@@ -3,7 +3,7 @@
  * Query-result printing support for frontend code
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/fe_utils/print.h
@@ -26,14 +26,15 @@
 enum printFormat
 {
 	PRINT_NOTHING = 0,			/* to make sure someone initializes this */
-	PRINT_UNALIGNED,
 	PRINT_ALIGNED,
-	PRINT_WRAPPED,
-	PRINT_HTML,
 	PRINT_ASCIIDOC,
+	PRINT_CSV,
+	PRINT_HTML,
 	PRINT_LATEX,
 	PRINT_LATEX_LONGTABLE,
-	PRINT_TROFF_MS
+	PRINT_TROFF_MS,
+	PRINT_UNALIGNED,
+	PRINT_WRAPPED
 	/* add your favourite output format here ... */
 };
 
@@ -112,6 +113,7 @@ typedef struct printTableOpt
 	const printTextFormat *line_style;	/* line style (NULL for default) */
 	struct separator fieldSep;	/* field separator for unaligned text mode */
 	struct separator recordSep; /* record separator for unaligned text mode */
+	char		csvFieldSep[2]; /* field separator for csv format */
 	bool		numericLocale;	/* locale-aware numeric units separator and
 								 * decimal marker */
 	char	   *tableAttr;		/* attributes for HTML <table ...> */

@@ -6,7 +6,7 @@
  * See src/backend/optimizer/README for discussion of EquivalenceClasses.
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -22,12 +22,13 @@
 #include "catalog/pg_type.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
+#include "optimizer/appendinfo.h"
 #include "optimizer/clauses.h"
+#include "optimizer/optimizer.h"
 #include "optimizer/pathnode.h"
 #include "optimizer/paths.h"
 #include "optimizer/planmain.h"
-#include "optimizer/prep.h"
-#include "optimizer/var.h"
+#include "optimizer/restrictinfo.h"
 #include "utils/lsyscache.h"
 
 
@@ -71,8 +72,14 @@ static bool reconsider_full_join_clause(PlannerInfo *root,
  *	  any delay by an outer join, so its two sides can be considered equal
  *	  anywhere they are both computable; moreover that equality can be
  *	  extended transitively.  Record this knowledge in the EquivalenceClass
- *	  data structure.  Returns TRUE if successful, FALSE if not (in which
- *	  case caller should treat the clause as ordinary, not an equivalence).
+ *	  data structure, if applicable.  Returns true if successful, false if not
+ *	  (in which case caller should treat the clause as ordinary, not an
+ *	  equivalence).
+ *
+ * In some cases, although we cannot convert a clause into EquivalenceClass
+ * knowledge, we can still modify it to a more useful form than the original.
+ * Then, *p_restrictinfo will be replaced by a new RestrictInfo, which is what
+ * the caller should use for further processing.
  *
  * If below_outer_join is true, then the clause was found below the nullable
  * side of an outer join, so its sides might validly be both NULL rather than
@@ -104,9 +111,11 @@ static bool reconsider_full_join_clause(PlannerInfo *root,
  * memory context.
  */
 bool
-process_equivalence(PlannerInfo *root, RestrictInfo *restrictinfo,
+process_equivalence(PlannerInfo *root,
+					RestrictInfo **p_restrictinfo,
 					bool below_outer_join)
 {
+	RestrictInfo *restrictinfo = *p_restrictinfo;
 	Expr	   *clause = restrictinfo->clause;
 	Oid			opno,
 				collation,
@@ -154,16 +163,45 @@ process_equivalence(PlannerInfo *root, RestrictInfo *restrictinfo,
 									   collation);
 
 	/*
-	 * Reject clauses of the form X=X.  These are not as redundant as they
-	 * might seem at first glance: assuming the operator is strict, this is
-	 * really an expensive way to write X IS NOT NULL.  So we must not risk
-	 * just losing the clause, which would be possible if there is already a
-	 * single-element EquivalenceClass containing X.  The case is not common
-	 * enough to be worth contorting the EC machinery for, so just reject the
-	 * clause and let it be processed as a normal restriction clause.
+	 * Clauses of the form X=X cannot be translated into EquivalenceClasses.
+	 * We'd either end up with a single-entry EC, losing the knowledge that
+	 * the clause was present at all, or else make an EC with duplicate
+	 * entries, causing other issues.
 	 */
 	if (equal(item1, item2))
-		return false;			/* X=X is not a useful equivalence */
+	{
+		/*
+		 * If the operator is strict, then the clause can be treated as just
+		 * "X IS NOT NULL".  (Since we know we are considering a top-level
+		 * qual, we can ignore the difference between FALSE and NULL results.)
+		 * It's worth making the conversion because we'll typically get a much
+		 * better selectivity estimate than we would for X=X.
+		 *
+		 * If the operator is not strict, we can't be sure what it will do
+		 * with NULLs, so don't attempt to optimize it.
+		 */
+		set_opfuncid((OpExpr *) clause);
+		if (func_strict(((OpExpr *) clause)->opfuncid))
+		{
+			NullTest   *ntest = makeNode(NullTest);
+
+			ntest->arg = item1;
+			ntest->nulltesttype = IS_NOT_NULL;
+			ntest->argisrow = false;	/* correct even if composite arg */
+			ntest->location = -1;
+
+			*p_restrictinfo =
+				make_restrictinfo((Expr *) ntest,
+								  restrictinfo->is_pushed_down,
+								  restrictinfo->outerjoin_delayed,
+								  restrictinfo->pseudoconstant,
+								  restrictinfo->security_level,
+								  NULL,
+								  restrictinfo->outer_relids,
+								  restrictinfo->nullable_relids);
+		}
+		return false;
+	}
 
 	/*
 	 * If below outer join, check for strictness, else reject.
@@ -459,8 +497,9 @@ canonicalize_ec_expression(Expr *expr, Oid req_type, Oid req_collation)
 
 	/*
 	 * For a polymorphic-input-type opclass, just keep the same exposed type.
+	 * RECORD opclasses work like polymorphic-type ones for this purpose.
 	 */
-	if (IsPolymorphicType(req_type))
+	if (IsPolymorphicType(req_type) || req_type == RECORDOID)
 		req_type = expr_type;
 
 	/*
@@ -564,8 +603,8 @@ add_eq_member(EquivalenceClass *ec, Expr *expr, Relids relids,
  * so for now we live with just reporting the first match.  See also
  * generate_implied_equalities_for_column and match_pathkeys_to_index.)
  *
- * If create_it is TRUE, we'll build a new EquivalenceClass when there is no
- * match.  If create_it is FALSE, we just return NULL when no match.
+ * If create_it is true, we'll build a new EquivalenceClass when there is no
+ * match.  If create_it is false, we just return NULL when no match.
  *
  * This can be used safely both before and after EquivalenceClass merging;
  * since it never causes merging it does not invalidate any existing ECs
@@ -1637,7 +1676,7 @@ reconsider_outer_join_clauses(PlannerInfo *root)
 /*
  * reconsider_outer_join_clauses for a single LEFT/RIGHT JOIN clause
  *
- * Returns TRUE if we were able to propagate a constant through the clause.
+ * Returns true if we were able to propagate a constant through the clause.
  */
 static bool
 reconsider_outer_join_clause(PlannerInfo *root, RestrictInfo *rinfo,
@@ -1741,7 +1780,7 @@ reconsider_outer_join_clause(PlannerInfo *root, RestrictInfo *rinfo,
 												   bms_copy(inner_relids),
 												   bms_copy(inner_nullable_relids),
 												   cur_ec->ec_min_security);
-			if (process_equivalence(root, newrinfo, true))
+			if (process_equivalence(root, &newrinfo, true))
 				match = true;
 		}
 
@@ -1762,7 +1801,7 @@ reconsider_outer_join_clause(PlannerInfo *root, RestrictInfo *rinfo,
 /*
  * reconsider_outer_join_clauses for a single FULL JOIN clause
  *
- * Returns TRUE if we were able to propagate a constant through the clause.
+ * Returns true if we were able to propagate a constant through the clause.
  */
 static bool
 reconsider_full_join_clause(PlannerInfo *root, RestrictInfo *rinfo)
@@ -1884,7 +1923,7 @@ reconsider_full_join_clause(PlannerInfo *root, RestrictInfo *rinfo)
 													   bms_copy(left_relids),
 													   bms_copy(left_nullable_relids),
 													   cur_ec->ec_min_security);
-				if (process_equivalence(root, newrinfo, true))
+				if (process_equivalence(root, &newrinfo, true))
 					matchleft = true;
 			}
 			eq_op = select_equality_operator(cur_ec,
@@ -1899,7 +1938,7 @@ reconsider_full_join_clause(PlannerInfo *root, RestrictInfo *rinfo)
 													   bms_copy(right_relids),
 													   bms_copy(right_nullable_relids),
 													   cur_ec->ec_min_security);
-				if (process_equivalence(root, newrinfo, true))
+				if (process_equivalence(root, &newrinfo, true))
 					matchright = true;
 			}
 		}
@@ -2012,6 +2051,14 @@ match_eclasses_to_foreign_key_col(PlannerInfo *root,
 		if (ec->ec_has_volatile)
 			continue;
 		/* Note: it seems okay to match to "broken" eclasses here */
+
+		/*
+		 * If eclass visibly doesn't have members for both rels, there's no
+		 * need to grovel through the members.
+		 */
+		if (!bms_is_member(var1varno, ec->ec_relids) ||
+			!bms_is_member(var2varno, ec->ec_relids))
+			continue;
 
 		foreach(lc2, ec->ec_members)
 		{
@@ -2468,6 +2515,43 @@ is_redundant_derived_clause(RestrictInfo *rinfo, List *clauselist)
 
 		if (otherrinfo->parent_ec == parent_ec)
 			return true;
+	}
+
+	return false;
+}
+
+/*
+ * is_redundant_with_indexclauses
+ *		Test whether rinfo is redundant with any clause in the IndexClause
+ *		list.  Here, for convenience, we test both simple identity and
+ *		whether it is derived from the same EC as any member of the list.
+ */
+bool
+is_redundant_with_indexclauses(RestrictInfo *rinfo, List *indexclauses)
+{
+	EquivalenceClass *parent_ec = rinfo->parent_ec;
+	ListCell   *lc;
+
+	foreach(lc, indexclauses)
+	{
+		IndexClause *iclause = lfirst_node(IndexClause, lc);
+		RestrictInfo *otherrinfo = iclause->rinfo;
+
+		/* If indexclause is lossy, it won't enforce the condition exactly */
+		if (iclause->lossy)
+			continue;
+
+		/* Match if it's same clause (pointer equality should be enough) */
+		if (rinfo == otherrinfo)
+			return true;
+		/* Match if derived from same EC */
+		if (parent_ec && otherrinfo->parent_ec == parent_ec)
+			return true;
+
+		/*
+		 * No need to look at the derived clauses in iclause->indexquals; they
+		 * couldn't match if the parent clause didn't.
+		 */
 	}
 
 	return false;

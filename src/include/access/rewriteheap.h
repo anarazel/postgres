@@ -3,7 +3,7 @@
  * rewriteheap.h
  *	  Declarations for heap rewrite support functions
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994-5, Regents of the University of California
  *
  * src/include/access/rewriteheap.h
@@ -45,9 +45,9 @@ typedef struct LogicalRewriteMappingData
  * components:
  * 1) database oid or InvalidOid for shared relations
  * 2) the oid of the relation
- * 3) xid we are mapping for
- * 4) upper 32bit of the LSN at which a rewrite started
- * 5) lower 32bit of the LSN at which a rewrite started
+ * 3) upper 32bit of the LSN at which a rewrite started
+ * 4) lower 32bit of the LSN at which a rewrite started
+ * 5) xid we are mapping for
  * 6) xid of the xact performing the mapping
  * ---
  */

@@ -3,7 +3,7 @@
  * nbtxlog.h
  *	  header file for postgres btree xlog routines
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/access/nbtxlog.h
@@ -38,16 +38,21 @@
 										 * vacuum */
 #define XLOG_BTREE_REUSE_PAGE	0xD0	/* old page is about to be reused from
 										 * FSM */
+#define XLOG_BTREE_META_CLEANUP	0xE0	/* update cleanup-related data in the
+										 * metapage */
 
 /*
  * All that we need to regenerate the meta-data page
  */
 typedef struct xl_btree_metadata
 {
+	uint32		version;
 	BlockNumber root;
 	uint32		level;
 	BlockNumber fastroot;
 	uint32		fastlevel;
+	TransactionId oldest_btpo_xact;
+	float8		last_cleanup_num_heap_tuples;
 } xl_btree_metadata;
 
 /*
@@ -75,26 +80,30 @@ typedef struct xl_btree_insert
  * whole page image.  The left page, however, is handled in the normal
  * incremental-update fashion.
  *
- * Note: the four XLOG_BTREE_SPLIT xl_info codes all use this data record.
- * The _L and _R variants indicate whether the inserted tuple went into the
- * left or right split page (and thus, whether newitemoff and the new item
- * are stored or not).  The _ROOT variants indicate that we are splitting
- * the root page, and thus that a newroot record rather than an insert or
- * split record should follow.  Note that a split record never carries a
- * metapage update --- we'll do that in the parent-level update.
+ * Note: XLOG_BTREE_SPLIT_L and XLOG_BTREE_SPLIT_R share this data record.
+ * There are two variants to indicate whether the inserted tuple went into the
+ * left or right split page (and thus, whether newitemoff and the new item are
+ * stored or not).  We always log the left page high key because suffix
+ * truncation can generate a new leaf high key using user-defined code.  This
+ * is also necessary on internal pages, since the first right item that the
+ * left page's high key was based on will have been truncated to zero
+ * attributes in the right page (the original is unavailable from the right
+ * page).
  *
  * Backup Blk 0: original page / new left page
  *
  * The left page's data portion contains the new item, if it's the _L variant.
- * (In the _R variants, the new item is one of the right page's tuples.)
- * If level > 0, an IndexTuple representing the HIKEY of the left page
- * follows.  We don't need this on leaf pages, because it's the same as the
- * leftmost key in the new right page.
+ * An IndexTuple representing the high key of the left page must follow with
+ * either variant.
  *
  * Backup Blk 1: new right page
  *
- * The right page's data portion contains the right page's tuples in the
- * form used by _bt_restore_page.
+ * The right page's data portion contains the right page's tuples in the form
+ * used by _bt_restore_page.  This includes the new item, if it's the _R
+ * variant.  The right page's tuples also include the right page's high key
+ * with either variant (moved from the left/original page during the split),
+ * unless the split happened to be of the rightmost page on its level, where
+ * there is no high key for new right page.
  *
  * Backup Blk 2: next block (orig page's rightlink), if any
  * Backup Blk 3: child's left sibling, if non-leaf split
@@ -117,8 +126,7 @@ typedef struct xl_btree_split
  */
 typedef struct xl_btree_delete
 {
-	RelFileNode hnode;			/* RelFileNode of the heap the index currently
-								 * points at */
+	TransactionId latestRemovedXid;
 	int			nitems;
 
 	/* TARGET OFFSET NUMBERS FOLLOW AT THE END */

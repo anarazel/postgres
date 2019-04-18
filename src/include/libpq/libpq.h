@@ -4,7 +4,7 @@
  *	  POSTGRES LIBPQ buffer structure definitions.
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/libpq/libpq.h
@@ -33,7 +33,7 @@ typedef struct
 	void		(*endcopyout) (bool errorAbort);
 } PQcommMethods;
 
-extern PGDLLIMPORT PQcommMethods *PqCommMethods;
+extern const PGDLLIMPORT PQcommMethods *PqCommMethods;
 
 #define pq_comm_reset() (PqCommMethods->comm_reset())
 #define pq_flush() (PqCommMethods->flush())
@@ -75,11 +75,14 @@ extern int	pq_putbytes(const char *s, size_t len);
 /*
  * prototypes for functions in be-secure.c
  */
+extern char *ssl_library;
 extern char *ssl_cert_file;
 extern char *ssl_key_file;
 extern char *ssl_ca_file;
 extern char *ssl_crl_file;
 extern char *ssl_dh_params_file;
+extern char *ssl_passphrase_command;
+extern bool ssl_passphrase_command_supports_reload;
 
 extern int	secure_initialize(bool isServerStart);
 extern bool secure_loaded_verify_locations(void);
@@ -90,6 +93,9 @@ extern ssize_t secure_read(Port *port, void *ptr, size_t len);
 extern ssize_t secure_write(Port *port, void *ptr, size_t len);
 extern ssize_t secure_raw_read(Port *port, void *ptr, size_t len);
 extern ssize_t secure_raw_write(Port *port, const void *ptr, size_t len);
+#ifdef ENABLE_GSS
+extern ssize_t secure_open_gssapi(Port *port);
+#endif
 
 extern bool ssl_loaded_verify_locations;
 
@@ -99,5 +105,24 @@ extern WaitEventSet *FeBeWaitSet;
 extern char *SSLCipherSuites;
 extern char *SSLECDHCurve;
 extern bool SSLPreferServerCiphers;
+extern int	ssl_min_protocol_version;
+extern int	ssl_max_protocol_version;
+
+enum ssl_protocol_versions
+{
+	PG_TLS_ANY = 0,
+	PG_TLS1_VERSION,
+	PG_TLS1_1_VERSION,
+	PG_TLS1_2_VERSION,
+	PG_TLS1_3_VERSION,
+};
+
+/*
+ * prototypes for functions in be-secure-common.c
+ */
+extern int run_ssl_passphrase_command(const char *prompt, bool is_server_start,
+						   char *buf, int size);
+extern bool check_ssl_key_file_permissions(const char *ssl_key_file,
+							   bool isServerStart);
 
 #endif							/* LIBPQ_H */

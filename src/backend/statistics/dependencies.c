@@ -3,7 +3,7 @@
  * dependencies.c
  *	  POSTGRES functional dependencies
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -18,11 +18,11 @@
 #include "catalog/pg_operator.h"
 #include "catalog/pg_statistic_ext.h"
 #include "lib/stringinfo.h"
+#include "nodes/nodeFuncs.h"
 #include "optimizer/clauses.h"
-#include "optimizer/cost.h"
-#include "optimizer/var.h"
+#include "optimizer/optimizer.h"
 #include "nodes/nodes.h"
-#include "nodes/relation.h"
+#include "nodes/pathnodes.h"
 #include "statistics/extended_stats_internal.h"
 #include "statistics/statistics.h"
 #include "utils/bytea.h"
@@ -202,13 +202,12 @@ dependency_degree(int numrows, HeapTuple *rows, int k, AttrNumber *dependency,
 				  VacAttrStats **stats, Bitmapset *attrs)
 {
 	int			i,
-				j;
-	int			nvalues = numrows * k;
+				nitems;
 	MultiSortSupport mss;
 	SortItem   *items;
-	Datum	   *values;
-	bool	   *isnull;
-	int		   *attnums;
+	AttrNumber *attnums;
+	AttrNumber *attnums_dep;
+	int			numattrs;
 
 	/* counters valid within a group */
 	int			group_size = 0;
@@ -223,26 +222,16 @@ dependency_degree(int numrows, HeapTuple *rows, int k, AttrNumber *dependency,
 	/* sort info for all attributes columns */
 	mss = multi_sort_init(k);
 
-	/* data for the sort */
-	items = (SortItem *) palloc(numrows * sizeof(SortItem));
-	values = (Datum *) palloc(sizeof(Datum) * nvalues);
-	isnull = (bool *) palloc(sizeof(bool) * nvalues);
-
-	/* fix the pointers to values/isnull */
-	for (i = 0; i < numrows; i++)
-	{
-		items[i].values = &values[i * k];
-		items[i].isnull = &isnull[i * k];
-	}
-
 	/*
-	 * Transform the bms into an array, to make accessing i-th member easier.
+	 * Transform the attrs from bitmap to an array to make accessing the i-th
+	 * member easier, and then construct a filtered version with only attnums
+	 * referenced by the dependency we validate.
 	 */
-	attnums = (int *) palloc(sizeof(int) * bms_num_members(attrs));
-	i = 0;
-	j = -1;
-	while ((j = bms_next_member(attrs, j)) >= 0)
-		attnums[i++] = j;
+	attnums = build_attnums_array(attrs, &numattrs);
+
+	attnums_dep = (AttrNumber *) palloc(k * sizeof(AttrNumber));
+	for (i = 0; i < k; i++)
+		attnums_dep[i] = attnums[dependency[i]];
 
 	/*
 	 * Verify the dependency (a,b,...)->z, using a rather simple algorithm:
@@ -252,9 +241,12 @@ dependency_degree(int numrows, HeapTuple *rows, int k, AttrNumber *dependency,
 	 * (b) split the data into groups by first (k-1) columns
 	 *
 	 * (c) for each group count different values in the last column
+	 *
+	 * We use the column data types' default sort operators and collations;
+	 * perhaps at some point it'd be worth using column-specific collations?
 	 */
 
-	/* prepare the sort function for the first dimension, and SortItem array */
+	/* prepare the sort function for the dimensions */
 	for (i = 0; i < k; i++)
 	{
 		VacAttrStats *colstat = stats[dependency[i]];
@@ -266,20 +258,18 @@ dependency_degree(int numrows, HeapTuple *rows, int k, AttrNumber *dependency,
 				 colstat->attrtypid);
 
 		/* prepare the sort function for this dimension */
-		multi_sort_add_dimension(mss, i, type->lt_opr);
-
-		/* accumulate all the data for both columns into an array and sort it */
-		for (j = 0; j < numrows; j++)
-		{
-			items[j].values[i] =
-				heap_getattr(rows[j], attnums[dependency[i]],
-							 stats[i]->tupDesc, &items[j].isnull[i]);
-		}
+		multi_sort_add_dimension(mss, i, type->lt_opr, type->typcollation);
 	}
 
-	/* sort the items so that we can detect the groups */
-	qsort_arg((void *) items, numrows, sizeof(SortItem),
-			  multi_sort_compare, mss);
+	/*
+	 * build an array of SortItem(s) sorted using the multi-sort support
+	 *
+	 * XXX This relies on all stats entries pointing to the same tuple
+	 * descriptor.  For now that assumption holds, but it might change in
+	 * the future for example if we support statistics on multiple tables.
+	 */
+	items = build_sorted_items(numrows, &nitems, rows, stats[0]->tupDesc,
+							   mss, k, attnums_dep);
 
 	/*
 	 * Walk through the sorted array, split it into rows according to the
@@ -292,14 +282,14 @@ dependency_degree(int numrows, HeapTuple *rows, int k, AttrNumber *dependency,
 	group_size = 1;
 
 	/* loop 1 beyond the end of the array so that we count the final group */
-	for (i = 1; i <= numrows; i++)
+	for (i = 1; i <= nitems; i++)
 	{
 		/*
 		 * Check if the group ended, which may be either because we processed
-		 * all the items (i==numrows), or because the i-th item is not equal
+		 * all the items (i==nitems), or because the i-th item is not equal
 		 * to the preceding one.
 		 */
-		if (i == numrows ||
+		if (i == nitems ||
 			multi_sort_compare_dims(0, k - 2, &items[i - 1], &items[i], mss) != 0)
 		{
 			/*
@@ -321,10 +311,12 @@ dependency_degree(int numrows, HeapTuple *rows, int k, AttrNumber *dependency,
 		group_size++;
 	}
 
-	pfree(items);
-	pfree(values);
-	pfree(isnull);
+	if (items)
+		pfree(items);
+
 	pfree(mss);
+	pfree(attnums);
+	pfree(attnums_dep);
 
 	/* Compute the 'degree of validity' as (supporting/total). */
 	return (n_supporting_rows * 1.0 / numrows);
@@ -351,24 +343,17 @@ statext_dependencies_build(int numrows, HeapTuple *rows, Bitmapset *attrs,
 						   VacAttrStats **stats)
 {
 	int			i,
-				j,
 				k;
 	int			numattrs;
-	int		   *attnums;
+	AttrNumber *attnums;
 
 	/* result */
 	MVDependencies *dependencies = NULL;
 
-	numattrs = bms_num_members(attrs);
-
 	/*
 	 * Transform the bms into an array, to make accessing i-th member easier.
 	 */
-	attnums = palloc(sizeof(int) * bms_num_members(attrs));
-	i = 0;
-	j = -1;
-	while ((j = bms_next_member(attrs, j)) >= 0)
-		attnums[i++] = j;
+	attnums = build_attnums_array(attrs, &numattrs);
 
 	Assert(numattrs >= 2);
 
@@ -395,7 +380,7 @@ statext_dependencies_build(int numrows, HeapTuple *rows, Bitmapset *attrs,
 			degree = dependency_degree(numrows, rows, k, dependency, stats, attrs);
 
 			/*
-			 * if the dependency seems entirely invalid, don't store it it
+			 * if the dependency seems entirely invalid, don't store it
 			 */
 			if (degree == 0.0)
 				continue;
@@ -631,20 +616,27 @@ dependency_implies_attribute(MVDependency *dependency, AttrNumber attnum)
 MVDependencies *
 statext_dependencies_load(Oid mvoid)
 {
+	MVDependencies *result;
 	bool		isnull;
 	Datum		deps;
-	HeapTuple	htup = SearchSysCache1(STATEXTOID, ObjectIdGetDatum(mvoid));
+	HeapTuple	htup;
 
+	htup = SearchSysCache1(STATEXTOID, ObjectIdGetDatum(mvoid));
 	if (!HeapTupleIsValid(htup))
 		elog(ERROR, "cache lookup failed for statistics object %u", mvoid);
 
 	deps = SysCacheGetAttr(STATEXTOID, htup,
 						   Anum_pg_statistic_ext_stxdependencies, &isnull);
-	Assert(!isnull);
+	if (isnull)
+		elog(ERROR,
+			 "requested statistic kind \"%c\" is not yet built for statistics object %u",
+			 STATS_EXT_DEPENDENCIES, mvoid);
+
+	result = statext_dependencies_deserialize(DatumGetByteaPP(deps));
 
 	ReleaseSysCache(htup);
 
-	return statext_dependencies_deserialize(DatumGetByteaP(deps));
+	return result;
 }
 
 /*
@@ -736,83 +728,104 @@ pg_dependencies_send(PG_FUNCTION_ARGS)
  * dependency_is_compatible_clause
  *		Determines if the clause is compatible with functional dependencies
  *
- * Only OpExprs with two arguments using an equality operator are supported.
- * When returning True attnum is set to the attribute number of the Var within
- * the supported clause.
- *
- * Currently we only support Var = Const, or Const = Var. It may be possible
- * to expand on this later.
+ * Only clauses that have the form of equality to a pseudoconstant, or can be
+ * interpreted that way, are currently accepted.  Furthermore the variable
+ * part of the clause must be a simple Var belonging to the specified
+ * relation, whose attribute number we return in *attnum on success.
  */
 static bool
 dependency_is_compatible_clause(Node *clause, Index relid, AttrNumber *attnum)
 {
 	RestrictInfo *rinfo = (RestrictInfo *) clause;
+	Var		   *var;
 
 	if (!IsA(rinfo, RestrictInfo))
 		return false;
 
-	/* Pseudoconstants are not really interesting here. */
+	/* Pseudoconstants are not interesting (they couldn't contain a Var) */
 	if (rinfo->pseudoconstant)
 		return false;
 
-	/* clauses referencing multiple varnos are incompatible */
+	/* Clauses referencing multiple, or no, varnos are incompatible */
 	if (bms_membership(rinfo->clause_relids) != BMS_SINGLETON)
 		return false;
 
 	if (is_opclause(rinfo->clause))
 	{
+		/* If it's an opclause, check for Var = Const or Const = Var. */
 		OpExpr	   *expr = (OpExpr *) rinfo->clause;
-		Var		   *var;
-		bool		varonleft = true;
-		bool		ok;
 
-		/* Only expressions with two arguments are considered compatible. */
+		/* Only expressions with two arguments are candidates. */
 		if (list_length(expr->args) != 2)
 			return false;
 
-		/* see if it actually has the right */
-		ok = (NumRelids((Node *) expr) == 1) &&
-			(is_pseudo_constant_clause(lsecond(expr->args)) ||
-			 (varonleft = false,
-			  is_pseudo_constant_clause(linitial(expr->args))));
-
-		/* unsupported structure (two variables or so) */
-		if (!ok)
+		/* Make sure non-selected argument is a pseudoconstant. */
+		if (is_pseudo_constant_clause(lsecond(expr->args)))
+			var = linitial(expr->args);
+		else if (is_pseudo_constant_clause(linitial(expr->args)))
+			var = lsecond(expr->args);
+		else
 			return false;
 
 		/*
-		 * If it's not "=" operator, just ignore the clause, as it's not
+		 * If it's not an "=" operator, just ignore the clause, as it's not
 		 * compatible with functional dependencies.
 		 *
 		 * This uses the function for estimating selectivity, not the operator
 		 * directly (a bit awkward, but well ...).
+		 *
+		 * XXX this is pretty dubious; probably it'd be better to check btree
+		 * or hash opclass membership, so as not to be fooled by custom
+		 * selectivity functions, and to be more consistent with decisions
+		 * elsewhere in the planner.
 		 */
 		if (get_oprrest(expr->opno) != F_EQSEL)
 			return false;
 
-		var = (varonleft) ? linitial(expr->args) : lsecond(expr->args);
-
-		/* We only support plain Vars for now */
-		if (!IsA(var, Var))
-			return false;
-
-		/* Ensure var is from the correct relation */
-		if (var->varno != relid)
-			return false;
-
-		/* we also better ensure the Var is from the current level */
-		if (var->varlevelsup > 0)
-			return false;
-
-		/* Also skip system attributes (we don't allow stats on those). */
-		if (!AttrNumberIsForUserDefinedAttr(var->varattno))
-			return false;
-
-		*attnum = var->varattno;
-		return true;
+		/* OK to proceed with checking "var" */
+	}
+	else if (is_notclause(rinfo->clause))
+	{
+		/*
+		 * "NOT x" can be interpreted as "x = false", so get the argument and
+		 * proceed with seeing if it's a suitable Var.
+		 */
+		var = (Var *) get_notclausearg(rinfo->clause);
+	}
+	else
+	{
+		/*
+		 * A boolean expression "x" can be interpreted as "x = true", so
+		 * proceed with seeing if it's a suitable Var.
+		 */
+		var = (Var *) rinfo->clause;
 	}
 
-	return false;
+	/*
+	 * We may ignore any RelabelType node above the operand.  (There won't be
+	 * more than one, since eval_const_expressions has been applied already.)
+	 */
+	if (IsA(var, RelabelType))
+		var = (Var *) ((RelabelType *) var)->arg;
+
+	/* We only support plain Vars for now */
+	if (!IsA(var, Var))
+		return false;
+
+	/* Ensure Var is from the correct relation */
+	if (var->varno != relid)
+		return false;
+
+	/* We also better ensure the Var is from the current level */
+	if (var->varlevelsup != 0)
+		return false;
+
+	/* Also ignore system attributes (we don't allow stats on those) */
+	if (!AttrNumberIsForUserDefinedAttr(var->varattno))
+		return false;
+
+	*attnum = var->varattno;
+	return true;
 }
 
 /*
@@ -883,13 +896,13 @@ find_strongest_dependency(StatisticExtInfo *stats, MVDependencies *dependencies,
 
 /*
  * dependencies_clauselist_selectivity
- *		Return the estimated selectivity of the given clauses using
- *		functional dependency statistics, or 1.0 if no useful functional
+ *		Return the estimated selectivity of (a subset of) the given clauses
+ *		using functional dependency statistics, or 1.0 if no useful functional
  *		dependency statistic exists.
  *
- * 'estimatedclauses' is an output argument that gets a bit set corresponding
- * to the (zero-based) list index of clauses that are included in the
- * estimated selectivity.
+ * 'estimatedclauses' is an input/output argument that gets a bit set
+ * corresponding to the (zero-based) list index of each clause that is included
+ * in the estimated selectivity.
  *
  * Given equality clauses on attributes (a,b) we find the strongest dependency
  * between them, i.e. either (a=>b) or (b=>a). Assuming (a=>b) is the selected
@@ -938,6 +951,9 @@ dependencies_clauselist_selectivity(PlannerInfo *root,
 	 * the attnums for each clause in a list which we'll reference later so we
 	 * don't need to repeat the same work again. We'll also keep track of all
 	 * attnums seen.
+	 *
+	 * We also skip clauses that we already estimated using different types of
+	 * statistics (we treat them as incompatible).
 	 */
 	listidx = 0;
 	foreach(l, clauses)
@@ -945,7 +961,8 @@ dependencies_clauselist_selectivity(PlannerInfo *root,
 		Node	   *clause = (Node *) lfirst(l);
 		AttrNumber	attnum;
 
-		if (dependency_is_compatible_clause(clause, rel->relid, &attnum))
+		if (!bms_is_member(listidx, *estimatedclauses) &&
+			dependency_is_compatible_clause(clause, rel->relid, &attnum))
 		{
 			list_attnums[listidx] = attnum;
 			clauses_attnums = bms_add_member(clauses_attnums, attnum);
@@ -1015,8 +1032,7 @@ dependencies_clauselist_selectivity(PlannerInfo *root,
 			/*
 			 * Skip incompatible clauses, and ones we've already estimated on.
 			 */
-			if (list_attnums[listidx] == InvalidAttrNumber ||
-				bms_is_member(listidx, *estimatedclauses))
+			if (list_attnums[listidx] == InvalidAttrNumber)
 				continue;
 
 			/*

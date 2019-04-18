@@ -8,7 +8,7 @@
  * stepping on each others' toes.  Formerly we used table-level locks
  * on pg_database, but that's too coarse-grained.
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -26,6 +26,7 @@
 #include "access/genam.h"
 #include "access/heapam.h"
 #include "access/htup_details.h"
+#include "access/tableam.h"
 #include "access/xact.h"
 #include "access/xloginsert.h"
 #include "access/xlogutils.h"
@@ -53,6 +54,7 @@
 #include "storage/fd.h"
 #include "storage/lmgr.h"
 #include "storage/ipc.h"
+#include "storage/md.h"
 #include "storage/procarray.h"
 #include "storage/smgr.h"
 #include "utils/acl.h"
@@ -61,7 +63,6 @@
 #include "utils/pg_locale.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
-#include "utils/tqual.h"
 
 
 typedef struct
@@ -98,7 +99,7 @@ static int	errdetail_busy_db(int notherbackends, int npreparedxacts);
 Oid
 createdb(ParseState *pstate, const CreatedbStmt *stmt)
 {
-	HeapScanDesc scan;
+	TableScanDesc scan;
 	Relation	rel;
 	Oid			src_dboid;
 	Oid			src_owner;
@@ -422,7 +423,7 @@ createdb(ParseState *pstate, const CreatedbStmt *stmt)
 		aclresult = pg_tablespace_aclcheck(dst_deftablespace, GetUserId(),
 										   ACL_CREATE);
 		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_TABLESPACE,
+			aclcheck_error(aclresult, OBJECT_TABLESPACE,
 						   tablespacename);
 
 		/* pg_global must never be the default tablespace */
@@ -500,11 +501,12 @@ createdb(ParseState *pstate, const CreatedbStmt *stmt)
 	 * filename conflict with anything already existing in the tablespace
 	 * directories.
 	 */
-	pg_database_rel = heap_open(DatabaseRelationId, RowExclusiveLock);
+	pg_database_rel = table_open(DatabaseRelationId, RowExclusiveLock);
 
 	do
 	{
-		dboid = GetNewOid(pg_database_rel);
+		dboid = GetNewOidWithIndex(pg_database_rel, DatabaseOidIndexId,
+								   Anum_pg_database_oid);
 	} while (check_db_file_conflict(dboid));
 
 	/*
@@ -517,6 +519,7 @@ createdb(ParseState *pstate, const CreatedbStmt *stmt)
 	MemSet(new_record, 0, sizeof(new_record));
 	MemSet(new_record_nulls, false, sizeof(new_record_nulls));
 
+	new_record[Anum_pg_database_oid - 1] = ObjectIdGetDatum(dboid);
 	new_record[Anum_pg_database_datname - 1] =
 		DirectFunctionCall1(namein, CStringGetDatum(dbname));
 	new_record[Anum_pg_database_datdba - 1] = ObjectIdGetDatum(datdba);
@@ -542,8 +545,6 @@ createdb(ParseState *pstate, const CreatedbStmt *stmt)
 
 	tuple = heap_form_tuple(RelationGetDescr(pg_database_rel),
 							new_record, new_record_nulls);
-
-	HeapTupleSetOid(tuple, dboid);
 
 	CatalogTupleInsert(pg_database_rel, tuple);
 
@@ -589,11 +590,12 @@ createdb(ParseState *pstate, const CreatedbStmt *stmt)
 		 * Iterate through all tablespaces of the template database, and copy
 		 * each one to the new database.
 		 */
-		rel = heap_open(TableSpaceRelationId, AccessShareLock);
-		scan = heap_beginscan_catalog(rel, 0, NULL);
+		rel = table_open(TableSpaceRelationId, AccessShareLock);
+		scan = table_beginscan_catalog(rel, 0, NULL);
 		while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
 		{
-			Oid			srctablespace = HeapTupleGetOid(tuple);
+			Form_pg_tablespace spaceform = (Form_pg_tablespace) GETSTRUCT(tuple);
+			Oid			srctablespace = spaceform->oid;
 			Oid			dsttablespace;
 			char	   *srcpath;
 			char	   *dstpath;
@@ -643,8 +645,8 @@ createdb(ParseState *pstate, const CreatedbStmt *stmt)
 								  XLOG_DBASE_CREATE | XLR_SPECIAL_REL_UPDATE);
 			}
 		}
-		heap_endscan(scan);
-		heap_close(rel, AccessShareLock);
+		table_endscan(scan);
+		table_close(rel, AccessShareLock);
 
 		/*
 		 * We force a checkpoint before committing.  This effectively means
@@ -680,7 +682,7 @@ createdb(ParseState *pstate, const CreatedbStmt *stmt)
 		/*
 		 * Close pg_database, but keep lock till commit.
 		 */
-		heap_close(pg_database_rel, NoLock);
+		table_close(pg_database_rel, NoLock);
 
 		/*
 		 * Force synchronous commit, thus minimizing the window between
@@ -796,7 +798,7 @@ dropdb(const char *dbname, bool missing_ok)
 	 * using it as a CREATE DATABASE template or trying to delete it for
 	 * themselves.
 	 */
-	pgdbrel = heap_open(DatabaseRelationId, RowExclusiveLock);
+	pgdbrel = table_open(DatabaseRelationId, RowExclusiveLock);
 
 	if (!get_db_info(dbname, AccessExclusiveLock, &db_id, NULL, NULL,
 					 &db_istemplate, NULL, NULL, NULL, NULL, NULL, NULL, NULL))
@@ -810,7 +812,7 @@ dropdb(const char *dbname, bool missing_ok)
 		else
 		{
 			/* Close pg_database, release the lock, since we changed nothing */
-			heap_close(pgdbrel, RowExclusiveLock);
+			table_close(pgdbrel, RowExclusiveLock);
 			ereport(NOTICE,
 					(errmsg("database \"%s\" does not exist, skipping",
 							dbname)));
@@ -822,7 +824,7 @@ dropdb(const char *dbname, bool missing_ok)
 	 * Permission checks
 	 */
 	if (!pg_database_ownercheck(db_id, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
+		aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_DATABASE,
 					   dbname);
 
 	/* DROP hook for the database being removed */
@@ -857,8 +859,8 @@ dropdb(const char *dbname, bool missing_ok)
 				(errcode(ERRCODE_OBJECT_IN_USE),
 				 errmsg("database \"%s\" is used by an active logical replication slot",
 						dbname),
-				 errdetail_plural("There is %d active slot",
-								  "There are %d active slots",
+				 errdetail_plural("There is %d active slot.",
+								  "There are %d active slots.",
 								  nslots_active, nslots_active)));
 	}
 
@@ -940,11 +942,11 @@ dropdb(const char *dbname, bool missing_ok)
 	 * worse, it will delete files that belong to a newly created database
 	 * with the same OID.
 	 */
-	ForgetDatabaseFsyncRequests(db_id);
+	ForgetDatabaseSyncRequests(db_id);
 
 	/*
 	 * Force a checkpoint to make sure the checkpointer has received the
-	 * message sent by ForgetDatabaseFsyncRequests. On Windows, this also
+	 * message sent by ForgetDatabaseSyncRequests. On Windows, this also
 	 * ensures that background procs don't hold any open files, which would
 	 * cause rmdir() to fail.
 	 */
@@ -958,7 +960,7 @@ dropdb(const char *dbname, bool missing_ok)
 	/*
 	 * Close pg_database, but keep lock till commit.
 	 */
-	heap_close(pgdbrel, NoLock);
+	table_close(pgdbrel, NoLock);
 
 	/*
 	 * Force synchronous commit, thus minimizing the window between removal of
@@ -987,7 +989,7 @@ RenameDatabase(const char *oldname, const char *newname)
 	 * Look up the target database's OID, and get exclusive lock on it. We
 	 * need this for the same reasons as DROP DATABASE.
 	 */
-	rel = heap_open(DatabaseRelationId, RowExclusiveLock);
+	rel = table_open(DatabaseRelationId, RowExclusiveLock);
 
 	if (!get_db_info(oldname, AccessExclusiveLock, &db_id, NULL, NULL,
 					 NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL))
@@ -997,7 +999,7 @@ RenameDatabase(const char *oldname, const char *newname)
 
 	/* must be owner */
 	if (!pg_database_ownercheck(db_id, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
+		aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_DATABASE,
 					   oldname);
 
 	/* must have createdb rights */
@@ -1053,7 +1055,7 @@ RenameDatabase(const char *oldname, const char *newname)
 	/*
 	 * Close pg_database, but keep lock till commit.
 	 */
-	heap_close(rel, NoLock);
+	table_close(rel, NoLock);
 
 	return address;
 }
@@ -1091,7 +1093,7 @@ movedb(const char *dbname, const char *tblspcname)
 	 * we are moving it, and that no one is using it as a CREATE DATABASE
 	 * template or trying to delete it.
 	 */
-	pgdbrel = heap_open(DatabaseRelationId, RowExclusiveLock);
+	pgdbrel = table_open(DatabaseRelationId, RowExclusiveLock);
 
 	if (!get_db_info(dbname, AccessExclusiveLock, &db_id, NULL, NULL,
 					 NULL, NULL, NULL, NULL, NULL, &src_tblspcoid, NULL, NULL))
@@ -1112,7 +1114,7 @@ movedb(const char *dbname, const char *tblspcname)
 	 * Permission checks
 	 */
 	if (!pg_database_ownercheck(db_id, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
+		aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_DATABASE,
 					   dbname);
 
 	/*
@@ -1134,7 +1136,7 @@ movedb(const char *dbname, const char *tblspcname)
 	aclresult = pg_tablespace_aclcheck(dst_tblspcoid, GetUserId(),
 									   ACL_CREATE);
 	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_TABLESPACE,
+		aclcheck_error(aclresult, OBJECT_TABLESPACE,
 					   tblspcname);
 
 	/*
@@ -1150,7 +1152,7 @@ movedb(const char *dbname, const char *tblspcname)
 	 */
 	if (src_tblspcoid == dst_tblspcoid)
 	{
-		heap_close(pgdbrel, NoLock);
+		table_close(pgdbrel, NoLock);
 		UnlockSharedObjectForSession(DatabaseRelationId, db_id, 0,
 									 AccessExclusiveLock);
 		return;
@@ -1301,8 +1303,7 @@ movedb(const char *dbname, const char *tblspcname)
 									 new_record_nulls, new_record_repl);
 		CatalogTupleUpdate(pgdbrel, &oldtuple->t_self, newtuple);
 
-		InvokeObjectPostAlterHook(DatabaseRelationId,
-								  HeapTupleGetOid(newtuple), 0);
+		InvokeObjectPostAlterHook(DatabaseRelationId, db_id, 0);
 
 		systable_endscan(sysscan);
 
@@ -1325,7 +1326,7 @@ movedb(const char *dbname, const char *tblspcname)
 		/*
 		 * Close pg_database, but keep lock till commit.
 		 */
-		heap_close(pgdbrel, NoLock);
+		table_close(pgdbrel, NoLock);
 	}
 	PG_END_ENSURE_ERROR_CLEANUP(movedb_failure_callback,
 								PointerGetDatum(&fparms));
@@ -1400,6 +1401,7 @@ AlterDatabase(ParseState *pstate, AlterDatabaseStmt *stmt, bool isTopLevel)
 	Oid			dboid;
 	HeapTuple	tuple,
 				newtuple;
+	Form_pg_database datform;
 	ScanKeyData scankey;
 	SysScanDesc scan;
 	ListCell   *option;
@@ -1476,7 +1478,7 @@ AlterDatabase(ParseState *pstate, AlterDatabaseStmt *stmt, bool isTopLevel)
 							dtablespace->defname),
 					 parser_errposition(pstate, dtablespace->location)));
 		/* this case isn't allowed within a transaction block */
-		PreventTransactionChain(isTopLevel, "ALTER DATABASE SET TABLESPACE");
+		PreventInTransactionBlock(isTopLevel, "ALTER DATABASE SET TABLESPACE");
 		movedb(stmt->dbname, defGetString(dtablespace));
 		return InvalidOid;
 	}
@@ -1499,7 +1501,7 @@ AlterDatabase(ParseState *pstate, AlterDatabaseStmt *stmt, bool isTopLevel)
 	 * because we're not going to do anything that would mess up incoming
 	 * connections.
 	 */
-	rel = heap_open(DatabaseRelationId, RowExclusiveLock);
+	rel = table_open(DatabaseRelationId, RowExclusiveLock);
 	ScanKeyInit(&scankey,
 				Anum_pg_database_datname,
 				BTEqualStrategyNumber, F_NAMEEQ,
@@ -1512,10 +1514,11 @@ AlterDatabase(ParseState *pstate, AlterDatabaseStmt *stmt, bool isTopLevel)
 				(errcode(ERRCODE_UNDEFINED_DATABASE),
 				 errmsg("database \"%s\" does not exist", stmt->dbname)));
 
-	dboid = HeapTupleGetOid(tuple);
+	datform = (Form_pg_database) GETSTRUCT(tuple);
+	dboid = datform->oid;
 
-	if (!pg_database_ownercheck(HeapTupleGetOid(tuple), GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
+	if (!pg_database_ownercheck(dboid, GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_DATABASE,
 					   stmt->dbname);
 
 	/*
@@ -1556,13 +1559,12 @@ AlterDatabase(ParseState *pstate, AlterDatabaseStmt *stmt, bool isTopLevel)
 								 new_record_nulls, new_record_repl);
 	CatalogTupleUpdate(rel, &tuple->t_self, newtuple);
 
-	InvokeObjectPostAlterHook(DatabaseRelationId,
-							  HeapTupleGetOid(newtuple), 0);
+	InvokeObjectPostAlterHook(DatabaseRelationId, dboid, 0);
 
 	systable_endscan(scan);
 
 	/* Close pg_database, but keep lock till commit */
-	heap_close(rel, NoLock);
+	table_close(rel, NoLock);
 
 	return dboid;
 }
@@ -1583,7 +1585,7 @@ AlterDatabaseSet(AlterDatabaseSetStmt *stmt)
 	shdepLockAndCheckObject(DatabaseRelationId, datid);
 
 	if (!pg_database_ownercheck(datid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
+		aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_DATABASE,
 					   stmt->dbname);
 
 	AlterSetting(datid, InvalidOid, stmt->setstmt);
@@ -1613,7 +1615,7 @@ AlterDatabaseOwner(const char *dbname, Oid newOwnerId)
 	 * because we're not going to do anything that would mess up incoming
 	 * connections.
 	 */
-	rel = heap_open(DatabaseRelationId, RowExclusiveLock);
+	rel = table_open(DatabaseRelationId, RowExclusiveLock);
 	ScanKeyInit(&scankey,
 				Anum_pg_database_datname,
 				BTEqualStrategyNumber, F_NAMEEQ,
@@ -1626,8 +1628,8 @@ AlterDatabaseOwner(const char *dbname, Oid newOwnerId)
 				(errcode(ERRCODE_UNDEFINED_DATABASE),
 				 errmsg("database \"%s\" does not exist", dbname)));
 
-	db_id = HeapTupleGetOid(tuple);
 	datForm = (Form_pg_database) GETSTRUCT(tuple);
+	db_id = datForm->oid;
 
 	/*
 	 * If the new owner is the same as the existing owner, consider the
@@ -1645,8 +1647,8 @@ AlterDatabaseOwner(const char *dbname, Oid newOwnerId)
 		HeapTuple	newtuple;
 
 		/* Otherwise, must be owner of the existing object */
-		if (!pg_database_ownercheck(HeapTupleGetOid(tuple), GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
+		if (!pg_database_ownercheck(db_id, GetUserId()))
+			aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_DATABASE,
 						   dbname);
 
 		/* Must be able to become new owner */
@@ -1694,18 +1696,17 @@ AlterDatabaseOwner(const char *dbname, Oid newOwnerId)
 		heap_freetuple(newtuple);
 
 		/* Update owner dependency reference */
-		changeDependencyOnOwner(DatabaseRelationId, HeapTupleGetOid(tuple),
-								newOwnerId);
+		changeDependencyOnOwner(DatabaseRelationId, db_id, newOwnerId);
 	}
 
-	InvokeObjectPostAlterHook(DatabaseRelationId, HeapTupleGetOid(tuple), 0);
+	InvokeObjectPostAlterHook(DatabaseRelationId, db_id, 0);
 
 	ObjectAddressSet(address, DatabaseRelationId, db_id);
 
 	systable_endscan(scan);
 
 	/* Close pg_database, but keep lock till commit */
-	heap_close(rel, NoLock);
+	table_close(rel, NoLock);
 
 	return address;
 }
@@ -1718,8 +1719,8 @@ AlterDatabaseOwner(const char *dbname, Oid newOwnerId)
 /*
  * Look up info about the database named "name".  If the database exists,
  * obtain the specified lock type on it, fill in any of the remaining
- * parameters that aren't NULL, and return TRUE.  If no such database,
- * return FALSE.
+ * parameters that aren't NULL, and return true.  If no such database,
+ * return false.
  */
 static bool
 get_db_info(const char *name, LOCKMODE lockmode,
@@ -1735,7 +1736,7 @@ get_db_info(const char *name, LOCKMODE lockmode,
 	AssertArg(name);
 
 	/* Caller may wish to grab a better lock on pg_database beforehand... */
-	relation = heap_open(DatabaseRelationId, AccessShareLock);
+	relation = table_open(DatabaseRelationId, AccessShareLock);
 
 	/*
 	 * Loop covers the rare case where the database is renamed before we can
@@ -1770,7 +1771,7 @@ get_db_info(const char *name, LOCKMODE lockmode,
 			break;
 		}
 
-		dbOid = HeapTupleGetOid(tuple);
+		dbOid = ((Form_pg_database) GETSTRUCT(tuple))->oid;
 
 		systable_endscan(scan);
 
@@ -1836,7 +1837,7 @@ get_db_info(const char *name, LOCKMODE lockmode,
 			UnlockSharedObject(DatabaseRelationId, dbOid, 0, lockmode);
 	}
 
-	heap_close(relation, AccessShareLock);
+	table_close(relation, AccessShareLock);
 
 	return result;
 }
@@ -1871,14 +1872,15 @@ static void
 remove_dbtablespaces(Oid db_id)
 {
 	Relation	rel;
-	HeapScanDesc scan;
+	TableScanDesc scan;
 	HeapTuple	tuple;
 
-	rel = heap_open(TableSpaceRelationId, AccessShareLock);
-	scan = heap_beginscan_catalog(rel, 0, NULL);
+	rel = table_open(TableSpaceRelationId, AccessShareLock);
+	scan = table_beginscan_catalog(rel, 0, NULL);
 	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
 	{
-		Oid			dsttablespace = HeapTupleGetOid(tuple);
+		Form_pg_tablespace spcform = (Form_pg_tablespace) GETSTRUCT(tuple);
+		Oid			dsttablespace = spcform->oid;
 		char	   *dstpath;
 		struct stat st;
 
@@ -1917,13 +1919,13 @@ remove_dbtablespaces(Oid db_id)
 		pfree(dstpath);
 	}
 
-	heap_endscan(scan);
-	heap_close(rel, AccessShareLock);
+	table_endscan(scan);
+	table_close(rel, AccessShareLock);
 }
 
 /*
  * Check for existing files that conflict with a proposed new DB OID;
- * return TRUE if there are any
+ * return true if there are any
  *
  * If there were a subdirectory in any tablespace matching the proposed new
  * OID, we'd get a create failure due to the duplicate name ... and then we'd
@@ -1938,14 +1940,15 @@ check_db_file_conflict(Oid db_id)
 {
 	bool		result = false;
 	Relation	rel;
-	HeapScanDesc scan;
+	TableScanDesc scan;
 	HeapTuple	tuple;
 
-	rel = heap_open(TableSpaceRelationId, AccessShareLock);
-	scan = heap_beginscan_catalog(rel, 0, NULL);
+	rel = table_open(TableSpaceRelationId, AccessShareLock);
+	scan = table_beginscan_catalog(rel, 0, NULL);
 	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
 	{
-		Oid			dsttablespace = HeapTupleGetOid(tuple);
+		Form_pg_tablespace spcform = (Form_pg_tablespace) GETSTRUCT(tuple);
+		Oid			dsttablespace = spcform->oid;
 		char	   *dstpath;
 		struct stat st;
 
@@ -1966,8 +1969,8 @@ check_db_file_conflict(Oid db_id)
 		pfree(dstpath);
 	}
 
-	heap_endscan(scan);
-	heap_close(rel, AccessShareLock);
+	table_endscan(scan);
+	table_close(rel, AccessShareLock);
 
 	return result;
 }
@@ -2018,7 +2021,7 @@ get_database_oid(const char *dbname, bool missing_ok)
 	 * There's no syscache for pg_database indexed by name, so we must look
 	 * the hard way.
 	 */
-	pg_database = heap_open(DatabaseRelationId, AccessShareLock);
+	pg_database = table_open(DatabaseRelationId, AccessShareLock);
 	ScanKeyInit(&entry[0],
 				Anum_pg_database_datname,
 				BTEqualStrategyNumber, F_NAMEEQ,
@@ -2030,12 +2033,12 @@ get_database_oid(const char *dbname, bool missing_ok)
 
 	/* We assume that there can be at most one matching tuple */
 	if (HeapTupleIsValid(dbtuple))
-		oid = HeapTupleGetOid(dbtuple);
+		oid = ((Form_pg_database)GETSTRUCT(dbtuple))->oid;
 	else
 		oid = InvalidOid;
 
 	systable_endscan(scan);
-	heap_close(pg_database, AccessShareLock);
+	table_close(pg_database, AccessShareLock);
 
 	if (!OidIsValid(oid) && !missing_ok)
 		ereport(ERROR,
@@ -2148,7 +2151,7 @@ dbase_redo(XLogReaderState *record)
 		DropDatabaseBuffers(xlrec->db_id);
 
 		/* Also, clean out any fsync requests that might be pending in md.c */
-		ForgetDatabaseFsyncRequests(xlrec->db_id);
+		ForgetDatabaseSyncRequests(xlrec->db_id);
 
 		/* Clean out the xlog relcache too */
 		XLogDropDatabase(xlrec->db_id);

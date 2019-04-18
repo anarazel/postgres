@@ -2,7 +2,7 @@
 
 #include "postgres_fe.h"
 
-#include "extern.h"
+#include "preproc_extern.h"
 
 #define indicator_set ind_type != NULL && ind_type->type != ECPGt_NO_INDICATOR
 
@@ -74,7 +74,7 @@ ECPGstruct_member_dup(struct ECPGstruct_member *rm)
 
 /* The NAME argument is copied. The type argument is preserved as a pointer. */
 void
-ECPGmake_struct_member(char *name, struct ECPGtype *type, struct ECPGstruct_member **start)
+ECPGmake_struct_member(const char *name, struct ECPGtype *type, struct ECPGstruct_member **start)
 {
 	struct ECPGstruct_member *ptr,
 			   *ne =
@@ -102,7 +102,7 @@ ECPGmake_simple_type(enum ECPGttype type, char *size, int counter)
 	ne->size = size;
 	ne->u.element = NULL;
 	ne->struct_sizeof = NULL;
-	ne->counter = counter;		/* only needed for varchar */
+	ne->counter = counter;		/* only needed for varchar and bytea */
 
 	return ne;
 }
@@ -175,6 +175,8 @@ get_type(enum ECPGttype type)
 			break;
 		case ECPGt_varchar:
 			return "ECPGt_varchar";
+		case ECPGt_bytea:
+			return "ECPGt_bytea";
 		case ECPGt_NO_INDICATOR:	/* no indicator */
 			return "ECPGt_NO_INDICATOR";
 			break;
@@ -299,7 +301,7 @@ ECPGdump_a_type(FILE *o, const char *name, struct ECPGtype *type, const int brac
 					break;
 				default:
 					if (!IS_SIMPLE_TYPE(type->u.element->type))
-						base_yyerror("internal error: unknown datatype, please report this to <pgsql-bugs@postgresql.org>");
+						base_yyerror("internal error: unknown datatype, please report this to <pgsql-bugs@lists.postgresql.org>");
 
 					ECPGdump_a_simple(o, name,
 									  type->u.element->type,
@@ -424,6 +426,7 @@ ECPGdump_a_simple(FILE *o, const char *name, enum ECPGttype type,
 	{
 		char	   *variable = (char *) mm_alloc(strlen(name) + ((prefix == NULL) ? 0 : strlen(prefix)) + 4);
 		char	   *offset = (char *) mm_alloc(strlen(name) + strlen("sizeof(struct varchar_)") + 1 + strlen(varcharsize) + sizeof(int) * CHAR_BIT * 10 / 3);
+		char	   *struct_name;
 
 		switch (type)
 		{
@@ -433,6 +436,7 @@ ECPGdump_a_simple(FILE *o, const char *name, enum ECPGttype type,
 				 */
 
 			case ECPGt_varchar:
+			case ECPGt_bytea:
 
 				/*
 				 * we have to use the pointer except for arrays with given
@@ -449,10 +453,15 @@ ECPGdump_a_simple(FILE *o, const char *name, enum ECPGttype type,
 				 * If we created a varchar structure automatically, counter is
 				 * greater than 0.
 				 */
-				if (counter)
-					sprintf(offset, "sizeof(struct varchar_%d)", counter);
+				if (type == ECPGt_varchar)
+					struct_name = "struct varchar";
 				else
-					sprintf(offset, "sizeof(struct varchar)");
+					struct_name = "struct bytea";
+
+				if (counter)
+					sprintf(offset, "sizeof(%s_%d)", struct_name, counter);
+				else
+					sprintf(offset, "sizeof(%s)", struct_name);
 				break;
 			case ECPGt_char:
 			case ECPGt_unsigned_char:
@@ -609,7 +618,19 @@ ECPGdump_a_struct(FILE *o, const char *name, const char *ind_name, char *arrsize
 						prefix, ind_prefix, arrsize, type->struct_sizeof,
 						(ind_p != NULL) ? ind_type->struct_sizeof : NULL);
 		if (ind_p != NULL && ind_p != &struct_no_indicator)
+		{
 			ind_p = ind_p->next;
+			if (ind_p == NULL && p->next != NULL)
+			{
+				mmerror(PARSE_ERROR, ET_WARNING, "indicator struct \"%s\" has too few members", ind_name);
+				ind_p = &struct_no_indicator;
+			}
+		}
+	}
+
+	if (ind_type != NULL && ind_p != NULL && ind_p != &struct_no_indicator)
+	{
+		mmerror(PARSE_ERROR, ET_WARNING, "indicator struct \"%s\" has too many members", ind_name);
 	}
 
 	free(pbuf);
@@ -651,7 +672,7 @@ ECPGfree_type(struct ECPGtype *type)
 						break;
 					default:
 						if (!IS_SIMPLE_TYPE(type->u.element->type))
-							base_yyerror("internal error: unknown datatype, please report this to <pgsql-bugs@postgresql.org>");
+							base_yyerror("internal error: unknown datatype, please report this to <pgsql-bugs@lists.postgresql.org>");
 
 						free(type->u.element);
 				}

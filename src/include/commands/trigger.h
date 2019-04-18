@@ -3,7 +3,7 @@
  * trigger.h
  *	  Declarations for trigger handling.
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/commands/trigger.h
@@ -35,8 +35,8 @@ typedef struct TriggerData
 	HeapTuple	tg_trigtuple;
 	HeapTuple	tg_newtuple;
 	Trigger    *tg_trigger;
-	Buffer		tg_trigtuplebuf;
-	Buffer		tg_newtuplebuf;
+	TupleTableSlot *tg_trigslot;
+	TupleTableSlot *tg_newslot;
 	Tuplestorestate *tg_oldtable;
 	Tuplestorestate *tg_newtable;
 } TriggerData;
@@ -77,9 +77,9 @@ typedef struct TransitionCaptureState
 	 * format to parent format after they have already been converted in the
 	 * opposite direction during routing.  In that case we bypass conversion
 	 * and allow the inserting code (copy.c and nodeModifyTable.c) to provide
-	 * the original tuple directly.
+	 * a slot containing the original tuple directly.
 	 */
-	HeapTuple	tcs_original_insert_tuple;
+	TupleTableSlot	*tcs_original_insert_tuple;
 
 	/*
 	 * Private data including the tuplestore(s) into which to insert tuples.
@@ -159,7 +159,8 @@ extern PGDLLIMPORT int SessionReplicationRole;
 
 extern ObjectAddress CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 			  Oid relOid, Oid refRelOid, Oid constraintOid, Oid indexOid,
-			  bool isInternal);
+			  Oid funcoid, Oid parentTriggerOid, Node *whenClause,
+			  bool isInternal, bool in_partition);
 
 extern void RemoveTriggerById(Oid trigOid);
 extern Oid	get_trigger_oid(Oid relid, const char *name, bool missing_ok);
@@ -167,7 +168,7 @@ extern Oid	get_trigger_oid(Oid relid, const char *name, bool missing_ok);
 extern ObjectAddress renametrig(RenameStmt *stmt);
 
 extern void EnableDisableTrigger(Relation rel, const char *tgname,
-					 char fires_when, bool skip_system);
+					 char fires_when, bool skip_system, LOCKMODE lockmode);
 
 extern void RelationBuildTriggers(Relation relation);
 
@@ -185,15 +186,15 @@ extern void ExecBSInsertTriggers(EState *estate,
 extern void ExecASInsertTriggers(EState *estate,
 					 ResultRelInfo *relinfo,
 					 TransitionCaptureState *transition_capture);
-extern TupleTableSlot *ExecBRInsertTriggers(EState *estate,
+extern bool ExecBRInsertTriggers(EState *estate,
 					 ResultRelInfo *relinfo,
 					 TupleTableSlot *slot);
 extern void ExecARInsertTriggers(EState *estate,
 					 ResultRelInfo *relinfo,
-					 HeapTuple trigtuple,
+					 TupleTableSlot *slot,
 					 List *recheckIndexes,
 					 TransitionCaptureState *transition_capture);
-extern TupleTableSlot *ExecIRInsertTriggers(EState *estate,
+extern bool ExecIRInsertTriggers(EState *estate,
 					 ResultRelInfo *relinfo,
 					 TupleTableSlot *slot);
 extern void ExecBSDeleteTriggers(EState *estate,
@@ -205,7 +206,8 @@ extern bool ExecBRDeleteTriggers(EState *estate,
 					 EPQState *epqstate,
 					 ResultRelInfo *relinfo,
 					 ItemPointer tupleid,
-					 HeapTuple fdw_trigtuple);
+					 HeapTuple fdw_trigtuple,
+					 TupleTableSlot **epqslot);
 extern void ExecARDeleteTriggers(EState *estate,
 					 ResultRelInfo *relinfo,
 					 ItemPointer tupleid,
@@ -219,7 +221,7 @@ extern void ExecBSUpdateTriggers(EState *estate,
 extern void ExecASUpdateTriggers(EState *estate,
 					 ResultRelInfo *relinfo,
 					 TransitionCaptureState *transition_capture);
-extern TupleTableSlot *ExecBRUpdateTriggers(EState *estate,
+extern bool ExecBRUpdateTriggers(EState *estate,
 					 EPQState *epqstate,
 					 ResultRelInfo *relinfo,
 					 ItemPointer tupleid,
@@ -229,10 +231,10 @@ extern void ExecARUpdateTriggers(EState *estate,
 					 ResultRelInfo *relinfo,
 					 ItemPointer tupleid,
 					 HeapTuple fdw_trigtuple,
-					 HeapTuple newtuple,
+					 TupleTableSlot *slot,
 					 List *recheckIndexes,
 					 TransitionCaptureState *transition_capture);
-extern TupleTableSlot *ExecIRUpdateTriggers(EState *estate,
+extern bool ExecIRUpdateTriggers(EState *estate,
 					 ResultRelInfo *relinfo,
 					 HeapTuple trigtuple,
 					 TupleTableSlot *slot);
@@ -256,11 +258,13 @@ extern bool AfterTriggerPendingOnRel(Oid relid);
  * in utils/adt/ri_triggers.c
  */
 extern bool RI_FKey_pk_upd_check_required(Trigger *trigger, Relation pk_rel,
-							  HeapTuple old_row, HeapTuple new_row);
+							  TupleTableSlot *old_slot, TupleTableSlot *new_slot);
 extern bool RI_FKey_fk_upd_check_required(Trigger *trigger, Relation fk_rel,
-							  HeapTuple old_row, HeapTuple new_row);
+							  TupleTableSlot *old_slot, TupleTableSlot  *new_slot);
 extern bool RI_Initial_Check(Trigger *trigger,
 				 Relation fk_rel, Relation pk_rel);
+extern void RI_PartitionRemove_Check(Trigger *trigger, Relation fk_rel,
+						 Relation pk_rel);
 
 /* result values for RI_FKey_trigger_type: */
 #define RI_TRIGGER_PK	1		/* is a trigger on the PK relation */

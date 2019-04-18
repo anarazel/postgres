@@ -5,7 +5,7 @@
  *		bits of hard-wired knowledge
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -21,7 +21,9 @@
 #include <unistd.h>
 
 #include "access/genam.h"
+#include "access/htup_details.h"
 #include "access/sysattr.h"
+#include "access/table.h"
 #include "access/transam.h"
 #include "catalog/catalog.h"
 #include "catalog/indexing.h"
@@ -43,8 +45,10 @@
 #include "miscadmin.h"
 #include "storage/fd.h"
 #include "utils/fmgroids.h"
+#include "utils/fmgrprotos.h"
 #include "utils/rel.h"
-#include "utils/tqual.h"
+#include "utils/snapmgr.h"
+#include "utils/syscache.h"
 
 
 /*
@@ -120,7 +124,7 @@ IsCatalogClass(Oid relid, Form_pg_class reltuple)
 	 * this is noticeably cheaper and doesn't require catalog access.
 	 *
 	 * This test is safe since even an oid wraparound will preserve this
-	 * property (c.f. GetNewObjectId()) and it has the advantage that it works
+	 * property (cf. GetNewObjectId()) and it has the advantage that it works
 	 * correctly even if a user decides to create a relation in the pg_catalog
 	 * namespace.
 	 * ----
@@ -253,75 +257,49 @@ IsSharedRelation(Oid relationId)
 		relationId == SubscriptionNameIndexId)
 		return true;
 	/* These are their toast tables and toast indexes (see toasting.h) */
-	if (relationId == PgShdescriptionToastTable ||
-		relationId == PgShdescriptionToastIndex ||
+	if (relationId == PgAuthidToastTable ||
+		relationId == PgAuthidToastIndex ||
+		relationId == PgDatabaseToastTable ||
+		relationId == PgDatabaseToastIndex ||
 		relationId == PgDbRoleSettingToastTable ||
 		relationId == PgDbRoleSettingToastIndex ||
+		relationId == PgPlTemplateToastTable ||
+		relationId == PgPlTemplateToastIndex ||
+		relationId == PgReplicationOriginToastTable ||
+		relationId == PgReplicationOriginToastIndex ||
+		relationId == PgShdescriptionToastTable ||
+		relationId == PgShdescriptionToastIndex ||
 		relationId == PgShseclabelToastTable ||
-		relationId == PgShseclabelToastIndex)
+		relationId == PgShseclabelToastIndex ||
+		relationId == PgSubscriptionToastTable ||
+		relationId == PgSubscriptionToastIndex ||
+		relationId == PgTablespaceToastTable ||
+		relationId == PgTablespaceToastIndex)
 		return true;
 	return false;
 }
 
 
 /*
- * GetNewOid
- *		Generate a new OID that is unique within the given relation.
- *
- * Caller must have a suitable lock on the relation.
- *
- * Uniqueness is promised only if the relation has a unique index on OID.
- * This is true for all system catalogs that have OIDs, but might not be
- * true for user tables.  Note that we are effectively assuming that the
- * table has a relatively small number of entries (much less than 2^32)
- * and there aren't very long runs of consecutive existing OIDs.  Again,
- * this is reasonable for system catalogs but less so for user tables.
+ * GetNewOidWithIndex
+ *		Generate a new OID that is unique within the system relation.
  *
  * Since the OID is not immediately inserted into the table, there is a
  * race condition here; but a problem could occur only if someone else
  * managed to cycle through 2^32 OIDs and generate the same OID before we
  * finish inserting our row.  This seems unlikely to be a problem.  Note
  * that if we had to *commit* the row to end the race condition, the risk
- * would be rather higher; therefore we use SnapshotDirty in the test,
- * so that we will see uncommitted rows.
- */
-Oid
-GetNewOid(Relation relation)
-{
-	Oid			oidIndex;
-
-	/* If relation doesn't have OIDs at all, caller is confused */
-	Assert(relation->rd_rel->relhasoids);
-
-	/* In bootstrap mode, we don't have any indexes to use */
-	if (IsBootstrapProcessingMode())
-		return GetNewObjectId();
-
-	/* The relcache will cache the identity of the OID index for us */
-	oidIndex = RelationGetOidIndex(relation);
-
-	/* If no OID index, just hand back the next OID counter value */
-	if (!OidIsValid(oidIndex))
-	{
-		/*
-		 * System catalogs that have OIDs should *always* have a unique OID
-		 * index; we should only take this path for user tables. Give a
-		 * warning if it looks like somebody forgot an index.
-		 */
-		if (IsSystemRelation(relation))
-			elog(WARNING, "generating possibly-non-unique OID for \"%s\"",
-				 RelationGetRelationName(relation));
-
-		return GetNewObjectId();
-	}
-
-	/* Otherwise, use the index to find a nonconflicting OID */
-	return GetNewOidWithIndex(relation, oidIndex, ObjectIdAttributeNumber);
-}
-
-/*
- * GetNewOidWithIndex
- *		Guts of GetNewOid: use the supplied index
+ * would be rather higher; therefore we use SnapshotAny in the test, so that
+ * we will see uncommitted rows.  (We used to use SnapshotDirty, but that has
+ * the disadvantage that it ignores recently-deleted rows, creating a risk
+ * of transient conflicts for as long as our own MVCC snapshots think a
+ * recently-deleted row is live.  The risk is far higher when selecting TOAST
+ * OIDs, because SnapshotToast considers dead rows as active indefinitely.)
+ *
+ * Note that we are effectively assuming that the table has a relatively small
+ * number of entries (much less than 2^32) and there aren't very long runs of
+ * consecutive existing OIDs.  This is a mostly reasonable assumption for
+ * system catalogs.
  *
  * This is exported separately because there are cases where we want to use
  * an index that will not be recognized by RelationGetOidIndex: TOAST tables
@@ -336,10 +314,16 @@ Oid
 GetNewOidWithIndex(Relation relation, Oid indexId, AttrNumber oidcolumn)
 {
 	Oid			newOid;
-	SnapshotData SnapshotDirty;
 	SysScanDesc scan;
 	ScanKeyData key;
 	bool		collides;
+
+	/* Only system relations are supported */
+	Assert(IsSystemRelation(relation));
+
+	/* In bootstrap mode, we don't have any indexes to use */
+	if (IsBootstrapProcessingMode())
+		return GetNewObjectId();
 
 	/*
 	 * We should never be asked to generate a new pg_type OID during
@@ -348,8 +332,6 @@ GetNewOidWithIndex(Relation relation, Oid indexId, AttrNumber oidcolumn)
 	 * ensure that a type OID is determined by commands in the dump script.
 	 */
 	Assert(!IsBinaryUpgrade || RelationGetRelid(relation) != TypeRelationId);
-
-	InitDirtySnapshot(SnapshotDirty);
 
 	/* Generate new OIDs until we find one not in the table */
 	do
@@ -363,9 +345,9 @@ GetNewOidWithIndex(Relation relation, Oid indexId, AttrNumber oidcolumn)
 					BTEqualStrategyNumber, F_OIDEQ,
 					ObjectIdGetDatum(newOid));
 
-		/* see notes above about using SnapshotDirty */
+		/* see notes above about using SnapshotAny */
 		scan = systable_beginscan(relation, indexId, true,
-								  &SnapshotDirty, 1, &key);
+								  SnapshotAny, 1, &key);
 
 		collides = HeapTupleIsValid(systable_getnext(scan));
 
@@ -385,8 +367,8 @@ GetNewOidWithIndex(Relation relation, Oid indexId, AttrNumber oidcolumn)
  * is also an unused OID within pg_class.  If the result is to be used only
  * as a relfilenode for an existing relation, pass NULL for pg_class.
  *
- * As with GetNewOid, there is some theoretical risk of a race condition,
- * but it doesn't seem worth worrying about.
+ * As with GetNewObjectIdWithIndex(), there is some theoretical risk of a race
+ * condition, but it doesn't seem worth worrying about.
  *
  * Note: we don't support using this in bootstrap mode.  All relations
  * created by bootstrap have preassigned OIDs, so there's no need.
@@ -396,7 +378,6 @@ GetNewRelFileNode(Oid reltablespace, Relation pg_class, char relpersistence)
 {
 	RelFileNodeBackend rnode;
 	char	   *rpath;
-	int			fd;
 	bool		collides;
 	BackendId	backend;
 
@@ -438,18 +419,17 @@ GetNewRelFileNode(Oid reltablespace, Relation pg_class, char relpersistence)
 
 		/* Generate the OID */
 		if (pg_class)
-			rnode.node.relNode = GetNewOid(pg_class);
+			rnode.node.relNode = GetNewOidWithIndex(pg_class, ClassOidIndexId,
+													Anum_pg_class_oid);
 		else
 			rnode.node.relNode = GetNewObjectId();
 
 		/* Check for existing file of same name */
 		rpath = relpath(rnode, MAIN_FORKNUM);
-		fd = BasicOpenFile(rpath, O_RDONLY | PG_BINARY, 0);
 
-		if (fd >= 0)
+		if (access(rpath, F_OK) == 0)
 		{
 			/* definite collision */
-			close(fd);
 			collides = true;
 		}
 		else
@@ -457,13 +437,9 @@ GetNewRelFileNode(Oid reltablespace, Relation pg_class, char relpersistence)
 			/*
 			 * Here we have a little bit of a dilemma: if errno is something
 			 * other than ENOENT, should we declare a collision and loop? In
-			 * particular one might think this advisable for, say, EPERM.
-			 * However there really shouldn't be any unreadable files in a
-			 * tablespace directory, and if the EPERM is actually complaining
-			 * that we can't read the directory itself, we'd be in an infinite
-			 * loop.  In practice it seems best to go ahead regardless of the
-			 * errno.  If there is a colliding file we will get an smgr
-			 * failure when we attempt to create the new relation file.
+			 * practice it seems best to go ahead regardless of the errno.  If
+			 * there is a colliding file we will get an smgr failure when we
+			 * attempt to create the new relation file.
 			 */
 			collides = false;
 		}
@@ -472,4 +448,83 @@ GetNewRelFileNode(Oid reltablespace, Relation pg_class, char relpersistence)
 	} while (collides);
 
 	return rnode.node.relNode;
+}
+
+/*
+ * SQL callable interface for GetNewOidWithIndex().  Outside of initdb's
+ * direct insertions into catalog tables, and recovering from corruption, this
+ * should rarely be needed.
+ *
+ * Function is intentionally not documented in the user facing docs.
+ */
+Datum
+pg_nextoid(PG_FUNCTION_ARGS)
+{
+	Oid		reloid = PG_GETARG_OID(0);
+	Name	attname = PG_GETARG_NAME(1);
+	Oid		idxoid = PG_GETARG_OID(2);
+	Relation rel;
+	Relation idx;
+	HeapTuple atttuple;
+	Form_pg_attribute attform;
+	AttrNumber attno;
+	Oid		newoid;
+
+	/*
+	 * As this function is not intended to be used during normal running, and
+	 * only supports system catalogs (which require superuser permissions to
+	 * modify), just checking for superuser ought to not obstruct valid
+	 * usecases.
+	 */
+	if (!superuser())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be superuser to call pg_nextoid")));
+
+	rel = table_open(reloid, RowExclusiveLock);
+	idx = index_open(idxoid, RowExclusiveLock);
+
+	if (!IsSystemRelation(rel))
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("pg_nextoid() can only be used on system relation")));
+
+	if (idx->rd_index->indrelid != RelationGetRelid(rel))
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("index %s does not belong to table %s",
+						RelationGetRelationName(idx),
+						RelationGetRelationName(rel))));
+
+	atttuple = SearchSysCacheAttName(reloid, NameStr(*attname));
+	if (!HeapTupleIsValid(atttuple))
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("attribute %s does not exists",
+						NameStr(*attname))));
+
+	attform = ((Form_pg_attribute) GETSTRUCT(atttuple));
+	attno = attform->attnum;
+
+	if (attform->atttypid != OIDOID)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("attribute %s is not of type oid",
+						NameStr(*attname))));
+
+	if (IndexRelationGetNumberOfKeyAttributes(idx) != 1 ||
+		idx->rd_index->indkey.values[0] != attno)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("index %s is not the index for attribute %s",
+						RelationGetRelationName(idx),
+						NameStr(*attname))));
+
+	newoid = GetNewOidWithIndex(rel, idxoid, attno);
+
+	ReleaseSysCache(atttuple);
+	table_close(rel, RowExclusiveLock);
+	index_close(idx, RowExclusiveLock);
+
+	return newoid;
 }

@@ -4,7 +4,7 @@
  *	  POSTGRES free space map for quickly finding free space in relations
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/storage/freespace.h
@@ -18,23 +18,26 @@
 #include "storage/relfilenode.h"
 #include "utils/relcache.h"
 
+/* Only create the FSM if the heap has greater than this many blocks */
+#define HEAP_FSM_CREATION_THRESHOLD 4
+
 /* prototypes for public functions in freespace.c */
 extern Size GetRecordedFreeSpace(Relation rel, BlockNumber heapBlk);
-extern BlockNumber GetPageWithFreeSpace(Relation rel, Size spaceNeeded);
+extern BlockNumber GetPageWithFreeSpace(Relation rel, Size spaceNeeded,
+					 bool check_fsm_only);
 extern BlockNumber RecordAndGetPageWithFreeSpace(Relation rel,
 							  BlockNumber oldPage,
 							  Size oldSpaceAvail,
 							  Size spaceNeeded);
 extern void RecordPageWithFreeSpace(Relation rel, BlockNumber heapBlk,
-						Size spaceAvail);
+						Size spaceAvail, BlockNumber nblocks);
+extern void FSMClearLocalMap(void);
 extern void XLogRecordPageWithFreeSpace(RelFileNode rnode, BlockNumber heapBlk,
 							Size spaceAvail);
 
 extern void FreeSpaceMapTruncateRel(Relation rel, BlockNumber nblocks);
 extern void FreeSpaceMapVacuum(Relation rel);
-extern void UpdateFreeSpaceMap(Relation rel,
-				   BlockNumber startBlkNum,
-				   BlockNumber endBlkNum,
-				   Size freespace);
+extern void FreeSpaceMapVacuumRange(Relation rel, BlockNumber start,
+						BlockNumber end);
 
 #endif							/* FREESPACE_H_ */

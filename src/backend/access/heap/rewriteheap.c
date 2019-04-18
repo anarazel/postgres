@@ -92,7 +92,7 @@
  * heap's TOAST table will go through the normal bufmgr.
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994-5, Regents of the University of California
  *
  * IDENTIFICATION
@@ -130,7 +130,6 @@
 
 #include "utils/memutils.h"
 #include "utils/rel.h"
-#include "utils/tqual.h"
 
 #include "storage/procarray.h"
 
@@ -407,7 +406,10 @@ rewrite_heap_tuple(RewriteState state,
 	 * While we have our hands on the tuple, we may as well freeze any
 	 * eligible xmin or xmax, so that future VACUUM effort can be saved.
 	 */
-	heap_freeze_tuple(new_tuple->t_data, state->rs_freeze_xid,
+	heap_freeze_tuple(new_tuple->t_data,
+					  state->rs_old_rel->rd_rel->relfrozenxid,
+					  state->rs_old_rel->rd_rel->relminmxid,
+					  state->rs_freeze_xid,
 					  state->rs_cutoff_multi);
 
 	/*
@@ -421,6 +423,7 @@ rewrite_heap_tuple(RewriteState state,
 	 */
 	if (!((old_tuple->t_data->t_infomask & HEAP_XMAX_INVALID) ||
 		  HeapTupleHeaderIsOnlyLocked(old_tuple->t_data)) &&
+		!HeapTupleHeaderIndicatesMovedPartitions(old_tuple->t_data) &&
 		!(ItemPointerEquals(&(old_tuple->t_self),
 							&(old_tuple->t_data->t_ctid))))
 	{
@@ -648,10 +651,22 @@ raw_heap_insert(RewriteState state, HeapTuple tup)
 		heaptup = tup;
 	}
 	else if (HeapTupleHasExternal(tup) || tup->t_len > TOAST_TUPLE_THRESHOLD)
+	{
+		int options = HEAP_INSERT_SKIP_FSM;
+
+		if (!state->rs_use_wal)
+			options |= HEAP_INSERT_SKIP_WAL;
+
+		/*
+		 * While rewriting the heap for VACUUM FULL / CLUSTER, make sure data
+		 * for the TOAST table are not logically decoded.  The main heap is
+		 * WAL-logged as XLOG FPI records, which are not logically decoded.
+		 */
+		options |= HEAP_INSERT_NO_LOGICAL;
+
 		heaptup = toast_insert_or_update(state->rs_new_rel, tup, NULL,
-										 HEAP_INSERT_SKIP_FSM |
-										 (state->rs_use_wal ?
-										  0 : HEAP_INSERT_SKIP_WAL));
+										 options);
+	}
 	else
 		heaptup = tup;
 
@@ -918,7 +933,7 @@ logical_heap_rewrite_flush_mappings(RewriteState state)
 		 * Note that we deviate from the usual WAL coding practices here,
 		 * check the above "Logical rewrite support" comment for reasoning.
 		 */
-		written = FileWrite(src->vfd, waldata_start, len,
+		written = FileWrite(src->vfd, waldata_start, len, src->off,
 							WAIT_EVENT_LOGICAL_REWRITE_WRITE);
 		if (written != len)
 			ereport(ERROR,
@@ -961,7 +976,7 @@ logical_end_heap_rewrite(RewriteState state)
 	while ((src = (RewriteMappingFile *) hash_seq_search(&seq_status)) != NULL)
 	{
 		if (FileSync(src->vfd, WAIT_EVENT_LOGICAL_REWRITE_SYNC) != 0)
-			ereport(ERROR,
+			ereport(data_sync_elevel(ERROR),
 					(errcode_for_file_access(),
 					 errmsg("could not fsync file \"%s\": %m", src->path)));
 		FileClose(src->vfd);
@@ -1013,8 +1028,7 @@ logical_rewrite_log_mapping(RewriteState state, TransactionId xid,
 		src->off = 0;
 		memcpy(src->path, path, sizeof(path));
 		src->vfd = PathNameOpenFile(path,
-									O_CREAT | O_EXCL | O_WRONLY | PG_BINARY,
-									S_IRUSR | S_IWUSR);
+									O_CREAT | O_EXCL | O_WRONLY | PG_BINARY);
 		if (src->vfd < 0)
 			ereport(ERROR,
 					(errcode_for_file_access(),
@@ -1133,8 +1147,7 @@ heap_xlog_logical_rewrite(XLogReaderState *r)
 			 xlrec->mapped_xid, XLogRecGetXid(r));
 
 	fd = OpenTransientFile(path,
-						   O_CREAT | O_WRONLY | PG_BINARY,
-						   S_IRUSR | S_IWUSR);
+						   O_CREAT | O_WRONLY | PG_BINARY);
 	if (fd < 0)
 		ereport(ERROR,
 				(errcode_for_file_access(),
@@ -1164,11 +1177,17 @@ heap_xlog_logical_rewrite(XLogReaderState *r)
 	len = xlrec->num_mappings * sizeof(LogicalRewriteMappingData);
 
 	/* write out tail end of mapping file (again) */
+	errno = 0;
 	pgstat_report_wait_start(WAIT_EVENT_LOGICAL_REWRITE_MAPPING_WRITE);
 	if (write(fd, data, len) != len)
+	{
+		/* if write didn't set errno, assume problem is no disk space */
+		if (errno == 0)
+			errno = ENOSPC;
 		ereport(ERROR,
 				(errcode_for_file_access(),
 				 errmsg("could not write to file \"%s\": %m", path)));
+	}
 	pgstat_report_wait_end();
 
 	/*
@@ -1178,12 +1197,15 @@ heap_xlog_logical_rewrite(XLogReaderState *r)
 	 */
 	pgstat_report_wait_start(WAIT_EVENT_LOGICAL_REWRITE_MAPPING_SYNC);
 	if (pg_fsync(fd) != 0)
-		ereport(ERROR,
+		ereport(data_sync_elevel(ERROR),
 				(errcode_for_file_access(),
 				 errmsg("could not fsync file \"%s\": %m", path)));
 	pgstat_report_wait_end();
 
-	CloseTransientFile(fd);
+	if (CloseTransientFile(fd))
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not close file \"%s\": %m", path)));
 }
 
 /* ---
@@ -1258,7 +1280,7 @@ CheckPointLogicalRewriteHeap(void)
 		}
 		else
 		{
-			int			fd = OpenTransientFile(path, O_RDONLY | PG_BINARY, 0);
+			int			fd = OpenTransientFile(path, O_RDONLY | PG_BINARY);
 
 			/*
 			 * The file cannot vanish due to concurrency since this function
@@ -1277,11 +1299,15 @@ CheckPointLogicalRewriteHeap(void)
 			 */
 			pgstat_report_wait_start(WAIT_EVENT_LOGICAL_REWRITE_CHECKPOINT_SYNC);
 			if (pg_fsync(fd) != 0)
-				ereport(ERROR,
+				ereport(data_sync_elevel(ERROR),
 						(errcode_for_file_access(),
 						 errmsg("could not fsync file \"%s\": %m", path)));
 			pgstat_report_wait_end();
-			CloseTransientFile(fd);
+
+			if (CloseTransientFile(fd))
+				ereport(ERROR,
+						(errcode_for_file_access(),
+						 errmsg("could not close file \"%s\": %m", path)));
 		}
 	}
 	FreeDir(mappings_dir);

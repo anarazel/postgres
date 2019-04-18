@@ -3,7 +3,7 @@
  * enum.c
  *	  I/O functions, operators, aggregates etc for enum types
  *
- * Copyright (c) 2006-2017, PostgreSQL Global Development Group
+ * Copyright (c) 2006-2019, PostgreSQL Global Development Group
  *
  *
  * IDENTIFICATION
@@ -14,8 +14,8 @@
 #include "postgres.h"
 
 #include "access/genam.h"
-#include "access/heapam.h"
 #include "access/htup_details.h"
+#include "access/table.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_enum.h"
 #include "libpq/pqformat.h"
@@ -48,7 +48,14 @@ static ArrayType *enum_range_internal(Oid enumtypoid, Oid lower, Oid upper);
  * However, it's okay to allow use of uncommitted values belonging to enum
  * types that were themselves created in the same transaction, because then
  * any such index would also be new and would go away altogether on rollback.
- * (This case is required by pg_upgrade.)
+ * We don't implement that fully right now, but we do allow free use of enum
+ * values created during CREATE TYPE AS ENUM, which are surely of the same
+ * lifespan as the enum type.  (This case is required by "pg_restore -1".)
+ * Values added by ALTER TYPE ADD VALUE are currently restricted, but could
+ * be allowed if the enum type could be proven to have been created earlier
+ * in the same transaction.  (Note that comparing tuple xmins would not work
+ * for that, because the type tuple might have been updated in the current
+ * transaction.  Subtransactions also create hazards to be accounted for.)
  *
  * This function needs to be called (directly or indirectly) in any of the
  * functions below that could return an enum value to SQL operations.
@@ -57,8 +64,7 @@ static void
 check_safe_enum_use(HeapTuple enumval_tup)
 {
 	TransactionId xmin;
-	Form_pg_enum en;
-	HeapTuple	enumtyp_tup;
+	Form_pg_enum en = (Form_pg_enum) GETSTRUCT(enumval_tup);
 
 	/*
 	 * If the row is hinted as committed, it's surely safe.  This provides a
@@ -76,35 +82,14 @@ check_safe_enum_use(HeapTuple enumval_tup)
 		TransactionIdDidCommit(xmin))
 		return;
 
-	/* It is a new enum value, so check to see if the whole enum is new */
-	en = (Form_pg_enum) GETSTRUCT(enumval_tup);
-	enumtyp_tup = SearchSysCache1(TYPEOID, ObjectIdGetDatum(en->enumtypid));
-	if (!HeapTupleIsValid(enumtyp_tup))
-		elog(ERROR, "cache lookup failed for type %u", en->enumtypid);
-
 	/*
-	 * We insist that the type have been created in the same (sub)transaction
-	 * as the enum value.  It would be safe to allow the type's originating
-	 * xact to be a subcommitted child of the enum value's xact, but not vice
-	 * versa (since we might now be in a subxact of the type's originating
-	 * xact, which could roll back along with the enum value's subxact).  The
-	 * former case seems a sufficiently weird usage pattern as to not be worth
-	 * spending code for, so we're left with a simple equality check.
-	 *
-	 * We also insist that the type's pg_type row not be HEAP_UPDATED.  If it
-	 * is, we can't tell whether the row was created or only modified in the
-	 * apparent originating xact, so it might be older than that xact.  (We do
-	 * not worry whether the enum value is HEAP_UPDATED; if it is, we might
-	 * think it's too new and throw an unnecessary error, but we won't allow
-	 * an unsafe case.)
+	 * Check if the enum value is blacklisted.  If not, it's safe, because it
+	 * was made during CREATE TYPE AS ENUM and can't be shorter-lived than its
+	 * owning type.  (This'd also be false for values made by other
+	 * transactions; but the previous tests should have handled all of those.)
 	 */
-	if (xmin == HeapTupleHeaderGetXmin(enumtyp_tup->t_data) &&
-		!(enumtyp_tup->t_data->t_infomask & HEAP_UPDATED))
-	{
-		/* same (sub)transaction, so safe */
-		ReleaseSysCache(enumtyp_tup);
+	if (!EnumBlacklisted(en->oid))
 		return;
-	}
 
 	/*
 	 * There might well be other tests we could do here to narrow down the
@@ -154,7 +139,7 @@ enum_in(PG_FUNCTION_ARGS)
 	 * This comes from pg_enum.oid and stores system oids in user tables. This
 	 * oid must be preserved by binary upgrades.
 	 */
-	enumoid = HeapTupleGetOid(tup);
+	enumoid = ((Form_pg_enum) GETSTRUCT(tup))->oid;
 
 	ReleaseSysCache(tup);
 
@@ -218,7 +203,7 @@ enum_recv(PG_FUNCTION_ARGS)
 	/* check it's safe to use in SQL */
 	check_safe_enum_use(tup);
 
-	enumoid = HeapTupleGetOid(tup);
+	enumoid = ((Form_pg_enum) GETSTRUCT(tup))->oid;
 
 	ReleaseSysCache(tup);
 
@@ -418,7 +403,7 @@ enum_endpoint(Oid enumtypoid, ScanDirection direction)
 				BTEqualStrategyNumber, F_OIDEQ,
 				ObjectIdGetDatum(enumtypoid));
 
-	enum_rel = heap_open(EnumRelationId, AccessShareLock);
+	enum_rel = table_open(EnumRelationId, AccessShareLock);
 	enum_idx = index_open(EnumTypIdSortOrderIndexId, AccessShareLock);
 	enum_scan = systable_beginscan_ordered(enum_rel, enum_idx, NULL,
 										   1, &skey);
@@ -428,7 +413,7 @@ enum_endpoint(Oid enumtypoid, ScanDirection direction)
 	{
 		/* check it's safe to use in SQL */
 		check_safe_enum_use(enum_tuple);
-		minmax = HeapTupleGetOid(enum_tuple);
+		minmax = ((Form_pg_enum) GETSTRUCT(enum_tuple))->oid;
 	}
 	else
 	{
@@ -438,7 +423,7 @@ enum_endpoint(Oid enumtypoid, ScanDirection direction)
 
 	systable_endscan_ordered(enum_scan);
 	index_close(enum_idx, AccessShareLock);
-	heap_close(enum_rel, AccessShareLock);
+	table_close(enum_rel, AccessShareLock);
 
 	return minmax;
 }
@@ -577,7 +562,7 @@ enum_range_internal(Oid enumtypoid, Oid lower, Oid upper)
 				BTEqualStrategyNumber, F_OIDEQ,
 				ObjectIdGetDatum(enumtypoid));
 
-	enum_rel = heap_open(EnumRelationId, AccessShareLock);
+	enum_rel = table_open(EnumRelationId, AccessShareLock);
 	enum_idx = index_open(EnumTypIdSortOrderIndexId, AccessShareLock);
 	enum_scan = systable_beginscan_ordered(enum_rel, enum_idx, NULL, 1, &skey);
 
@@ -588,7 +573,7 @@ enum_range_internal(Oid enumtypoid, Oid lower, Oid upper)
 
 	while (HeapTupleIsValid(enum_tuple = systable_getnext_ordered(enum_scan, ForwardScanDirection)))
 	{
-		Oid			enum_oid = HeapTupleGetOid(enum_tuple);
+		Oid			enum_oid = ((Form_pg_enum) GETSTRUCT(enum_tuple))->oid;
 
 		if (!left_found && lower == enum_oid)
 			left_found = true;
@@ -613,7 +598,7 @@ enum_range_internal(Oid enumtypoid, Oid lower, Oid upper)
 
 	systable_endscan_ordered(enum_scan);
 	index_close(enum_idx, AccessShareLock);
-	heap_close(enum_rel, AccessShareLock);
+	table_close(enum_rel, AccessShareLock);
 
 	/* and build the result array */
 	/* note this hardwires some details about the representation of Oid */

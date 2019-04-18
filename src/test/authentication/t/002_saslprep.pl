@@ -27,6 +27,7 @@ sub reset_pg_hba
 	unlink($node->data_dir . '/pg_hba.conf');
 	$node->append_conf('pg_hba.conf', "local all all $hba_method");
 	$node->reload;
+	return;
 }
 
 # Test access for a single role, useful to wrap all tests into one.
@@ -41,11 +42,11 @@ sub test_login
 	$status_string = 'success' if ($expected_res eq 0);
 
 	$ENV{"PGPASSWORD"} = $password;
-	my $res =
-	  $node->psql('postgres', 'SELECT 1', extra_params => [ '-U', $role ]);
+	my $res = $node->psql('postgres', undef, extra_params => [ '-U', $role ]);
 	is($res, $expected_res,
 		"authentication $status_string for role $role with password $password"
 	);
+	return;
 }
 
 # Initialize master node. Force UTF-8 encoding, so that we can use non-ASCII

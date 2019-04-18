@@ -4,7 +4,6 @@
 #include "postgres_fe.h"
 
 #include <time.h>
-#include <float.h>
 #include <limits.h>
 #include <math.h>
 
@@ -12,7 +11,7 @@
 #error -ffast-math is known to break this code
 #endif
 
-#include "extern.h"
+#include "pgtypeslib_extern.h"
 #include "dt.h"
 #include "pgtypes_timestamp.h"
 #include "pgtypes_date.h"
@@ -192,7 +191,7 @@ timestamp2tm(timestamp dt, int *tzp, struct tm *tm, fsec_t *fsec, const char **t
 /* EncodeSpecialTimestamp()
  *	* Convert reserved timestamp data type to string.
  *	 */
-static int
+static void
 EncodeSpecialTimestamp(timestamp dt, char *str)
 {
 	if (TIMESTAMP_IS_NOBEGIN(dt))
@@ -200,10 +199,8 @@ EncodeSpecialTimestamp(timestamp dt, char *str)
 	else if (TIMESTAMP_IS_NOEND(dt))
 		strcpy(str, LATE);
 	else
-		return FALSE;
-
-	return TRUE;
-}								/* EncodeSpecialTimestamp() */
+		abort();				/* shouldn't happen */
+}
 
 timestamp
 PGTYPEStimestamp_from_asc(char *str, char **endptr)
@@ -815,7 +812,7 @@ PGTYPEStimestamp_sub(timestamp * ts1, timestamp * ts2, interval * iv)
 }
 
 int
-PGTYPEStimestamp_defmt_asc(char *str, const char *fmt, timestamp * d)
+PGTYPEStimestamp_defmt_asc(const char *str, const char *fmt, timestamp * d)
 {
 	int			year,
 				month,

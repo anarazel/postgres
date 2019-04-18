@@ -188,7 +188,7 @@ seg_upper(PG_FUNCTION_ARGS)
 /*
 ** The GiST Consistent method for segments
 ** Should return false if for all data items x below entry,
-** the predicate x op query == FALSE, where op is the oper
+** the predicate x op query == false, where op is the oper
 ** corresponding to strategy in the pg_amop table.
 */
 Datum
@@ -413,9 +413,9 @@ gseg_same(PG_FUNCTION_ARGS)
 	bool	   *result = (bool *) PG_GETARG_POINTER(2);
 
 	if (DirectFunctionCall2(seg_same, PG_GETARG_DATUM(0), PG_GETARG_DATUM(1)))
-		*result = TRUE;
+		*result = true;
 	else
-		*result = FALSE;
+		*result = false;
 
 #ifdef GIST_DEBUG
 	fprintf(stderr, "same: %s\n", (*result ? "TRUE" : "FALSE"));
@@ -465,7 +465,7 @@ gseg_leaf_consistent(Datum key, Datum query, StrategyNumber strategy)
 			retval = DirectFunctionCall2(seg_contained, key, query);
 			break;
 		default:
-			retval = FALSE;
+			retval = false;
 	}
 
 	PG_RETURN_DATUM(retval);
@@ -514,7 +514,7 @@ gseg_internal_consistent(Datum key, Datum query, StrategyNumber strategy)
 				DatumGetBool(DirectFunctionCall2(seg_overlap, key, query));
 			break;
 		default:
-			retval = FALSE;
+			retval = false;
 	}
 
 	PG_RETURN_BOOL(retval);
@@ -1052,9 +1052,9 @@ restore(char *result, float val, int n)
  * a floating point number
  */
 int
-significant_digits(char *s)
+significant_digits(const char *s)
 {
-	char	   *p = s;
+	const char *p = s;
 	int			n,
 				c,
 				zeroes;

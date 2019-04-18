@@ -5,7 +5,7 @@
  *	  infrastructure for selectivity and cost estimation.
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/utils/selfuncs.h
@@ -15,9 +15,8 @@
 #ifndef SELFUNCS_H
 #define SELFUNCS_H
 
-#include "fmgr.h"
 #include "access/htup.h"
-#include "nodes/relation.h"
+#include "nodes/pathnodes.h"
 
 
 /*
@@ -85,31 +84,6 @@ typedef struct VariableStatData
 	} while(0)
 
 
-typedef enum
-{
-	Pattern_Type_Like, Pattern_Type_Like_IC,
-	Pattern_Type_Regex, Pattern_Type_Regex_IC
-} Pattern_Type;
-
-typedef enum
-{
-	Pattern_Prefix_None, Pattern_Prefix_Partial, Pattern_Prefix_Exact
-} Pattern_Prefix_Status;
-
-/*
- * deconstruct_indexquals is a simple function to examine the indexquals
- * attached to a proposed IndexPath.  It returns a list of IndexQualInfo
- * structs, one per qual expression.
- */
-typedef struct
-{
-	RestrictInfo *rinfo;		/* the indexqual itself */
-	int			indexcol;		/* zero-based index column number */
-	bool		varonleft;		/* true if index column is on left of qual */
-	Oid			clause_op;		/* qual's operator OID, if relevant */
-	Node	   *other_operand;	/* non-index operand of qual's operator */
-} IndexQualInfo;
-
 /*
  * genericcostestimate is a general-purpose estimator that can be used for
  * most index types.  In some cases we use genericcostestimate as the base
@@ -173,14 +147,16 @@ extern double histogram_selectivity(VariableStatData *vardata, FmgrInfo *opproc,
 					  Datum constval, bool varonleft,
 					  int min_hist_size, int n_skip,
 					  int *hist_size);
-
-extern Pattern_Prefix_Status pattern_fixed_prefix(Const *patt,
-					 Pattern_Type ptype,
-					 Oid collation,
-					 Const **prefix,
-					 Selectivity *rest_selec);
-extern Const *make_greater_string(const Const *str_const, FmgrInfo *ltproc,
-					Oid collation);
+extern double ineq_histogram_selectivity(PlannerInfo *root,
+						   VariableStatData *vardata,
+						   FmgrInfo *opproc, bool isgt, bool iseq,
+						   Datum constval, Oid consttype);
+extern double var_eq_const(VariableStatData *vardata, Oid oproid,
+			 Datum constval, bool constisnull,
+			 bool varonleft, bool negate);
+extern double var_eq_non_const(VariableStatData *vardata, Oid oproid,
+				 Node *other,
+				 bool varonleft, bool negate);
 
 extern Selectivity boolvarsel(PlannerInfo *root, Node *arg, int varRelid);
 extern Selectivity booltestsel(PlannerInfo *root, BoolTestType booltesttype,
@@ -210,11 +186,17 @@ extern void estimate_hash_bucket_stats(PlannerInfo *root,
 						   Node *hashkey, double nbuckets,
 						   Selectivity *mcv_freq,
 						   Selectivity *bucketsize_frac);
+extern double estimate_hashagg_tablesize(Path *path,
+						   const AggClauseCosts *agg_costs,
+						   double dNumGroups);
 
-extern List *deconstruct_indexquals(IndexPath *path);
+extern List *get_quals_from_indexclauses(List *indexclauses);
+extern Cost index_other_operands_eval_cost(PlannerInfo *root,
+							   List *indexquals);
+extern List *add_predicate_to_index_quals(IndexOptInfo *index,
+							 List *indexQuals);
 extern void genericcostestimate(PlannerInfo *root, IndexPath *path,
 					double loop_count,
-					List *qinfos,
 					GenericCosts *costs);
 
 /* Functions in array_selfuncs.c */

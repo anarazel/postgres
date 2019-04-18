@@ -3,7 +3,7 @@
  *
  *	Definitions for the PostgreSQL statistics collector daemon.
  *
- *	Copyright (c) 2001-2017, PostgreSQL Global Development Group
+ *	Copyright (c) 2001-2019, PostgreSQL Global Development Group
  *
  *	src/include/pgstat.h
  * ----------
@@ -64,7 +64,8 @@ typedef enum StatMsgType
 	PGSTAT_MTYPE_FUNCPURGE,
 	PGSTAT_MTYPE_RECOVERYCONFLICT,
 	PGSTAT_MTYPE_TEMPFILE,
-	PGSTAT_MTYPE_DEADLOCK
+	PGSTAT_MTYPE_DEADLOCK,
+	PGSTAT_MTYPE_CHECKSUMFAILURE
 } StatMsgType;
 
 /* ----------
@@ -530,6 +531,19 @@ typedef struct PgStat_MsgDeadlock
 	Oid			m_databaseid;
 } PgStat_MsgDeadlock;
 
+/* ----------
+ * PgStat_MsgChecksumFailure	Sent by the backend to tell the collector
+ *								about checksum failures noticed.
+ * ----------
+ */
+typedef struct PgStat_MsgChecksumFailure
+{
+	PgStat_MsgHdr m_hdr;
+	Oid			m_databaseid;
+	int			m_failurecount;
+	TimestampTz	m_failure_time;
+} PgStat_MsgChecksumFailure;
+
 
 /* ----------
  * PgStat_Msg					Union over all possible messages.
@@ -593,6 +607,8 @@ typedef struct PgStat_StatDBEntry
 	PgStat_Counter n_temp_files;
 	PgStat_Counter n_temp_bytes;
 	PgStat_Counter n_deadlocks;
+	PgStat_Counter n_checksum_failures;
+	TimestampTz last_checksum_failure;
 	PgStat_Counter n_block_read_time;	/* times in microseconds */
 	PgStat_Counter n_block_write_time;
 
@@ -759,8 +775,8 @@ typedef enum
 	WAIT_EVENT_BGWRITER_HIBERNATE,
 	WAIT_EVENT_BGWRITER_MAIN,
 	WAIT_EVENT_CHECKPOINTER_MAIN,
-	WAIT_EVENT_LOGICAL_LAUNCHER_MAIN,
 	WAIT_EVENT_LOGICAL_APPLY_MAIN,
+	WAIT_EVENT_LOGICAL_LAUNCHER_MAIN,
 	WAIT_EVENT_PGSTAT_MAIN,
 	WAIT_EVENT_RECOVERY_WAL_ALL,
 	WAIT_EVENT_RECOVERY_WAL_STREAM,
@@ -787,7 +803,8 @@ typedef enum
 	WAIT_EVENT_SSL_OPEN_SERVER,
 	WAIT_EVENT_WAL_RECEIVER_WAIT_START,
 	WAIT_EVENT_WAL_SENDER_WAIT_WAL,
-	WAIT_EVENT_WAL_SENDER_WRITE_DATA
+	WAIT_EVENT_WAL_SENDER_WRITE_DATA,
+	WAIT_EVENT_GSS_OPEN_SERVER,
 } WaitEventClient;
 
 /* ----------
@@ -802,17 +819,36 @@ typedef enum
 	WAIT_EVENT_BGWORKER_SHUTDOWN = PG_WAIT_IPC,
 	WAIT_EVENT_BGWORKER_STARTUP,
 	WAIT_EVENT_BTREE_PAGE,
+	WAIT_EVENT_CLOG_GROUP_UPDATE,
+	WAIT_EVENT_CHECKPOINT_DONE,
+	WAIT_EVENT_CHECKPOINT_START,
 	WAIT_EVENT_EXECUTE_GATHER,
+	WAIT_EVENT_HASH_BATCH_ALLOCATING,
+	WAIT_EVENT_HASH_BATCH_ELECTING,
+	WAIT_EVENT_HASH_BATCH_LOADING,
+	WAIT_EVENT_HASH_BUILD_ALLOCATING,
+	WAIT_EVENT_HASH_BUILD_ELECTING,
+	WAIT_EVENT_HASH_BUILD_HASHING_INNER,
+	WAIT_EVENT_HASH_BUILD_HASHING_OUTER,
+	WAIT_EVENT_HASH_GROW_BATCHES_ALLOCATING,
+	WAIT_EVENT_HASH_GROW_BATCHES_DECIDING,
+	WAIT_EVENT_HASH_GROW_BATCHES_ELECTING,
+	WAIT_EVENT_HASH_GROW_BATCHES_FINISHING,
+	WAIT_EVENT_HASH_GROW_BATCHES_REPARTITIONING,
+	WAIT_EVENT_HASH_GROW_BUCKETS_ALLOCATING,
+	WAIT_EVENT_HASH_GROW_BUCKETS_ELECTING,
+	WAIT_EVENT_HASH_GROW_BUCKETS_REINSERTING,
 	WAIT_EVENT_LOGICAL_SYNC_DATA,
 	WAIT_EVENT_LOGICAL_SYNC_STATE_CHANGE,
 	WAIT_EVENT_MQ_INTERNAL,
 	WAIT_EVENT_MQ_PUT_MESSAGE,
 	WAIT_EVENT_MQ_RECEIVE,
 	WAIT_EVENT_MQ_SEND,
-	WAIT_EVENT_PARALLEL_FINISH,
 	WAIT_EVENT_PARALLEL_BITMAP_SCAN,
+	WAIT_EVENT_PARALLEL_CREATE_INDEX_SCAN,
+	WAIT_EVENT_PARALLEL_FINISH,
 	WAIT_EVENT_PROCARRAY_GROUP_UPDATE,
-	WAIT_EVENT_CLOG_GROUP_UPDATE,
+	WAIT_EVENT_PROMOTE,
 	WAIT_EVENT_REPLICATION_ORIGIN_DROP,
 	WAIT_EVENT_REPLICATION_SLOT_DROP,
 	WAIT_EVENT_SAFE_SNAPSHOT,
@@ -905,6 +941,7 @@ typedef enum
 	WAIT_EVENT_WAL_INIT_SYNC,
 	WAIT_EVENT_WAL_INIT_WRITE,
 	WAIT_EVENT_WAL_READ,
+	WAIT_EVENT_WAL_SYNC,
 	WAIT_EVENT_WAL_SYNC_METHOD_ASSIGN,
 	WAIT_EVENT_WAL_WRITE
 } WaitEventIO;
@@ -916,10 +953,12 @@ typedef enum
 typedef enum ProgressCommandType
 {
 	PROGRESS_COMMAND_INVALID,
-	PROGRESS_COMMAND_VACUUM
+	PROGRESS_COMMAND_VACUUM,
+	PROGRESS_COMMAND_CLUSTER,
+	PROGRESS_COMMAND_CREATE_INDEX
 } ProgressCommandType;
 
-#define PGSTAT_NUM_PROGRESS_PARAM	10
+#define PGSTAT_NUM_PROGRESS_PARAM	20
 
 /* ----------
  * Shared-memory data structures
@@ -932,16 +971,43 @@ typedef enum ProgressCommandType
  *
  * For each backend, we keep the SSL status in a separate struct, that
  * is only filled in if SSL is enabled.
+ *
+ * All char arrays must be null-terminated.
  */
 typedef struct PgBackendSSLStatus
 {
 	/* Information about SSL connection */
 	int			ssl_bits;
 	bool		ssl_compression;
-	char		ssl_version[NAMEDATALEN];	/* MUST be null-terminated */
-	char		ssl_cipher[NAMEDATALEN];	/* MUST be null-terminated */
-	char		ssl_clientdn[NAMEDATALEN];	/* MUST be null-terminated */
+	char		ssl_version[NAMEDATALEN];
+	char		ssl_cipher[NAMEDATALEN];
+	char		ssl_client_dn[NAMEDATALEN];
+
+	/*
+	 * serial number is max "20 octets" per RFC 5280, so this size should be
+	 * fine
+	 */
+	char		ssl_client_serial[NAMEDATALEN];
+
+	char		ssl_issuer_dn[NAMEDATALEN];
 } PgBackendSSLStatus;
+
+/*
+ * PgBackendGSSStatus
+ *
+ * For each backend, we keep the GSS status in a separate struct, that
+ * is only filled in if GSS is enabled.
+ *
+ * All char arrays must be null-terminated.
+ */
+typedef struct PgBackendGSSStatus
+{
+	/* Information about GSSAPI connection */
+	char		gss_princ[NAMEDATALEN]; /* GSSAPI Principal used to auth */
+	bool		gss_auth;		/* If GSSAPI authentication was used */
+	bool		gss_enc;		/* If encryption is being used */
+
+} PgBackendGSSStatus;
 
 
 /* ----------
@@ -997,14 +1063,24 @@ typedef struct PgBackendStatus
 	bool		st_ssl;
 	PgBackendSSLStatus *st_sslstatus;
 
+	/* Information about GSSAPI connection */
+	bool		st_gss;
+	PgBackendGSSStatus *st_gssstatus;
+
 	/* current state */
 	BackendState st_state;
 
 	/* application name; MUST be null-terminated */
 	char	   *st_appname;
 
-	/* current command string; MUST be null-terminated */
-	char	   *st_activity;
+	/*
+	 * Current command string; MUST be null-terminated. Note that this string
+	 * possibly is truncated in the middle of a multi-byte character. As
+	 * activity strings are stored more frequently than read, that allows to
+	 * move the cost of correct truncation to the display side. Use
+	 * pgstat_clip_activity() to truncate correctly.
+	 */
+	char	   *st_activity_raw;
 
 	/*
 	 * Command progress reporting.  Any command which wishes can advertise
@@ -1166,6 +1242,8 @@ extern void pgstat_report_analyze(Relation rel,
 
 extern void pgstat_report_recovery_conflict(int reason);
 extern void pgstat_report_deadlock(void);
+extern void pgstat_report_checksum_failures_in_db(Oid dboid, int failurecount);
+extern void pgstat_report_checksum_failure(void);
 
 extern void pgstat_initialize(void);
 extern void pgstat_bestart(void);
@@ -1192,6 +1270,8 @@ extern PgStat_TableStatus *find_tabstat_entry(Oid rel_id);
 extern PgStat_BackendFunctionEntry *find_funcstat_entry(Oid func_id);
 
 extern void pgstat_initstats(Relation rel);
+
+extern char *pgstat_clip_activity(const char *raw_activity);
 
 /* ----------
  * pgstat_report_wait_start() -
@@ -1295,12 +1375,12 @@ extern void pgstat_count_heap_delete(Relation rel);
 extern void pgstat_count_truncate(Relation rel);
 extern void pgstat_update_heap_dead_tuples(Relation rel, int delta);
 
-extern void pgstat_init_function_usage(FunctionCallInfoData *fcinfo,
+extern void pgstat_init_function_usage(FunctionCallInfo fcinfo,
 						   PgStat_FunctionCallUsage *fcu);
 extern void pgstat_end_function_usage(PgStat_FunctionCallUsage *fcu,
 						  bool finalize);
 
-extern void AtEOXact_PgStat(bool isCommit);
+extern void AtEOXact_PgStat(bool isCommit, bool parallel);
 extern void AtEOSubXact_PgStat(bool isCommit, int nestDepth);
 
 extern void AtPrepare_PgStat(void);

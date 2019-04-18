@@ -4,7 +4,7 @@
  *	  prototypes for postgres.c.
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/tcop/tcopprot.h
@@ -45,7 +45,7 @@ typedef enum
 	LOGSTMT_ALL					/* log all statements */
 } LogStmtLevel;
 
-extern int	log_statement;
+extern PGDLLIMPORT int log_statement;
 
 extern List *pg_parse_query(const char *query_string);
 extern List *pg_analyze_and_rewrite(RawStmt *parsetree,

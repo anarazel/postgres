@@ -19,7 +19,7 @@
  * tree after local transformations that might introduce nested AND/ORs.
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -32,14 +32,15 @@
 #include "postgres.h"
 
 #include "nodes/makefuncs.h"
-#include "optimizer/clauses.h"
+#include "nodes/nodeFuncs.h"
+#include "optimizer/optimizer.h"
 #include "optimizer/prep.h"
 #include "utils/lsyscache.h"
 
 
 static List *pull_ands(List *andlist);
 static List *pull_ors(List *orlist);
-static Expr *find_duplicate_ors(Expr *qual);
+static Expr *find_duplicate_ors(Expr *qual, bool is_check);
 static Expr *process_duplicate_ors(List *orlist);
 
 
@@ -269,6 +270,11 @@ negate_clause(Node *node)
  * canonicalize_qual
  *	  Convert a qualification expression to the most useful form.
  *
+ * This is primarily intended to be used on top-level WHERE (or JOIN/ON)
+ * clauses.  It can also be used on top-level CHECK constraints, for which
+ * pass is_check = true.  DO NOT call it on any expression that is not known
+ * to be one or the other, as it might apply inappropriate simplifications.
+ *
  * The name of this routine is a holdover from a time when it would try to
  * force the expression into canonical AND-of-ORs or OR-of-ANDs form.
  * Eventually, we recognized that that had more theoretical purity than
@@ -283,7 +289,7 @@ negate_clause(Node *node)
  * Returns the modified qualification.
  */
 Expr *
-canonicalize_qual(Expr *qual)
+canonicalize_qual(Expr *qual, bool is_check)
 {
 	Expr	   *newqual;
 
@@ -291,12 +297,15 @@ canonicalize_qual(Expr *qual)
 	if (qual == NULL)
 		return NULL;
 
+	/* This should not be invoked on quals in implicit-AND format */
+	Assert(!IsA(qual, List));
+
 	/*
 	 * Pull up redundant subclauses in OR-of-AND trees.  We do this only
 	 * within the top-level AND/OR structure; there's no point in looking
 	 * deeper.  Also remove any NULL constants in the top-level structure.
 	 */
-	newqual = find_duplicate_ors(qual);
+	newqual = find_duplicate_ors(qual, is_check);
 
 	return newqual;
 }
@@ -325,7 +334,7 @@ pull_ands(List *andlist)
 		 * built a new arglist not shared with any other expr. Otherwise we'd
 		 * need a list_copy here.
 		 */
-		if (and_clause(subexpr))
+		if (is_andclause(subexpr))
 			out_list = list_concat(out_list,
 								   pull_ands(((BoolExpr *) subexpr)->args));
 		else
@@ -357,7 +366,7 @@ pull_ors(List *orlist)
 		 * built a new arglist not shared with any other expr. Otherwise we'd
 		 * need a list_copy here.
 		 */
-		if (or_clause(subexpr))
+		if (is_orclause(subexpr))
 			out_list = list_concat(out_list,
 								   pull_ors(((BoolExpr *) subexpr)->args));
 		else
@@ -395,18 +404,19 @@ pull_ors(List *orlist)
  *	  Only the top-level AND/OR structure is searched.
  *
  * While at it, we remove any NULL constants within the top-level AND/OR
- * structure, eg "x OR NULL::boolean" is reduced to "x".  In general that
- * would change the result, so eval_const_expressions can't do it; but at
- * top level of WHERE, we don't need to distinguish between FALSE and NULL
- * results, so it's valid to treat NULL::boolean the same as FALSE and then
- * simplify AND/OR accordingly.
+ * structure, eg in a WHERE clause, "x OR NULL::boolean" is reduced to "x".
+ * In general that would change the result, so eval_const_expressions can't
+ * do it; but at top level of WHERE, we don't need to distinguish between
+ * FALSE and NULL results, so it's valid to treat NULL::boolean the same
+ * as FALSE and then simplify AND/OR accordingly.  Conversely, in a top-level
+ * CHECK constraint, we may treat a NULL the same as TRUE.
  *
  * Returns the modified qualification.  AND/OR flatness is preserved.
  */
 static Expr *
-find_duplicate_ors(Expr *qual)
+find_duplicate_ors(Expr *qual, bool is_check)
 {
-	if (or_clause((Node *) qual))
+	if (is_orclause(qual))
 	{
 		List	   *orlist = NIL;
 		ListCell   *temp;
@@ -416,18 +426,29 @@ find_duplicate_ors(Expr *qual)
 		{
 			Expr	   *arg = (Expr *) lfirst(temp);
 
-			arg = find_duplicate_ors(arg);
+			arg = find_duplicate_ors(arg, is_check);
 
 			/* Get rid of any constant inputs */
 			if (arg && IsA(arg, Const))
 			{
 				Const	   *carg = (Const *) arg;
 
-				/* Drop constant FALSE or NULL */
-				if (carg->constisnull || !DatumGetBool(carg->constvalue))
-					continue;
-				/* constant TRUE, so OR reduces to TRUE */
-				return arg;
+				if (is_check)
+				{
+					/* Within OR in CHECK, drop constant FALSE */
+					if (!carg->constisnull && !DatumGetBool(carg->constvalue))
+						continue;
+					/* Constant TRUE or NULL, so OR reduces to TRUE */
+					return (Expr *) makeBoolConst(true, false);
+				}
+				else
+				{
+					/* Within OR in WHERE, drop constant FALSE or NULL */
+					if (carg->constisnull || !DatumGetBool(carg->constvalue))
+						continue;
+					/* Constant TRUE, so OR reduces to TRUE */
+					return arg;
+				}
 			}
 
 			orlist = lappend(orlist, arg);
@@ -439,7 +460,7 @@ find_duplicate_ors(Expr *qual)
 		/* Now we can look for duplicate ORs */
 		return process_duplicate_ors(orlist);
 	}
-	else if (and_clause((Node *) qual))
+	else if (is_andclause(qual))
 	{
 		List	   *andlist = NIL;
 		ListCell   *temp;
@@ -449,18 +470,29 @@ find_duplicate_ors(Expr *qual)
 		{
 			Expr	   *arg = (Expr *) lfirst(temp);
 
-			arg = find_duplicate_ors(arg);
+			arg = find_duplicate_ors(arg, is_check);
 
 			/* Get rid of any constant inputs */
 			if (arg && IsA(arg, Const))
 			{
 				Const	   *carg = (Const *) arg;
 
-				/* Drop constant TRUE */
-				if (!carg->constisnull && DatumGetBool(carg->constvalue))
-					continue;
-				/* constant FALSE or NULL, so AND reduces to FALSE */
-				return (Expr *) makeBoolConst(false, false);
+				if (is_check)
+				{
+					/* Within AND in CHECK, drop constant TRUE or NULL */
+					if (carg->constisnull || DatumGetBool(carg->constvalue))
+						continue;
+					/* Constant FALSE, so AND reduces to FALSE */
+					return arg;
+				}
+				else
+				{
+					/* Within AND in WHERE, drop constant TRUE */
+					if (!carg->constisnull && DatumGetBool(carg->constvalue))
+						continue;
+					/* Constant FALSE or NULL, so AND reduces to FALSE */
+					return (Expr *) makeBoolConst(false, false);
+				}
 			}
 
 			andlist = lappend(andlist, arg);
@@ -519,7 +551,7 @@ process_duplicate_ors(List *orlist)
 	{
 		Expr	   *clause = (Expr *) lfirst(temp);
 
-		if (and_clause((Node *) clause))
+		if (is_andclause(clause))
 		{
 			List	   *subclauses = ((BoolExpr *) clause)->args;
 			int			nclauses = list_length(subclauses);
@@ -557,7 +589,7 @@ process_duplicate_ors(List *orlist)
 		{
 			Expr	   *clause = (Expr *) lfirst(temp2);
 
-			if (and_clause((Node *) clause))
+			if (is_andclause(clause))
 			{
 				if (!list_member(((BoolExpr *) clause)->args, refclause))
 				{
@@ -600,7 +632,7 @@ process_duplicate_ors(List *orlist)
 	{
 		Expr	   *clause = (Expr *) lfirst(temp);
 
-		if (and_clause((Node *) clause))
+		if (is_andclause(clause))
 		{
 			List	   *subclauses = ((BoolExpr *) clause)->args;
 

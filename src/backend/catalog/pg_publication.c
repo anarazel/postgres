@@ -3,7 +3,7 @@
  * pg_publication.c
  *		publication C API manipulation
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -18,9 +18,9 @@
 #include "miscadmin.h"
 
 #include "access/genam.h"
-#include "access/hash.h"
 #include "access/heapam.h"
 #include "access/htup_details.h"
+#include "access/tableam.h"
 #include "access/xact.h"
 
 #include "catalog/catalog.h"
@@ -105,6 +105,15 @@ is_publishable_class(Oid relid, Form_pg_class reltuple)
 		relid >= FirstNormalObjectId;
 }
 
+/*
+ * Another variant of this, taking a Relation.
+ */
+bool
+is_publishable_relation(Relation rel)
+{
+	return is_publishable_class(RelationGetRelid(rel), rel->rd_rel);
+}
+
 
 /*
  * SQL-callable variant of the above
@@ -146,7 +155,7 @@ publication_add_relation(Oid pubid, Relation targetrel,
 	ObjectAddress myself,
 				referenced;
 
-	rel = heap_open(PublicationRelRelationId, RowExclusiveLock);
+	rel = table_open(PublicationRelRelationId, RowExclusiveLock);
 
 	/*
 	 * Check for duplicates. Note that this does not really prevent
@@ -156,7 +165,7 @@ publication_add_relation(Oid pubid, Relation targetrel,
 	if (SearchSysCacheExists2(PUBLICATIONRELMAP, ObjectIdGetDatum(relid),
 							  ObjectIdGetDatum(pubid)))
 	{
-		heap_close(rel, RowExclusiveLock);
+		table_close(rel, RowExclusiveLock);
 
 		if (if_not_exists)
 			return InvalidObjectAddress;
@@ -173,6 +182,9 @@ publication_add_relation(Oid pubid, Relation targetrel,
 	memset(values, 0, sizeof(values));
 	memset(nulls, false, sizeof(nulls));
 
+	prrelid = GetNewOidWithIndex(rel, PublicationRelObjectIndexId,
+								 Anum_pg_publication_rel_oid);
+	values[Anum_pg_publication_rel_oid - 1] = ObjectIdGetDatum(prrelid);
 	values[Anum_pg_publication_rel_prpubid - 1] =
 		ObjectIdGetDatum(pubid);
 	values[Anum_pg_publication_rel_prrelid - 1] =
@@ -181,7 +193,7 @@ publication_add_relation(Oid pubid, Relation targetrel,
 	tup = heap_form_tuple(RelationGetDescr(rel), values, nulls);
 
 	/* Insert tuple into catalog. */
-	prrelid = CatalogTupleInsert(rel, tup);
+	CatalogTupleInsert(rel, tup);
 	heap_freetuple(tup);
 
 	ObjectAddressSet(myself, PublicationRelRelationId, prrelid);
@@ -195,7 +207,7 @@ publication_add_relation(Oid pubid, Relation targetrel,
 	recordDependencyOn(&myself, &referenced, DEPENDENCY_AUTO);
 
 	/* Close the table. */
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 
 	/* Invalidate relcache so that publication info is rebuilt. */
 	CacheInvalidateRelcache(targetrel);
@@ -246,7 +258,7 @@ GetPublicationRelations(Oid pubid)
 	HeapTuple	tup;
 
 	/* Find all publications associated with the relation. */
-	pubrelsrel = heap_open(PublicationRelRelationId, AccessShareLock);
+	pubrelsrel = table_open(PublicationRelRelationId, AccessShareLock);
 
 	ScanKeyInit(&scankey,
 				Anum_pg_publication_rel_prpubid,
@@ -267,7 +279,7 @@ GetPublicationRelations(Oid pubid)
 	}
 
 	systable_endscan(scan);
-	heap_close(pubrelsrel, AccessShareLock);
+	table_close(pubrelsrel, AccessShareLock);
 
 	return result;
 }
@@ -285,7 +297,7 @@ GetAllTablesPublications(void)
 	HeapTuple	tup;
 
 	/* Find all publications that are marked as for all tables. */
-	rel = heap_open(PublicationRelationId, AccessShareLock);
+	rel = table_open(PublicationRelationId, AccessShareLock);
 
 	ScanKeyInit(&scankey,
 				Anum_pg_publication_puballtables,
@@ -297,10 +309,14 @@ GetAllTablesPublications(void)
 
 	result = NIL;
 	while (HeapTupleIsValid(tup = systable_getnext(scan)))
-		result = lappend_oid(result, HeapTupleGetOid(tup));
+	{
+		Oid		oid = ((Form_pg_publication) GETSTRUCT(tup))->oid;
+
+		result = lappend_oid(result, oid);
+	}
 
 	systable_endscan(scan);
-	heap_close(rel, AccessShareLock);
+	table_close(rel, AccessShareLock);
 
 	return result;
 }
@@ -313,30 +329,30 @@ GetAllTablesPublicationRelations(void)
 {
 	Relation	classRel;
 	ScanKeyData key[1];
-	HeapScanDesc scan;
+	TableScanDesc scan;
 	HeapTuple	tuple;
 	List	   *result = NIL;
 
-	classRel = heap_open(RelationRelationId, AccessShareLock);
+	classRel = table_open(RelationRelationId, AccessShareLock);
 
 	ScanKeyInit(&key[0],
 				Anum_pg_class_relkind,
 				BTEqualStrategyNumber, F_CHAREQ,
 				CharGetDatum(RELKIND_RELATION));
 
-	scan = heap_beginscan_catalog(classRel, 1, key);
+	scan = table_beginscan_catalog(classRel, 1, key);
 
 	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
 	{
-		Oid			relid = HeapTupleGetOid(tuple);
 		Form_pg_class relForm = (Form_pg_class) GETSTRUCT(tuple);
+		Oid			relid = relForm->oid;
 
 		if (is_publishable_class(relid, relForm))
 			result = lappend_oid(result, relid);
 	}
 
-	heap_endscan(scan);
-	heap_close(classRel, AccessShareLock);
+	table_endscan(scan);
+	table_close(classRel, AccessShareLock);
 
 	return result;
 }
@@ -367,6 +383,7 @@ GetPublication(Oid pubid)
 	pub->pubactions.pubinsert = pubform->pubinsert;
 	pub->pubactions.pubupdate = pubform->pubupdate;
 	pub->pubactions.pubdelete = pubform->pubdelete;
+	pub->pubactions.pubtruncate = pubform->pubtruncate;
 
 	ReleaseSysCache(tup);
 
@@ -382,7 +399,8 @@ GetPublicationByName(const char *pubname, bool missing_ok)
 {
 	Oid			oid;
 
-	oid = GetSysCacheOid1(PUBLICATIONNAME, CStringGetDatum(pubname));
+	oid = GetSysCacheOid1(PUBLICATIONNAME, Anum_pg_publication_oid,
+						  CStringGetDatum(pubname));
 	if (!OidIsValid(oid))
 	{
 		if (missing_ok)
@@ -407,7 +425,8 @@ get_publication_oid(const char *pubname, bool missing_ok)
 {
 	Oid			oid;
 
-	oid = GetSysCacheOid1(PUBLICATIONNAME, CStringGetDatum(pubname));
+	oid = GetSysCacheOid1(PUBLICATIONNAME, Anum_pg_publication_oid,
+						  CStringGetDatum(pubname));
 	if (!OidIsValid(oid) && !missing_ok)
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
@@ -417,9 +436,12 @@ get_publication_oid(const char *pubname, bool missing_ok)
 
 /*
  * get_publication_name - given a publication Oid, look up the name
+ *
+ * If missing_ok is false, throw an error if name not found.  If true, just
+ * return NULL.
  */
 char *
-get_publication_name(Oid pubid)
+get_publication_name(Oid pubid, bool missing_ok)
 {
 	HeapTuple	tup;
 	char	   *pubname;
@@ -428,7 +450,11 @@ get_publication_name(Oid pubid)
 	tup = SearchSysCache1(PUBLICATIONOID, ObjectIdGetDatum(pubid));
 
 	if (!HeapTupleIsValid(tup))
-		elog(ERROR, "cache lookup failed for publication %u", pubid);
+	{
+		if (!missing_ok)
+			elog(ERROR, "cache lookup failed for publication %u", pubid);
+		return NULL;
+	}
 
 	pubform = (Form_pg_publication) GETSTRUCT(tup);
 	pubname = pstrdup(NameStr(pubform->pubname));

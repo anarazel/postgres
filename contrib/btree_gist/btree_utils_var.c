@@ -37,7 +37,7 @@ Datum
 gbt_var_decompress(PG_FUNCTION_ARGS)
 {
 	GISTENTRY  *entry = (GISTENTRY *) PG_GETARG_POINTER(0);
-	GBT_VARKEY *key = (GBT_VARKEY *) DatumGetPointer(PG_DETOAST_DATUM(entry->key));
+	GBT_VARKEY *key = (GBT_VARKEY *) PG_DETOAST_DATUM(entry->key);
 
 	if (key != (GBT_VARKEY *) DatumGetPointer(entry->key))
 	{
@@ -45,7 +45,7 @@ gbt_var_decompress(PG_FUNCTION_ARGS)
 
 		gistentryinit(*retval, PointerGetDatum(key),
 					  entry->rel, entry->page,
-					  entry->offset, FALSE);
+					  entry->offset, false);
 
 		PG_RETURN_POINTER(retval);
 	}
@@ -159,7 +159,7 @@ gbt_var_node_cp_len(const GBT_VARKEY *node, const gbtree_vinfo *tinfo)
 		l--;
 		i++;
 	}
-	return ml;				/* lower == upper */
+	return ml;					/* lower == upper */
 }
 
 
@@ -169,7 +169,7 @@ gbt_var_node_cp_len(const GBT_VARKEY *node, const gbtree_vinfo *tinfo)
 static bool
 gbt_bytea_pf_match(const bytea *pf, const bytea *query, const gbtree_vinfo *tinfo)
 {
-	bool		out = FALSE;
+	bool		out = false;
 	int32		qlen = VARSIZE(query) - VARHDRSZ;
 	int32		nlen = VARSIZE(pf) - VARHDRSZ;
 
@@ -294,7 +294,7 @@ gbt_var_compress(GISTENTRY *entry, const gbtree_vinfo *tinfo)
 		retval = palloc(sizeof(GISTENTRY));
 		gistentryinit(*retval, PointerGetDatum(r),
 					  entry->rel, entry->page,
-					  entry->offset, TRUE);
+					  entry->offset, true);
 	}
 	else
 		retval = entry;
@@ -307,14 +307,14 @@ Datum
 gbt_var_fetch(PG_FUNCTION_ARGS)
 {
 	GISTENTRY  *entry = (GISTENTRY *) PG_GETARG_POINTER(0);
-	GBT_VARKEY *key = (GBT_VARKEY *) DatumGetPointer(PG_DETOAST_DATUM(entry->key));
+	GBT_VARKEY *key = (GBT_VARKEY *) PG_DETOAST_DATUM(entry->key);
 	GBT_VARKEY_R r = gbt_var_key_readable(key);
 	GISTENTRY  *retval;
 
 	retval = palloc(sizeof(GISTENTRY));
 	gistentryinit(*retval, PointerGetDatum(r.lower),
 				  entry->rel, entry->page,
-				  entry->offset, TRUE);
+				  entry->offset, true);
 
 	PG_RETURN_POINTER(retval);
 }
@@ -561,7 +561,7 @@ gbt_var_consistent(GBT_VARKEY_R *key,
 				   const gbtree_vinfo *tinfo,
 				   FmgrInfo *flinfo)
 {
-	bool		retval = FALSE;
+	bool		retval = false;
 
 	switch (strategy)
 	{
@@ -607,7 +607,7 @@ gbt_var_consistent(GBT_VARKEY_R *key,
 					   tinfo->f_eq(query, key->upper, collation, flinfo));
 			break;
 		default:
-			retval = FALSE;
+			retval = false;
 	}
 
 	return retval;

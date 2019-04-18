@@ -3,7 +3,7 @@
  * parse_oper.c
  *		handle operator things for parser
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -244,7 +244,7 @@ get_sort_group_operators(Oid argtype,
 Oid
 oprid(Operator op)
 {
-	return HeapTupleGetOid(op);
+	return ((Form_pg_operator) GETSTRUCT(op))->oid;
 }
 
 /* given operator tuple, return the underlying function's OID */
@@ -1023,7 +1023,7 @@ static HTAB *OprCacheHash = NULL;
  * make_oper_cache_key
  *		Fill the lookup key struct given operator name and arg types.
  *
- * Returns TRUE if successful, FALSE if the search_path overflowed
+ * Returns true if successful, false if the search_path overflowed
  * (hence no caching is possible).
  *
  * pstate/location are used only to report the error position; pass NULL/-1

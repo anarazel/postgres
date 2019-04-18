@@ -3,7 +3,7 @@
  * jsonb_util.c
  *	  converting between Jsonb and JsonbValues, and iterating.
  *
- * Copyright (c) 2014-2017, PostgreSQL Global Development Group
+ * Copyright (c) 2014-2019, PostgreSQL Global Development Group
  *
  *
  * IDENTIFICATION
@@ -13,10 +13,10 @@
  */
 #include "postgres.h"
 
-#include "access/hash.h"
 #include "catalog/pg_collation.h"
 #include "miscadmin.h"
 #include "utils/builtins.h"
+#include "utils/hashutils.h"
 #include "utils/jsonb.h"
 #include "utils/memutils.h"
 #include "utils/varlena.h"
@@ -901,7 +901,7 @@ iteratorFromContainer(JsonbContainer *container, JsonbIterator *parent)
 {
 	JsonbIterator *it;
 
-	it = palloc(sizeof(JsonbIterator));
+	it = palloc0(sizeof(JsonbIterator));
 	it->container = container;
 	it->parent = parent;
 	it->nElems = JsonContainerSize(container);
@@ -1363,7 +1363,7 @@ compareJsonbScalarValue(JsonbValue *aScalar, JsonbValue *bScalar)
 
 
 /*
- * Functions for manipulating the resizeable buffer used by convertJsonb and
+ * Functions for manipulating the resizable buffer used by convertJsonb and
  * its subroutines.
  */
 
@@ -1728,6 +1728,14 @@ convertJsonbScalar(StringInfo buffer, JEntry *jentry, JsonbValue *scalarVal)
 			break;
 
 		case jbvNumeric:
+			/* replace numeric NaN with string "NaN" */
+			if (numeric_is_nan(scalarVal->val.numeric))
+			{
+				appendToBuffer(buffer, "NaN", 3);
+				*jentry = 3;
+				break;
+			}
+
 			numlen = VARSIZE_ANY(scalarVal->val.numeric);
 			padlen = padBufferToInt(buffer);
 

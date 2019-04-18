@@ -5,7 +5,7 @@
  *	  clients and standalone backends are supported here).
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -32,6 +32,10 @@ static bool printtup_internal_20(TupleTableSlot *slot, DestReceiver *self);
 static void printtup_shutdown(DestReceiver *self);
 static void printtup_destroy(DestReceiver *self);
 
+static void SendRowDescriptionCols_2(StringInfo buf, TupleDesc typeinfo,
+						 List *targetlist, int16 *formats);
+static void SendRowDescriptionCols_3(StringInfo buf, TupleDesc typeinfo,
+						 List *targetlist, int16 *formats);
 
 /* ----------------------------------------------------------------
  *		printtup / debugtup support
@@ -62,6 +66,7 @@ typedef struct
 	TupleDesc	attrinfo;		/* The attr info we are set up for */
 	int			nattrs;
 	PrinttupAttrInfo *myinfo;	/* Cached info about each attr */
+	StringInfoData buf;			/* output buffer (*not* in tmpcontext) */
 	MemoryContext tmpcontext;	/* Memory context for per-row workspace */
 } DR_printtup;
 
@@ -89,6 +94,7 @@ printtup_create_DR(CommandDest dest)
 	self->attrinfo = NULL;
 	self->nattrs = 0;
 	self->myinfo = NULL;
+	self->buf.data = NULL;
 	self->tmpcontext = NULL;
 
 	return (DestReceiver *) self;
@@ -128,6 +134,12 @@ printtup_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 	Portal		portal = myState->portal;
 
 	/*
+	 * Create I/O buffer to be used for all messages.  This cannot be inside
+	 * tmpcontext, since we want to re-use it across rows.
+	 */
+	initStringInfo(&myState->buf);
+
+	/*
 	 * Create a temporary memory context that we can reset once per row to
 	 * recover palloc'd memory.  This avoids any problems with leaks inside
 	 * datatype output routines, and should be faster than retail pfree's
@@ -157,7 +169,8 @@ printtup_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 	 * descriptor of the tuples.
 	 */
 	if (myState->sendDescrip)
-		SendRowDescriptionMessage(typeinfo,
+		SendRowDescriptionMessage(&myState->buf,
+								  typeinfo,
 								  FetchPortalTargetList(portal),
 								  portal->formats);
 
@@ -185,16 +198,109 @@ printtup_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
  * send zeroes for the format codes in that case.
  */
 void
-SendRowDescriptionMessage(TupleDesc typeinfo, List *targetlist, int16 *formats)
+SendRowDescriptionMessage(StringInfo buf, TupleDesc typeinfo,
+						  List *targetlist, int16 *formats)
 {
 	int			natts = typeinfo->natts;
 	int			proto = PG_PROTOCOL_MAJOR(FrontendProtocol);
+
+	/* tuple descriptor message type */
+	pq_beginmessage_reuse(buf, 'T');
+	/* # of attrs in tuples */
+	pq_sendint16(buf, natts);
+
+	if (proto >= 3)
+		SendRowDescriptionCols_3(buf, typeinfo, targetlist, formats);
+	else
+		SendRowDescriptionCols_2(buf, typeinfo, targetlist, formats);
+
+	pq_endmessage_reuse(buf);
+}
+
+/*
+ * Send description for each column when using v3+ protocol
+ */
+static void
+SendRowDescriptionCols_3(StringInfo buf, TupleDesc typeinfo, List *targetlist, int16 *formats)
+{
+	int			natts = typeinfo->natts;
 	int			i;
-	StringInfoData buf;
 	ListCell   *tlist_item = list_head(targetlist);
 
-	pq_beginmessage(&buf, 'T'); /* tuple descriptor message type */
-	pq_sendint(&buf, natts, 2); /* # of attrs in tuples */
+	/*
+	 * Preallocate memory for the entire message to be sent. That allows to
+	 * use the significantly faster inline pqformat.h functions and to avoid
+	 * reallocations.
+	 *
+	 * Have to overestimate the size of the column-names, to account for
+	 * character set overhead.
+	 */
+	enlargeStringInfo(buf, (NAMEDATALEN * MAX_CONVERSION_GROWTH /* attname */
+							+ sizeof(Oid)	/* resorigtbl */
+							+ sizeof(AttrNumber)	/* resorigcol */
+							+ sizeof(Oid)	/* atttypid */
+							+ sizeof(int16) /* attlen */
+							+ sizeof(int32) /* attypmod */
+							+ sizeof(int16) /* format */
+							) * natts);
+
+	for (i = 0; i < natts; ++i)
+	{
+		Form_pg_attribute att = TupleDescAttr(typeinfo, i);
+		Oid			atttypid = att->atttypid;
+		int32		atttypmod = att->atttypmod;
+		Oid			resorigtbl;
+		AttrNumber	resorigcol;
+		int16		format;
+
+		/*
+		 * If column is a domain, send the base type and typmod instead.
+		 * Lookup before sending any ints, for efficiency.
+		 */
+		atttypid = getBaseTypeAndTypmod(atttypid, &atttypmod);
+
+		/* Do we have a non-resjunk tlist item? */
+		while (tlist_item &&
+			   ((TargetEntry *) lfirst(tlist_item))->resjunk)
+			tlist_item = lnext(tlist_item);
+		if (tlist_item)
+		{
+			TargetEntry *tle = (TargetEntry *) lfirst(tlist_item);
+
+			resorigtbl = tle->resorigtbl;
+			resorigcol = tle->resorigcol;
+			tlist_item = lnext(tlist_item);
+		}
+		else
+		{
+			/* No info available, so send zeroes */
+			resorigtbl = 0;
+			resorigcol = 0;
+		}
+
+		if (formats)
+			format = formats[i];
+		else
+			format = 0;
+
+		pq_writestring(buf, NameStr(att->attname));
+		pq_writeint32(buf, resorigtbl);
+		pq_writeint16(buf, resorigcol);
+		pq_writeint32(buf, atttypid);
+		pq_writeint16(buf, att->attlen);
+		pq_writeint32(buf, atttypmod);
+		pq_writeint16(buf, format);
+	}
+}
+
+/*
+ * Send description for each column when using v2 protocol
+ */
+static void
+SendRowDescriptionCols_2(StringInfo buf, TupleDesc typeinfo, List *targetlist, int16 *formats)
+{
+	int			natts = typeinfo->natts;
+	int			i;
 
 	for (i = 0; i < natts; ++i)
 	{
@@ -202,44 +308,16 @@ SendRowDescriptionMessage(TupleDesc typeinfo, List *targetlist, int16 *formats)
 		Oid			atttypid = att->atttypid;
 		int32		atttypmod = att->atttypmod;
 
-		pq_sendstring(&buf, NameStr(att->attname));
-		/* column ID info appears in protocol 3.0 and up */
-		if (proto >= 3)
-		{
-			/* Do we have a non-resjunk tlist item? */
-			while (tlist_item &&
-				   ((TargetEntry *) lfirst(tlist_item))->resjunk)
-				tlist_item = lnext(tlist_item);
-			if (tlist_item)
-			{
-				TargetEntry *tle = (TargetEntry *) lfirst(tlist_item);
-
-				pq_sendint(&buf, tle->resorigtbl, 4);
-				pq_sendint(&buf, tle->resorigcol, 2);
-				tlist_item = lnext(tlist_item);
-			}
-			else
-			{
-				/* No info available, so send zeroes */
-				pq_sendint(&buf, 0, 4);
-				pq_sendint(&buf, 0, 2);
-			}
-		}
 		/* If column is a domain, send the base type and typmod instead */
 		atttypid = getBaseTypeAndTypmod(atttypid, &atttypmod);
-		pq_sendint(&buf, (int) atttypid, sizeof(atttypid));
-		pq_sendint(&buf, att->attlen, sizeof(att->attlen));
-		pq_sendint(&buf, atttypmod, sizeof(atttypmod));
-		/* format info appears in protocol 3.0 and up */
-		if (proto >= 3)
-		{
-			if (formats)
-				pq_sendint(&buf, formats[i], 2);
-			else
-				pq_sendint(&buf, 0, 2);
-		}
+
+		pq_sendstring(buf, NameStr(att->attname));
+		/* column ID only info appears in protocol 3.0 and up */
+		pq_sendint32(buf, atttypid);
+		pq_sendint16(buf, att->attlen);
+		pq_sendint32(buf, atttypmod);
+		/* format info only appears in protocol 3.0 and up */
 	}
-	pq_endmessage(&buf);
 }
 
 /*
@@ -302,7 +380,7 @@ printtup(TupleTableSlot *slot, DestReceiver *self)
 	TupleDesc	typeinfo = slot->tts_tupleDescriptor;
 	DR_printtup *myState = (DR_printtup *) self;
 	MemoryContext oldcontext;
-	StringInfoData buf;
+	StringInfo	buf = &myState->buf;
 	int			natts = typeinfo->natts;
 	int			i;
 
@@ -319,9 +397,9 @@ printtup(TupleTableSlot *slot, DestReceiver *self)
 	/*
 	 * Prepare a DataRow message (note buffer is in per-row context)
 	 */
-	pq_beginmessage(&buf, 'D');
+	pq_beginmessage_reuse(buf, 'D');
 
-	pq_sendint(&buf, natts, 2);
+	pq_sendint16(buf, natts);
 
 	/*
 	 * send the attributes of this tuple
@@ -333,7 +411,7 @@ printtup(TupleTableSlot *slot, DestReceiver *self)
 
 		if (slot->tts_isnull[i])
 		{
-			pq_sendint(&buf, -1, 4);
+			pq_sendint32(buf, -1);
 			continue;
 		}
 
@@ -354,7 +432,7 @@ printtup(TupleTableSlot *slot, DestReceiver *self)
 			char	   *outputstr;
 
 			outputstr = OutputFunctionCall(&thisState->finfo, attr);
-			pq_sendcountedtext(&buf, outputstr, strlen(outputstr), false);
+			pq_sendcountedtext(buf, outputstr, strlen(outputstr), false);
 		}
 		else
 		{
@@ -362,13 +440,13 @@ printtup(TupleTableSlot *slot, DestReceiver *self)
 			bytea	   *outputbytes;
 
 			outputbytes = SendFunctionCall(&thisState->finfo, attr);
-			pq_sendint(&buf, VARSIZE(outputbytes) - VARHDRSZ, 4);
-			pq_sendbytes(&buf, VARDATA(outputbytes),
+			pq_sendint32(buf, VARSIZE(outputbytes) - VARHDRSZ);
+			pq_sendbytes(buf, VARDATA(outputbytes),
 						 VARSIZE(outputbytes) - VARHDRSZ);
 		}
 	}
 
-	pq_endmessage(&buf);
+	pq_endmessage_reuse(buf);
 
 	/* Return to caller's context, and flush row's temporary memory */
 	MemoryContextSwitchTo(oldcontext);
@@ -387,7 +465,7 @@ printtup_20(TupleTableSlot *slot, DestReceiver *self)
 	TupleDesc	typeinfo = slot->tts_tupleDescriptor;
 	DR_printtup *myState = (DR_printtup *) self;
 	MemoryContext oldcontext;
-	StringInfoData buf;
+	StringInfo	buf = &myState->buf;
 	int			natts = typeinfo->natts;
 	int			i,
 				j,
@@ -406,7 +484,7 @@ printtup_20(TupleTableSlot *slot, DestReceiver *self)
 	/*
 	 * tell the frontend to expect new tuple data (in ASCII style)
 	 */
-	pq_beginmessage(&buf, 'D');
+	pq_beginmessage_reuse(buf, 'D');
 
 	/*
 	 * send a bitmap of which attributes are not null
@@ -420,13 +498,13 @@ printtup_20(TupleTableSlot *slot, DestReceiver *self)
 		k >>= 1;
 		if (k == 0)				/* end of byte? */
 		{
-			pq_sendint(&buf, j, 1);
+			pq_sendint8(buf, j);
 			j = 0;
 			k = 1 << 7;
 		}
 	}
 	if (k != (1 << 7))			/* flush last partial byte */
-		pq_sendint(&buf, j, 1);
+		pq_sendint8(buf, j);
 
 	/*
 	 * send the attributes of this tuple
@@ -443,10 +521,10 @@ printtup_20(TupleTableSlot *slot, DestReceiver *self)
 		Assert(thisState->format == 0);
 
 		outputstr = OutputFunctionCall(&thisState->finfo, attr);
-		pq_sendcountedtext(&buf, outputstr, strlen(outputstr), true);
+		pq_sendcountedtext(buf, outputstr, strlen(outputstr), true);
 	}
 
-	pq_endmessage(&buf);
+	pq_endmessage_reuse(buf);
 
 	/* Return to caller's context, and flush row's temporary memory */
 	MemoryContextSwitchTo(oldcontext);
@@ -469,6 +547,10 @@ printtup_shutdown(DestReceiver *self)
 	myState->myinfo = NULL;
 
 	myState->attrinfo = NULL;
+
+	if (myState->buf.data)
+		pfree(myState->buf.data);
+	myState->buf.data = NULL;
 
 	if (myState->tmpcontext)
 		MemoryContextDelete(myState->tmpcontext);
@@ -572,7 +654,7 @@ printtup_internal_20(TupleTableSlot *slot, DestReceiver *self)
 	TupleDesc	typeinfo = slot->tts_tupleDescriptor;
 	DR_printtup *myState = (DR_printtup *) self;
 	MemoryContext oldcontext;
-	StringInfoData buf;
+	StringInfo	buf = &myState->buf;
 	int			natts = typeinfo->natts;
 	int			i,
 				j,
@@ -591,7 +673,7 @@ printtup_internal_20(TupleTableSlot *slot, DestReceiver *self)
 	/*
 	 * tell the frontend to expect new tuple data (in binary style)
 	 */
-	pq_beginmessage(&buf, 'B');
+	pq_beginmessage_reuse(buf, 'B');
 
 	/*
 	 * send a bitmap of which attributes are not null
@@ -605,13 +687,13 @@ printtup_internal_20(TupleTableSlot *slot, DestReceiver *self)
 		k >>= 1;
 		if (k == 0)				/* end of byte? */
 		{
-			pq_sendint(&buf, j, 1);
+			pq_sendint8(buf, j);
 			j = 0;
 			k = 1 << 7;
 		}
 	}
 	if (k != (1 << 7))			/* flush last partial byte */
-		pq_sendint(&buf, j, 1);
+		pq_sendint8(buf, j);
 
 	/*
 	 * send the attributes of this tuple
@@ -628,12 +710,12 @@ printtup_internal_20(TupleTableSlot *slot, DestReceiver *self)
 		Assert(thisState->format == 1);
 
 		outputbytes = SendFunctionCall(&thisState->finfo, attr);
-		pq_sendint(&buf, VARSIZE(outputbytes) - VARHDRSZ, 4);
-		pq_sendbytes(&buf, VARDATA(outputbytes),
+		pq_sendint32(buf, VARSIZE(outputbytes) - VARHDRSZ);
+		pq_sendbytes(buf, VARDATA(outputbytes),
 					 VARSIZE(outputbytes) - VARHDRSZ);
 	}
 
-	pq_endmessage(&buf);
+	pq_endmessage_reuse(buf);
 
 	/* Return to caller's context, and flush row's temporary memory */
 	MemoryContextSwitchTo(oldcontext);

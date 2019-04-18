@@ -4,7 +4,7 @@
  *		Extension management commands (create/drop extension).
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/commands/extension.h
@@ -28,7 +28,7 @@
  * them from the extension first.
  */
 extern PGDLLIMPORT bool creating_extension;
-extern Oid	CurrentExtensionObject;
+extern PGDLLIMPORT Oid CurrentExtensionObject;
 
 
 extern ObjectAddress CreateExtension(ParseState *pstate, CreateExtensionStmt *stmt);

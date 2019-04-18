@@ -3,7 +3,7 @@
  * bufpage.c
  *	  POSTGRES standard buffer page code.
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -17,6 +17,7 @@
 #include "access/htup_details.h"
 #include "access/itup.h"
 #include "access/xlog.h"
+#include "pgstat.h"
 #include "storage/checksum.h"
 #include "utils/memdebug.h"
 #include "utils/memutils.h"
@@ -150,6 +151,8 @@ PageIsVerified(Page page, BlockNumber blkno)
 				(ERRCODE_DATA_CORRUPTED,
 				 errmsg("page verification failed, calculated checksum %u but expected %u",
 						checksum, p->pd_checksum)));
+
+		pgstat_report_checksum_failure();
 
 		if (header_sane && ignore_checksum_failure)
 			return true;
@@ -481,6 +484,8 @@ PageRepairFragmentation(Page page)
 	Offset		pd_lower = ((PageHeader) page)->pd_lower;
 	Offset		pd_upper = ((PageHeader) page)->pd_upper;
 	Offset		pd_special = ((PageHeader) page)->pd_special;
+	itemIdSortData itemidbase[MaxHeapTuplesPerPage];
+	itemIdSort	itemidptr;
 	ItemId		lp;
 	int			nline,
 				nstorage,
@@ -505,45 +510,23 @@ PageRepairFragmentation(Page page)
 				 errmsg("corrupted page pointers: lower = %u, upper = %u, special = %u",
 						pd_lower, pd_upper, pd_special)));
 
+	/*
+	 * Run through the line pointer array and collect data about live items.
+	 */
 	nline = PageGetMaxOffsetNumber(page);
-	nunused = nstorage = 0;
+	itemidptr = itemidbase;
+	nunused = totallen = 0;
 	for (i = FirstOffsetNumber; i <= nline; i++)
 	{
 		lp = PageGetItemId(page, i);
 		if (ItemIdIsUsed(lp))
 		{
 			if (ItemIdHasStorage(lp))
-				nstorage++;
-		}
-		else
-		{
-			/* Unused entries should have lp_len = 0, but make sure */
-			ItemIdSetUnused(lp);
-			nunused++;
-		}
-	}
-
-	if (nstorage == 0)
-	{
-		/* Page is completely empty, so just reset it quickly */
-		((PageHeader) page)->pd_upper = pd_special;
-	}
-	else
-	{
-		/* Need to compact the page the hard way */
-		itemIdSortData itemidbase[MaxHeapTuplesPerPage];
-		itemIdSort	itemidptr = itemidbase;
-
-		totallen = 0;
-		for (i = 0; i < nline; i++)
-		{
-			lp = PageGetItemId(page, i + 1);
-			if (ItemIdHasStorage(lp))
 			{
-				itemidptr->offsetindex = i;
+				itemidptr->offsetindex = i - 1;
 				itemidptr->itemoff = ItemIdGetOffset(lp);
-				if (itemidptr->itemoff < (int) pd_upper ||
-					itemidptr->itemoff >= (int) pd_special)
+				if (unlikely(itemidptr->itemoff < (int) pd_upper ||
+							 itemidptr->itemoff >= (int) pd_special))
 					ereport(ERROR,
 							(errcode(ERRCODE_DATA_CORRUPTED),
 							 errmsg("corrupted item pointer: %u",
@@ -553,7 +536,23 @@ PageRepairFragmentation(Page page)
 				itemidptr++;
 			}
 		}
+		else
+		{
+			/* Unused entries should have lp_len = 0, but make sure */
+			ItemIdSetUnused(lp);
+			nunused++;
+		}
+	}
 
+	nstorage = itemidptr - itemidbase;
+	if (nstorage == 0)
+	{
+		/* Page is completely empty, so just reset it quickly */
+		((PageHeader) page)->pd_upper = pd_special;
+	}
+	else
+	{
+		/* Need to compact the page the hard way */
 		if (totallen > (Size) (pd_special - pd_lower))
 			ereport(ERROR,
 					(errcode(ERRCODE_DATA_CORRUPTED),

@@ -4,7 +4,7 @@
  *	  prototypes for plancat.c.
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/optimizer/plancat.h
@@ -14,7 +14,7 @@
 #ifndef PLANCAT_H
 #define PLANCAT_H
 
-#include "nodes/relation.h"
+#include "nodes/pathnodes.h"
 #include "utils/relcache.h"
 
 /* Hook for plugins to get control in get_relation_info() */
@@ -33,6 +33,7 @@ extern List *infer_arbiter_indexes(PlannerInfo *root);
 extern void estimate_rel_size(Relation rel, int32 *attr_widths,
 				  BlockNumber *pages, double *tuples, double *allvisfrac);
 
+extern int32 get_rel_data_width(Relation rel, int32 *attr_widths);
 extern int32 get_relation_data_width(Oid relid, int32 *attr_widths);
 
 extern bool relation_excluded_by_constraints(PlannerInfo *root,
@@ -55,6 +56,22 @@ extern Selectivity join_selectivity(PlannerInfo *root,
 				 JoinType jointype,
 				 SpecialJoinInfo *sjinfo);
 
+extern Selectivity function_selectivity(PlannerInfo *root,
+					 Oid funcid,
+					 List *args,
+					 Oid inputcollid,
+					 bool is_join,
+					 int varRelid,
+					 JoinType jointype,
+					 SpecialJoinInfo *sjinfo);
+
+extern void add_function_cost(PlannerInfo *root, Oid funcid, Node *node,
+				  QualCost *cost);
+
+extern double get_function_rows(PlannerInfo *root, Oid funcid, Node *node);
+
 extern bool has_row_triggers(PlannerInfo *root, Index rti, CmdType event);
+
+extern bool has_stored_generated_columns(PlannerInfo *root, Index rti);
 
 #endif							/* PLANCAT_H */

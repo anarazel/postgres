@@ -9,7 +9,7 @@
  * See utils/resowner/README for more info.
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/utils/resowner.h
@@ -33,6 +33,7 @@ typedef struct ResourceOwnerData *ResourceOwner;
 extern PGDLLIMPORT ResourceOwner CurrentResourceOwner;
 extern PGDLLIMPORT ResourceOwner CurTransactionResourceOwner;
 extern PGDLLIMPORT ResourceOwner TopTransactionResourceOwner;
+extern PGDLLIMPORT ResourceOwner AuxProcessResourceOwner;
 
 /*
  * Resource releasing is done in three phases: pre-locks, locks, and
@@ -78,5 +79,7 @@ extern void RegisterResourceReleaseCallback(ResourceReleaseCallback callback,
 								void *arg);
 extern void UnregisterResourceReleaseCallback(ResourceReleaseCallback callback,
 								  void *arg);
+extern void CreateAuxProcessResourceOwner(void);
+extern void ReleaseAuxProcessResources(bool isCommit);
 
 #endif							/* RESOWNER_H */

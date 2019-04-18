@@ -4,7 +4,7 @@
  *	  per-process shared memory data structures
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/storage/proc.h
@@ -113,6 +113,9 @@ struct PGPROC
 	BackendId	backendId;		/* This backend's backend ID (if assigned) */
 	Oid			databaseId;		/* OID of database this backend is using */
 	Oid			roleId;			/* OID of role using this backend */
+
+	Oid			tempNamespaceId;	/* OID of temp schema this backend is
+									 * using */
 
 	bool		isBackgroundWorker; /* true if background worker. */
 
@@ -252,6 +255,8 @@ typedef struct PROC_HDR
 	PGPROC	   *autovacFreeProcs;
 	/* Head of list of bgworker free PGPROC structures */
 	PGPROC	   *bgworkerFreeProcs;
+	/* Head of list of walsender free PGPROC structures */
+	PGPROC	   *walsenderFreeProcs;
 	/* First pgproc waiting for group XID clear */
 	pg_atomic_uint32 procArrayGroupFirst;
 	/* First pgproc waiting for group transaction status update */
@@ -269,7 +274,7 @@ typedef struct PROC_HDR
 	int			startupBufferPinWaitBufId;
 } PROC_HDR;
 
-extern PROC_HDR *ProcGlobal;
+extern PGDLLIMPORT PROC_HDR *ProcGlobal;
 
 extern PGPROC *PreparedXactProcs;
 
@@ -287,7 +292,7 @@ extern PGPROC *PreparedXactProcs;
 #define NUM_AUXILIARY_PROCS		4
 
 /* configurable options */
-extern int	DeadlockTimeout;
+extern PGDLLIMPORT int DeadlockTimeout;
 extern int	StatementTimeout;
 extern int	LockTimeout;
 extern int	IdleInTransactionSessionTimeout;

@@ -3,7 +3,7 @@
  * timestamp.h
  *	  Definitions for the SQL "timestamp" and "interval" types.
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/utils/timestamp.h
@@ -103,5 +103,7 @@ extern void isoweekdate2date(int isoweek, int wday, int *year, int *mon, int *md
 extern int	date2isoweek(int year, int mon, int mday);
 extern int	date2isoyear(int year, int mon, int mday);
 extern int	date2isoyearday(int year, int mon, int mday);
+
+extern bool TimestampTimestampTzRequiresRewrite(void);
 
 #endif							/* TIMESTAMP_H */

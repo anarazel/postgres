@@ -3,7 +3,7 @@
  * hashovfl.c
  *	  Overflow page management code for the Postgres hash access method
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -341,8 +341,9 @@ found:
 			metap->hashm_mapp[metap->hashm_nmaps] = BufferGetBlockNumber(newmapbuf);
 			metap->hashm_nmaps++;
 			metap->hashm_spares[splitnum]++;
-			MarkBufferDirty(metabuf);
 		}
+
+		MarkBufferDirty(metabuf);
 
 		/*
 		 * for new overflow page, we don't need to explicitly set the bit in
@@ -890,7 +891,7 @@ readpage:
 
 			itup = (IndexTuple) PageGetItem(rpage,
 											PageGetItemId(rpage, roffnum));
-			itemsz = IndexTupleDSize(*itup);
+			itemsz = IndexTupleSize(itup);
 			itemsz = MAXALIGN(itemsz);
 
 			/*

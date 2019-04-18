@@ -4,7 +4,7 @@
  *	  prototypes for various files in optimizer/plan
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/optimizer/planmain.h
@@ -14,21 +14,12 @@
 #ifndef PLANMAIN_H
 #define PLANMAIN_H
 
+#include "nodes/pathnodes.h"
 #include "nodes/plannodes.h"
-#include "nodes/relation.h"
-
-/* possible values for force_parallel_mode */
-typedef enum
-{
-	FORCE_PARALLEL_OFF,
-	FORCE_PARALLEL_ON,
-	FORCE_PARALLEL_REGRESS
-}			ForceParallelMode;
 
 /* GUC parameters */
 #define DEFAULT_CURSOR_TUPLE_FRACTION 0.1
 extern double cursor_tuple_fraction;
-extern int	force_parallel_mode;
 
 /* query_planner callback to compute query_pathkeys */
 typedef void (*query_pathkeys_callback) (PlannerInfo *root, void *extra);
@@ -36,13 +27,13 @@ typedef void (*query_pathkeys_callback) (PlannerInfo *root, void *extra);
 /*
  * prototypes for plan/planmain.c
  */
-extern RelOptInfo *query_planner(PlannerInfo *root, List *tlist,
+extern RelOptInfo *query_planner(PlannerInfo *root,
 			  query_pathkeys_callback qp_callback, void *qp_extra);
 
 /*
  * prototypes for plan/planagg.c
  */
-extern void preprocess_minmax_aggregates(PlannerInfo *root, List *tlist);
+extern void preprocess_minmax_aggregates(PlannerInfo *root);
 
 /*
  * prototypes for plan/createplan.c
@@ -52,6 +43,8 @@ extern ForeignScan *make_foreignscan(List *qptlist, List *qpqual,
 				 Index scanrelid, List *fdw_exprs, List *fdw_private,
 				 List *fdw_scan_tlist, List *fdw_recheck_quals,
 				 Plan *outer_plan);
+extern Plan *change_plan_targetlist(Plan *subplan, List *tlist,
+					   bool tlist_parallel_safe);
 extern Plan *materialize_finished_plan(Plan *subplan);
 extern bool is_projection_capable_path(Path *path);
 extern bool is_projection_capable_plan(Plan *plan);
@@ -60,7 +53,7 @@ extern bool is_projection_capable_plan(Plan *plan);
 extern Sort *make_sort_from_sortclauses(List *sortcls, Plan *lefttree);
 extern Agg *make_agg(List *tlist, List *qual,
 		 AggStrategy aggstrategy, AggSplit aggsplit,
-		 int numGroupCols, AttrNumber *grpColIdx, Oid *grpOperators,
+		 int numGroupCols, AttrNumber *grpColIdx, Oid *grpOperators, Oid *grpCollations,
 		 List *groupingSets, List *chain,
 		 double dNumGroups, Plan *lefttree);
 extern Limit *make_limit(Plan *lefttree, Node *limitOffset, Node *limitCount);
@@ -72,6 +65,7 @@ extern int	from_collapse_limit;
 extern int	join_collapse_limit;
 
 extern void add_base_rels_to_query(PlannerInfo *root, Node *jtnode);
+extern void add_other_rels_to_query(PlannerInfo *root);
 extern void build_base_rel_tlists(PlannerInfo *root, List *final_tlist);
 extern void add_vars_to_targetlist(PlannerInfo *root, List *vars,
 					   Relids where_needed, bool create_new_ph);
@@ -107,7 +101,7 @@ extern void reduce_unique_semijoins(PlannerInfo *root);
 extern bool query_supports_distinctness(Query *query);
 extern bool query_is_distinct_for(Query *query, List *colnos, List *opids);
 extern bool innerrel_is_unique(PlannerInfo *root,
-				   Relids outerrelids, RelOptInfo *innerrel,
+				   Relids joinrelids, Relids outerrelids, RelOptInfo *innerrel,
 				   JoinType jointype, List *restrictlist, bool force_cache);
 
 /*
@@ -115,9 +109,7 @@ extern bool innerrel_is_unique(PlannerInfo *root,
  */
 extern Plan *set_plan_references(PlannerInfo *root, Plan *plan);
 extern void record_plan_function_dependency(PlannerInfo *root, Oid funcid);
-extern void extract_query_dependencies(Node *query,
-						   List **relationOids,
-						   List **invalItems,
-						   bool *hasRowSecurity);
+extern void record_plan_type_dependency(PlannerInfo *root, Oid typid);
+extern bool extract_query_dependencies_walker(Node *node, PlannerInfo *root);
 
 #endif							/* PLANMAIN_H */

@@ -4,7 +4,7 @@
  *	  support for the POSTGRES executor module
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/executor/executor.h
@@ -14,9 +14,10 @@
 #ifndef EXECUTOR_H
 #define EXECUTOR_H
 
-#include "catalog/partition.h"
 #include "executor/execdesc.h"
+#include "nodes/lockoptions.h"
 #include "nodes/parsenodes.h"
+#include "utils/memutils.h"
 
 
 /*
@@ -50,19 +51,13 @@
  * AfterTriggerBeginQuery/AfterTriggerEndQuery.  This does not necessarily
  * mean that the plan can't queue any AFTER triggers; just that the caller
  * is responsible for there being a trigger context for them to be queued in.
- *
- * WITH/WITHOUT_OIDS tell the executor to emit tuples with or without space
- * for OIDs, respectively.  These are currently used only for CREATE TABLE AS.
- * If neither is set, the plan may or may not produce tuples including OIDs.
  */
 #define EXEC_FLAG_EXPLAIN_ONLY	0x0001	/* EXPLAIN, no ANALYZE */
 #define EXEC_FLAG_REWIND		0x0002	/* need efficient rescan */
 #define EXEC_FLAG_BACKWARD		0x0004	/* need backward scan */
 #define EXEC_FLAG_MARK			0x0008	/* need mark/restore */
 #define EXEC_FLAG_SKIP_TRIGGERS 0x0010	/* skip AfterTrigger calls */
-#define EXEC_FLAG_WITH_OIDS		0x0020	/* force OIDs in returned tuples */
-#define EXEC_FLAG_WITHOUT_OIDS	0x0040	/* force no OIDs in returned tuples */
-#define EXEC_FLAG_WITH_NO_DATA	0x0080	/* rel scannability doesn't matter */
+#define EXEC_FLAG_WITH_NO_DATA	0x0020	/* rel scannability doesn't matter */
 
 
 /* Hook for plugins to get control in ExecutorStart() */
@@ -92,7 +87,7 @@ extern PGDLLIMPORT ExecutorCheckPerms_hook_type ExecutorCheckPerms_hook;
 /*
  * prototypes from functions in execAmi.c
  */
-struct Path;					/* avoid including relation.h here */
+struct Path;					/* avoid including pathnodes.h here */
 
 extern void ExecReScan(PlanState *node);
 extern void ExecMarkPos(PlanState *node);
@@ -112,28 +107,33 @@ extern bool execCurrentOf(CurrentOfExpr *cexpr,
 /*
  * prototypes from functions in execGrouping.c
  */
-extern bool execTuplesMatch(TupleTableSlot *slot1,
-				TupleTableSlot *slot2,
-				int numCols,
-				AttrNumber *matchColIdx,
-				FmgrInfo *eqfunctions,
-				MemoryContext evalContext);
-extern bool execTuplesUnequal(TupleTableSlot *slot1,
-				  TupleTableSlot *slot2,
-				  int numCols,
-				  AttrNumber *matchColIdx,
-				  FmgrInfo *eqfunctions,
-				  MemoryContext evalContext);
-extern FmgrInfo *execTuplesMatchPrepare(int numCols,
-					   Oid *eqOperators);
+extern ExprState *execTuplesMatchPrepare(TupleDesc desc,
+					   int numCols,
+					   const AttrNumber *keyColIdx,
+					   const Oid *eqOperators,
+					   const Oid *collations,
+					   PlanState *parent);
 extern void execTuplesHashPrepare(int numCols,
-					  Oid *eqOperators,
-					  FmgrInfo **eqFunctions,
+					  const Oid *eqOperators,
+					  Oid **eqFuncOids,
 					  FmgrInfo **hashFunctions);
-extern TupleHashTable BuildTupleHashTable(int numCols, AttrNumber *keyColIdx,
-					FmgrInfo *eqfunctions,
+extern TupleHashTable BuildTupleHashTable(PlanState *parent,
+					TupleDesc inputDesc,
+					int numCols, AttrNumber *keyColIdx,
+					const Oid *eqfuncoids,
 					FmgrInfo *hashfunctions,
+					Oid *collations,
 					long nbuckets, Size additionalsize,
+					MemoryContext tablecxt,
+					MemoryContext tempcxt, bool use_variable_hash_iv);
+extern TupleHashTable BuildTupleHashTableExt(PlanState *parent,
+					TupleDesc inputDesc,
+					int numCols, AttrNumber *keyColIdx,
+					const Oid *eqfuncoids,
+					FmgrInfo *hashfunctions,
+					Oid *collations,
+					long nbuckets, Size additionalsize,
+					MemoryContext metacxt,
 					MemoryContext tablecxt,
 					MemoryContext tempcxt, bool use_variable_hash_iv);
 extern TupleHashEntry LookupTupleHashEntry(TupleHashTable hashtable,
@@ -141,13 +141,14 @@ extern TupleHashEntry LookupTupleHashEntry(TupleHashTable hashtable,
 					 bool *isnew);
 extern TupleHashEntry FindTupleHashEntry(TupleHashTable hashtable,
 				   TupleTableSlot *slot,
-				   FmgrInfo *eqfunctions,
+				   ExprState *eqcomp,
 				   FmgrInfo *hashfunctions);
+extern void ResetTupleHashTable(TupleHashTable hashtable);
 
 /*
  * prototypes from functions in execJunk.c
  */
-extern JunkFilter *ExecInitJunkFilter(List *targetList, bool hasoid,
+extern JunkFilter *ExecInitJunkFilter(List *targetList,
 				   TupleTableSlot *slot);
 extern JunkFilter *ExecInitJunkFilterConversion(List *targetList,
 							 TupleDesc cleanTupType,
@@ -185,39 +186,25 @@ extern void InitResultRelInfo(ResultRelInfo *resultRelInfo,
 				  int instrument_options);
 extern ResultRelInfo *ExecGetTriggerResultRel(EState *estate, Oid relid);
 extern void ExecCleanUpTriggerState(EState *estate);
-extern bool ExecContextForcesOids(PlanState *planstate, bool *hasoids);
 extern void ExecConstraints(ResultRelInfo *resultRelInfo,
 				TupleTableSlot *slot, EState *estate);
+extern bool ExecPartitionCheck(ResultRelInfo *resultRelInfo,
+				   TupleTableSlot *slot, EState *estate, bool emitError);
+extern void ExecPartitionCheckEmitError(ResultRelInfo *resultRelInfo,
+							TupleTableSlot *slot, EState *estate);
 extern void ExecWithCheckOptions(WCOKind kind, ResultRelInfo *resultRelInfo,
 					 TupleTableSlot *slot, EState *estate);
 extern LockTupleMode ExecUpdateLockMode(EState *estate, ResultRelInfo *relinfo);
 extern ExecRowMark *ExecFindRowMark(EState *estate, Index rti, bool missing_ok);
 extern ExecAuxRowMark *ExecBuildAuxRowMark(ExecRowMark *erm, List *targetlist);
 extern TupleTableSlot *EvalPlanQual(EState *estate, EPQState *epqstate,
-			 Relation relation, Index rti, int lockmode,
-			 ItemPointer tid, TransactionId priorXmax);
-extern HeapTuple EvalPlanQualFetch(EState *estate, Relation relation,
-				  int lockmode, LockWaitPolicy wait_policy, ItemPointer tid,
-				  TransactionId priorXmax);
+			 Relation relation, Index rti, TupleTableSlot *testslot);
 extern void EvalPlanQualInit(EPQState *epqstate, EState *estate,
 				 Plan *subplan, List *auxrowmarks, int epqParam);
 extern void EvalPlanQualSetPlan(EPQState *epqstate,
 					Plan *subplan, List *auxrowmarks);
-extern void EvalPlanQualSetTuple(EPQState *epqstate, Index rti,
-					 HeapTuple tuple);
-extern HeapTuple EvalPlanQualGetTuple(EPQState *epqstate, Index rti);
-extern void ExecSetupPartitionTupleRouting(Relation rel,
-							   Index resultRTindex,
-							   EState *estate,
-							   PartitionDispatch **pd,
-							   ResultRelInfo **partitions,
-							   TupleConversionMap ***tup_conv_maps,
-							   TupleTableSlot **partition_tuple_slot,
-							   int *num_parted, int *num_partitions);
-extern int ExecFindPartition(ResultRelInfo *resultRelInfo,
-				  PartitionDispatch *pd,
-				  TupleTableSlot *slot,
-				  EState *estate);
+extern TupleTableSlot *EvalPlanQualSlot(EPQState *epqstate,
+			 Relation relation, Index rti);
 
 #define EvalPlanQualSetSlot(epqstate, slot)  ((epqstate)->origslot = (slot))
 extern void EvalPlanQualFetchRowMarks(EPQState *epqstate);
@@ -229,6 +216,7 @@ extern void EvalPlanQualEnd(EPQState *epqstate);
  * functions in execProcnode.c
  */
 extern PlanState *ExecInitNode(Plan *node, EState *estate, int eflags);
+extern void ExecSetExecProcNode(PlanState *node, ExecProcNodeMtd function);
 extern Node *MultiExecProcNode(PlanState *node);
 extern void ExecEndNode(PlanState *node);
 extern bool ExecShutdownNode(PlanState *node);
@@ -256,9 +244,19 @@ ExecProcNode(PlanState *node)
  * prototypes from functions in execExpr.c
  */
 extern ExprState *ExecInitExpr(Expr *node, PlanState *parent);
+extern ExprState *ExecInitExprWithParams(Expr *node, ParamListInfo ext_params);
 extern ExprState *ExecInitQual(List *qual, PlanState *parent);
 extern ExprState *ExecInitCheck(List *qual, PlanState *parent);
 extern List *ExecInitExprList(List *nodes, PlanState *parent);
+extern ExprState *ExecBuildAggTrans(AggState *aggstate, struct AggStatePerPhaseData *phase,
+				  bool doSort, bool doHash);
+extern ExprState *ExecBuildGroupingEqual(TupleDesc ldesc, TupleDesc rdesc,
+					   const TupleTableSlotOps *lops, const TupleTableSlotOps *rops,
+					   int numCols,
+					   const AttrNumber *keyColIdx,
+					   const Oid *eqfunctions,
+					   const Oid *collations,
+					   PlanState *parent);
 extern ProjectionInfo *ExecBuildProjectionInfo(List *targetList,
 						ExprContext *econtext,
 						TupleTableSlot *slot,
@@ -346,7 +344,7 @@ ExecProject(ProjectionInfo *projInfo)
 	 * Successfully formed a result row.  Mark the result slot as containing a
 	 * valid virtual tuple (inlined version of ExecStoreVirtualTuple()).
 	 */
-	slot->tts_isempty = false;
+	slot->tts_flags &= ~TTS_FLAG_EMPTY;
 	slot->tts_nvalid = slot->tts_tupleDescriptor->natts;
 
 	return slot;
@@ -384,6 +382,22 @@ ExecQual(ExprState *state, ExprContext *econtext)
 }
 #endif
 
+/*
+ * ExecQualAndReset() - evaluate qual with ExecQual() and reset expression
+ * context.
+ */
+#ifndef FRONTEND
+static inline bool
+ExecQualAndReset(ExprState *state, ExprContext *econtext)
+{
+	bool		ret = ExecQual(state, econtext);
+
+	/* inline ResetExprContext, to avoid ordering issue in this file */
+	MemoryContextReset(econtext->ecxt_per_tuple_memory);
+	return ret;
+}
+#endif
+
 extern bool ExecCheck(ExprState *state, ExprContext *context);
 
 /*
@@ -400,6 +414,7 @@ extern SetExprState *ExecInitFunctionResultSet(Expr *expr,
 						  ExprContext *econtext, PlanState *parent);
 extern Datum ExecMakeFunctionResultSet(SetExprState *fcache,
 						  ExprContext *econtext,
+						  MemoryContext argContext,
 						  bool *isNull,
 						  ExprDoneCond *isDone);
 
@@ -418,13 +433,21 @@ extern void ExecScanReScan(ScanState *node);
 /*
  * prototypes from functions in execTuples.c
  */
-extern void ExecInitResultTupleSlot(EState *estate, PlanState *planstate);
-extern void ExecInitScanTupleSlot(EState *estate, ScanState *scanstate);
-extern TupleTableSlot *ExecInitExtraTupleSlot(EState *estate);
-extern TupleTableSlot *ExecInitNullTupleSlot(EState *estate,
-					  TupleDesc tupType);
-extern TupleDesc ExecTypeFromTL(List *targetList, bool hasoid);
-extern TupleDesc ExecCleanTypeFromTL(List *targetList, bool hasoid);
+extern void ExecInitResultTypeTL(PlanState *planstate);
+extern void ExecInitResultSlot(PlanState *planstate,
+							   const TupleTableSlotOps *tts_ops);
+extern void ExecInitResultTupleSlotTL(PlanState *planstate,
+									  const TupleTableSlotOps *tts_ops);
+extern void ExecInitScanTupleSlot(EState *estate, ScanState *scanstate,
+								  TupleDesc tupleDesc,
+								  const TupleTableSlotOps *tts_ops);
+extern TupleTableSlot *ExecInitExtraTupleSlot(EState *estate,
+					   TupleDesc tupledesc,
+					   const TupleTableSlotOps *tts_ops);
+extern TupleTableSlot *ExecInitNullTupleSlot(EState *estate, TupleDesc tupType,
+					  const TupleTableSlotOps *tts_ops);
+extern TupleDesc ExecTypeFromTL(List *targetList);
+extern TupleDesc ExecCleanTypeFromTL(List *targetList);
 extern TupleDesc ExecTypeFromExprList(List *exprList);
 extern void ExecTypeSetColNames(TupleDesc typeInfo, List *namesList);
 extern void UpdateChangedParamSet(PlanState *node, Bitmapset *newchg);
@@ -436,7 +459,8 @@ typedef struct TupOutputState
 } TupOutputState;
 
 extern TupOutputState *begin_tup_output_tupdesc(DestReceiver *dest,
-						 TupleDesc tupdesc);
+						 TupleDesc tupdesc,
+						 const TupleTableSlotOps *tts_ops);
 extern void do_tup_output(TupOutputState *tstate, Datum *values, bool *isnull);
 extern void do_text_output_multiline(TupOutputState *tstate, const char *txt);
 extern void end_tup_output(TupOutputState *tstate);
@@ -489,19 +513,34 @@ extern ExprContext *MakePerTupleExprContext(EState *estate);
 	} while (0)
 
 extern void ExecAssignExprContext(EState *estate, PlanState *planstate);
-extern void ExecAssignResultType(PlanState *planstate, TupleDesc tupDesc);
-extern void ExecAssignResultTypeFromTL(PlanState *planstate);
 extern TupleDesc ExecGetResultType(PlanState *planstate);
+extern TupleTableSlot ExecGetResultSlot(PlanState *planstate);
+extern const TupleTableSlotOps *ExecGetResultSlotOps(PlanState *planstate,
+													 bool *isfixed);
 extern void ExecAssignProjectionInfo(PlanState *planstate,
 						 TupleDesc inputDesc);
+extern void ExecConditionalAssignProjectionInfo(PlanState *planstate,
+									TupleDesc inputDesc, Index varno);
 extern void ExecFreeExprContext(PlanState *planstate);
 extern void ExecAssignScanType(ScanState *scanstate, TupleDesc tupDesc);
-extern void ExecAssignScanTypeFromOuterPlan(ScanState *scanstate);
+extern void ExecCreateScanSlotFromOuterPlan(EState *estate,
+								ScanState *scanstate,
+								const TupleTableSlotOps *tts_ops);
 
 extern bool ExecRelationIsTargetRelation(EState *estate, Index scanrelid);
 
 extern Relation ExecOpenScanRelation(EState *estate, Index scanrelid, int eflags);
-extern void ExecCloseScanRelation(Relation scanrel);
+
+extern void ExecInitRangeTable(EState *estate, List *rangeTable);
+
+static inline RangeTblEntry *
+exec_rt_fetch(Index rti, EState *estate)
+{
+	Assert(rti > 0 && rti <= estate->es_range_table_size);
+	return estate->es_range_table_array[rti - 1];
+}
+
+extern Relation ExecGetRangeTableRelation(EState *estate, Index rti);
 
 extern int	executor_errposition(EState *estate, int location);
 
@@ -512,8 +551,6 @@ extern void UnregisterExprContextCallback(ExprContext *econtext,
 							  ExprContextCallbackFunction function,
 							  Datum arg);
 
-extern void ExecLockNonLeafAppendTables(List *partitioned_rels, EState *estate);
-
 extern Datum GetAttributeByName(HeapTupleHeader tuple, const char *attname,
 				   bool *isNull);
 extern Datum GetAttributeByNum(HeapTupleHeader tuple, AttrNumber attrno,
@@ -522,14 +559,17 @@ extern Datum GetAttributeByNum(HeapTupleHeader tuple, AttrNumber attrno,
 extern int	ExecTargetListLength(List *targetlist);
 extern int	ExecCleanTargetListLength(List *targetlist);
 
+extern TupleTableSlot *ExecGetTriggerOldSlot(EState *estate, ResultRelInfo *relInfo);
+extern TupleTableSlot *ExecGetTriggerNewSlot(EState *estate, ResultRelInfo *relInfo);
+extern TupleTableSlot *ExecGetReturningSlot(EState *estate, ResultRelInfo *relInfo);
+
 /*
  * prototypes from functions in execIndexing.c
  */
 extern void ExecOpenIndices(ResultRelInfo *resultRelInfo, bool speculative);
 extern void ExecCloseIndices(ResultRelInfo *resultRelInfo);
-extern List *ExecInsertIndexTuples(TupleTableSlot *slot, ItemPointer tupleid,
-					  EState *estate, bool noDupErr, bool *specConflict,
-					  List *arbiterIndexes);
+extern List *ExecInsertIndexTuples(TupleTableSlot *slot, EState *estate, bool noDupErr,
+					  bool *specConflict, List *arbiterIndexes);
 extern bool ExecCheckIndexConstraints(TupleTableSlot *slot, EState *estate,
 						  ItemPointer conflictTid, List *arbiterIndexes);
 extern void check_exclusion_constraint(Relation heap, Relation index,

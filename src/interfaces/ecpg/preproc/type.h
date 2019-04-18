@@ -33,7 +33,7 @@ struct ECPGtype
 };
 
 /* Everything is malloced. */
-void		ECPGmake_struct_member(char *, struct ECPGtype *, struct ECPGstruct_member **);
+void		ECPGmake_struct_member(const char *, struct ECPGtype *, struct ECPGstruct_member **);
 struct ECPGtype *ECPGmake_simple_type(enum ECPGttype, char *, int);
 struct ECPGtype *ECPGmake_array_type(struct ECPGtype *, char *);
 struct ECPGtype *ECPGmake_struct_type(struct ECPGstruct_member *, enum ECPGttype, char *, char *);
@@ -128,11 +128,19 @@ struct cursor
 	char	   *command;
 	char	   *connection;
 	bool		opened;
+	char	   *prepared_name;
 	struct arguments *argsinsert;
 	struct arguments *argsinsert_oos;
 	struct arguments *argsresult;
 	struct arguments *argsresult_oos;
 	struct cursor *next;
+};
+
+/* structure to store declared name */
+struct declared_name_st
+{
+	char	   *name; /* declared name */
+	struct declared_name_st *next;
 };
 
 struct typedefs

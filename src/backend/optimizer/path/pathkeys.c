@@ -7,7 +7,7 @@
  * the nature and use of path keys.
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -18,17 +18,21 @@
 #include "postgres.h"
 
 #include "access/stratnum.h"
+#include "catalog/pg_opfamily.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "nodes/plannodes.h"
-#include "optimizer/clauses.h"
+#include "optimizer/optimizer.h"
 #include "optimizer/pathnode.h"
 #include "optimizer/paths.h"
-#include "optimizer/tlist.h"
+#include "partitioning/partbounds.h"
 #include "utils/lsyscache.h"
 
 
 static bool pathkey_is_redundant(PathKey *new_pathkey, List *pathkeys);
+static bool matches_boolean_partition_clause(RestrictInfo *rinfo,
+								 RelOptInfo *partrel,
+								 int partkeycol);
 static bool right_merge_direction(PlannerInfo *root, PathKey *pathkey);
 
 
@@ -162,8 +166,8 @@ pathkey_is_redundant(PathKey *new_pathkey, List *pathkeys)
  * considered.  Otherwise child members are ignored.  (See the comments for
  * get_eclass_for_sort_expr.)
  *
- * create_it is TRUE if we should create any missing EquivalenceClass
- * needed to represent the sort key.  If it's FALSE, we return NULL if the
+ * create_it is true if we should create any missing EquivalenceClass
+ * needed to represent the sort key.  If it's false, we return NULL if the
  * sort key isn't already present in any EquivalenceClass.
  */
 static PathKey *
@@ -447,8 +451,10 @@ get_cheapest_parallel_safe_total_inner(List *paths)
  * If 'scandir' is BackwardScanDirection, build pathkeys representing a
  * backwards scan of the index.
  *
- * The result is canonical, meaning that redundant pathkeys are removed;
- * it may therefore have fewer entries than there are index columns.
+ * We iterate only key columns of covering indexes, since non-key columns
+ * don't influence index ordering.  The result is canonical, meaning that
+ * redundant pathkeys are removed; it may therefore have fewer entries than
+ * there are key columns in the index.
  *
  * Another reason for stopping early is that we may be able to tell that
  * an index column's sort order is uninteresting for this query.  However,
@@ -476,6 +482,13 @@ build_index_pathkeys(PlannerInfo *root,
 		bool		reverse_sort;
 		bool		nulls_first;
 		PathKey    *cpathkey;
+
+		/*
+		 * INCLUDE columns are stored in index unordered, so they don't
+		 * support ordered index scan.
+		 */
+		if (i >= index->nkeycolumns)
+			break;
 
 		/* We assume we don't need to make a copy of the tlist item */
 		indexkey = indextle->expr;
@@ -535,6 +548,165 @@ build_index_pathkeys(PlannerInfo *root,
 		i++;
 	}
 
+	return retval;
+}
+
+/*
+ * partkey_is_bool_constant_for_query
+ *
+ * If a partition key column is constrained to have a constant value by the
+ * query's WHERE conditions, then it's irrelevant for sort-order
+ * considerations.  Usually that means we have a restriction clause
+ * WHERE partkeycol = constant, which gets turned into an EquivalenceClass
+ * containing a constant, which is recognized as redundant by
+ * build_partition_pathkeys().  But if the partition key column is a
+ * boolean variable (or expression), then we are not going to see such a
+ * WHERE clause, because expression preprocessing will have simplified it
+ * to "WHERE partkeycol" or "WHERE NOT partkeycol".  So we are not going
+ * to have a matching EquivalenceClass (unless the query also contains
+ * "ORDER BY partkeycol").  To allow such cases to work the same as they would
+ * for non-boolean values, this function is provided to detect whether the
+ * specified partition key column matches a boolean restriction clause.
+ */
+static bool
+partkey_is_bool_constant_for_query(RelOptInfo *partrel, int partkeycol)
+{
+	PartitionScheme partscheme = partrel->part_scheme;
+	ListCell   *lc;
+
+	/* If the partkey isn't boolean, we can't possibly get a match */
+	if (!IsBooleanOpfamily(partscheme->partopfamily[partkeycol]))
+		return false;
+
+	/* Check each restriction clause for the partitioned rel */
+	foreach(lc, partrel->baserestrictinfo)
+	{
+		RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
+
+		/* Ignore pseudoconstant quals, they won't match */
+		if (rinfo->pseudoconstant)
+			continue;
+
+		/* See if we can match the clause's expression to the partkey column */
+		if (matches_boolean_partition_clause(rinfo, partrel, partkeycol))
+			return true;
+	}
+
+	return false;
+}
+
+/*
+ * matches_boolean_partition_clause
+ *		Determine if the boolean clause described by rinfo matches
+ *		partrel's partkeycol-th partition key column.
+ *
+ * "Matches" can be either an exact match (equivalent to partkey = true),
+ * or a NOT above an exact match (equivalent to partkey = false).
+ */
+static bool
+matches_boolean_partition_clause(RestrictInfo *rinfo,
+								 RelOptInfo *partrel, int partkeycol)
+{
+	Node	   *clause = (Node *) rinfo->clause;
+	Node	   *partexpr = (Node *) linitial(partrel->partexprs[partkeycol]);
+
+	/* Direct match? */
+	if (equal(partexpr, clause))
+		return true;
+	/* NOT clause? */
+	else if (is_notclause(clause))
+	{
+		Node	   *arg = (Node *) get_notclausearg((Expr *) clause);
+
+		if (equal(partexpr, arg))
+			return true;
+	}
+
+	return false;
+}
+
+/*
+ * build_partition_pathkeys
+ *	  Build a pathkeys list that describes the ordering induced by the
+ *	  partitions of partrel, under either forward or backward scan
+ *	  as per scandir.
+ *
+ * Caller must have checked that the partitions are properly ordered,
+ * as detected by partitions_are_ordered().
+ *
+ * Sets *partialkeys to true if pathkeys were only built for a prefix of the
+ * partition key, or false if the pathkeys include all columns of the
+ * partition key.
+ */
+List *
+build_partition_pathkeys(PlannerInfo *root, RelOptInfo *partrel,
+						 ScanDirection scandir, bool *partialkeys)
+{
+	List	   *retval = NIL;
+	PartitionScheme partscheme = partrel->part_scheme;
+	int			i;
+
+	Assert(partscheme != NULL);
+	Assert(partitions_are_ordered(partrel->boundinfo, partrel->nparts));
+	/* For now, we can only cope with baserels */
+	Assert(IS_SIMPLE_REL(partrel));
+
+	for (i = 0; i < partscheme->partnatts; i++)
+	{
+		PathKey    *cpathkey;
+		Expr	   *keyCol = (Expr *) linitial(partrel->partexprs[i]);
+
+		/*
+		 * Try to make a canonical pathkey for this partkey.
+		 *
+		 * We're considering a baserel scan, so nullable_relids should be
+		 * NULL.  Also, we assume the PartitionDesc lists any NULL partition
+		 * last, so we treat the scan like a NULLS LAST index: we have
+		 * nulls_first for backwards scan only.
+		 */
+		cpathkey = make_pathkey_from_sortinfo(root,
+											  keyCol,
+											  NULL,
+											  partscheme->partopfamily[i],
+											  partscheme->partopcintype[i],
+											  partscheme->partcollation[i],
+											  ScanDirectionIsBackward(scandir),
+											  ScanDirectionIsBackward(scandir),
+											  0,
+											  partrel->relids,
+											  false);
+
+
+		if (cpathkey)
+		{
+			/*
+			 * We found the sort key in an EquivalenceClass, so it's relevant
+			 * for this query.  Add it to list, unless it's redundant.
+			 */
+			if (!pathkey_is_redundant(cpathkey, retval))
+				retval = lappend(retval, cpathkey);
+		}
+		else
+		{
+			/*
+			 * Boolean partition keys might be redundant even if they do not
+			 * appear in an EquivalenceClass, because of our special treatment
+			 * of boolean equality conditions --- see the comment for
+			 * partkey_is_bool_constant_for_query().  If that applies, we can
+			 * continue to examine lower-order partition keys.  Otherwise, the
+			 * sort key is not an interesting sort order for this query, so we
+			 * should stop considering partition columns; any lower-order sort
+			 * keys won't be useful either.
+			 */
+			if (!partkey_is_bool_constant_for_query(partrel, i))
+			{
+				*partialkeys = true;
+				return retval;
+			}
+		}
+	}
+
+	*partialkeys = false;
 	return retval;
 }
 
@@ -981,16 +1153,14 @@ update_mergeclause_eclasses(PlannerInfo *root, RestrictInfo *restrictinfo)
 }
 
 /*
- * find_mergeclauses_for_pathkeys
- *	  This routine attempts to find a set of mergeclauses that can be
- *	  used with a specified ordering for one of the input relations.
+ * find_mergeclauses_for_outer_pathkeys
+ *	  This routine attempts to find a list of mergeclauses that can be
+ *	  used with a specified ordering for the join's outer relation.
  *	  If successful, it returns a list of mergeclauses.
  *
- * 'pathkeys' is a pathkeys list showing the ordering of an input path.
- * 'outer_keys' is TRUE if these keys are for the outer input path,
- *			FALSE if for inner.
+ * 'pathkeys' is a pathkeys list showing the ordering of an outer-rel path.
  * 'restrictinfos' is a list of mergejoinable restriction clauses for the
- *			join relation being formed.
+ *			join relation being formed, in no particular order.
  *
  * The restrictinfos must be marked (via outer_is_left) to show which side
  * of each clause is associated with the current outer path.  (See
@@ -998,12 +1168,12 @@ update_mergeclause_eclasses(PlannerInfo *root, RestrictInfo *restrictinfo)
  *
  * The result is NIL if no merge can be done, else a maximal list of
  * usable mergeclauses (represented as a list of their restrictinfo nodes).
+ * The list is ordered to match the pathkeys, as required for execution.
  */
 List *
-find_mergeclauses_for_pathkeys(PlannerInfo *root,
-							   List *pathkeys,
-							   bool outer_keys,
-							   List *restrictinfos)
+find_mergeclauses_for_outer_pathkeys(PlannerInfo *root,
+									 List *pathkeys,
+									 List *restrictinfos)
 {
 	List	   *mergeclauses = NIL;
 	ListCell   *i;
@@ -1044,19 +1214,20 @@ find_mergeclauses_for_pathkeys(PlannerInfo *root,
 		 *
 		 * It's possible that multiple matching clauses might have different
 		 * ECs on the other side, in which case the order we put them into our
-		 * result makes a difference in the pathkeys required for the other
-		 * input path.  However this routine hasn't got any info about which
+		 * result makes a difference in the pathkeys required for the inner
+		 * input rel.  However this routine hasn't got any info about which
 		 * order would be best, so we don't worry about that.
 		 *
 		 * It's also possible that the selected mergejoin clauses produce
-		 * a noncanonical ordering of pathkeys for the other side, ie, we
+		 * a noncanonical ordering of pathkeys for the inner side, ie, we
 		 * might select clauses that reference b.v1, b.v2, b.v1 in that
 		 * order.  This is not harmful in itself, though it suggests that
-		 * the clauses are partially redundant.  Since it happens only with
-		 * redundant query conditions, we don't bother to eliminate it.
-		 * make_inner_pathkeys_for_merge() has to delete duplicates when
-		 * it constructs the canonical pathkeys list, and we also have to
-		 * deal with the case in create_mergejoin_plan().
+		 * the clauses are partially redundant.  Since the alternative is
+		 * to omit mergejoin clauses and thereby possibly fail to generate a
+		 * plan altogether, we live with it.  make_inner_pathkeys_for_merge()
+		 * has to delete duplicates when it constructs the inner pathkeys
+		 * list, and we also have to deal with such cases specially in
+		 * create_mergejoin_plan().
 		 *----------
 		 */
 		foreach(j, restrictinfos)
@@ -1064,12 +1235,8 @@ find_mergeclauses_for_pathkeys(PlannerInfo *root,
 			RestrictInfo *rinfo = (RestrictInfo *) lfirst(j);
 			EquivalenceClass *clause_ec;
 
-			if (outer_keys)
-				clause_ec = rinfo->outer_is_left ?
-					rinfo->left_ec : rinfo->right_ec;
-			else
-				clause_ec = rinfo->outer_is_left ?
-					rinfo->right_ec : rinfo->left_ec;
+			clause_ec = rinfo->outer_is_left ?
+				rinfo->left_ec : rinfo->right_ec;
 			if (clause_ec == pathkey_ec)
 				matched_restrictinfos = lappend(matched_restrictinfos, rinfo);
 		}
@@ -1273,8 +1440,8 @@ select_outer_pathkeys_for_merge(PlannerInfo *root,
  *	  must be applied to an inner path to make it usable with the
  *	  given mergeclauses.
  *
- * 'mergeclauses' is a list of RestrictInfos for mergejoin clauses
- *			that will be used in a merge join.
+ * 'mergeclauses' is a list of RestrictInfos for the mergejoin clauses
+ *			that will be used in a merge join, in order.
  * 'outer_pathkeys' are the already-known canonical pathkeys for the outer
  *			side of the join.
  *
@@ -1351,8 +1518,13 @@ make_inner_pathkeys_for_merge(PlannerInfo *root,
 											 opathkey->pk_nulls_first);
 
 		/*
-		 * Don't generate redundant pathkeys (can happen if multiple
-		 * mergeclauses refer to same EC).
+		 * Don't generate redundant pathkeys (which can happen if multiple
+		 * mergeclauses refer to the same EC).  Because we do this, the output
+		 * pathkey list isn't necessarily ordered like the mergeclauses, which
+		 * complicates life for create_mergejoin_plan().  But if we didn't,
+		 * we'd have a noncanonical sort key list, which would be bad; for one
+		 * reason, it certainly wouldn't match any available sort order for
+		 * the input relation.
 		 */
 		if (!pathkey_is_redundant(pathkey, pathkeys))
 			pathkeys = lappend(pathkeys, pathkey);
@@ -1360,6 +1532,98 @@ make_inner_pathkeys_for_merge(PlannerInfo *root,
 
 	return pathkeys;
 }
+
+/*
+ * trim_mergeclauses_for_inner_pathkeys
+ *	  This routine trims a list of mergeclauses to include just those that
+ *	  work with a specified ordering for the join's inner relation.
+ *
+ * 'mergeclauses' is a list of RestrictInfos for mergejoin clauses for the
+ *			join relation being formed, in an order known to work for the
+ *			currently-considered sort ordering of the join's outer rel.
+ * 'pathkeys' is a pathkeys list showing the ordering of an inner-rel path;
+ *			it should be equal to, or a truncation of, the result of
+ *			make_inner_pathkeys_for_merge for these mergeclauses.
+ *
+ * What we return will be a prefix of the given mergeclauses list.
+ *
+ * We need this logic because make_inner_pathkeys_for_merge's result isn't
+ * necessarily in the same order as the mergeclauses.  That means that if we
+ * consider an inner-rel pathkey list that is a truncation of that result,
+ * we might need to drop mergeclauses even though they match a surviving inner
+ * pathkey.  This happens when they are to the right of a mergeclause that
+ * matches a removed inner pathkey.
+ *
+ * The mergeclauses must be marked (via outer_is_left) to show which side
+ * of each clause is associated with the current outer path.  (See
+ * select_mergejoin_clauses())
+ */
+List *
+trim_mergeclauses_for_inner_pathkeys(PlannerInfo *root,
+									 List *mergeclauses,
+									 List *pathkeys)
+{
+	List	   *new_mergeclauses = NIL;
+	PathKey    *pathkey;
+	EquivalenceClass *pathkey_ec;
+	bool		matched_pathkey;
+	ListCell   *lip;
+	ListCell   *i;
+
+	/* No pathkeys => no mergeclauses (though we don't expect this case) */
+	if (pathkeys == NIL)
+		return NIL;
+	/* Initialize to consider first pathkey */
+	lip = list_head(pathkeys);
+	pathkey = (PathKey *) lfirst(lip);
+	pathkey_ec = pathkey->pk_eclass;
+	lip = lnext(lip);
+	matched_pathkey = false;
+
+	/* Scan mergeclauses to see how many we can use */
+	foreach(i, mergeclauses)
+	{
+		RestrictInfo *rinfo = (RestrictInfo *) lfirst(i);
+		EquivalenceClass *clause_ec;
+
+		/* Assume we needn't do update_mergeclause_eclasses again here */
+
+		/* Check clause's inner-rel EC against current pathkey */
+		clause_ec = rinfo->outer_is_left ?
+			rinfo->right_ec : rinfo->left_ec;
+
+		/* If we don't have a match, attempt to advance to next pathkey */
+		if (clause_ec != pathkey_ec)
+		{
+			/* If we had no clauses matching this inner pathkey, must stop */
+			if (!matched_pathkey)
+				break;
+
+			/* Advance to next inner pathkey, if any */
+			if (lip == NULL)
+				break;
+			pathkey = (PathKey *) lfirst(lip);
+			pathkey_ec = pathkey->pk_eclass;
+			lip = lnext(lip);
+			matched_pathkey = false;
+		}
+
+		/* If mergeclause matches current inner pathkey, we can use it */
+		if (clause_ec == pathkey_ec)
+		{
+			new_mergeclauses = lappend(new_mergeclauses, rinfo);
+			matched_pathkey = true;
+		}
+		else
+		{
+			/* Else, no hope of adding any more mergeclauses */
+			break;
+		}
+	}
+
+	return new_mergeclauses;
+}
+
 
 /****************************************************************************
  *		PATHKEY USEFULNESS CHECKS

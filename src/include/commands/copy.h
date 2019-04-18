@@ -4,7 +4,7 @@
  *	  Definitions for using the POSTGRES copy command.
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/commands/copy.h
@@ -32,7 +32,7 @@ extern CopyState BeginCopyFrom(ParseState *pstate, Relation rel, const char *fil
 			  bool is_program, copy_data_source_cb data_source_cb, List *attnamelist, List *options);
 extern void EndCopyFrom(CopyState cstate);
 extern bool NextCopyFrom(CopyState cstate, ExprContext *econtext,
-			 Datum *values, bool *nulls, Oid *tupleOid);
+			 Datum *values, bool *nulls);
 extern bool NextCopyFromRawFields(CopyState cstate,
 					  char ***fields, int *nfields);
 extern void CopyFromErrorCallback(void *arg);

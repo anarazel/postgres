@@ -3,7 +3,7 @@
  * nodeLimit.c
  *	  Routines to handle limiting of query results where appropriate
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -134,6 +134,14 @@ ExecLimit(PlanState *pstate)
 					node->position - node->offset >= node->count)
 				{
 					node->lstate = LIMIT_WINDOWEND;
+
+					/*
+					 * If we know we won't need to back up, we can release
+					 * resources at this point.
+					 */
+					if (!(node->ps.state->es_top_eflags & EXEC_FLAG_BACKWARD))
+						(void) ExecShutdownNode(outerPlan);
+
 					return NULL;
 				}
 
@@ -354,6 +362,12 @@ ExecInitLimit(Limit *node, EState *estate, int eflags)
 	ExecAssignExprContext(estate, &limitstate->ps);
 
 	/*
+	 * initialize outer plan
+	 */
+	outerPlan = outerPlan(node);
+	outerPlanState(limitstate) = ExecInitNode(outerPlan, estate, eflags);
+
+	/*
 	 * initialize child expressions
 	 */
 	limitstate->limitOffset = ExecInitExpr((Expr *) node->limitOffset,
@@ -362,21 +376,18 @@ ExecInitLimit(Limit *node, EState *estate, int eflags)
 										  (PlanState *) limitstate);
 
 	/*
-	 * Tuple table initialization (XXX not actually used...)
+	 * Initialize result type.
 	 */
-	ExecInitResultTupleSlot(estate, &limitstate->ps);
+	ExecInitResultTypeTL(&limitstate->ps);
 
-	/*
-	 * then initialize outer plan
-	 */
-	outerPlan = outerPlan(node);
-	outerPlanState(limitstate) = ExecInitNode(outerPlan, estate, eflags);
+	limitstate->ps.resultopsset = true;
+	limitstate->ps.resultops = ExecGetResultSlotOps(outerPlanState(limitstate),
+													&limitstate->ps.resultopsfixed);
 
 	/*
 	 * limit nodes do no projections, so initialize projection info for this
 	 * node appropriately
 	 */
-	ExecAssignResultTypeFromTL(&limitstate->ps);
 	limitstate->ps.ps_ProjInfo = NULL;
 
 	return limitstate;

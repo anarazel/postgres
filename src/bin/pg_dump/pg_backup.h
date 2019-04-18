@@ -74,6 +74,7 @@ typedef struct _restoreOptions
 	int			dump_inserts;
 	int			column_inserts;
 	int			if_exists;
+	int			no_comments;	/* Skip comments */
 	int			no_publications;	/* Skip publication entries */
 	int			no_security_labels; /* Skip security label entries */
 	int			no_subscriptions;	/* Skip subscription entries */
@@ -130,7 +131,6 @@ typedef struct _dumpOptions
 	const char *pghost;
 	const char *pgport;
 	const char *username;
-	bool		oids;
 
 	int			binary_upgrade;
 
@@ -140,12 +140,13 @@ typedef struct _dumpOptions
 	int			dumpSections;	/* bitmask of chosen sections */
 	bool		aclsSkip;
 	const char *lockWaitTimeout;
+	int			dump_inserts;	/* 0 = COPY, otherwise rows per INSERT */
 
 	/* flags for various command-line long options */
 	int			disable_dollar_quoting;
-	int			dump_inserts;
 	int			column_inserts;
 	int			if_exists;
+	int			no_comments;
 	int			no_security_labels;
 	int			no_publications;
 	int			no_subscriptions;
@@ -170,6 +171,7 @@ typedef struct _dumpOptions
 	char	   *outputSuperuser;
 
 	int			sequence_data;	/* dump sequence data even in schema-only mode */
+	int			do_nothing;
 } DumpOptions;
 
 /*
@@ -195,6 +197,9 @@ typedef struct Archive
 	/* info needed for string escaping */
 	int			encoding;		/* libpq code for client_encoding */
 	bool		std_strings;	/* standard_conforming_strings */
+
+	/* other important stuff */
+	char	   *searchpath;		/* search_path to set during restore */
 	char	   *use_role;		/* Issue SET ROLE to this */
 
 	/* error handling */
@@ -245,18 +250,6 @@ extern void ConnectDatabase(Archive *AH,
 				trivalue prompt_password);
 extern void DisconnectDatabase(Archive *AHX);
 extern PGconn *GetConnection(Archive *AHX);
-
-/* Called to add a TOC entry */
-extern void ArchiveEntry(Archive *AHX,
-			 CatalogId catalogId, DumpId dumpId,
-			 const char *tag,
-			 const char *namespace, const char *tablespace,
-			 const char *owner, bool withOids,
-			 const char *desc, teSection section,
-			 const char *defn,
-			 const char *dropStmt, const char *copyStmt,
-			 const DumpId *deps, int nDeps,
-			 DataDumperPtr dumpFn, void *dumpArg);
 
 /* Called to write *data* to the archive */
 extern void WriteData(Archive *AH, const void *data, size_t dLen);

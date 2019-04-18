@@ -141,6 +141,37 @@ select a, d, grouping(a,b,c)
   from gstest3
  group by grouping sets ((a,b), (a,c));
 
+-- check that distinct grouping columns are kept separate
+-- even if they are equal()
+explain (costs off)
+select g as alias1, g as alias2
+  from generate_series(1,3) g
+ group by alias1, rollup(alias2);
+
+select g as alias1, g as alias2
+  from generate_series(1,3) g
+ group by alias1, rollup(alias2);
+
+-- check that pulled-up subquery outputs still go to null when appropriate
+select four, x
+  from (select four, ten, 'foo'::text as x from tenk1) as t
+  group by grouping sets (four, x)
+  having x = 'foo';
+
+select four, x || 'x'
+  from (select four, ten, 'foo'::text as x from tenk1) as t
+  group by grouping sets (four, x)
+  order by four;
+
+select (x+y)*1, sum(z)
+ from (select 1 as x, 2 as y, 3 as z) s
+ group by grouping sets (x+y, x);
+
+select x, not x as not_x, q2 from
+  (select *, q1 = 1 as x from int8_tbl i1) as t
+  group by grouping sets(x, q2)
+  order by x, q2;
+
 -- simple rescan tests
 
 select a, b, sum(v.x)
@@ -261,6 +292,11 @@ explain (costs off)
   select a, b, grouping(a,b), array_agg(v order by v)
     from gstest1 group by cube(a,b);
 
+-- unsortable cases
+select unsortable_col, count(*)
+  from gstest4 group by grouping sets ((unsortable_col),(unsortable_col))
+  order by unsortable_col::text;
+
 -- mixed hashable/sortable cases
 select unhashable_col, unsortable_col,
        grouping(unhashable_col, unsortable_col),
@@ -311,12 +347,13 @@ explain (costs off)
 
 select a, b, sum(v.x)
   from (values (1),(2)) v(x), gstest_data(v.x)
- group by grouping sets (a,b);
+ group by grouping sets (a,b)
+ order by 1, 2, 3;
 explain (costs off)
   select a, b, sum(v.x)
     from (values (1),(2)) v(x), gstest_data(v.x)
-   group by grouping sets (a,b);
-
+   group by grouping sets (a,b)
+   order by 3, 1, 2;
 select *
   from (values (1),(2)) v(x),
        lateral (select a, b, sum(v.x) from gstest_data(v.x) group by grouping sets (a,b)) s;
@@ -377,5 +414,16 @@ explain (costs off)
          count(hundred), count(thousand), count(twothousand),
          count(*)
     from tenk1 group by grouping sets (unique1,twothousand,thousand,hundred,ten,four,two);
+
+-- check collation-sensitive matching between grouping expressions
+-- (similar to a check for aggregates, but there are additional code
+-- paths for GROUPING, so check again here)
+
+select v||'a', case grouping(v||'a') when 1 then 1 else 0 end, count(*)
+  from unnest(array[1,1], array['a','b']) u(i,v)
+ group by rollup(i, v||'a') order by 1,3;
+select v||'a', case when grouping(v||'a') = 1 then 1 else 0 end, count(*)
+  from unnest(array[1,1], array['a','b']) u(i,v)
+ group by rollup(i, v||'a') order by 1,3;
 
 -- end

@@ -90,7 +90,7 @@
  * efficient than using WaitLatch or WaitLatchOrSocket.
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/storage/latch.h
@@ -126,10 +126,11 @@ typedef struct Latch
 #define WL_SOCKET_WRITEABLE  (1 << 2)
 #define WL_TIMEOUT			 (1 << 3)	/* not for WaitEventSetWait() */
 #define WL_POSTMASTER_DEATH  (1 << 4)
+#define WL_EXIT_ON_PM_DEATH	 (1 << 5)
 #ifdef WIN32
-#define WL_SOCKET_CONNECTED  (1 << 5)
+#define WL_SOCKET_CONNECTED  (1 << 6)
 #else
-/* avoid having to to deal with case on platforms not requiring it */
+/* avoid having to deal with case on platforms not requiring it */
 #define WL_SOCKET_CONNECTED  WL_SOCKET_WRITEABLE
 #endif
 
@@ -155,12 +156,12 @@ typedef struct WaitEventSet WaitEventSet;
  * prototypes for functions in latch.c
  */
 extern void InitializeLatchSupport(void);
-extern void InitLatch(volatile Latch *latch);
-extern void InitSharedLatch(volatile Latch *latch);
-extern void OwnLatch(volatile Latch *latch);
-extern void DisownLatch(volatile Latch *latch);
-extern void SetLatch(volatile Latch *latch);
-extern void ResetLatch(volatile Latch *latch);
+extern void InitLatch(Latch *latch);
+extern void InitSharedLatch(Latch *latch);
+extern void OwnLatch(Latch *latch);
+extern void DisownLatch(Latch *latch);
+extern void SetLatch(Latch *latch);
+extern void ResetLatch(Latch *latch);
 
 extern WaitEventSet *CreateWaitEventSet(MemoryContext context, int nevents);
 extern void FreeWaitEventSet(WaitEventSet *set);
@@ -171,9 +172,9 @@ extern void ModifyWaitEvent(WaitEventSet *set, int pos, uint32 events, Latch *la
 extern int WaitEventSetWait(WaitEventSet *set, long timeout,
 				 WaitEvent *occurred_events, int nevents,
 				 uint32 wait_event_info);
-extern int WaitLatch(volatile Latch *latch, int wakeEvents, long timeout,
+extern int WaitLatch(Latch *latch, int wakeEvents, long timeout,
 		  uint32 wait_event_info);
-extern int WaitLatchOrSocket(volatile Latch *latch, int wakeEvents,
+extern int WaitLatchOrSocket(Latch *latch, int wakeEvents,
 				  pgsocket sock, long timeout, uint32 wait_event_info);
 
 /*

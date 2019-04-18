@@ -63,7 +63,7 @@
  * the standbys which are considered as synchronous at that moment
  * will release waiters from the queue.
  *
- * Portions Copyright (c) 2010-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 2010-2019, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  src/backend/replication/syncrep.c
@@ -156,11 +156,9 @@ SyncRepWaitForLSN(XLogRecPtr lsn, bool commit)
 		mode = Min(SyncRepWaitMode, SYNC_REP_WAIT_FLUSH);
 
 	/*
-	 * Fast exit if user has not requested sync replication, or there are no
-	 * sync replication standby names defined. Note that those standbys don't
-	 * need to be connected.
+	 * Fast exit if user has not requested sync replication.
 	 */
-	if (!SyncRepRequested() || !SyncStandbysDefined())
+	if (!SyncRepRequested())
 		return;
 
 	Assert(SHMQueueIsDetached(&(MyProc->syncRepLinks)));
@@ -216,6 +214,8 @@ SyncRepWaitForLSN(XLogRecPtr lsn, bool commit)
 	 */
 	for (;;)
 	{
+		int			rc;
+
 		/* Must reset the latch before testing state. */
 		ResetLatch(MyLatch);
 
@@ -269,24 +269,24 @@ SyncRepWaitForLSN(XLogRecPtr lsn, bool commit)
 		}
 
 		/*
+		 * Wait on latch.  Any condition that should wake us up will set the
+		 * latch, so no need for timeout.
+		 */
+		rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, -1,
+					   WAIT_EVENT_SYNC_REP);
+
+		/*
 		 * If the postmaster dies, we'll probably never get an
-		 * acknowledgement, because all the wal sender processes will exit. So
+		 * acknowledgment, because all the wal sender processes will exit. So
 		 * just bail out.
 		 */
-		if (!PostmasterIsAlive())
+		if (rc & WL_POSTMASTER_DEATH)
 		{
 			ProcDiePending = true;
 			whereToSendOutput = DestNone;
 			SyncRepCancelWait();
 			break;
 		}
-
-		/*
-		 * Wait on latch.  Any condition that should wake us up will set the
-		 * latch, so no need for timeout.
-		 */
-		WaitLatch(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, -1,
-				  WAIT_EVENT_SYNC_REP);
 	}
 
 	/*
@@ -425,10 +425,12 @@ SyncRepReleaseWaiters(void)
 	 * If this WALSender is serving a standby that is not on the list of
 	 * potential sync standbys then we have nothing to do. If we are still
 	 * starting up, still running base backup or the current flush position is
-	 * still invalid, then leave quickly also.
+	 * still invalid, then leave quickly also.  Streaming or stopping WAL
+	 * senders are allowed to release waiters.
 	 */
 	if (MyWalSnd->sync_standby_priority == 0 ||
-		MyWalSnd->state < WALSNDSTATE_STREAMING ||
+		(MyWalSnd->state != WALSNDSTATE_STREAMING &&
+		 MyWalSnd->state != WALSNDSTATE_STOPPING) ||
 		XLogRecPtrIsInvalid(MyWalSnd->flush))
 	{
 		announce_next_takeover = true;
@@ -730,8 +732,9 @@ SyncRepGetSyncStandbysQuorum(bool *am_sync)
 		if (pid == 0)
 			continue;
 
-		/* Must be streaming */
-		if (state != WALSNDSTATE_STREAMING)
+		/* Must be streaming or stopping */
+		if (state != WALSNDSTATE_STREAMING &&
+			state != WALSNDSTATE_STOPPING)
 			continue;
 
 		/* Must be synchronous */
@@ -809,8 +812,9 @@ SyncRepGetSyncStandbysPriority(bool *am_sync)
 		if (pid == 0)
 			continue;
 
-		/* Must be streaming */
-		if (state != WALSNDSTATE_STREAMING)
+		/* Must be streaming or stopping */
+		if (state != WALSNDSTATE_STREAMING &&
+			state != WALSNDSTATE_STOPPING)
 			continue;
 
 		/* Must be synchronous */

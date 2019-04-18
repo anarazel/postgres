@@ -3,7 +3,7 @@
  * nodeTidscan.c
  *	  Routines to support direct tid scans of relations
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -23,11 +23,12 @@
 #include "postgres.h"
 
 #include "access/sysattr.h"
+#include "access/tableam.h"
 #include "catalog/pg_type.h"
 #include "executor/execdebug.h"
 #include "executor/nodeTidscan.h"
 #include "miscadmin.h"
-#include "optimizer/clauses.h"
+#include "nodes/nodeFuncs.h"
 #include "storage/bufmgr.h"
 #include "utils/array.h"
 #include "utils/rel.h"
@@ -306,9 +307,7 @@ TidNext(TidScanState *node)
 	ScanDirection direction;
 	Snapshot	snapshot;
 	Relation	heapRelation;
-	HeapTuple	tuple;
 	TupleTableSlot *slot;
-	Buffer		buffer = InvalidBuffer;
 	ItemPointerData *tidList;
 	int			numTids;
 	bool		bBackward;
@@ -330,12 +329,6 @@ TidNext(TidScanState *node)
 
 	tidList = node->tss_TidList;
 	numTids = node->tss_NumTids;
-
-	/*
-	 * We use node->tss_htup as the tuple pointer; note this can't just be a
-	 * local variable here, as the scan tuple slot will keep a pointer to it.
-	 */
-	tuple = &(node->tss_htup);
 
 	/*
 	 * Initialize or advance scan position, depending on direction.
@@ -364,7 +357,7 @@ TidNext(TidScanState *node)
 
 	while (node->tss_TidPtr >= 0 && node->tss_TidPtr < numTids)
 	{
-		tuple->t_self = tidList[node->tss_TidPtr];
+		ItemPointerData tid = tidList[node->tss_TidPtr];
 
 		/*
 		 * For WHERE CURRENT OF, the tuple retrieved from the cursor might
@@ -372,30 +365,11 @@ TidNext(TidScanState *node)
 		 * current according to our snapshot.
 		 */
 		if (node->tss_isCurrentOf)
-			heap_get_latest_tid(heapRelation, snapshot, &tuple->t_self);
+			table_get_latest_tid(heapRelation, snapshot, &tid);
 
-		if (heap_fetch(heapRelation, snapshot, tuple, &buffer, false, NULL))
-		{
-			/*
-			 * store the scanned tuple in the scan tuple slot of the scan
-			 * state.  Eventually we will only do this and not return a tuple.
-			 * Note: we pass 'false' because tuples returned by amgetnext are
-			 * pointers onto disk pages and were not created with palloc() and
-			 * so should not be pfree()'d.
-			 */
-			ExecStoreTuple(tuple,	/* tuple to store */
-						   slot,	/* slot to store in */
-						   buffer,	/* buffer associated with tuple  */
-						   false);	/* don't pfree */
-
-			/*
-			 * At this point we have an extra pin on the buffer, because
-			 * ExecStoreTuple incremented the pin count. Drop our local pin.
-			 */
-			ReleaseBuffer(buffer);
-
+		if (table_fetch_row_version(heapRelation, &tid, snapshot, slot))
 			return slot;
-		}
+
 		/* Bad TID or failed snapshot qual; try next */
 		if (bBackward)
 			node->tss_TidPtr--;
@@ -489,13 +463,9 @@ ExecEndTidScan(TidScanState *node)
 	/*
 	 * clear out tuple table slots
 	 */
-	ExecClearTuple(node->ss.ps.ps_ResultTupleSlot);
+	if (node->ss.ps.ps_ResultTupleSlot)
+		ExecClearTuple(node->ss.ps.ps_ResultTupleSlot);
 	ExecClearTuple(node->ss.ss_ScanTupleSlot);
-
-	/*
-	 * close the heap relation.
-	 */
-	ExecCloseScanRelation(node->ss.ss_currentRelation);
 }
 
 /* ----------------------------------------------------------------
@@ -531,20 +501,6 @@ ExecInitTidScan(TidScan *node, EState *estate, int eflags)
 	ExecAssignExprContext(estate, &tidstate->ss.ps);
 
 	/*
-	 * initialize child expressions
-	 */
-	tidstate->ss.ps.qual =
-		ExecInitQual(node->scan.plan.qual, (PlanState *) tidstate);
-
-	TidExprListCreate(tidstate);
-
-	/*
-	 * tuple table initialization
-	 */
-	ExecInitResultTupleSlot(estate, &tidstate->ss.ps);
-	ExecInitScanTupleSlot(estate, &tidstate->ss);
-
-	/*
 	 * mark tid list as not computed yet
 	 */
 	tidstate->tss_TidList = NULL;
@@ -552,7 +508,7 @@ ExecInitTidScan(TidScan *node, EState *estate, int eflags)
 	tidstate->tss_TidPtr = -1;
 
 	/*
-	 * open the base relation and acquire appropriate lock on it.
+	 * open the scan relation
 	 */
 	currentRelation = ExecOpenScanRelation(estate, node->scan.scanrelid, eflags);
 
@@ -562,13 +518,23 @@ ExecInitTidScan(TidScan *node, EState *estate, int eflags)
 	/*
 	 * get the scan type from the relation descriptor.
 	 */
-	ExecAssignScanType(&tidstate->ss, RelationGetDescr(currentRelation));
+	ExecInitScanTupleSlot(estate, &tidstate->ss,
+						  RelationGetDescr(currentRelation),
+						  table_slot_callbacks(currentRelation));
 
 	/*
-	 * Initialize result tuple type and projection info.
+	 * Initialize result type and projection.
 	 */
-	ExecAssignResultTypeFromTL(&tidstate->ss.ps);
+	ExecInitResultTypeTL(&tidstate->ss.ps);
 	ExecAssignScanProjectionInfo(&tidstate->ss);
+
+	/*
+	 * initialize child expressions
+	 */
+	tidstate->ss.ps.qual =
+		ExecInitQual(node->scan.plan.qual, (PlanState *) tidstate);
+
+	TidExprListCreate(tidstate);
 
 	/*
 	 * all done.

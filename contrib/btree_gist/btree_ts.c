@@ -9,6 +9,7 @@
 #include "btree_utils_num.h"
 #include "utils/builtins.h"
 #include "utils/datetime.h"
+#include "utils/float.h"
 
 typedef struct
 {
@@ -230,7 +231,7 @@ gbt_tstz_compress(PG_FUNCTION_ARGS)
 		r->lower = r->upper = gmt;
 		gistentryinit(*retval, PointerGetDatum(r),
 					  entry->rel, entry->page,
-					  entry->offset, FALSE);
+					  entry->offset, false);
 	}
 	else
 		retval = entry;

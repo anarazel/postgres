@@ -3,7 +3,7 @@
  * bufmgr.c
  *	  buffer manager interface routines
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -733,7 +733,10 @@ ReadBuffer_common(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 		bufHdr = LocalBufferAlloc(smgr, forkNum, blockNum, &found);
 		if (found)
 			pgBufferUsage.local_blks_hit++;
-		else
+		else if (isExtend)
+			pgBufferUsage.local_blks_written++;
+		else if (mode == RBM_NORMAL || mode == RBM_NORMAL_NO_LOG ||
+				 mode == RBM_ZERO_ON_ERROR)
 			pgBufferUsage.local_blks_read++;
 	}
 	else
@@ -746,7 +749,10 @@ ReadBuffer_common(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 							 strategy, &found);
 		if (found)
 			pgBufferUsage.shared_blks_hit++;
-		else
+		else if (isExtend)
+			pgBufferUsage.shared_blks_written++;
+		else if (mode == RBM_NORMAL || mode == RBM_NORMAL_NO_LOG ||
+				 mode == RBM_ZERO_ON_ERROR)
 			pgBufferUsage.shared_blks_read++;
 	}
 
@@ -975,7 +981,7 @@ ReadBuffer_common(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
  *
  * The returned buffer is pinned and is already marked as holding the
  * desired page.  If it already did have the desired page, *foundPtr is
- * set TRUE.  Otherwise, *foundPtr is set FALSE and the buffer is marked
+ * set true.  Otherwise, *foundPtr is set false and the buffer is marked
  * as IO_IN_PROGRESS; ReadBuffer will now need to do I/O to fill it.
  *
  * *foundPtr is actually redundant with the buffer's BM_VALID flag, but
@@ -1025,7 +1031,7 @@ BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 		/* Can release the mapping lock as soon as we've pinned it */
 		LWLockRelease(newPartitionLock);
 
-		*foundPtr = TRUE;
+		*foundPtr = true;
 
 		if (!valid)
 		{
@@ -1042,7 +1048,7 @@ BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 				 * If we get here, previous attempts to read the buffer must
 				 * have failed ... but we shall bravely try again.
 				 */
-				*foundPtr = FALSE;
+				*foundPtr = false;
 			}
 		}
 
@@ -1237,7 +1243,7 @@ BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 			/* Can release the mapping lock as soon as we've pinned it */
 			LWLockRelease(newPartitionLock);
 
-			*foundPtr = TRUE;
+			*foundPtr = true;
 
 			if (!valid)
 			{
@@ -1254,7 +1260,7 @@ BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 					 * If we get here, previous attempts to read the buffer
 					 * must have failed ... but we shall bravely try again.
 					 */
-					*foundPtr = FALSE;
+					*foundPtr = false;
 				}
 			}
 
@@ -1324,9 +1330,9 @@ BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 	 * read it before we did, so there's nothing left for BufferAlloc() to do.
 	 */
 	if (StartBufferIO(buf, true))
-		*foundPtr = FALSE;
+		*foundPtr = false;
 	else
-		*foundPtr = TRUE;
+		*foundPtr = true;
 
 	return buf;
 }
@@ -1564,7 +1570,7 @@ ReleaseAndReadBuffer(Buffer buffer,
  *
  * Note that ResourceOwnerEnlargeBuffers must have been done already.
  *
- * Returns TRUE if buffer is BM_VALID, else FALSE.  This provision allows
+ * Returns true if buffer is BM_VALID, else false.  This provision allows
  * some callers to avoid an extra spinlock cycle.
  */
 static bool
@@ -1688,7 +1694,7 @@ PinBuffer_Locked(BufferDesc *buf)
  * This should be applied only to shared buffers, never local ones.
  *
  * Most but not all callers want CurrentResourceOwner to be adjusted.
- * Those that don't should pass fixOwner = FALSE.
+ * Those that don't should pass fixOwner = false.
  */
 static void
 UnpinBuffer(BufferDesc *buf, bool fixOwner)
@@ -2578,7 +2584,7 @@ CheckPointBuffers(int flags)
 	BufferSync(flags);
 	CheckpointStats.ckpt_sync_t = GetCurrentTimestamp();
 	TRACE_POSTGRESQL_BUFFER_CHECKPOINT_SYNC_START();
-	smgrsync();
+	ProcessSyncRequests();
 	CheckpointStats.ckpt_sync_end_t = GetCurrentTimestamp();
 	TRACE_POSTGRESQL_BUFFER_CHECKPOINT_DONE();
 }
@@ -3348,7 +3354,6 @@ IncrBufferRefCount(Buffer buffer)
 {
 	Assert(BufferIsPinned(buffer));
 	ResourceOwnerEnlargeBuffers(CurrentResourceOwner);
-	ResourceOwnerRememberBuffer(CurrentResourceOwner, buffer);
 	if (BufferIsLocal(buffer))
 		LocalRefCount[-buffer - 1]++;
 	else
@@ -3359,6 +3364,7 @@ IncrBufferRefCount(Buffer buffer)
 		Assert(ref != NULL);
 		ref->refcount++;
 	}
+	ResourceOwnerRememberBuffer(CurrentResourceOwner, buffer);
 }
 
 /*
@@ -3712,7 +3718,7 @@ HoldingBufferPinThatDelaysRecovery(void)
  * ConditionalLockBufferForCleanup - as above, but don't wait to get the lock
  *
  * We won't loop, but just check once to see if the pin count is OK.  If
- * not, return FALSE with no lock held.
+ * not, return false with no lock held.
  */
 bool
 ConditionalLockBufferForCleanup(Buffer buffer)
@@ -3868,8 +3874,8 @@ WaitIO(BufferDesc *buf)
  * and output operations only on buffers that are BM_VALID and BM_DIRTY,
  * so we can always tell if the work is already done.
  *
- * Returns TRUE if we successfully marked the buffer as I/O busy,
- * FALSE if someone else already did the work.
+ * Returns true if we successfully marked the buffer as I/O busy,
+ * false if someone else already did the work.
  */
 static bool
 StartBufferIO(BufferDesc *buf, bool forInput)
@@ -3929,7 +3935,7 @@ StartBufferIO(BufferDesc *buf, bool forInput)
  *	We hold the buffer's io_in_progress lock
  *	The buffer is Pinned
  *
- * If clear_dirty is TRUE and BM_JUST_DIRTIED is not set, we clear the
+ * If clear_dirty is true and BM_JUST_DIRTIED is not set, we clear the
  * buffer's BM_DIRTY flag.  This is appropriate when terminating a
  * successful write.  The check on BM_JUST_DIRTIED is necessary to avoid
  * marking the buffer clean if it was re-dirtied while we were writing.
@@ -4064,8 +4070,8 @@ local_buffer_write_error_callback(void *arg)
 static int
 rnode_comparator(const void *p1, const void *p2)
 {
-	RelFileNode n1 = *(RelFileNode *) p1;
-	RelFileNode n2 = *(RelFileNode *) p2;
+	RelFileNode n1 = *(const RelFileNode *) p1;
+	RelFileNode n2 = *(const RelFileNode *) p2;
 
 	if (n1.relNode < n2.relNode)
 		return -1;
@@ -4174,8 +4180,8 @@ buffertag_comparator(const void *a, const void *b)
 static int
 ckpt_buforder_comparator(const void *pa, const void *pb)
 {
-	const CkptSortItem *a = (CkptSortItem *) pa;
-	const CkptSortItem *b = (CkptSortItem *) pb;
+	const CkptSortItem *a = (const CkptSortItem *) pa;
+	const CkptSortItem *b = (const CkptSortItem *) pb;
 
 	/* compare tablespace */
 	if (a->tsId < b->tsId)
@@ -4195,8 +4201,10 @@ ckpt_buforder_comparator(const void *pa, const void *pb)
 	/* compare block number */
 	else if (a->blockNum < b->blockNum)
 		return -1;
-	else						/* should not be the same block ... */
+	else if (a->blockNum > b->blockNum)
 		return 1;
+	/* equal page IDs are unlikely, but not impossible */
+	return 0;
 }
 
 /*

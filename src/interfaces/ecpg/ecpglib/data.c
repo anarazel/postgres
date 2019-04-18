@@ -3,13 +3,12 @@
 #define POSTGRES_ECPG_INTERNAL
 #include "postgres_fe.h"
 
-#include <float.h>
 #include <math.h>
 
 #include "ecpgtype.h"
 #include "ecpglib.h"
 #include "ecpgerrno.h"
-#include "extern.h"
+#include "ecpglib_extern.h"
 #include "sqlca.h"
 #include "pgtypes_numeric.h"
 #include "pgtypes_date.h"
@@ -44,7 +43,7 @@ array_boundary(enum ARRAY_TYPE isarray, char c)
 
 /* returns true if some garbage is found at the end of the scanned string */
 static bool
-garbage_left(enum ARRAY_TYPE isarray, char *scan_length, enum COMPAT_MODE compat)
+garbage_left(enum ARRAY_TYPE isarray, char **scan_length, enum COMPAT_MODE compat)
 {
 	/*
 	 * INFORMIX allows for selecting a numeric into an int, the result is
@@ -52,13 +51,19 @@ garbage_left(enum ARRAY_TYPE isarray, char *scan_length, enum COMPAT_MODE compat
 	 */
 	if (isarray == ECPG_ARRAY_NONE)
 	{
-		if (INFORMIX_MODE(compat) && *scan_length == '.')
-			return false;
+		if (INFORMIX_MODE(compat) && **scan_length == '.')
+		{
+			/* skip invalid characters */
+			do
+			{
+				(*scan_length)++;
+			} while (isdigit((unsigned char) **scan_length));
+		}
 
-		if (*scan_length != ' ' && *scan_length != '\0')
+		if (**scan_length != ' ' && **scan_length != '\0')
 			return true;
 	}
-	else if (ECPG_IS_ARRAY(isarray) && !array_delimiter(isarray, *scan_length) && !array_boundary(isarray, *scan_length))
+	else if (ECPG_IS_ARRAY(isarray) && !array_delimiter(isarray, **scan_length) && !array_boundary(isarray, **scan_length))
 		return true;
 
 	return false;
@@ -115,6 +120,86 @@ check_special_value(char *ptr, double *retval, char **endptr)
 	}
 
 	return false;
+}
+
+/* imported from src/backend/utils/adt/encode.c */
+
+unsigned
+ecpg_hex_enc_len(unsigned srclen)
+{
+	return srclen << 1;
+}
+
+unsigned
+ecpg_hex_dec_len(unsigned srclen)
+{
+	return srclen >> 1;
+}
+
+static inline char
+get_hex(char c)
+{
+	static const int8 hexlookup[128] = {
+		-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, -1, -1, -1, -1, -1, -1,
+		-1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+		-1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	};
+	int			res = -1;
+
+	if (c > 0 && c < 127)
+		res = hexlookup[(unsigned char) c];
+
+	return (char) res;
+}
+
+static unsigned
+hex_decode(const char *src, unsigned len, char *dst)
+{
+	const char *s,
+			   *srcend;
+	char		v1,
+				v2,
+			   *p;
+
+	srcend = src + len;
+	s = src;
+	p = dst;
+	while (s < srcend)
+	{
+		if (*s == ' ' || *s == '\n' || *s == '\t' || *s == '\r')
+		{
+			s++;
+			continue;
+		}
+		v1 = get_hex(*s++) << 4;
+		if (s >= srcend)
+			return -1;
+
+		v2 = get_hex(*s++);
+		*p++ = v1 | v2;
+	}
+
+	return p - dst;
+}
+
+unsigned
+ecpg_hex_encode(const char *src, unsigned len, char *dst)
+{
+	static const char hextbl[] = "0123456789abcdef";
+	const char *end = src + len;
+
+	while (src < end)
+	{
+		*dst++ = hextbl[(*src >> 4) & 0xF];
+		*dst++ = hextbl[*src & 0xF];
+		src++;
+	}
+	return len * 2;
 }
 
 bool
@@ -303,7 +388,7 @@ ecpg_get_data(const PGresult *results, int act_tuple, int act_field, int lineno,
 				case ECPGt_int:
 				case ECPGt_long:
 					res = strtol(pval, &scan_length, 10);
-					if (garbage_left(isarray, scan_length, compat))
+					if (garbage_left(isarray, &scan_length, compat))
 					{
 						ecpg_raise(lineno, ECPG_INT_FORMAT,
 								   ECPG_SQLSTATE_DATATYPE_MISMATCH, pval);
@@ -332,7 +417,7 @@ ecpg_get_data(const PGresult *results, int act_tuple, int act_field, int lineno,
 				case ECPGt_unsigned_int:
 				case ECPGt_unsigned_long:
 					ures = strtoul(pval, &scan_length, 10);
-					if (garbage_left(isarray, scan_length, compat))
+					if (garbage_left(isarray, &scan_length, compat))
 					{
 						ecpg_raise(lineno, ECPG_UINT_FORMAT,
 								   ECPG_SQLSTATE_DATATYPE_MISMATCH, pval);
@@ -361,7 +446,7 @@ ecpg_get_data(const PGresult *results, int act_tuple, int act_field, int lineno,
 #ifdef HAVE_STRTOLL
 				case ECPGt_long_long:
 					*((long long int *) (var + offset * act_tuple)) = strtoll(pval, &scan_length, 10);
-					if (garbage_left(isarray, scan_length, compat))
+					if (garbage_left(isarray, &scan_length, compat))
 					{
 						ecpg_raise(lineno, ECPG_INT_FORMAT, ECPG_SQLSTATE_DATATYPE_MISMATCH, pval);
 						return false;
@@ -373,7 +458,7 @@ ecpg_get_data(const PGresult *results, int act_tuple, int act_field, int lineno,
 #ifdef HAVE_STRTOULL
 				case ECPGt_unsigned_long_long:
 					*((unsigned long long int *) (var + offset * act_tuple)) = strtoull(pval, &scan_length, 10);
-					if (garbage_left(isarray, scan_length, compat))
+					if (garbage_left(isarray, &scan_length, compat))
 					{
 						ecpg_raise(lineno, ECPG_UINT_FORMAT, ECPG_SQLSTATE_DATATYPE_MISMATCH, pval);
 						return false;
@@ -395,7 +480,8 @@ ecpg_get_data(const PGresult *results, int act_tuple, int act_field, int lineno,
 					if (isarray && *scan_length == '"')
 						scan_length++;
 
-					if (garbage_left(isarray, scan_length, compat))
+					/* no special INFORMIX treatment for floats */
+					if (garbage_left(isarray, &scan_length, ECPG_COMPAT_PGSQL))
 					{
 						ecpg_raise(lineno, ECPG_FLOAT_FORMAT,
 								   ECPG_SQLSTATE_DATATYPE_MISMATCH, pval);
@@ -441,6 +527,55 @@ ecpg_get_data(const PGresult *results, int act_tuple, int act_field, int lineno,
 					return false;
 					break;
 
+				case ECPGt_bytea:
+					{
+						struct ECPGgeneric_varchar *variable =
+						(struct ECPGgeneric_varchar *) (var + offset * act_tuple);
+						long		dst_size,
+									src_size,
+									dec_size;
+
+						dst_size = ecpg_hex_enc_len(varcharsize);
+						src_size = size - 2;	/* exclude backslash + 'x' */
+						dec_size = src_size < dst_size ? src_size : dst_size;
+						variable->len = hex_decode(pval + 2, dec_size, variable->arr);
+
+						if (dst_size < src_size)
+						{
+							long		rcv_size = ecpg_hex_dec_len(size - 2);
+
+							/* truncation */
+							switch (ind_type)
+							{
+								case ECPGt_short:
+								case ECPGt_unsigned_short:
+									*((short *) (ind + ind_offset * act_tuple)) = rcv_size;
+									break;
+								case ECPGt_int:
+								case ECPGt_unsigned_int:
+									*((int *) (ind + ind_offset * act_tuple)) = rcv_size;
+									break;
+								case ECPGt_long:
+								case ECPGt_unsigned_long:
+									*((long *) (ind + ind_offset * act_tuple)) = rcv_size;
+									break;
+#ifdef HAVE_LONG_LONG_INT
+								case ECPGt_long_long:
+								case ECPGt_unsigned_long_long:
+									*((long long int *) (ind + ind_offset * act_tuple)) = rcv_size;
+									break;
+#endif							/* HAVE_LONG_LONG_INT */
+								default:
+									break;
+							}
+							sqlca->sqlwarn[0] = sqlca->sqlwarn[1] = 'W';
+						}
+
+						pval += size;
+
+					}
+					break;
+
 				case ECPGt_char:
 				case ECPGt_unsigned_char:
 				case ECPGt_string:
@@ -457,7 +592,52 @@ ecpg_get_data(const PGresult *results, int act_tuple, int act_field, int lineno,
 
 						if (varcharsize == 0 || varcharsize > size)
 						{
-							strncpy(str, pval, size + 1);
+							/*
+							 * compatibility mode, blank pad and null
+							 * terminate char array
+							 */
+							if (ORACLE_MODE(compat) && (type == ECPGt_char || type == ECPGt_unsigned_char))
+							{
+								memset(str, ' ', varcharsize);
+								memcpy(str, pval, size);
+								str[varcharsize - 1] = '\0';
+
+								/*
+								 * compatibility mode empty string gets -1
+								 * indicator but no warning
+								 */
+								if (size == 0)
+								{
+									/* truncation */
+									switch (ind_type)
+									{
+										case ECPGt_short:
+										case ECPGt_unsigned_short:
+											*((short *) (ind + ind_offset * act_tuple)) = -1;
+											break;
+										case ECPGt_int:
+										case ECPGt_unsigned_int:
+											*((int *) (ind + ind_offset * act_tuple)) = -1;
+											break;
+										case ECPGt_long:
+										case ECPGt_unsigned_long:
+											*((long *) (ind + ind_offset * act_tuple)) = -1;
+											break;
+#ifdef HAVE_LONG_LONG_INT
+										case ECPGt_long_long:
+										case ECPGt_unsigned_long_long:
+											*((long long int *) (ind + ind_offset * act_tuple)) = -1;
+											break;
+#endif							/* HAVE_LONG_LONG_INT */
+										default:
+											break;
+									}
+								}
+							}
+							else
+							{
+								strncpy(str, pval, size + 1);
+							}
 							/* do the rtrim() */
 							if (type == ECPGt_string)
 							{
@@ -474,7 +654,14 @@ ecpg_get_data(const PGresult *results, int act_tuple, int act_field, int lineno,
 						{
 							strncpy(str, pval, varcharsize);
 
-							if (varcharsize < size)
+							/* compatibility mode, null terminate char array */
+							if (ORACLE_MODE(compat) && (varcharsize - 1) < size)
+							{
+								if (type == ECPGt_char || type == ECPGt_unsigned_char)
+									str[varcharsize - 1] = '\0';
+							}
+
+							if (varcharsize < size || (ORACLE_MODE(compat) && (varcharsize - 1) < size))
 							{
 								/* truncation */
 								switch (ind_type)
@@ -593,7 +780,7 @@ ecpg_get_data(const PGresult *results, int act_tuple, int act_field, int lineno,
 					}
 					else
 					{
-						if (!isarray && garbage_left(isarray, scan_length, compat))
+						if (!isarray && garbage_left(isarray, &scan_length, compat))
 						{
 							free(nres);
 							ecpg_raise(lineno, ECPG_NUMERIC_FORMAT,
@@ -651,7 +838,7 @@ ecpg_get_data(const PGresult *results, int act_tuple, int act_field, int lineno,
 						if (*scan_length == '"')
 							scan_length++;
 
-						if (!isarray && garbage_left(isarray, scan_length, compat))
+						if (!isarray && garbage_left(isarray, &scan_length, compat))
 						{
 							free(ires);
 							ecpg_raise(lineno, ECPG_INTERVAL_FORMAT,
@@ -701,7 +888,7 @@ ecpg_get_data(const PGresult *results, int act_tuple, int act_field, int lineno,
 						if (*scan_length == '"')
 							scan_length++;
 
-						if (!isarray && garbage_left(isarray, scan_length, compat))
+						if (!isarray && garbage_left(isarray, &scan_length, compat))
 						{
 							ecpg_raise(lineno, ECPG_DATE_FORMAT,
 									   ECPG_SQLSTATE_DATATYPE_MISMATCH, pval);
@@ -749,7 +936,7 @@ ecpg_get_data(const PGresult *results, int act_tuple, int act_field, int lineno,
 						if (*scan_length == '"')
 							scan_length++;
 
-						if (!isarray && garbage_left(isarray, scan_length, compat))
+						if (!isarray && garbage_left(isarray, &scan_length, compat))
 						{
 							ecpg_raise(lineno, ECPG_TIMESTAMP_FORMAT,
 									   ECPG_SQLSTATE_DATATYPE_MISMATCH, pval);

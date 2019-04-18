@@ -42,7 +42,7 @@
  * function for such cases, but probably not any other acceleration method.
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/utils/sortsupport.h
@@ -96,8 +96,7 @@ typedef struct SortSupportData
 	 * Comparator function has the same API as the traditional btree
 	 * comparison function, ie, return <0, 0, or >0 according as x is less
 	 * than, equal to, or greater than y.  Note that x and y are guaranteed
-	 * not null, and there is no way to return null either.  Do not return
-	 * INT_MIN, as callers are allowed to negate the result before using it.
+	 * not null, and there is no way to return null either.
 	 *
 	 * This may be either the authoritative comparator, or the abbreviated
 	 * comparator.  Core code may switch this over the initial preference of
@@ -224,7 +223,7 @@ ApplySortComparator(Datum datum1, bool isNull1,
 	{
 		compare = ssup->comparator(datum1, datum2, ssup);
 		if (ssup->ssup_reverse)
-			compare = -compare;
+			INVERT_COMPARE_RESULT(compare);
 	}
 
 	return compare;
@@ -262,7 +261,7 @@ ApplySortAbbrevFullComparator(Datum datum1, bool isNull1,
 	{
 		compare = ssup->abbrev_full_comparator(datum1, datum2, ssup);
 		if (ssup->ssup_reverse)
-			compare = -compare;
+			INVERT_COMPARE_RESULT(compare);
 	}
 
 	return compare;

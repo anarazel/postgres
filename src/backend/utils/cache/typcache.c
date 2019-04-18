@@ -30,7 +30,7 @@
  * Domain constraint changes are also tracked properly.
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -43,11 +43,12 @@
 #include <limits.h>
 
 #include "access/hash.h"
-#include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/nbtree.h"
 #include "access/parallel.h"
+#include "access/relation.h"
 #include "access/session.h"
+#include "access/table.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_am.h"
 #include "catalog/pg_constraint.h"
@@ -58,7 +59,7 @@
 #include "commands/defrem.h"
 #include "executor/executor.h"
 #include "lib/dshash.h"
-#include "optimizer/planner.h"
+#include "optimizer/optimizer.h"
 #include "storage/lwlock.h"
 #include "utils/builtins.h"
 #include "utils/catcache.h"
@@ -79,22 +80,24 @@ static HTAB *TypeCacheHash = NULL;
 static TypeCacheEntry *firstDomainTypeEntry = NULL;
 
 /* Private flag bits in the TypeCacheEntry.flags field */
-#define TCFLAGS_CHECKED_BTREE_OPCLASS		0x0001
-#define TCFLAGS_CHECKED_HASH_OPCLASS		0x0002
-#define TCFLAGS_CHECKED_EQ_OPR				0x0004
-#define TCFLAGS_CHECKED_LT_OPR				0x0008
-#define TCFLAGS_CHECKED_GT_OPR				0x0010
-#define TCFLAGS_CHECKED_CMP_PROC			0x0020
-#define TCFLAGS_CHECKED_HASH_PROC			0x0040
-#define TCFLAGS_CHECKED_ELEM_PROPERTIES		0x0080
-#define TCFLAGS_HAVE_ELEM_EQUALITY			0x0100
-#define TCFLAGS_HAVE_ELEM_COMPARE			0x0200
-#define TCFLAGS_HAVE_ELEM_HASHING			0x0400
-#define TCFLAGS_CHECKED_FIELD_PROPERTIES	0x0800
-#define TCFLAGS_HAVE_FIELD_EQUALITY			0x1000
-#define TCFLAGS_HAVE_FIELD_COMPARE			0x2000
-#define TCFLAGS_CHECKED_DOMAIN_CONSTRAINTS	0x4000
-#define TCFLAGS_CHECKED_HASH_EXTENDED_PROC	0x8000
+#define TCFLAGS_CHECKED_BTREE_OPCLASS		0x000001
+#define TCFLAGS_CHECKED_HASH_OPCLASS		0x000002
+#define TCFLAGS_CHECKED_EQ_OPR				0x000004
+#define TCFLAGS_CHECKED_LT_OPR				0x000008
+#define TCFLAGS_CHECKED_GT_OPR				0x000010
+#define TCFLAGS_CHECKED_CMP_PROC			0x000020
+#define TCFLAGS_CHECKED_HASH_PROC			0x000040
+#define TCFLAGS_CHECKED_HASH_EXTENDED_PROC	0x000080
+#define TCFLAGS_CHECKED_ELEM_PROPERTIES		0x000100
+#define TCFLAGS_HAVE_ELEM_EQUALITY			0x000200
+#define TCFLAGS_HAVE_ELEM_COMPARE			0x000400
+#define TCFLAGS_HAVE_ELEM_HASHING			0x000800
+#define TCFLAGS_HAVE_ELEM_EXTENDED_HASHING	0x001000
+#define TCFLAGS_CHECKED_FIELD_PROPERTIES	0x002000
+#define TCFLAGS_HAVE_FIELD_EQUALITY			0x004000
+#define TCFLAGS_HAVE_FIELD_COMPARE			0x008000
+#define TCFLAGS_CHECKED_DOMAIN_CONSTRAINTS	0x010000
+#define TCFLAGS_DOMAIN_BASE_IS_COMPOSITE	0x020000
 
 /*
  * Data stored about a domain type's constraints.  Note that we do not create
@@ -148,7 +151,7 @@ typedef struct RecordCacheEntry
 
 /*
  * To deal with non-anonymous record types that are exchanged by backends
- * involved in a parallel query, we also need a shared verion of the above.
+ * involved in a parallel query, we also need a shared version of the above.
  */
 struct SharedRecordTypmodRegistry
 {
@@ -196,7 +199,7 @@ typedef struct SharedTypmodTableEntry
 } SharedTypmodTableEntry;
 
 /*
- * A comparator function for SharedTupleDescTableKey.
+ * A comparator function for SharedRecordTableKey.
  */
 static int
 shared_record_table_compare(const void *a, const void *b, size_t size,
@@ -257,11 +260,21 @@ static const dshash_parameters srtr_typmod_table_params = {
 	LWTRANCHE_SESSION_TYPMOD_TABLE
 };
 
+/* hashtable for recognizing registered record types */
 static HTAB *RecordCacheHash = NULL;
 
+/* arrays of info about registered record types, indexed by assigned typmod */
 static TupleDesc *RecordCacheArray = NULL;
-static int32 RecordCacheArrayLen = 0;	/* allocated length of array */
+static uint64 *RecordIdentifierArray = NULL;
+static int32 RecordCacheArrayLen = 0;	/* allocated length of above arrays */
 static int32 NextRecordTypmod = 0;	/* number of entries used */
+
+/*
+ * Process-wide counter for generating unique tupledesc identifiers.
+ * Zero and one (INVALID_TUPLEDESC_IDENTIFIER) aren't allowed to be chosen
+ * as identifiers, so we start the counter at INVALID_TUPLEDESC_IDENTIFIER.
+ */
+static uint64 tupledesc_id_counter = INVALID_TUPLEDESC_IDENTIFIER;
 
 static void load_typcache_tupdesc(TypeCacheEntry *typentry);
 static void load_rangetype_info(TypeCacheEntry *typentry);
@@ -273,10 +286,14 @@ static List *prep_domain_constraints(List *constraints, MemoryContext execctx);
 static bool array_element_has_equality(TypeCacheEntry *typentry);
 static bool array_element_has_compare(TypeCacheEntry *typentry);
 static bool array_element_has_hashing(TypeCacheEntry *typentry);
+static bool array_element_has_extended_hashing(TypeCacheEntry *typentry);
 static void cache_array_element_properties(TypeCacheEntry *typentry);
 static bool record_fields_have_equality(TypeCacheEntry *typentry);
 static bool record_fields_have_compare(TypeCacheEntry *typentry);
 static void cache_record_field_properties(TypeCacheEntry *typentry);
+static bool range_element_has_hashing(TypeCacheEntry *typentry);
+static bool range_element_has_extended_hashing(TypeCacheEntry *typentry);
+static void cache_range_element_properties(TypeCacheEntry *typentry);
 static void TypeCacheRelCallback(Datum arg, Oid relid);
 static void TypeCacheOpcCallback(Datum arg, int cacheid, uint32 hashvalue);
 static void TypeCacheConstrCallback(Datum arg, int cacheid, uint32 hashvalue);
@@ -371,6 +388,8 @@ lookup_type_cache(Oid type_id, int flags)
 		typentry->typstorage = typtup->typstorage;
 		typentry->typtype = typtup->typtype;
 		typentry->typrelid = typtup->typrelid;
+		typentry->typelem = typtup->typelem;
+		typentry->typcollation = typtup->typcollation;
 
 		/* If it's a domain, immediately thread it into the domain cache list */
 		if (typentry->typtype == TYPTYPE_DOMAIN)
@@ -451,8 +470,8 @@ lookup_type_cache(Oid type_id, int flags)
 		 * eq_opr; if we already found one from the btree opclass, that
 		 * decision is still good.
 		 */
-		typentry->flags &= ~(TCFLAGS_CHECKED_HASH_PROC);
-		typentry->flags &= ~(TCFLAGS_CHECKED_HASH_EXTENDED_PROC);
+		typentry->flags &= ~(TCFLAGS_CHECKED_HASH_PROC |
+							 TCFLAGS_CHECKED_HASH_EXTENDED_PROC);
 		typentry->flags |= TCFLAGS_CHECKED_HASH_OPCLASS;
 	}
 
@@ -478,9 +497,11 @@ lookup_type_cache(Oid type_id, int flags)
 
 		/*
 		 * If the proposed equality operator is array_eq or record_eq, check
-		 * to see if the element type or column types support equality. If
+		 * to see if the element type or column types support equality.  If
 		 * not, array_eq or record_eq would fail at runtime, so we don't want
-		 * to report that the type has equality.
+		 * to report that the type has equality.  (We can omit similar
+		 * checking for ranges because ranges can't be created in the first
+		 * place unless their subtypes support equality.)
 		 */
 		if (eq_opr == ARRAY_EQ_OP &&
 			!array_element_has_equality(typentry))
@@ -500,8 +521,8 @@ lookup_type_cache(Oid type_id, int flags)
 		 * equality operator.  This is so we can ensure that the hash
 		 * functions match the operator.
 		 */
-		typentry->flags &= ~(TCFLAGS_CHECKED_HASH_PROC);
-		typentry->flags &= ~(TCFLAGS_CHECKED_HASH_EXTENDED_PROC);
+		typentry->flags &= ~(TCFLAGS_CHECKED_HASH_PROC |
+							 TCFLAGS_CHECKED_HASH_EXTENDED_PROC);
 		typentry->flags |= TCFLAGS_CHECKED_EQ_OPR;
 	}
 	if ((flags & TYPECACHE_LT_OPR) &&
@@ -515,7 +536,10 @@ lookup_type_cache(Oid type_id, int flags)
 										 typentry->btree_opintype,
 										 BTLessStrategyNumber);
 
-		/* As above, make sure array_cmp or record_cmp will succeed */
+		/*
+		 * As above, make sure array_cmp or record_cmp will succeed; but again
+		 * we need no special check for ranges.
+		 */
 		if (lt_opr == ARRAY_LT_OP &&
 			!array_element_has_compare(typentry))
 			lt_opr = InvalidOid;
@@ -537,7 +561,10 @@ lookup_type_cache(Oid type_id, int flags)
 										 typentry->btree_opintype,
 										 BTGreaterStrategyNumber);
 
-		/* As above, make sure array_cmp or record_cmp will succeed */
+		/*
+		 * As above, make sure array_cmp or record_cmp will succeed; but again
+		 * we need no special check for ranges.
+		 */
 		if (gt_opr == ARRAY_GT_OP &&
 			!array_element_has_compare(typentry))
 			gt_opr = InvalidOid;
@@ -559,7 +586,10 @@ lookup_type_cache(Oid type_id, int flags)
 										 typentry->btree_opintype,
 										 BTORDER_PROC);
 
-		/* As above, make sure array_cmp or record_cmp will succeed */
+		/*
+		 * As above, make sure array_cmp or record_cmp will succeed; but again
+		 * we need no special check for ranges.
+		 */
 		if (cmp_proc == F_BTARRAYCMP &&
 			!array_element_has_compare(typentry))
 			cmp_proc = InvalidOid;
@@ -603,6 +633,13 @@ lookup_type_cache(Oid type_id, int flags)
 			!array_element_has_hashing(typentry))
 			hash_proc = InvalidOid;
 
+		/*
+		 * Likewise for hash_range.
+		 */
+		if (hash_proc == F_HASH_RANGE &&
+			!range_element_has_hashing(typentry))
+			hash_proc = InvalidOid;
+
 		/* Force update of hash_proc_finfo only if we're changing state */
 		if (typentry->hash_proc != hash_proc)
 			typentry->hash_proc_finfo.fn_oid = InvalidOid;
@@ -637,10 +674,17 @@ lookup_type_cache(Oid type_id, int flags)
 		 * we'll need more logic here to check that case too.
 		 */
 		if (hash_extended_proc == F_HASH_ARRAY_EXTENDED &&
-			!array_element_has_hashing(typentry))
+			!array_element_has_extended_hashing(typentry))
 			hash_extended_proc = InvalidOid;
 
-		/* Force update of hash_proc_finfo only if we're changing state */
+		/*
+		 * Likewise for hash_range_extended.
+		 */
+		if (hash_extended_proc == F_HASH_RANGE_EXTENDED &&
+			!range_element_has_extended_hashing(typentry))
+			hash_extended_proc = InvalidOid;
+
+		/* Force update of proc finfo only if we're changing state */
 		if (typentry->hash_extended_proc != hash_extended_proc)
 			typentry->hash_extended_proc_finfo.fn_oid = InvalidOid;
 
@@ -717,7 +761,15 @@ lookup_type_cache(Oid type_id, int flags)
 	/*
 	 * If requested, get information about a domain type
 	 */
-	if ((flags & TYPECACHE_DOMAIN_INFO) &&
+	if ((flags & TYPECACHE_DOMAIN_BASE_INFO) &&
+		typentry->domainBaseType == InvalidOid &&
+		typentry->typtype == TYPTYPE_DOMAIN)
+	{
+		typentry->domainBaseTypmod = -1;
+		typentry->domainBaseType =
+			getBaseTypeAndTypmod(type_id, &typentry->domainBaseTypmod);
+	}
+	if ((flags & TYPECACHE_DOMAIN_CONSTR_INFO) &&
 		(typentry->flags & TCFLAGS_CHECKED_DOMAIN_CONSTRAINTS) == 0 &&
 		typentry->typtype == TYPTYPE_DOMAIN)
 	{
@@ -751,6 +803,12 @@ load_typcache_tupdesc(TypeCacheEntry *typentry)
 
 	Assert(typentry->tupDesc->tdrefcount > 0);
 	typentry->tupDesc->tdrefcount++;
+
+	/*
+	 * In future, we could take some pains to not change tupDesc_identifier if
+	 * the tupdesc didn't really change; but for now it's not worth it.
+	 */
+	typentry->tupDesc_identifier = ++tupledesc_id_counter;
 
 	relation_close(rel, AccessShareLock);
 }
@@ -857,7 +915,7 @@ load_domaintype_info(TypeCacheEntry *typentry)
 	 * constraints for not just this domain, but any ancestor domains, so the
 	 * outer loop crawls up the domain stack.
 	 */
-	conRel = heap_open(ConstraintRelationId, AccessShareLock);
+	conRel = table_open(ConstraintRelationId, AccessShareLock);
 
 	for (;;)
 	{
@@ -936,7 +994,16 @@ load_domaintype_info(TypeCacheEntry *typentry)
 
 			check_expr = (Expr *) stringToNode(constring);
 
-			/* ExecInitExpr will assume we've planned the expression */
+			/*
+			 * Plan the expression, since ExecInitExpr will expect that.
+			 *
+			 * Note: caching the result of expression_planner() is not very
+			 * good practice.  Ideally we'd use a CachedExpression here so
+			 * that we would react promptly to, eg, changes in inlined
+			 * functions.  However, because we don't support mutable domain
+			 * CHECK constraints, it's not really clear that it's worth the
+			 * extra overhead to do that.
+			 */
 			check_expr = expression_planner(check_expr);
 
 			r = makeNode(DomainConstraintState);
@@ -989,7 +1056,7 @@ load_domaintype_info(TypeCacheEntry *typentry)
 		ReleaseSysCache(tup);
 	}
 
-	heap_close(conRel, AccessShareLock);
+	table_close(conRel, AccessShareLock);
 
 	/*
 	 * Only need to add one NOT NULL check regardless of how many domains in
@@ -1136,7 +1203,7 @@ InitDomainConstraintRef(Oid type_id, DomainConstraintRef *ref,
 						MemoryContext refctx, bool need_exprstate)
 {
 	/* Look up the typcache entry --- we assume it survives indefinitely */
-	ref->tcache = lookup_type_cache(type_id, TYPECACHE_DOMAIN_INFO);
+	ref->tcache = lookup_type_cache(type_id, TYPECACHE_DOMAIN_CONSTR_INFO);
 	ref->need_exprstate = need_exprstate;
 	/* For safety, establish the callback before acquiring a refcount */
 	ref->refctx = refctx;
@@ -1227,7 +1294,7 @@ DomainHasConstraints(Oid type_id)
 	 * Note: a side effect is to cause the typcache's domain data to become
 	 * valid.  This is fine since we'll likely need it soon if there is any.
 	 */
-	typentry = lookup_type_cache(type_id, TYPECACHE_DOMAIN_INFO);
+	typentry = lookup_type_cache(type_id, TYPECACHE_DOMAIN_CONSTR_INFO);
 
 	return (typentry->domainData != NULL);
 }
@@ -1269,6 +1336,14 @@ array_element_has_hashing(TypeCacheEntry *typentry)
 	return (typentry->flags & TCFLAGS_HAVE_ELEM_HASHING) != 0;
 }
 
+static bool
+array_element_has_extended_hashing(TypeCacheEntry *typentry)
+{
+	if (!(typentry->flags & TCFLAGS_CHECKED_ELEM_PROPERTIES))
+		cache_array_element_properties(typentry);
+	return (typentry->flags & TCFLAGS_HAVE_ELEM_EXTENDED_HASHING) != 0;
+}
+
 static void
 cache_array_element_properties(TypeCacheEntry *typentry)
 {
@@ -1281,16 +1356,23 @@ cache_array_element_properties(TypeCacheEntry *typentry)
 		elementry = lookup_type_cache(elem_type,
 									  TYPECACHE_EQ_OPR |
 									  TYPECACHE_CMP_PROC |
-									  TYPECACHE_HASH_PROC);
+									  TYPECACHE_HASH_PROC |
+									  TYPECACHE_HASH_EXTENDED_PROC);
 		if (OidIsValid(elementry->eq_opr))
 			typentry->flags |= TCFLAGS_HAVE_ELEM_EQUALITY;
 		if (OidIsValid(elementry->cmp_proc))
 			typentry->flags |= TCFLAGS_HAVE_ELEM_COMPARE;
 		if (OidIsValid(elementry->hash_proc))
 			typentry->flags |= TCFLAGS_HAVE_ELEM_HASHING;
+		if (OidIsValid(elementry->hash_extended_proc))
+			typentry->flags |= TCFLAGS_HAVE_ELEM_EXTENDED_HASHING;
 	}
 	typentry->flags |= TCFLAGS_CHECKED_ELEM_PROPERTIES;
 }
+
+/*
+ * Likewise, some helper functions for composite types.
+ */
 
 static bool
 record_fields_have_equality(TypeCacheEntry *typentry)
@@ -1360,11 +1442,83 @@ cache_record_field_properties(TypeCacheEntry *typentry)
 
 		DecrTupleDescRefCount(tupdesc);
 	}
+	else if (typentry->typtype == TYPTYPE_DOMAIN)
+	{
+		/* If it's domain over composite, copy base type's properties */
+		TypeCacheEntry *baseentry;
+
+		/* load up basetype info if we didn't already */
+		if (typentry->domainBaseType == InvalidOid)
+		{
+			typentry->domainBaseTypmod = -1;
+			typentry->domainBaseType =
+				getBaseTypeAndTypmod(typentry->type_id,
+									 &typentry->domainBaseTypmod);
+		}
+		baseentry = lookup_type_cache(typentry->domainBaseType,
+									  TYPECACHE_EQ_OPR |
+									  TYPECACHE_CMP_PROC);
+		if (baseentry->typtype == TYPTYPE_COMPOSITE)
+		{
+			typentry->flags |= TCFLAGS_DOMAIN_BASE_IS_COMPOSITE;
+			typentry->flags |= baseentry->flags & (TCFLAGS_HAVE_FIELD_EQUALITY |
+												   TCFLAGS_HAVE_FIELD_COMPARE);
+		}
+	}
 	typentry->flags |= TCFLAGS_CHECKED_FIELD_PROPERTIES;
 }
 
 /*
- * Make sure that RecordCacheArray is large enough to store 'typmod'.
+ * Likewise, some helper functions for range types.
+ *
+ * We can borrow the flag bits for array element properties to use for range
+ * element properties, since those flag bits otherwise have no use in a
+ * range type's typcache entry.
+ */
+
+static bool
+range_element_has_hashing(TypeCacheEntry *typentry)
+{
+	if (!(typentry->flags & TCFLAGS_CHECKED_ELEM_PROPERTIES))
+		cache_range_element_properties(typentry);
+	return (typentry->flags & TCFLAGS_HAVE_ELEM_HASHING) != 0;
+}
+
+static bool
+range_element_has_extended_hashing(TypeCacheEntry *typentry)
+{
+	if (!(typentry->flags & TCFLAGS_CHECKED_ELEM_PROPERTIES))
+		cache_range_element_properties(typentry);
+	return (typentry->flags & TCFLAGS_HAVE_ELEM_EXTENDED_HASHING) != 0;
+}
+
+static void
+cache_range_element_properties(TypeCacheEntry *typentry)
+{
+	/* load up subtype link if we didn't already */
+	if (typentry->rngelemtype == NULL &&
+		typentry->typtype == TYPTYPE_RANGE)
+		load_rangetype_info(typentry);
+
+	if (typentry->rngelemtype != NULL)
+	{
+		TypeCacheEntry *elementry;
+
+		/* might need to calculate subtype's hash function properties */
+		elementry = lookup_type_cache(typentry->rngelemtype->type_id,
+									  TYPECACHE_HASH_PROC |
+									  TYPECACHE_HASH_EXTENDED_PROC);
+		if (OidIsValid(elementry->hash_proc))
+			typentry->flags |= TCFLAGS_HAVE_ELEM_HASHING;
+		if (OidIsValid(elementry->hash_extended_proc))
+			typentry->flags |= TCFLAGS_HAVE_ELEM_EXTENDED_HASHING;
+	}
+	typentry->flags |= TCFLAGS_CHECKED_ELEM_PROPERTIES;
+}
+
+/*
+ * Make sure that RecordCacheArray and RecordIdentifierArray are large enough
+ * to store 'typmod'.
  */
 static void
 ensure_record_cache_typmod_slot_exists(int32 typmod)
@@ -1373,6 +1527,8 @@ ensure_record_cache_typmod_slot_exists(int32 typmod)
 	{
 		RecordCacheArray = (TupleDesc *)
 			MemoryContextAllocZero(CacheMemoryContext, 64 * sizeof(TupleDesc));
+		RecordIdentifierArray = (uint64 *)
+			MemoryContextAllocZero(CacheMemoryContext, 64 * sizeof(uint64));
 		RecordCacheArrayLen = 64;
 	}
 
@@ -1387,6 +1543,10 @@ ensure_record_cache_typmod_slot_exists(int32 typmod)
 												  newlen * sizeof(TupleDesc));
 		memset(RecordCacheArray + RecordCacheArrayLen, 0,
 			   (newlen - RecordCacheArrayLen) * sizeof(TupleDesc));
+		RecordIdentifierArray = (uint64 *) repalloc(RecordIdentifierArray,
+													newlen * sizeof(uint64));
+		memset(RecordIdentifierArray + RecordCacheArrayLen, 0,
+			   (newlen - RecordCacheArrayLen) * sizeof(uint64));
 		RecordCacheArrayLen = newlen;
 	}
 }
@@ -1449,10 +1609,16 @@ lookup_rowtype_tupdesc_internal(Oid type_id, int32 typmod, bool noError)
 
 					/*
 					 * Our local array can now point directly to the TupleDesc
-					 * in shared memory.
+					 * in shared memory, which is non-reference-counted.
 					 */
 					RecordCacheArray[typmod] = tupdesc;
 					Assert(tupdesc->tdrefcount == -1);
+
+					/*
+					 * We don't share tupdesc identifiers across processes, so
+					 * assign one locally.
+					 */
+					RecordIdentifierArray[typmod] = ++tupledesc_id_counter;
 
 					dshash_release_lock(CurrentSession->shared_typmod_table,
 										entry);
@@ -1523,6 +1689,53 @@ lookup_rowtype_tupdesc_copy(Oid type_id, int32 typmod)
 
 	tmp = lookup_rowtype_tupdesc_internal(type_id, typmod, false);
 	return CreateTupleDescCopyConstr(tmp);
+}
+
+/*
+ * lookup_rowtype_tupdesc_domain
+ *
+ * Same as lookup_rowtype_tupdesc_noerror(), except that the type can also be
+ * a domain over a named composite type; so this is effectively equivalent to
+ * lookup_rowtype_tupdesc_noerror(getBaseType(type_id), typmod, noError)
+ * except for being a tad faster.
+ *
+ * Note: the reason we don't fold the look-through-domain behavior into plain
+ * lookup_rowtype_tupdesc() is that we want callers to know they might be
+ * dealing with a domain.  Otherwise they might construct a tuple that should
+ * be of the domain type, but not apply domain constraints.
+ */
+TupleDesc
+lookup_rowtype_tupdesc_domain(Oid type_id, int32 typmod, bool noError)
+{
+	TupleDesc	tupDesc;
+
+	if (type_id != RECORDOID)
+	{
+		/*
+		 * Check for domain or named composite type.  We might as well load
+		 * whichever data is needed.
+		 */
+		TypeCacheEntry *typentry;
+
+		typentry = lookup_type_cache(type_id,
+									 TYPECACHE_TUPDESC |
+									 TYPECACHE_DOMAIN_BASE_INFO);
+		if (typentry->typtype == TYPTYPE_DOMAIN)
+			return lookup_rowtype_tupdesc_noerror(typentry->domainBaseType,
+												  typentry->domainBaseTypmod,
+												  noError);
+		if (typentry->tupDesc == NULL && !noError)
+			ereport(ERROR,
+					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+					 errmsg("type %s is not composite",
+							format_type_be(type_id))));
+		tupDesc = typentry->tupDesc;
+	}
+	else
+		tupDesc = lookup_rowtype_tupdesc_internal(type_id, typmod, noError);
+	if (tupDesc != NULL)
+		PinTupleDesc(tupDesc);
+	return tupDesc;
 }
 
 /*
@@ -1611,6 +1824,9 @@ assign_record_type_typmod(TupleDesc tupDesc)
 	RecordCacheArray[entDesc->tdtypmod] = entDesc;
 	recentry->tupdesc = entDesc;
 
+	/* Assign a unique tupdesc identifier, too. */
+	RecordIdentifierArray[entDesc->tdtypmod] = ++tupledesc_id_counter;
+
 	/* Update the caller's tuple descriptor. */
 	tupDesc->tdtypmod = entDesc->tdtypmod;
 
@@ -1618,7 +1834,53 @@ assign_record_type_typmod(TupleDesc tupDesc)
 }
 
 /*
- * Return the amout of shmem required to hold a SharedRecordTypmodRegistry.
+ * assign_record_type_identifier
+ *
+ * Get an identifier, which will be unique over the lifespan of this backend
+ * process, for the current tuple descriptor of the specified composite type.
+ * For named composite types, the value is guaranteed to change if the type's
+ * definition does.  For registered RECORD types, the value will not change
+ * once assigned, since the registered type won't either.  If an anonymous
+ * RECORD type is specified, we return a new identifier on each call.
+ */
+uint64
+assign_record_type_identifier(Oid type_id, int32 typmod)
+{
+	if (type_id != RECORDOID)
+	{
+		/*
+		 * It's a named composite type, so use the regular typcache.
+		 */
+		TypeCacheEntry *typentry;
+
+		typentry = lookup_type_cache(type_id, TYPECACHE_TUPDESC);
+		if (typentry->tupDesc == NULL)
+			ereport(ERROR,
+					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+					 errmsg("type %s is not composite",
+							format_type_be(type_id))));
+		Assert(typentry->tupDesc_identifier != 0);
+		return typentry->tupDesc_identifier;
+	}
+	else
+	{
+		/*
+		 * It's a transient record type, so look in our record-type table.
+		 */
+		if (typmod >= 0 && typmod < RecordCacheArrayLen &&
+			RecordCacheArray[typmod] != NULL)
+		{
+			Assert(RecordIdentifierArray[typmod] != 0);
+			return RecordIdentifierArray[typmod];
+		}
+
+		/* For anonymous or unrecognized record type, generate a new ID */
+		return ++tupledesc_id_counter;
+	}
+}
+
+/*
+ * Return the amount of shmem required to hold a SharedRecordTypmodRegistry.
  * This exists only to avoid exposing private innards of
  * SharedRecordTypmodRegistry in a header.
  */
@@ -1836,29 +2098,40 @@ TypeCacheRelCallback(Datum arg, Oid relid)
 	hash_seq_init(&status, TypeCacheHash);
 	while ((typentry = (TypeCacheEntry *) hash_seq_search(&status)) != NULL)
 	{
-		if (typentry->typtype != TYPTYPE_COMPOSITE)
-			continue;			/* skip non-composites */
+		if (typentry->typtype == TYPTYPE_COMPOSITE)
+		{
+			/* Skip if no match, unless we're zapping all composite types */
+			if (relid != typentry->typrelid && relid != InvalidOid)
+				continue;
 
-		/* Skip if no match, unless we're zapping all composite types */
-		if (relid != typentry->typrelid && relid != InvalidOid)
-			continue;
+			/* Delete tupdesc if we have it */
+			if (typentry->tupDesc != NULL)
+			{
+				/*
+				 * Release our refcount, and free the tupdesc if none remain.
+				 * (Can't use DecrTupleDescRefCount because this reference is
+				 * not logged in current resource owner.)
+				 */
+				Assert(typentry->tupDesc->tdrefcount > 0);
+				if (--typentry->tupDesc->tdrefcount == 0)
+					FreeTupleDesc(typentry->tupDesc);
+				typentry->tupDesc = NULL;
+			}
 
-		/* Delete tupdesc if we have it */
-		if (typentry->tupDesc != NULL)
+			/* Reset equality/comparison/hashing validity information */
+			typentry->flags = 0;
+		}
+		else if (typentry->typtype == TYPTYPE_DOMAIN)
 		{
 			/*
-			 * Release our refcount, and free the tupdesc if none remain.
-			 * (Can't use DecrTupleDescRefCount because this reference is not
-			 * logged in current resource owner.)
+			 * If it's domain over composite, reset flags.  (We don't bother
+			 * trying to determine whether the specific base type needs a
+			 * reset.)  Note that if we haven't determined whether the base
+			 * type is composite, we don't need to reset anything.
 			 */
-			Assert(typentry->tupDesc->tdrefcount > 0);
-			if (--typentry->tupDesc->tdrefcount == 0)
-				FreeTupleDesc(typentry->tupDesc);
-			typentry->tupDesc = NULL;
+			if (typentry->flags & TCFLAGS_DOMAIN_BASE_IS_COMPOSITE)
+				typentry->flags = 0;
 		}
-
-		/* Reset equality/comparison/hashing validity information */
-		typentry->flags = 0;
 	}
 }
 
@@ -2074,7 +2347,7 @@ load_enum_cache_data(TypeCacheEntry *tcache)
 				BTEqualStrategyNumber, F_OIDEQ,
 				ObjectIdGetDatum(tcache->type_id));
 
-	enum_rel = heap_open(EnumRelationId, AccessShareLock);
+	enum_rel = table_open(EnumRelationId, AccessShareLock);
 	enum_scan = systable_beginscan(enum_rel,
 								   EnumTypIdLabelIndexId,
 								   true, NULL,
@@ -2089,13 +2362,13 @@ load_enum_cache_data(TypeCacheEntry *tcache)
 			maxitems *= 2;
 			items = (EnumItem *) repalloc(items, sizeof(EnumItem) * maxitems);
 		}
-		items[numitems].enum_oid = HeapTupleGetOid(enum_tuple);
+		items[numitems].enum_oid = en->oid;
 		items[numitems].sort_order = en->enumsortorder;
 		numitems++;
 	}
 
 	systable_endscan(enum_scan);
-	heap_close(enum_rel, AccessShareLock);
+	table_close(enum_rel, AccessShareLock);
 
 	/* Sort the items into OID order */
 	qsort(items, numitems, sizeof(EnumItem), enum_oid_cmp);

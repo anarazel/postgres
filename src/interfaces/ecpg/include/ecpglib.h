@@ -55,6 +55,10 @@ bool		ECPGdisconnect(int, const char *);
 bool		ECPGprepare(int, const char *, const bool, const char *, const char *);
 bool		ECPGdeallocate(int, int, const char *, const char *);
 bool		ECPGdeallocate_all(int, int, const char *);
+bool		ECPGdeclare(int, const char *, const char *);
+bool		ECPGopen(const char*, const char*, const int, const int, const int, const char *, const bool, const int, const char *,...);
+bool		ECPGfetch(const char*, const int, const int, const int, const char *, const bool, const int, const char *,...);
+bool		ECPGclose(const char*, const int, const int, const int, const char *, const bool, const int, const char *,...);
 char	   *ECPGprepared_statement(const char *, const char *, int);
 PGconn	   *ECPGget_PGconn(const char *);
 PGTransactionStatusType ECPGtransactionStatus(const char *);
@@ -80,7 +84,7 @@ bool		ECPGset_desc_header(int, const char *, int);
 bool		ECPGset_desc(int, const char *, int,...);
 
 void		ECPGset_noind_null(enum ECPGttype, void *);
-bool		ECPGis_noind_null(enum ECPGttype, void *);
+bool		ECPGis_noind_null(enum ECPGttype, const void *);
 bool		ECPGdescribe(int, int, bool, const char *, const char *,...);
 
 void		ECPGset_var(int, void *, int);

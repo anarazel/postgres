@@ -5,7 +5,7 @@
  *		number of background workers for shared memory message queue
  *		testing.
  *
- * Copyright (c) 2013-2017, PostgreSQL Global Development Group
+ * Copyright (c) 2013-2019, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *		src/test/modules/test_shm_mq/setup.c
@@ -219,7 +219,7 @@ setup_background_workers(int nworkers, dsm_segment *seg)
 	worker.bgw_restart_time = BGW_NEVER_RESTART;
 	sprintf(worker.bgw_library_name, "test_shm_mq");
 	sprintf(worker.bgw_function_name, "test_shm_mq_main");
-	snprintf(worker.bgw_name, BGW_MAXLEN, "test_shm_mq");
+	snprintf(worker.bgw_type, BGW_MAXLEN, "test_shm_mq");
 	worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(seg));
 	/* set bgw_notify_pid, so we can detect if the worker stops */
 	worker.bgw_notify_pid = MyProcPid;
@@ -280,7 +280,8 @@ wait_for_workers_to_become_ready(worker_state *wstate,
 		}
 
 		/* Wait to be signalled. */
-		WaitLatch(MyLatch, WL_LATCH_SET, 0, PG_WAIT_EXTENSION);
+		(void) WaitLatch(MyLatch, WL_LATCH_SET | WL_EXIT_ON_PM_DEATH, 0,
+						 PG_WAIT_EXTENSION);
 
 		/* Reset the latch so we don't spin. */
 		ResetLatch(MyLatch);

@@ -3,7 +3,7 @@
  * objectaddress.h
  *	  functions for working with object addresses
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/catalog/objectaddress.h
@@ -58,15 +58,16 @@ extern bool is_objectclass_supported(Oid class_id);
 extern Oid	get_object_oid_index(Oid class_id);
 extern int	get_object_catcache_oid(Oid class_id);
 extern int	get_object_catcache_name(Oid class_id);
+extern AttrNumber get_object_attnum_oid(Oid class_id);
 extern AttrNumber get_object_attnum_name(Oid class_id);
 extern AttrNumber get_object_attnum_namespace(Oid class_id);
 extern AttrNumber get_object_attnum_owner(Oid class_id);
 extern AttrNumber get_object_attnum_acl(Oid class_id);
-extern AclObjectKind get_object_aclkind(Oid class_id);
+extern ObjectType get_object_type(Oid class_id, Oid object_id);
 extern bool get_object_namensp_unique(Oid class_id);
 
 extern HeapTuple get_catalog_object_by_oid(Relation catalog,
-						  Oid objectId);
+						  AttrNumber oidcol, Oid objectId);
 
 extern char *getObjectDescription(const ObjectAddress *object);
 extern char *getObjectDescriptionOids(Oid classid, Oid objid);
@@ -77,5 +78,7 @@ extern char *getObjectIdentity(const ObjectAddress *address);
 extern char *getObjectIdentityParts(const ObjectAddress *address,
 					   List **objname, List **objargs);
 extern ArrayType *strlist_to_textarray(List *list);
+
+extern ObjectType get_relkind_objtype(char relkind);
 
 #endif							/* OBJECTADDRESS_H */

@@ -4,7 +4,7 @@
  *	  This file contains definitions for structures and
  *	  externs for functions used by frontend postgres applications.
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/interfaces/libpq/libpq-fe.h
@@ -65,8 +65,9 @@ typedef enum
 	CONNECTION_NEEDED,			/* Internal state: connect() needed */
 	CONNECTION_CHECK_WRITABLE,	/* Check if we could make a writable
 								 * connection. */
-	CONNECTION_CONSUME			/* Wait for any pending message and consume
+	CONNECTION_CONSUME,			/* Wait for any pending message and consume
 								 * them. */
+	CONNECTION_GSS_STARTUP		/* Negotiating GSSAPI. */
 } ConnStatusType;
 
 typedef enum
@@ -111,7 +112,8 @@ typedef enum
 {
 	PQERRORS_TERSE,				/* single-line error messages */
 	PQERRORS_DEFAULT,			/* recommended style */
-	PQERRORS_VERBOSE			/* all the facts, ma'am */
+	PQERRORS_VERBOSE,			/* all the facts, ma'am */
+	PQERRORS_SQLSTATE			/* only error severity and SQLSTATE code */
 } PGVerbosity;
 
 typedef enum
@@ -312,6 +314,7 @@ extern char *PQdb(const PGconn *conn);
 extern char *PQuser(const PGconn *conn);
 extern char *PQpass(const PGconn *conn);
 extern char *PQhost(const PGconn *conn);
+extern char *PQhostaddr(const PGconn *conn);
 extern char *PQport(const PGconn *conn);
 extern char *PQtty(const PGconn *conn);
 extern char *PQoptions(const PGconn *conn);
@@ -344,6 +347,12 @@ extern void PQinitSSL(int do_init);
 
 /* More detailed way to tell libpq whether it needs to initialize OpenSSL */
 extern void PQinitOpenSSL(int do_ssl, int do_crypto);
+
+/* Return true if GSSAPI encryption is in use */
+extern int PQgssEncInUse(PGconn *conn);
+
+/* Returns GSSAPI context if GSSAPI is in use */
+extern void *PQgetgssctx(PGconn *conn);
 
 /* Set verbosity for PQerrorMessage and PQresultErrorMessage */
 extern PGVerbosity PQsetErrorVerbosity(PGconn *conn, PGVerbosity verbosity);
@@ -516,6 +525,7 @@ extern PGresult *PQmakeEmptyPGresult(PGconn *conn, ExecStatusType status);
 extern PGresult *PQcopyResult(const PGresult *src, int flags);
 extern int	PQsetResultAttrs(PGresult *res, int numAttributes, PGresAttDesc *attDescs);
 extern void *PQresultAlloc(PGresult *res, size_t nBytes);
+extern size_t PQresultMemorySize(const PGresult *res);
 extern int	PQsetvalue(PGresult *res, int tup_num, int field_num, char *value, int len);
 
 /* Quoting strings before inclusion in queries. */

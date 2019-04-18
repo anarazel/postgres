@@ -9,7 +9,7 @@
  * proper FooMain() routine for the incarnation.
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -61,6 +61,14 @@ main(int argc, char *argv[])
 {
 	bool		do_check_root = true;
 
+	/*
+	 * If supported on the current platform, set up a handler to be called if
+	 * the backend/postmaster crashes with a fatal signal or exception.
+	 */
+#if defined(WIN32) && defined(HAVE_MINIDUMP_TYPE)
+	pgwin32_install_crashdump_handler();
+#endif
+
 	progname = get_progname(argv[0]);
 
 	/*
@@ -80,14 +88,6 @@ main(int argc, char *argv[])
 	 * result pointer.
 	 */
 	argv = save_ps_display_args(argc, argv);
-
-	/*
-	 * If supported on the current platform, set up a handler to be called if
-	 * the backend/postmaster crashes with a fatal signal or exception.
-	 */
-#if defined(WIN32) && defined(HAVE_MINIDUMP_TYPE)
-	pgwin32_install_crashdump_handler();
-#endif
 
 	/*
 	 * Fire up essential subsystems: error and memory management
@@ -377,7 +377,7 @@ help(const char *progname)
 	printf(_("\nPlease read the documentation for the complete list of run-time\n"
 			 "configuration settings and how to set them on the command line or in\n"
 			 "the configuration file.\n\n"
-			 "Report bugs to <pgsql-bugs@postgresql.org>.\n"));
+			 "Report bugs to <pgsql-bugs@lists.postgresql.org>.\n"));
 }
 
 

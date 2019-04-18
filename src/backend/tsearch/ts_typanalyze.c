@@ -3,7 +3,7 @@
  * ts_typanalyze.c
  *	  functions for gathering statistics from tsvector columns
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  *
  *
  * IDENTIFICATION
@@ -13,11 +13,12 @@
  */
 #include "postgres.h"
 
-#include "access/hash.h"
+#include "catalog/pg_collation.h"
 #include "catalog/pg_operator.h"
 #include "commands/vacuum.h"
 #include "tsearch/ts_type.h"
 #include "utils/builtins.h"
+#include "utils/hashutils.h"
 
 
 /* A hash key for lexemes */
@@ -415,6 +416,7 @@ compute_tsvector_stats(VacAttrStats *stats,
 
 			stats->stakind[0] = STATISTIC_KIND_MCELEM;
 			stats->staop[0] = TextEqualOperator;
+			stats->stacoll[0] = DEFAULT_COLLATION_OID;
 			stats->stanumbers[0] = mcelem_freqs;
 			/* See above comment about two extra frequency fields */
 			stats->numnumbers[0] = num_mcelem + 2;

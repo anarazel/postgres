@@ -2,7 +2,7 @@
  *
  * pgbench.h
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *-------------------------------------------------------------------------
@@ -33,8 +33,11 @@ union YYSTYPE;
  */
 typedef enum
 {
+	PGBT_NO_VALUE,
+	PGBT_NULL,
 	PGBT_INT,
-	PGBT_DOUBLE
+	PGBT_DOUBLE,
+	PGBT_BOOLEAN
 	/* add other types here */
 } PgBenchValueType;
 
@@ -45,6 +48,7 @@ typedef struct
 	{
 		int64		ival;
 		double		dval;
+		bool		bval;
 		/* add other types here */
 	}			u;
 } PgBenchValue;
@@ -73,9 +77,29 @@ typedef enum PgBenchFunction
 	PGBENCH_DOUBLE,
 	PGBENCH_PI,
 	PGBENCH_SQRT,
+	PGBENCH_LN,
+	PGBENCH_EXP,
 	PGBENCH_RANDOM,
 	PGBENCH_RANDOM_GAUSSIAN,
-	PGBENCH_RANDOM_EXPONENTIAL
+	PGBENCH_RANDOM_EXPONENTIAL,
+	PGBENCH_RANDOM_ZIPFIAN,
+	PGBENCH_POW,
+	PGBENCH_AND,
+	PGBENCH_OR,
+	PGBENCH_NOT,
+	PGBENCH_BITAND,
+	PGBENCH_BITOR,
+	PGBENCH_BITXOR,
+	PGBENCH_LSHIFT,
+	PGBENCH_RSHIFT,
+	PGBENCH_EQ,
+	PGBENCH_NE,
+	PGBENCH_LE,
+	PGBENCH_LT,
+	PGBENCH_IS,
+	PGBENCH_CASE,
+	PGBENCH_HASH_FNV1A,
+	PGBENCH_HASH_MURMUR2
 } PgBenchFunction;
 
 typedef struct PgBenchExpr PgBenchExpr;
@@ -136,6 +160,7 @@ extern void syntax_error(const char *source, int lineno, const char *line,
 			 const char *cmd, const char *msg,
 			 const char *more, int col) pg_attribute_noreturn();
 
-extern int64 strtoint64(const char *str);
+extern bool strtoint64(const char *str, bool errorOK, int64 *pi);
+extern bool strtodouble(const char *str, bool errorOK, double *pd);
 
 #endif							/* PGBENCH_H */

@@ -5,7 +5,7 @@
  *
  * Code originally contributed by Adriaan Joubert.
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -17,8 +17,10 @@
 #include "postgres.h"
 
 #include "access/htup_details.h"
+#include "common/int.h"
 #include "libpq/pqformat.h"
 #include "nodes/nodeFuncs.h"
+#include "nodes/supportnodes.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/varbit.h"
@@ -665,38 +667,47 @@ varbit_send(PG_FUNCTION_ARGS)
 	StringInfoData buf;
 
 	pq_begintypsend(&buf);
-	pq_sendint(&buf, VARBITLEN(s), sizeof(int32));
+	pq_sendint32(&buf, VARBITLEN(s));
 	pq_sendbytes(&buf, (char *) VARBITS(s), VARBITBYTES(s));
 	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
 }
 
 /*
- * varbit_transform()
- * Flatten calls to varbit's length coercion function that set the new maximum
- * length >= the previous maximum length.  We can ignore the isExplicit
- * argument, since that only affects truncation cases.
+ * varbit_support()
+ *
+ * Planner support function for the varbit() length coercion function.
+ *
+ * Currently, the only interesting thing we can do is flatten calls that set
+ * the new maximum length >= the previous maximum length.  We can ignore the
+ * isExplicit argument, since that only affects truncation cases.
  */
 Datum
-varbit_transform(PG_FUNCTION_ARGS)
+varbit_support(PG_FUNCTION_ARGS)
 {
-	FuncExpr   *expr = castNode(FuncExpr, PG_GETARG_POINTER(0));
+	Node	   *rawreq = (Node *) PG_GETARG_POINTER(0);
 	Node	   *ret = NULL;
-	Node	   *typmod;
 
-	Assert(list_length(expr->args) >= 2);
-
-	typmod = (Node *) lsecond(expr->args);
-
-	if (IsA(typmod, Const) &&!((Const *) typmod)->constisnull)
+	if (IsA(rawreq, SupportRequestSimplify))
 	{
-		Node	   *source = (Node *) linitial(expr->args);
-		int32		new_typmod = DatumGetInt32(((Const *) typmod)->constvalue);
-		int32		old_max = exprTypmod(source);
-		int32		new_max = new_typmod;
+		SupportRequestSimplify *req = (SupportRequestSimplify *) rawreq;
+		FuncExpr   *expr = req->fcall;
+		Node	   *typmod;
 
-		/* Note: varbit() treats typmod 0 as invalid, so we do too */
-		if (new_max <= 0 || (old_max > 0 && old_max <= new_max))
-			ret = relabel_to_typmod(source, new_typmod);
+		Assert(list_length(expr->args) >= 2);
+
+		typmod = (Node *) lsecond(expr->args);
+
+		if (IsA(typmod, Const) &&!((Const *) typmod)->constisnull)
+		{
+			Node	   *source = (Node *) linitial(expr->args);
+			int32		new_typmod = DatumGetInt32(((Const *) typmod)->constvalue);
+			int32		old_max = exprTypmod(source);
+			int32		new_max = new_typmod;
+
+			/* Note: varbit() treats typmod 0 as invalid, so we do too */
+			if (new_max <= 0 || (old_max > 0 && old_max <= new_max))
+				ret = relabel_to_typmod(source, new_typmod);
+		}
 	}
 
 	PG_RETURN_POINTER(ret);
@@ -1166,8 +1177,7 @@ bit_overlay(VarBit *t1, VarBit *t2, int sp, int sl)
 		ereport(ERROR,
 				(errcode(ERRCODE_SUBSTRING_ERROR),
 				 errmsg("negative substring length not allowed")));
-	sp_pl_sl = sp + sl;
-	if (sp_pl_sl <= sl)
+	if (pg_add_s32_overflow(sp, sl, &sp_pl_sl))
 		ereport(ERROR,
 				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 				 errmsg("integer out of range")));
@@ -1539,11 +1549,11 @@ bitfromint4(PG_FUNCTION_ARGS)
 	/* store first fractional byte */
 	if (destbitsleft > srcbitsleft)
 	{
-		int			val = (int) (a >> (destbitsleft - 8));
+		unsigned int val = (unsigned int) (a >> (destbitsleft - 8));
 
 		/* Force sign-fill in case the compiler implements >> as zero-fill */
 		if (a < 0)
-			val |= (-1) << (srcbitsleft + 8 - destbitsleft);
+			val |= ((unsigned int) -1) << (srcbitsleft + 8 - destbitsleft);
 		*r++ = (bits8) (val & BITMASK);
 		destbitsleft -= 8;
 	}
@@ -1619,11 +1629,11 @@ bitfromint8(PG_FUNCTION_ARGS)
 	/* store first fractional byte */
 	if (destbitsleft > srcbitsleft)
 	{
-		int			val = (int) (a >> (destbitsleft - 8));
+		unsigned int val = (unsigned int) (a >> (destbitsleft - 8));
 
 		/* Force sign-fill in case the compiler implements >> as zero-fill */
 		if (a < 0)
-			val |= (-1) << (srcbitsleft + 8 - destbitsleft);
+			val |= ((unsigned int) -1) << (srcbitsleft + 8 - destbitsleft);
 		*r++ = (bits8) (val & BITMASK);
 		destbitsleft -= 8;
 	}

@@ -3,7 +3,7 @@
  * spi.c
  *				Server Programming Interface
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -36,10 +36,15 @@
 #include "utils/typcache.h"
 
 
+/*
+ * These global variables are part of the API for various SPI functions
+ * (a horrible API choice, but it's too late now).  To reduce the risk of
+ * interference between different SPI callers, we save and restore them
+ * when entering/exiting a SPI nesting level.
+ */
 uint64		SPI_processed = 0;
-Oid			SPI_lastoid = InvalidOid;
 SPITupleTable *SPI_tuptable = NULL;
-int			SPI_result;
+int			SPI_result = 0;
 
 static _SPI_connection *_SPI_stack = NULL;
 static _SPI_connection *_SPI_current = NULL;
@@ -71,8 +76,8 @@ static void _SPI_cursor_operation(Portal portal,
 static SPIPlanPtr _SPI_make_plan_non_temp(SPIPlanPtr plan);
 static SPIPlanPtr _SPI_save_plan(SPIPlanPtr plan);
 
-static int	_SPI_begin_call(bool execmem);
-static int	_SPI_end_call(bool procmem);
+static int	_SPI_begin_call(bool use_exec);
+static int	_SPI_end_call(bool use_exec);
 static MemoryContext _SPI_execmem(void);
 static MemoryContext _SPI_procmem(void);
 static bool _SPI_checktuples(void);
@@ -83,6 +88,12 @@ static bool _SPI_checktuples(void);
 int
 SPI_connect(void)
 {
+	return SPI_connect_ext(0);
+}
+
+int
+SPI_connect_ext(int options)
+{
 	int			newdepth;
 
 	/* Enlarge stack if necessary */
@@ -92,7 +103,7 @@ SPI_connect(void)
 			elog(ERROR, "SPI stack corrupted");
 		newdepth = 16;
 		_SPI_stack = (_SPI_connection *)
-			MemoryContextAlloc(TopTransactionContext,
+			MemoryContextAlloc(TopMemoryContext,
 							   newdepth * sizeof(_SPI_connection));
 		_SPI_stack_depth = newdepth;
 	}
@@ -116,30 +127,47 @@ SPI_connect(void)
 
 	_SPI_current = &(_SPI_stack[_SPI_connected]);
 	_SPI_current->processed = 0;
-	_SPI_current->lastoid = InvalidOid;
 	_SPI_current->tuptable = NULL;
+	_SPI_current->execSubid = InvalidSubTransactionId;
 	slist_init(&_SPI_current->tuptables);
 	_SPI_current->procCxt = NULL;	/* in case we fail to create 'em */
 	_SPI_current->execCxt = NULL;
 	_SPI_current->connectSubid = GetCurrentSubTransactionId();
 	_SPI_current->queryEnv = NULL;
+	_SPI_current->atomic = (options & SPI_OPT_NONATOMIC ? false : true);
+	_SPI_current->internal_xact = false;
+	_SPI_current->outer_processed = SPI_processed;
+	_SPI_current->outer_tuptable = SPI_tuptable;
+	_SPI_current->outer_result = SPI_result;
 
 	/*
 	 * Create memory contexts for this procedure
 	 *
-	 * XXX it would be better to use PortalContext as the parent context, but
-	 * we may not be inside a portal (consider deferred-trigger execution).
-	 * Perhaps CurTransactionContext would do?	For now it doesn't matter
-	 * because we clean up explicitly in AtEOSubXact_SPI().
+	 * In atomic contexts (the normal case), we use TopTransactionContext,
+	 * otherwise PortalContext, so that it lives across transaction
+	 * boundaries.
+	 *
+	 * XXX It could be better to use PortalContext as the parent context in
+	 * all cases, but we may not be inside a portal (consider deferred-trigger
+	 * execution).  Perhaps CurTransactionContext could be an option?  For now
+	 * it doesn't matter because we clean up explicitly in AtEOSubXact_SPI().
 	 */
-	_SPI_current->procCxt = AllocSetContextCreate(TopTransactionContext,
+	_SPI_current->procCxt = AllocSetContextCreate(_SPI_current->atomic ? TopTransactionContext : PortalContext,
 												  "SPI Proc",
 												  ALLOCSET_DEFAULT_SIZES);
-	_SPI_current->execCxt = AllocSetContextCreate(TopTransactionContext,
+	_SPI_current->execCxt = AllocSetContextCreate(_SPI_current->atomic ? TopTransactionContext : _SPI_current->procCxt,
 												  "SPI Exec",
 												  ALLOCSET_DEFAULT_SIZES);
 	/* ... and switch to procedure's context */
 	_SPI_current->savedcxt = MemoryContextSwitchTo(_SPI_current->procCxt);
+
+	/*
+	 * Reset API global variables so that current caller cannot accidentally
+	 * depend on state of an outer caller.
+	 */
+	SPI_processed = 0;
+	SPI_tuptable = NULL;
+	SPI_result = 0;
 
 	return SPI_OK_CONNECT;
 }
@@ -149,7 +177,7 @@ SPI_finish(void)
 {
 	int			res;
 
-	res = _SPI_begin_call(false);	/* live in procedure memory */
+	res = _SPI_begin_call(false);	/* just check we're connected */
 	if (res < 0)
 		return res;
 
@@ -163,12 +191,12 @@ SPI_finish(void)
 	_SPI_current->procCxt = NULL;
 
 	/*
-	 * Reset result variables, especially SPI_tuptable which is probably
+	 * Restore outer API variables, especially SPI_tuptable which is probably
 	 * pointing at a just-deleted tuptable
 	 */
-	SPI_processed = 0;
-	SPI_lastoid = InvalidOid;
-	SPI_tuptable = NULL;
+	SPI_processed = _SPI_current->outer_processed;
+	SPI_tuptable = _SPI_current->outer_tuptable;
+	SPI_result = _SPI_current->outer_result;
 
 	/* Exit stack level */
 	_SPI_connected--;
@@ -180,29 +208,154 @@ SPI_finish(void)
 	return SPI_OK_FINISH;
 }
 
+void
+SPI_start_transaction(void)
+{
+	MemoryContext oldcontext = CurrentMemoryContext;
+
+	StartTransactionCommand();
+	MemoryContextSwitchTo(oldcontext);
+}
+
+static void
+_SPI_commit(bool chain)
+{
+	MemoryContext oldcontext = CurrentMemoryContext;
+
+	if (_SPI_current->atomic)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_TRANSACTION_TERMINATION),
+				 errmsg("invalid transaction termination")));
+
+	/*
+	 * This restriction is required by PLs implemented on top of SPI.  They
+	 * use subtransactions to establish exception blocks that are supposed to
+	 * be rolled back together if there is an error.  Terminating the
+	 * top-level transaction in such a block violates that idea.  A future PL
+	 * implementation might have different ideas about this, in which case
+	 * this restriction would have to be refined or the check possibly be
+	 * moved out of SPI into the PLs.
+	 */
+	if (IsSubTransaction())
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_TRANSACTION_TERMINATION),
+				 errmsg("cannot commit while a subtransaction is active")));
+
+	_SPI_current->internal_xact = true;
+
+	/*
+	 * Before committing, pop all active snapshots to avoid error about
+	 * "snapshot %p still active".
+	 */
+	while (ActiveSnapshotSet())
+		PopActiveSnapshot();
+
+	if (chain)
+		SaveTransactionCharacteristics();
+
+	CommitTransactionCommand();
+
+	if (chain)
+	{
+		StartTransactionCommand();
+		RestoreTransactionCharacteristics();
+	}
+
+	MemoryContextSwitchTo(oldcontext);
+
+	_SPI_current->internal_xact = false;
+}
+
+void
+SPI_commit(void)
+{
+	_SPI_commit(false);
+}
+
+void
+SPI_commit_and_chain(void)
+{
+	_SPI_commit(true);
+}
+
+static void
+_SPI_rollback(bool chain)
+{
+	MemoryContext oldcontext = CurrentMemoryContext;
+
+	if (_SPI_current->atomic)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_TRANSACTION_TERMINATION),
+				 errmsg("invalid transaction termination")));
+
+	/* see under SPI_commit() */
+	if (IsSubTransaction())
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_TRANSACTION_TERMINATION),
+				 errmsg("cannot roll back while a subtransaction is active")));
+
+	_SPI_current->internal_xact = true;
+
+	if (chain)
+		SaveTransactionCharacteristics();
+
+	AbortCurrentTransaction();
+
+	if (chain)
+	{
+		StartTransactionCommand();
+		RestoreTransactionCharacteristics();
+	}
+
+	MemoryContextSwitchTo(oldcontext);
+
+	_SPI_current->internal_xact = false;
+}
+
+void
+SPI_rollback(void)
+{
+	_SPI_rollback(false);
+}
+
+void
+SPI_rollback_and_chain(void)
+{
+	_SPI_rollback(true);
+}
+
+/*
+ * Clean up SPI state.  Called on transaction end (of non-SPI-internal
+ * transactions) and when returning to the main loop on error.
+ */
+void
+SPICleanup(void)
+{
+	_SPI_current = NULL;
+	_SPI_connected = -1;
+	/* Reset API global variables, too */
+	SPI_processed = 0;
+	SPI_tuptable = NULL;
+	SPI_result = 0;
+}
+
 /*
  * Clean up SPI state at transaction commit or abort.
  */
 void
 AtEOXact_SPI(bool isCommit)
 {
-	/*
-	 * Note that memory contexts belonging to SPI stack entries will be freed
-	 * automatically, so we can ignore them here.  We just need to restore our
-	 * static variables to initial state.
-	 */
+	/* Do nothing if the transaction end was initiated by SPI. */
+	if (_SPI_current && _SPI_current->internal_xact)
+		return;
+
 	if (isCommit && _SPI_connected != -1)
 		ereport(WARNING,
 				(errcode(ERRCODE_WARNING),
 				 errmsg("transaction left non-empty SPI stack"),
 				 errhint("Check for missing \"SPI_finish\" calls.")));
 
-	_SPI_current = _SPI_stack = NULL;
-	_SPI_stack_depth = 0;
-	_SPI_connected = -1;
-	SPI_processed = 0;
-	SPI_lastoid = InvalidOid;
-	SPI_tuptable = NULL;
+	SPICleanup();
 }
 
 /*
@@ -223,6 +376,9 @@ AtEOSubXact_SPI(bool isCommit, SubTransactionId mySubid)
 		if (connection->connectSubid != mySubid)
 			break;				/* couldn't be any underneath it either */
 
+		if (connection->internal_xact)
+			break;
+
 		found = true;
 
 		/*
@@ -240,18 +396,19 @@ AtEOSubXact_SPI(bool isCommit, SubTransactionId mySubid)
 		}
 
 		/*
-		 * Pop the stack entry and reset global variables.  Unlike
+		 * Restore outer global variables and pop the stack entry.  Unlike
 		 * SPI_finish(), we don't risk switching to memory contexts that might
 		 * be already gone.
 		 */
+		SPI_processed = connection->outer_processed;
+		SPI_tuptable = connection->outer_tuptable;
+		SPI_result = connection->outer_result;
+
 		_SPI_connected--;
 		if (_SPI_connected < 0)
 			_SPI_current = NULL;
 		else
 			_SPI_current = &(_SPI_stack[_SPI_connected]);
-		SPI_processed = 0;
-		SPI_lastoid = InvalidOid;
-		SPI_tuptable = NULL;
 	}
 
 	if (found && isCommit)
@@ -268,8 +425,15 @@ AtEOSubXact_SPI(bool isCommit, SubTransactionId mySubid)
 	{
 		slist_mutable_iter siter;
 
-		/* free Executor memory the same as _SPI_end_call would do */
-		MemoryContextResetAndDeleteChildren(_SPI_current->execCxt);
+		/*
+		 * Throw away executor state if current executor operation was started
+		 * within current subxact (essentially, force a _SPI_end_call(true)).
+		 */
+		if (_SPI_current->execSubid >= mySubid)
+		{
+			_SPI_current->execSubid = InvalidSubTransactionId;
+			MemoryContextResetAndDeleteChildren(_SPI_current->execCxt);
+		}
 
 		/* throw away any tuple tables created within current subxact */
 		slist_foreach_modify(siter, &_SPI_current->tuptables)
@@ -293,9 +457,20 @@ AtEOSubXact_SPI(bool isCommit, SubTransactionId mySubid)
 				MemoryContextDelete(tuptable->tuptabcxt);
 			}
 		}
-		/* in particular we should have gotten rid of any in-progress table */
-		Assert(_SPI_current->tuptable == NULL);
 	}
+}
+
+/*
+ * Are we executing inside a procedure (that is, a nonatomic SPI context)?
+ */
+bool
+SPI_inside_nonatomic_context(void)
+{
+	if (_SPI_current == NULL)
+		return false;			/* not in any SPI context at all */
+	if (_SPI_current->atomic)
+		return false;			/* it's atomic (ie function not procedure) */
+	return true;
 }
 
 
@@ -740,8 +915,6 @@ SPI_modifytuple(Relation rel, HeapTuple tuple, int natts, int *attnum,
 		mtuple->t_data->t_ctid = tuple->t_data->t_ctid;
 		mtuple->t_self = tuple->t_self;
 		mtuple->t_tableOid = tuple->t_tableOid;
-		if (rel->rd_att->tdhasoid)
-			HeapTupleSetOid(mtuple, HeapTupleGetOid(tuple));
 	}
 	else
 	{
@@ -761,7 +934,7 @@ int
 SPI_fnumber(TupleDesc tupdesc, const char *fname)
 {
 	int			res;
-	Form_pg_attribute sysatt;
+	const FormData_pg_attribute *sysatt;
 
 	for (res = 0; res < tupdesc->natts; res++)
 	{
@@ -772,7 +945,7 @@ SPI_fnumber(TupleDesc tupdesc, const char *fname)
 			return res + 1;
 	}
 
-	sysatt = SystemAttributeByName(fname, true /* "oid" will be accepted */ );
+	sysatt = SystemAttributeByName(fname);
 	if (sysatt != NULL)
 		return sysatt->attnum;
 
@@ -783,7 +956,7 @@ SPI_fnumber(TupleDesc tupdesc, const char *fname)
 char *
 SPI_fname(TupleDesc tupdesc, int fnumber)
 {
-	Form_pg_attribute att;
+	const FormData_pg_attribute *att;
 
 	SPI_result = 0;
 
@@ -797,7 +970,7 @@ SPI_fname(TupleDesc tupdesc, int fnumber)
 	if (fnumber > 0)
 		att = TupleDescAttr(tupdesc, fnumber - 1);
 	else
-		att = SystemAttributeDefinition(fnumber, true);
+		att = SystemAttributeDefinition(fnumber);
 
 	return pstrdup(NameStr(att->attname));
 }
@@ -827,7 +1000,7 @@ SPI_getvalue(HeapTuple tuple, TupleDesc tupdesc, int fnumber)
 	if (fnumber > 0)
 		typoid = TupleDescAttr(tupdesc, fnumber - 1)->atttypid;
 	else
-		typoid = (SystemAttributeDefinition(fnumber, true))->atttypid;
+		typoid = (SystemAttributeDefinition(fnumber))->atttypid;
 
 	getTypeOutputInfo(typoid, &foutoid, &typisvarlena);
 
@@ -869,7 +1042,7 @@ SPI_gettype(TupleDesc tupdesc, int fnumber)
 	if (fnumber > 0)
 		typoid = TupleDescAttr(tupdesc, fnumber - 1)->atttypid;
 	else
-		typoid = (SystemAttributeDefinition(fnumber, true))->atttypid;
+		typoid = (SystemAttributeDefinition(fnumber))->atttypid;
 
 	typeTuple = SearchSysCache1(TYPEOID, ObjectIdGetDatum(typoid));
 
@@ -905,7 +1078,7 @@ SPI_gettypeid(TupleDesc tupdesc, int fnumber)
 	if (fnumber > 0)
 		return TupleDescAttr(tupdesc, fnumber - 1)->atttypid;
 	else
-		return (SystemAttributeDefinition(fnumber, true))->atttypid;
+		return (SystemAttributeDefinition(fnumber))->atttypid;
 }
 
 char *
@@ -1177,7 +1350,7 @@ SPI_cursor_open_internal(const char *name, SPIPlanPtr plan,
 	}
 
 	/* Copy the plan's query string into the portal */
-	query_string = MemoryContextStrdup(PortalGetHeapMemory(portal),
+	query_string = MemoryContextStrdup(portal->portalContext,
 									   plansource->query_string);
 
 	/*
@@ -1185,7 +1358,7 @@ SPI_cursor_open_internal(const char *name, SPIPlanPtr plan,
 	 * throws an error.
 	 */
 	spierrcontext.callback = _SPI_error_callback;
-	spierrcontext.arg = (void *) plansource->query_string;
+	spierrcontext.arg = unconstify(char *, plansource->query_string);
 	spierrcontext.previous = error_context_stack;
 	error_context_stack = &spierrcontext;
 
@@ -1207,7 +1380,7 @@ SPI_cursor_open_internal(const char *name, SPIPlanPtr plan,
 		 * will result in leaking our refcount on the plan, but it doesn't
 		 * matter because the plan is unsaved and hence transient anyway.
 		 */
-		oldcontext = MemoryContextSwitchTo(PortalGetHeapMemory(portal));
+		oldcontext = MemoryContextSwitchTo(portal->portalContext);
 		stmt_list = copyObject(stmt_list);
 		MemoryContextSwitchTo(oldcontext);
 		ReleaseCachedPlan(cplan, false);
@@ -1305,7 +1478,7 @@ SPI_cursor_open_internal(const char *name, SPIPlanPtr plan,
 	 */
 	if (paramLI)
 	{
-		oldcontext = MemoryContextSwitchTo(PortalGetHeapMemory(portal));
+		oldcontext = MemoryContextSwitchTo(portal->portalContext);
 		paramLI = copyParamList(paramLI);
 		MemoryContextSwitchTo(oldcontext);
 	}
@@ -1624,7 +1797,7 @@ SPI_plan_get_cached_plan(SPIPlanPtr plan)
 
 	/* Setup error traceback support for ereport() */
 	spierrcontext.callback = _SPI_error_callback;
-	spierrcontext.arg = (void *) plansource->query_string;
+	spierrcontext.arg = unconstify(char *, plansource->query_string);
 	spierrcontext.previous = error_context_stack;
 	error_context_stack = &spierrcontext;
 
@@ -1719,7 +1892,7 @@ spi_printtup(TupleTableSlot *slot, DestReceiver *self)
 	}
 
 	tuptable->vals[tuptable->alloced - tuptable->free] =
-		ExecCopySlotTuple(slot);
+		ExecCopySlotHeapTuple(slot);
 	(tuptable->free)--;
 
 	MemoryContextSwitchTo(oldcxt);
@@ -1755,7 +1928,7 @@ _SPI_prepare_plan(const char *src, SPIPlanPtr plan)
 	 * Setup error traceback support for ereport()
 	 */
 	spierrcontext.callback = _SPI_error_callback;
-	spierrcontext.arg = (void *) src;
+	spierrcontext.arg = unconstify(char *, src);
 	spierrcontext.previous = error_context_stack;
 	error_context_stack = &spierrcontext;
 
@@ -1860,7 +2033,7 @@ _SPI_prepare_oneshot_plan(const char *src, SPIPlanPtr plan)
 	 * Setup error traceback support for ereport()
 	 */
 	spierrcontext.callback = _SPI_error_callback;
-	spierrcontext.arg = (void *) src;
+	spierrcontext.arg = unconstify(char *, src);
 	spierrcontext.previous = error_context_stack;
 	error_context_stack = &spierrcontext;
 
@@ -1901,9 +2074,9 @@ _SPI_prepare_oneshot_plan(const char *src, SPIPlanPtr plan)
  * snapshot: query snapshot to use, or InvalidSnapshot for the normal
  *		behavior of taking a new snapshot for each query.
  * crosscheck_snapshot: for RI use, all others pass InvalidSnapshot
- * read_only: TRUE for read-only execution (no CommandCounterIncrement)
- * fire_triggers: TRUE to fire AFTER triggers at end of query (normal case);
- *		FALSE means any AFTER triggers are postponed to end of outer query
+ * read_only: true for read-only execution (no CommandCounterIncrement)
+ * fire_triggers: true to fire AFTER triggers at end of query (normal case);
+ *		false means any AFTER triggers are postponed to end of outer query
  * tcount: execution tuple-count limit, or 0 for none
  */
 static int
@@ -1913,7 +2086,6 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 {
 	int			my_res = 0;
 	uint64		my_processed = 0;
-	Oid			my_lastoid = InvalidOid;
 	SPITupleTable *my_tuptable = NULL;
 	int			res = 0;
 	bool		pushed_active_snap = false;
@@ -1947,8 +2119,11 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 	 *
 	 * In the first two cases, we can just push the snap onto the stack once
 	 * for the whole plan list.
+	 *
+	 * But if the plan has no_snapshots set to true, then don't manage
+	 * snapshots at all.  The caller should then take care of that.
 	 */
-	if (snapshot != InvalidSnapshot)
+	if (snapshot != InvalidSnapshot && !plan->no_snapshots)
 	{
 		if (read_only)
 		{
@@ -1969,7 +2144,7 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 		List	   *stmt_list;
 		ListCell   *lc2;
 
-		spierrcontext.arg = (void *) plansource->query_string;
+		spierrcontext.arg = unconstify(char *, plansource->query_string);
 
 		/*
 		 * If this is a one-shot plan, we still need to do parse analysis.
@@ -2027,7 +2202,7 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 		 * In the default non-read-only case, get a new snapshot, replacing
 		 * any that we pushed in a previous cycle.
 		 */
-		if (snapshot == InvalidSnapshot && !read_only)
+		if (snapshot == InvalidSnapshot && !read_only && !plan->no_snapshots)
 		{
 			if (pushed_active_snap)
 				PopActiveSnapshot();
@@ -2042,7 +2217,6 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 			DestReceiver *dest;
 
 			_SPI_current->processed = 0;
-			_SPI_current->lastoid = InvalidOid;
 			_SPI_current->tuptable = NULL;
 
 			if (stmt->utilityStmt)
@@ -2078,7 +2252,7 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 			 * If not read-only mode, advance the command counter before each
 			 * command and update the snapshot.
 			 */
-			if (!read_only)
+			if (!read_only && !plan->no_snapshots)
 			{
 				CommandCounterIncrement();
 				UpdateActiveSnapshotCommandId();
@@ -2109,10 +2283,23 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 			else
 			{
 				char		completionTag[COMPLETION_TAG_BUFSIZE];
+				ProcessUtilityContext context;
+
+				/*
+				 * If the SPI context is atomic, or we are asked to manage
+				 * snapshots, then we are in an atomic execution context.
+				 * Conversely, to propagate a nonatomic execution context, the
+				 * caller must be in a nonatomic SPI context and manage
+				 * snapshots itself.
+				 */
+				if (_SPI_current->atomic || !plan->no_snapshots)
+					context = PROCESS_UTILITY_QUERY;
+				else
+					context = PROCESS_UTILITY_QUERY_NONATOMIC;
 
 				ProcessUtility(stmt,
 							   plansource->query_string,
-							   PROCESS_UTILITY_QUERY,
+							   context,
 							   paramLI,
 							   _SPI_current->queryEnv,
 							   dest,
@@ -2170,7 +2357,6 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 			if (canSetTag)
 			{
 				my_processed = _SPI_current->processed;
-				my_lastoid = _SPI_current->lastoid;
 				SPI_freetuptable(my_tuptable);
 				my_tuptable = _SPI_current->tuptable;
 				my_res = res;
@@ -2218,7 +2404,6 @@ fail:
 
 	/* Save results for caller */
 	SPI_processed = my_processed;
-	SPI_lastoid = my_lastoid;
 	SPI_tuptable = my_tuptable;
 
 	/* tuptable now is caller's responsibility, not SPI's */
@@ -2246,19 +2431,9 @@ _SPI_convert_params(int nargs, Oid *argtypes,
 
 	if (nargs > 0)
 	{
-		int			i;
+		paramLI = makeParamList(nargs);
 
-		paramLI = (ParamListInfo) palloc(offsetof(ParamListInfoData, params) +
-										 nargs * sizeof(ParamExternData));
-		/* we have static list of params, so no hooks needed */
-		paramLI->paramFetch = NULL;
-		paramLI->paramFetchArg = NULL;
-		paramLI->parserSetup = NULL;
-		paramLI->parserSetupArg = NULL;
-		paramLI->numParams = nargs;
-		paramLI->paramMask = NULL;
-
-		for (i = 0; i < nargs; i++)
+		for (int i = 0; i < nargs; i++)
 		{
 			ParamExternData *prm = &paramLI->params[i];
 
@@ -2329,7 +2504,6 @@ _SPI_pquery(QueryDesc *queryDesc, bool fire_triggers, uint64 tcount)
 	ExecutorRun(queryDesc, ForwardScanDirection, tcount, true);
 
 	_SPI_current->processed = queryDesc->estate->es_processed;
-	_SPI_current->lastoid = queryDesc->estate->es_lastoid;
 
 	if ((res == SPI_OK_SELECT || queryDesc->plannedstmt->hasReturning) &&
 		queryDesc->dest->mydest == DestSPI)
@@ -2360,6 +2534,9 @@ _SPI_error_callback(void *arg)
 {
 	const char *query = (const char *) arg;
 	int			syntaxerrposition;
+
+	if (query == NULL)			/* in case arg wasn't set yet */
+		return;
 
 	/*
 	 * If there is a syntax error position, convert to internal syntax error;
@@ -2446,15 +2623,24 @@ _SPI_procmem(void)
 
 /*
  * _SPI_begin_call: begin a SPI operation within a connected procedure
+ *
+ * use_exec is true if we intend to make use of the procedure's execCxt
+ * during this SPI operation.  We'll switch into that context, and arrange
+ * for it to be cleaned up at _SPI_end_call or if an error occurs.
  */
 static int
-_SPI_begin_call(bool execmem)
+_SPI_begin_call(bool use_exec)
 {
 	if (_SPI_current == NULL)
 		return SPI_ERROR_UNCONNECTED;
 
-	if (execmem)				/* switch to the Executor memory context */
+	if (use_exec)
+	{
+		/* remember when the Executor operation started */
+		_SPI_current->execSubid = GetCurrentSubTransactionId();
+		/* switch to the Executor memory context */
 		_SPI_execmem();
+	}
 
 	return 0;
 }
@@ -2462,14 +2648,19 @@ _SPI_begin_call(bool execmem)
 /*
  * _SPI_end_call: end a SPI operation within a connected procedure
  *
+ * use_exec must be the same as in the previous _SPI_begin_call
+ *
  * Note: this currently has no failure return cases, so callers don't check
  */
 static int
-_SPI_end_call(bool procmem)
+_SPI_end_call(bool use_exec)
 {
-	if (procmem)				/* switch to the procedure memory context */
+	if (use_exec)
 	{
+		/* switch to the procedure memory context */
 		_SPI_procmem();
+		/* mark Executor context no longer in use */
+		_SPI_current->execSubid = InvalidSubTransactionId;
 		/* and free Executor memory */
 		MemoryContextResetAndDeleteChildren(_SPI_current->execCxt);
 	}
@@ -2526,11 +2717,8 @@ _SPI_make_plan_non_temp(SPIPlanPtr plan)
 	oldcxt = MemoryContextSwitchTo(plancxt);
 
 	/* Copy the SPI_plan struct and subsidiary data into the new context */
-	newplan = (SPIPlanPtr) palloc(sizeof(_SPI_plan));
+	newplan = (SPIPlanPtr) palloc0(sizeof(_SPI_plan));
 	newplan->magic = _SPI_PLAN_MAGIC;
-	newplan->saved = false;
-	newplan->oneshot = false;
-	newplan->plancache_list = NIL;
 	newplan->plancxt = plancxt;
 	newplan->cursor_options = plan->cursor_options;
 	newplan->nargs = plan->nargs;
@@ -2593,11 +2781,8 @@ _SPI_save_plan(SPIPlanPtr plan)
 	oldcxt = MemoryContextSwitchTo(plancxt);
 
 	/* Copy the SPI plan into its own context */
-	newplan = (SPIPlanPtr) palloc(sizeof(_SPI_plan));
+	newplan = (SPIPlanPtr) palloc0(sizeof(_SPI_plan));
 	newplan->magic = _SPI_PLAN_MAGIC;
-	newplan->saved = false;
-	newplan->oneshot = false;
-	newplan->plancache_list = NIL;
 	newplan->plancxt = plancxt;
 	newplan->cursor_options = plan->cursor_options;
 	newplan->nargs = plan->nargs;

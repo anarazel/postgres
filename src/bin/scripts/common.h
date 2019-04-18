@@ -2,7 +2,7 @@
  *	common.h
  *		Common support routines for bin/scripts/
  *
- *	Copyright (c) 2003-2017, PostgreSQL Global Development Group
+ *	Copyright (c) 2003-2019, PostgreSQL Global Development Group
  *
  *	src/bin/scripts/common.h
  */
@@ -32,11 +32,12 @@ extern void handle_help_version_opts(int argc, char *argv[],
 extern PGconn *connectDatabase(const char *dbname, const char *pghost,
 				const char *pgport, const char *pguser,
 				enum trivalue prompt_password, const char *progname,
-				bool fail_ok, bool allow_password_reuse);
+				bool echo, bool fail_ok, bool allow_password_reuse);
 
 extern PGconn *connectMaintenanceDatabase(const char *maintenance_db,
-						   const char *pghost, const char *pgport, const char *pguser,
-						   enum trivalue prompt_password, const char *progname);
+						   const char *pghost, const char *pgport,
+						   const char *pguser, enum trivalue prompt_password,
+						   const char *progname, bool echo);
 
 extern PGresult *executeQuery(PGconn *conn, const char *query,
 			 const char *progname, bool echo);
@@ -46,6 +47,12 @@ extern void executeCommand(PGconn *conn, const char *query,
 
 extern bool executeMaintenanceCommand(PGconn *conn, const char *query,
 						  bool echo);
+
+extern void splitTableColumnsSpec(const char *spec, int encoding,
+					  char **table, const char **columns);
+
+extern void appendQualifiedRelation(PQExpBuffer buf, const char *name,
+						PGconn *conn, const char *progname, bool echo);
 
 extern bool yesno_prompt(const char *question);
 

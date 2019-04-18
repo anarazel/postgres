@@ -4,7 +4,7 @@
  *
  * prototypes for CustomScan nodes
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * ------------------------------------------------------------------------
@@ -14,7 +14,6 @@
 
 #include "access/parallel.h"
 #include "nodes/execnodes.h"
-#include "nodes/extensible.h"
 
 /*
  * General executor code
@@ -37,7 +36,7 @@ extern void ExecCustomScanInitializeDSM(CustomScanState *node,
 extern void ExecCustomScanReInitializeDSM(CustomScanState *node,
 							  ParallelContext *pcxt);
 extern void ExecCustomScanInitializeWorker(CustomScanState *node,
-							   shm_toc *toc);
+							   ParallelWorkerContext *pwcxt);
 extern void ExecShutdownCustomScan(CustomScanState *node);
 
 #endif							/* NODECUSTOM_H */

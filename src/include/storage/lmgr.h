@@ -4,7 +4,7 @@
  *	  POSTGRES lock manager definitions.
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/storage/lmgr.h
@@ -45,6 +45,8 @@ extern void UnlockRelationOid(Oid relid, LOCKMODE lockmode);
 extern void LockRelation(Relation relation, LOCKMODE lockmode);
 extern bool ConditionalLockRelation(Relation relation, LOCKMODE lockmode);
 extern void UnlockRelation(Relation relation, LOCKMODE lockmode);
+extern bool CheckRelationLockedByMe(Relation relation, LOCKMODE lockmode,
+						bool orstronger);
 extern bool LockHasWaitersRelation(Relation relation, LOCKMODE lockmode);
 
 extern void LockRelationIdForSession(LockRelId *relid, LOCKMODE lockmode);
@@ -76,8 +78,8 @@ extern void XactLockTableWait(TransactionId xid, Relation rel,
 extern bool ConditionalXactLockTableWait(TransactionId xid);
 
 /* Lock VXIDs, specified by conflicting locktags */
-extern void WaitForLockers(LOCKTAG heaplocktag, LOCKMODE lockmode);
-extern void WaitForLockersMultiple(List *locktags, LOCKMODE lockmode);
+extern void WaitForLockers(LOCKTAG heaplocktag, LOCKMODE lockmode, bool progress);
+extern void WaitForLockersMultiple(List *locktags, LOCKMODE lockmode, bool progress);
 
 /* Lock an XID for tuple insertion (used to wait for an insertion to finish) */
 extern uint32 SpeculativeInsertionLockAcquire(TransactionId xid);

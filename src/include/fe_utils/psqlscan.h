@@ -10,7 +10,7 @@
  * backslash commands.
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/fe_utils/psqlscan.h
@@ -64,13 +64,6 @@ typedef struct PsqlScanCallbacks
 	/* This pointer can be NULL if no variable substitution is wanted */
 	char	   *(*get_variable) (const char *varname, PsqlScanQuoteType quote,
 								 void *passthrough);
-	/* Print an error message someplace appropriate */
-	/* (very old gcc versions don't support attributes on function pointers) */
-#if defined(__GNUC__) && __GNUC__ < 4
-	void		(*write_error) (const char *fmt,...);
-#else
-	void		(*write_error) (const char *fmt,...) pg_attribute_printf(1, 2);
-#endif
 } PsqlScanCallbacks;
 
 

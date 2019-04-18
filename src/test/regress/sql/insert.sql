@@ -90,6 +90,10 @@ create table range_parted (
 	a text,
 	b int
 ) partition by range (a, (b+0));
+
+-- no partitions, so fail
+insert into range_parted values ('a', 11);
+
 create table part1 partition of range_parted for values from ('a', 1) to ('a', 10);
 create table part2 partition of range_parted for values from ('a', 10) to ('a', 20);
 create table part3 partition of range_parted for values from ('b', 1) to ('b', 10);
@@ -222,8 +226,63 @@ insert into list_parted select 'gg', s.a from generate_series(1, 9) s(a);
 insert into list_parted (b) values (1);
 select tableoid::regclass::text, a, min(b) as min_b, max(b) as max_b from list_parted group by 1, 2 order by 1;
 
+-- direct partition inserts should check hash partition bound constraint
+
+-- Use hand-rolled hash functions and operator classes to get predictable
+-- result on different matchines.  The hash function for int4 simply returns
+-- the sum of the values passed to it and the one for text returns the length
+-- of the non-empty string value passed to it or 0.
+
+create or replace function part_hashint4_noop(value int4, seed int8)
+returns int8 as $$
+select value + seed;
+$$ language sql immutable;
+
+create operator class part_test_int4_ops
+for type int4
+using hash as
+operator 1 =,
+function 2 part_hashint4_noop(int4, int8);
+
+create or replace function part_hashtext_length(value text, seed int8)
+RETURNS int8 AS $$
+select length(coalesce(value, ''))::int8
+$$ language sql immutable;
+
+create operator class part_test_text_ops
+for type text
+using hash as
+operator 1 =,
+function 2 part_hashtext_length(text, int8);
+
+create table hash_parted (
+	a int
+) partition by hash (a part_test_int4_ops);
+create table hpart0 partition of hash_parted for values with (modulus 4, remainder 0);
+create table hpart1 partition of hash_parted for values with (modulus 4, remainder 1);
+create table hpart2 partition of hash_parted for values with (modulus 4, remainder 2);
+create table hpart3 partition of hash_parted for values with (modulus 4, remainder 3);
+
+insert into hash_parted values(generate_series(1,10));
+
+-- direct insert of values divisible by 4 - ok;
+insert into hpart0 values(12),(16);
+-- fail;
+insert into hpart0 values(11);
+-- 11 % 4 -> 3 remainder i.e. valid data for hpart3 partition
+insert into hpart3 values(11);
+
+-- view data
+select tableoid::regclass as part, a, a%4 as "remainder = a % 4"
+from hash_parted order by part;
+
+-- test \d+ output on a table which has both partitioned and unpartitioned
+-- partitions
+\d+ list_parted
+
 -- cleanup
 drop table range_parted, list_parted;
+drop table hash_parted;
 
 -- test that a default partition added as the first partition accepts any value
 -- including null
@@ -342,31 +401,59 @@ insert into mlparted values (70, 100);
 
 select tableoid::regclass, * from mlparted_def;
 
+-- Check multi-level tuple routing with attributes dropped from the
+-- top-most parent.  First remove the last attribute.
+alter table mlparted add d int, add e int;
+alter table mlparted drop e;
+create table mlparted5 partition of mlparted
+  for values from (1, 40) to (1, 50) partition by range (c);
+create table mlparted5_ab partition of mlparted5
+  for values from ('a') to ('c') partition by list (c);
+create table mlparted5_a partition of mlparted5_ab for values in ('a');
+create table mlparted5_b (d int, b int, c text, a int);
+alter table mlparted5_ab attach partition mlparted5_b for values in ('b');
+truncate mlparted;
+insert into mlparted values (1, 2, 'a', 1);
+insert into mlparted values (1, 40, 'a', 1);  -- goes to mlparted5_a
+insert into mlparted values (1, 45, 'b', 1);  -- goes to mlparted5_b
+select tableoid::regclass, * from mlparted order by a, b, c, d;
+alter table mlparted drop d;
+truncate mlparted;
+-- Remove the before last attribute.
+alter table mlparted add e int, add d int;
+alter table mlparted drop e;
+insert into mlparted values (1, 2, 'a', 1);
+insert into mlparted values (1, 40, 'a', 1);  -- goes to mlparted5_a
+insert into mlparted values (1, 45, 'b', 1);  -- goes to mlparted5_b
+select tableoid::regclass, * from mlparted order by a, b, c, d;
+alter table mlparted drop d;
+drop table mlparted5;
+
 -- check that message shown after failure to find a partition shows the
 -- appropriate key description (or none) in various situations
 create table key_desc (a int, b int) partition by list ((a+0));
 create table key_desc_1 partition of key_desc for values in (1) partition by range (b);
 
-create user someone_else;
-grant select (a) on key_desc_1 to someone_else;
-grant insert on key_desc to someone_else;
+create user regress_insert_other_user;
+grant select (a) on key_desc_1 to regress_insert_other_user;
+grant insert on key_desc to regress_insert_other_user;
 
-set role someone_else;
+set role regress_insert_other_user;
 -- no key description is shown
 insert into key_desc values (1, 1);
 
 reset role;
-grant select (b) on key_desc_1 to someone_else;
-set role someone_else;
+grant select (b) on key_desc_1 to regress_insert_other_user;
+set role regress_insert_other_user;
 -- key description (b)=(1) is now shown
 insert into key_desc values (1, 1);
 
 -- key description is not shown if key contains expression
 insert into key_desc values (2, 1);
 reset role;
-revoke all on key_desc from someone_else;
-revoke all on key_desc_1 from someone_else;
-drop role someone_else;
+revoke all on key_desc from regress_insert_other_user;
+revoke all on key_desc_1 from regress_insert_other_user;
+drop role regress_insert_other_user;
 drop table key_desc, key_desc_1;
 
 -- test minvalue/maxvalue restrictions
@@ -383,6 +470,9 @@ create table mcrparted2 partition of mcrparted for values from (10, 6, minvalue)
 create table mcrparted3 partition of mcrparted for values from (11, 1, 1) to (20, 10, 10);
 create table mcrparted4 partition of mcrparted for values from (21, minvalue, minvalue) to (30, 20, maxvalue);
 create table mcrparted5 partition of mcrparted for values from (30, 21, 20) to (maxvalue, maxvalue, maxvalue);
+
+-- null not allowed in range partition
+insert into mcrparted values (null, null, null);
 
 -- routed to mcrparted0
 insert into mcrparted values (0, 1, 1);
@@ -444,6 +534,29 @@ drop role regress_coldesc_role;
 drop table inserttest3;
 drop table brtrigpartcon;
 drop function brtrigpartcon1trigf();
+
+-- check that "do nothing" BR triggers work with tuple-routing (this checks
+-- that estate->es_result_relation_info is appropriately set/reset for each
+-- routed tuple)
+create table donothingbrtrig_test (a int, b text) partition by list (a);
+create table donothingbrtrig_test1 (b text, a int);
+create table donothingbrtrig_test2 (c text, b text, a int);
+alter table donothingbrtrig_test2 drop column c;
+create or replace function donothingbrtrig_func() returns trigger as $$begin raise notice 'b: %', new.b; return NULL; end$$ language plpgsql;
+create trigger donothingbrtrig1 before insert on donothingbrtrig_test1 for each row execute procedure donothingbrtrig_func();
+create trigger donothingbrtrig2 before insert on donothingbrtrig_test2 for each row execute procedure donothingbrtrig_func();
+alter table donothingbrtrig_test attach partition donothingbrtrig_test1 for values in (1);
+alter table donothingbrtrig_test attach partition donothingbrtrig_test2 for values in (2);
+insert into donothingbrtrig_test values (1, 'foo'), (2, 'bar');
+copy donothingbrtrig_test from stdout;
+1	baz
+2	qux
+\.
+select tableoid::regclass, * from donothingbrtrig_test;
+
+-- cleanup
+drop table donothingbrtrig_test;
+drop function donothingbrtrig_func();
 
 -- check multi-column range partitioning with minvalue/maxvalue constraints
 create table mcrparted (a text, b int) partition by range(a, b);

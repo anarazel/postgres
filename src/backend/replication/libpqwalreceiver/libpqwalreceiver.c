@@ -6,7 +6,7 @@
  * loaded as a dynamic module to avoid linking the main server binary with
  * libpq.
  *
- * Portions Copyright (c) 2010-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 2010-2019, PostgreSQL Global Development Group
  *
  *
  * IDENTIFICATION
@@ -53,9 +53,11 @@ static WalReceiverConn *libpqrcv_connect(const char *conninfo,
 				 char **err);
 static void libpqrcv_check_conninfo(const char *conninfo);
 static char *libpqrcv_get_conninfo(WalReceiverConn *conn);
+static void libpqrcv_get_senderinfo(WalReceiverConn *conn,
+						char **sender_host, int *sender_port);
 static char *libpqrcv_identify_system(WalReceiverConn *conn,
-						 TimeLineID *primary_tli,
-						 int *server_version);
+						 TimeLineID *primary_tli);
+static int libpqrcv_server_version(WalReceiverConn *conn);
 static void libpqrcv_readtimelinehistoryfile(WalReceiverConn *conn,
 								 TimeLineID tli, char **filename,
 								 char **content, int *len);
@@ -82,7 +84,9 @@ static WalReceiverFunctionsType PQWalReceiverFunctions = {
 	libpqrcv_connect,
 	libpqrcv_check_conninfo,
 	libpqrcv_get_conninfo,
+	libpqrcv_get_senderinfo,
 	libpqrcv_identify_system,
+	libpqrcv_server_version,
 	libpqrcv_readtimelinehistoryfile,
 	libpqrcv_startstreaming,
 	libpqrcv_endstreaming,
@@ -125,10 +129,7 @@ libpqrcv_connect(const char *conninfo, bool logical, const char *appname,
 
 	/*
 	 * We use the expand_dbname parameter to process the connection string (or
-	 * URI), and pass some extra options. The deliberately undocumented
-	 * parameter "replication=true" makes it a replication connection. The
-	 * database name is ignored by the server in replication mode, but specify
-	 * "replication" for .pgpass lookup.
+	 * URI), and pass some extra options.
 	 */
 	keys[i] = "dbname";
 	vals[i] = conninfo;
@@ -136,6 +137,10 @@ libpqrcv_connect(const char *conninfo, bool logical, const char *appname,
 	vals[i] = logical ? "database" : "true";
 	if (!logical)
 	{
+		/*
+		 * The database name is ignored by the server in replication mode, but
+		 * specify "replication" for .pgpass lookup.
+		 */
 		keys[++i] = "dbname";
 		vals[i] = "replication";
 	}
@@ -182,15 +187,10 @@ libpqrcv_connect(const char *conninfo, bool logical, const char *appname,
 			io_flag = WL_SOCKET_WRITEABLE;
 
 		rc = WaitLatchOrSocket(MyLatch,
-							   WL_POSTMASTER_DEATH |
-							   WL_LATCH_SET | io_flag,
+							   WL_EXIT_ON_PM_DEATH | WL_LATCH_SET | io_flag,
 							   PQsocket(conn->streamConn),
 							   0,
 							   WAIT_EVENT_LIBPQWALRECEIVER_CONNECT);
-
-		/* Emergency bailout? */
-		if (rc & WL_POSTMASTER_DEATH)
-			exit(1);
 
 		/* Interrupted? */
 		if (rc & WL_LATCH_SET)
@@ -283,12 +283,34 @@ libpqrcv_get_conninfo(WalReceiverConn *conn)
 }
 
 /*
+ * Provides information of sender this WAL receiver is connected to.
+ */
+static void
+libpqrcv_get_senderinfo(WalReceiverConn *conn, char **sender_host,
+						int *sender_port)
+{
+	char	   *ret = NULL;
+
+	*sender_host = NULL;
+	*sender_port = 0;
+
+	Assert(conn->streamConn != NULL);
+
+	ret = PQhost(conn->streamConn);
+	if (ret && strlen(ret) != 0)
+		*sender_host = pstrdup(ret);
+
+	ret = PQport(conn->streamConn);
+	if (ret && strlen(ret) != 0)
+		*sender_port = atoi(ret);
+}
+
+/*
  * Check that primary's system identifier matches ours, and fetch the current
  * timeline ID of the primary.
  */
 static char *
-libpqrcv_identify_system(WalReceiverConn *conn, TimeLineID *primary_tli,
-						 int *server_version)
+libpqrcv_identify_system(WalReceiverConn *conn, TimeLineID *primary_tli)
 {
 	PGresult   *res;
 	char	   *primary_sysid;
@@ -318,12 +340,19 @@ libpqrcv_identify_system(WalReceiverConn *conn, TimeLineID *primary_tli,
 						   ntuples, nfields, 3, 1)));
 	}
 	primary_sysid = pstrdup(PQgetvalue(res, 0, 0));
-	*primary_tli = pg_atoi(PQgetvalue(res, 0, 1), 4, 0);
+	*primary_tli = pg_strtoint32(PQgetvalue(res, 0, 1));
 	PQclear(res);
 
-	*server_version = PQserverVersion(conn->streamConn);
-
 	return primary_sysid;
+}
+
+/*
+ * Thin wrapper around libpq to obtain server version.
+ */
+static int
+libpqrcv_server_version(WalReceiverConn *conn)
+{
+	return PQserverVersion(conn->streamConn);
 }
 
 /*
@@ -453,7 +482,7 @@ libpqrcv_endstreaming(WalReceiverConn *conn, TimeLineID *next_tli)
 		if (PQnfields(res) < 2 || PQntuples(res) != 1)
 			ereport(ERROR,
 					(errmsg("unexpected result set after end-of-streaming")));
-		*next_tli = pg_atoi(PQgetvalue(res, 0, 0), sizeof(uint32), 0);
+		*next_tli = pg_strtoint32(PQgetvalue(res, 0, 0));
 		PQclear(res);
 
 		/* the result set should be followed by CommandComplete */
@@ -583,15 +612,11 @@ libpqrcv_PQexec(PGconn *streamConn, const char *query)
 			 * replication connection.
 			 */
 			rc = WaitLatchOrSocket(MyLatch,
-								   WL_POSTMASTER_DEATH | WL_SOCKET_READABLE |
+								   WL_EXIT_ON_PM_DEATH | WL_SOCKET_READABLE |
 								   WL_LATCH_SET,
 								   PQsocket(streamConn),
 								   0,
 								   WAIT_EVENT_LIBPQWALRECEIVER_RECEIVE);
-
-			/* Emergency bailout? */
-			if (rc & WL_POSTMASTER_DEATH)
-				exit(1);
 
 			/* Interrupted? */
 			if (rc & WL_LATCH_SET)
@@ -841,7 +866,7 @@ libpqrcv_processTuples(PGresult *pgres, WalRcvExecResult *walres,
 	walres->tuplestore = tuplestore_begin_heap(true, false, work_mem);
 
 	/* Create tuple descriptor corresponding to expected result. */
-	walres->tupledesc = CreateTemplateTupleDesc(nRetTypes, false);
+	walres->tupledesc = CreateTemplateTupleDesc(nRetTypes);
 	for (coln = 0; coln < nRetTypes; coln++)
 		TupleDescInitEntry(walres->tupledesc, (AttrNumber) coln + 1,
 						   PQfname(pgres, coln), retTypes[coln], -1, 0);

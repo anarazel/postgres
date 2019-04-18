@@ -443,7 +443,7 @@ T213	INSTEAD OF triggers			YES
 T231	Sensitive cursors			YES	
 T241	START TRANSACTION statement			YES	
 T251	SET TRANSACTION statement: LOCAL option			NO	
-T261	Chained transactions			NO	
+T261	Chained transactions			YES	
 T271	Savepoints			YES	
 T272	Enhanced savepoint management			NO	
 T281	SELECT privilege with column granularity			YES	
@@ -452,9 +452,9 @@ T301	Functional dependencies			NO	partially supported
 T312	OVERLAY function			YES	
 T321	Basic SQL-invoked routines			NO	
 T321	Basic SQL-invoked routines	01	User-defined functions with no overloading	YES	
-T321	Basic SQL-invoked routines	02	User-defined stored procedures with no overloading	NO	
+T321	Basic SQL-invoked routines	02	User-defined stored procedures with no overloading	YES	
 T321	Basic SQL-invoked routines	03	Function invocation	YES	
-T321	Basic SQL-invoked routines	04	CALL statement	NO	
+T321	Basic SQL-invoked routines	04	CALL statement	YES	
 T321	Basic SQL-invoked routines	05	RETURN statement	NO	
 T321	Basic SQL-invoked routines	06	ROUTINES view	YES	
 T321	Basic SQL-invoked routines	07	PARAMETERS view	YES	
@@ -480,7 +480,7 @@ T495	Combined data change and retrieval			NO	different syntax
 T501	Enhanced EXISTS predicate			YES	
 T502	Period predicates			NO	
 T511	Transaction counts			NO	
-T521	Named arguments in CALL statement			NO	
+T521	Named arguments in CALL statement			YES	
 T522	Default values for IN parameters of SQL-invoked procedures			NO	supported except DEFAULT key word in invocation
 T551	Optional key words for default syntax			YES	
 T561	Holdable locators			NO	
@@ -498,7 +498,7 @@ T616	Null treatment option for LEAD and LAG functions			NO
 T617	FIRST_VALUE and LAST_VALUE function			YES	
 T618	NTH_VALUE function			NO	function exists, but some options missing
 T619	Nested window functions			NO	
-T620	WINDOW clause: GROUPS option			NO	
+T620	WINDOW clause: GROUPS option			YES	
 T621	Enhanced numeric functions			YES	
 T631	IN predicate with one list element			YES	
 T641	Multiple column assignment			NO	only some syntax variants supported
@@ -593,7 +593,7 @@ X085	Predefined namespace prefixes			NO
 X086	XML namespace declarations in XMLTable			NO	
 X090	XML document predicate			YES	
 X091	XML content predicate			NO	
-X096	XMLExists			NO	XPath only
+X096	XMLExists			NO	XPath 1.0 only
 X100	Host language support for XML: CONTENT option			NO	
 X101	Host language support for XML: DOCUMENT option			NO	
 X110	Host language support for XML: VARCHAR mapping			NO	
@@ -635,8 +635,8 @@ X204	XMLQuery: initializing an XQuery variable			NO
 X205	XMLQuery: EMPTY ON EMPTY option			NO	
 X206	XMLQuery: NULL ON EMPTY option			NO	
 X211	XML 1.1 support			NO	
-X221	XML passing mechanism BY VALUE			NO	
-X222	XML passing mechanism BY REF			YES	
+X221	XML passing mechanism BY VALUE			YES	
+X222	XML passing mechanism BY REF			NO	parser accepts BY REF but ignores it; passing is always BY VALUE
 X231	XML(CONTENT(UNTYPED)) type			NO	
 X232	XML(CONTENT(ANY)) type			NO	
 X241	RETURNING CONTENT in XML publishing			NO	
@@ -661,11 +661,11 @@ X282	XMLValidate with CONTENT option			NO
 X283	XMLValidate with SEQUENCE option			NO	
 X284	XMLValidate: NAMESPACE without ELEMENT clause			NO	
 X286	XMLValidate: NO NAMESPACE with ELEMENT clause			NO	
-X300	XMLTable			NO	XPath only
+X300	XMLTable			NO	XPath 1.0 only
 X301	XMLTable: derived column list option			YES	
 X302	XMLTable: ordinality column option			YES	
 X303	XMLTable: column default option			YES	
-X304	XMLTable: passing a context item			YES	
+X304	XMLTable: passing a context item			YES	must be XML DOCUMENT
 X305	XMLTable: initializing an XQuery variable			NO	
 X400	Name and identifier mapping			YES	
 X410	Alter column data type: XML type			YES	

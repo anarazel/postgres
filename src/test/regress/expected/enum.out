@@ -634,19 +634,38 @@ LINE 1: SELECT 'bad'::bogon;
                ^
 HINT:  New enum values must be committed before they can be used.
 ROLLBACK;
-DROP TYPE bogus;
--- check that we can add new values to existing enums in a transaction
--- and use them, if the type is new as well
+-- but a renamed value is safe to use later in same transaction
 BEGIN;
-CREATE TYPE bogus AS ENUM('good');
-ALTER TYPE bogus ADD VALUE 'bad';
-ALTER TYPE bogus ADD VALUE 'ugly';
-SELECT enum_range(null::bogus);
+ALTER TYPE bogus RENAME VALUE 'good' to 'bad';
+SELECT 'bad'::bogus;
+ bogus 
+-------
+ bad
+(1 row)
+
+ROLLBACK;
+DROP TYPE bogus;
+-- check that values created during CREATE TYPE can be used in any case
+BEGIN;
+CREATE TYPE bogus AS ENUM('good','bad','ugly');
+ALTER TYPE bogus RENAME TO bogon;
+select enum_range(null::bogon);
    enum_range    
 -----------------
  {good,bad,ugly}
 (1 row)
 
+ROLLBACK;
+-- ideally, we'd allow this usage; but it requires keeping track of whether
+-- the enum type was created in the current transaction, which is expensive
+BEGIN;
+CREATE TYPE bogus AS ENUM('good');
+ALTER TYPE bogus RENAME TO bogon;
+ALTER TYPE bogon ADD VALUE 'bad';
+ALTER TYPE bogon ADD VALUE 'ugly';
+select enum_range(null::bogon);  -- fails
+ERROR:  unsafe use of new value "bad" of enum type bogon
+HINT:  New enum values must be committed before they can be used.
 ROLLBACK;
 --
 -- Cleanup
@@ -666,7 +685,7 @@ SELECT COUNT(*) FROM pg_type WHERE typname = 'rainbow';
 
 SELECT * FROM pg_enum WHERE NOT EXISTS
   (SELECT 1 FROM pg_type WHERE pg_type.oid = enumtypid);
- enumtypid | enumsortorder | enumlabel 
------------+---------------+-----------
+ oid | enumtypid | enumsortorder | enumlabel 
+-----+-----------+---------------+-----------
 (0 rows)
 

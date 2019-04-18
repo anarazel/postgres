@@ -24,6 +24,18 @@ COMMENT ON VIEW noview IS 'no view';
 COMMENT ON VIEW toyemp IS 'is a view';
 COMMENT ON VIEW toyemp IS NULL;
 
+-- These views are left around mainly to exercise special cases in pg_dump.
+
+CREATE TABLE view_base_table (key int PRIMARY KEY, data varchar(20));
+
+CREATE VIEW key_dependent_view AS
+   SELECT * FROM view_base_table GROUP BY key;
+
+ALTER TABLE view_base_table DROP CONSTRAINT view_base_table_pkey;  -- fails
+
+CREATE VIEW key_dependent_view_no_cols AS
+   SELECT FROM view_base_table GROUP BY key HAVING length(data) > 0;
+
 --
 -- CREATE OR REPLACE VIEW
 --
@@ -89,7 +101,7 @@ CREATE VIEW temp_view_test.v2 AS SELECT * FROM base_table;
 -- should fail
 CREATE VIEW temp_view_test.v3_temp AS SELECT * FROM temp_table;
 -- should fail
-CREATE SCHEMA test_schema
+CREATE SCHEMA test_view_schema
     CREATE TEMP VIEW testview AS SELECT 1;
 
 -- joins: if any of the join relations are temporary, the view
@@ -581,6 +593,5 @@ select pg_get_ruledef(oid, true) from pg_rewrite
   where ev_class = 'tt23v'::regclass and ev_type = '1';
 
 -- clean up all the random objects we made above
-\set VERBOSITY terse \\ -- suppress cascade details
 DROP SCHEMA temp_view_test CASCADE;
 DROP SCHEMA testviewschm2 CASCADE;

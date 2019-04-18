@@ -20,7 +20,7 @@
  * Future versions may support iterators and incremental resizing; for now
  * the implementation is minimalist.
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -129,7 +129,7 @@ struct dshash_table
 
 /* How many buckets are there in each partition at a given size? */
 #define BUCKETS_PER_PARTITION(size_log2)		\
-	(UINT64CONST(1) << NUM_SPLITS(size_log2))
+	(((size_t) 1) << NUM_SPLITS(size_log2))
 
 /* Max entries before we need to grow.  Half + quarter = 75% load factor. */
 #define MAX_COUNT_PER_PARTITION(hash_table)				\
@@ -249,6 +249,7 @@ dshash_create(dsa_area *area, const dshash_parameters *params, void *arg)
 	}
 	hash_table->buckets = dsa_get_address(area,
 										  hash_table->control->buckets);
+	hash_table->size_log2 = hash_table->control->size_log2;
 
 	return hash_table;
 }
@@ -279,6 +280,14 @@ dshash_attach(dsa_area *area, const dshash_parameters *params,
 	hash_table->find_locked = false;
 	hash_table->find_exclusively_locked = false;
 	Assert(hash_table->control->magic == DSHASH_MAGIC);
+
+	/*
+	 * These will later be set to the correct values by
+	 * ensure_valid_bucket_pointers(), at which time we'll be holding a
+	 * partition lock for interlocking against concurrent resizing.
+	 */
+	hash_table->buckets = NULL;
+	hash_table->size_log2 = 0;
 
 	return hash_table;
 }
@@ -663,9 +672,7 @@ delete_item(dshash_table *hash_table, dshash_table_item *item)
 
 /*
  * Grow the hash table if necessary to the requested number of buckets.  The
- * requested size must be double some previously observed size.  Returns true
- * if the table was successfully expanded or found to be big enough already
- * (because another backend expanded it).
+ * requested size must be double some previously observed size.
  *
  * Must be called without any partition lock held.
  */

@@ -13,7 +13,7 @@
  * estimates are already available in pg_statistic.
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -126,24 +126,27 @@ statext_ndistinct_build(double totalrows, int numrows, HeapTuple *rows,
 MVNDistinct *
 statext_ndistinct_load(Oid mvoid)
 {
-	bool		isnull = false;
+	MVNDistinct *result;
+	bool		isnull;
 	Datum		ndist;
 	HeapTuple	htup;
 
 	htup = SearchSysCache1(STATEXTOID, ObjectIdGetDatum(mvoid));
-	if (!htup)
+	if (!HeapTupleIsValid(htup))
 		elog(ERROR, "cache lookup failed for statistics object %u", mvoid);
 
 	ndist = SysCacheGetAttr(STATEXTOID, htup,
 							Anum_pg_statistic_ext_stxndistinct, &isnull);
 	if (isnull)
 		elog(ERROR,
-			 "requested statistic kind %c is not yet built for statistics object %u",
+			 "requested statistic kind \"%c\" is not yet built for statistics object %u",
 			 STATS_EXT_NDISTINCT, mvoid);
+
+	result = statext_ndistinct_deserialize(DatumGetByteaPP(ndist));
 
 	ReleaseSysCache(htup);
 
-	return statext_ndistinct_deserialize(DatumGetByteaP(ndist));
+	return result;
 }
 
 /*
@@ -451,6 +454,9 @@ ndistinct_for_combination(double totalrows, int numrows, HeapTuple *rows,
 	/*
 	 * For each dimension, set up sort-support and fill in the values from the
 	 * sample data.
+	 *
+	 * We use the column data types' default sort operators and collations;
+	 * perhaps at some point it'd be worth using column-specific collations?
 	 */
 	for (i = 0; i < k; i++)
 	{
@@ -463,7 +469,7 @@ ndistinct_for_combination(double totalrows, int numrows, HeapTuple *rows,
 				 colstat->attrtypid);
 
 		/* prepare the sort function for this dimension */
-		multi_sort_add_dimension(mss, i, type->lt_opr);
+		multi_sort_add_dimension(mss, i, type->lt_opr, type->typcollation);
 
 		/* accumulate all the data for this dimension into the arrays */
 		for (j = 0; j < numrows; j++)

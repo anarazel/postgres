@@ -6,7 +6,7 @@
  * Joe Conway <mail@joeconway.com>
  *
  * contrib/fuzzystrmatch/fuzzystrmatch.c
- * Copyright (c) 2001-2017, PostgreSQL Global Development Group
+ * Copyright (c) 2001-2019, PostgreSQL Global Development Group
  * ALL RIGHTS RESERVED;
  *
  * metaphone()
@@ -87,7 +87,7 @@ soundex_code(char letter)
 		phoned_word		--	The final phonized word.  (We'll allocate the
 							memory.)
 	Output
-		error	--	A simple error flag, returns TRUE or FALSE
+		error	--	A simple error flag, returns true or false
 
 	NOTES:	ALL non-alpha characters are ignored, this includes whitespace,
 	although non-alpha characters will break up phonemes.
@@ -104,7 +104,7 @@ soundex_code(char letter)
 #define  TH		'0'
 
 static char Lookahead(char *word, int how_far);
-static void	_metaphone(char *word, int max_phonemes, char **phoned_word);
+static void _metaphone(char *word, int max_phonemes, char **phoned_word);
 
 /* Metachar.h ... little bits about characters for metaphone */
 

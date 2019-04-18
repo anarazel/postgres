@@ -8,7 +8,7 @@
  * of the Datum.  (We do it this way because in most situations the caller
  * can look up the info just once and use it for many per-datum operations.)
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/utils/datum.h
@@ -45,6 +45,15 @@ extern Datum datumTransfer(Datum value, bool typByVal, int typLen);
  */
 extern bool datumIsEqual(Datum value1, Datum value2,
 			 bool typByVal, int typLen);
+
+/*
+ * datum_image_eq
+ *
+ * Compares two datums for identical contents, based on byte images.  Return
+ * true if the two datums are equal, false otherwise.
+ */
+extern bool datum_image_eq(Datum value1, Datum value2,
+						   bool typByVal, int typLen);
 
 /*
  * Serialize and restore datums so that we can transfer them to parallel

@@ -10,7 +10,7 @@
  * And contributors:
  * Nabil Sayegh <postgresql@e-trolley.de>
  *
- * Copyright (c) 2002-2017, PostgreSQL Global Development Group
+ * Copyright (c) 2002-2019, PostgreSQL Global Development Group
  *
  * Permission to use, copy, modify, and distribute this software and its
  * documentation for any purpose, without fee, and without a written agreement
@@ -867,11 +867,8 @@ get_crosstab_tuplestore(char *sql,
 							   "tuple has %d columns but crosstab " \
 							   "returns %d.", tupdesc->natts, result_ncols)));
 
-		/* allocate space */
-		values = (char **) palloc(result_ncols * sizeof(char *));
-
-		/* and make sure it's clear */
-		memset(values, '\0', result_ncols * sizeof(char *));
+		/* allocate space and make sure it's clear */
+		values = (char **) palloc0(result_ncols * sizeof(char *));
 
 		for (i = 0; i < proc; i++)
 		{

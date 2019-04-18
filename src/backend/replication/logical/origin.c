@@ -3,7 +3,7 @@
  * origin.c
  *	  Logical replication progress tracking support.
  *
- * Copyright (c) 2013-2017, PostgreSQL Global Development Group
+ * Copyright (c) 2013-2019, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  src/backend/replication/logical/origin.c
@@ -60,7 +60,7 @@
  *	 all our platforms, but it also simplifies memory ordering concerns
  *	 between the remote and local lsn. We use a lwlock instead of a spinlock
  *	 so it's less harmful to hold the lock over a WAL write
- *	 (c.f. AdvanceReplicationProgress).
+ *	 (cf. AdvanceReplicationProgress).
  *
  * ---------------------------------------------------------------------------
  */
@@ -74,8 +74,8 @@
 #include "miscadmin.h"
 
 #include "access/genam.h"
-#include "access/heapam.h"
 #include "access/htup_details.h"
+#include "access/table.h"
 #include "access/xact.h"
 
 #include "catalog/indexing.h"
@@ -95,7 +95,7 @@
 #include "utils/pg_lsn.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
-#include "utils/tqual.h"
+#include "utils/snapmgr.h"
 
 /*
  * Replay progress of a single remote node.
@@ -225,8 +225,10 @@ replorigin_by_name(char *roname, bool missing_ok)
 		ReleaseSysCache(tuple);
 	}
 	else if (!missing_ok)
-		elog(ERROR, "cache lookup failed for replication origin '%s'",
-			 roname);
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("replication origin \"%s\" does not exist",
+						roname)));
 
 	return roident;
 }
@@ -268,7 +270,7 @@ replorigin_create(char *roname)
 	 */
 	InitDirtySnapshot(SnapshotDirty);
 
-	rel = heap_open(ReplicationOriginRelationId, ExclusiveLock);
+	rel = table_open(ReplicationOriginRelationId, ExclusiveLock);
 
 	for (roident = InvalidOid + 1; roident < PG_UINT16_MAX; roident++)
 	{
@@ -311,7 +313,7 @@ replorigin_create(char *roname)
 	}
 
 	/* now release lock again,	*/
-	heap_close(rel, ExclusiveLock);
+	table_close(rel, ExclusiveLock);
 
 	if (tuple == NULL)
 		ereport(ERROR,
@@ -337,20 +339,26 @@ replorigin_drop(RepOriginId roident, bool nowait)
 
 	Assert(IsTransactionState());
 
-	rel = heap_open(ReplicationOriginRelationId, ExclusiveLock);
+	/*
+	 * To interlock against concurrent drops, we hold ExclusiveLock on
+	 * pg_replication_origin throughout this function.
+	 */
+	rel = table_open(ReplicationOriginRelationId, ExclusiveLock);
 
+	/*
+	 * First, clean up the slot state info, if there is any matching slot.
+	 */
 restart:
 	tuple = NULL;
-	/* cleanup the slot state info */
 	LWLockAcquire(ReplicationOriginLock, LW_EXCLUSIVE);
 
 	for (i = 0; i < max_replication_slots; i++)
 	{
 		ReplicationState *state = &replication_states[i];
 
-		/* found our slot */
 		if (state->roident == roident)
 		{
+			/* found our slot, is it busy? */
 			if (state->acquired_by != 0)
 			{
 				ConditionVariable *cv;
@@ -361,16 +369,23 @@ restart:
 							 errmsg("could not drop replication origin with OID %d, in use by PID %d",
 									state->roident,
 									state->acquired_by)));
+
+				/*
+				 * We must wait and then retry.  Since we don't know which CV
+				 * to wait on until here, we can't readily use
+				 * ConditionVariablePrepareToSleep (calling it here would be
+				 * wrong, since we could miss the signal if we did so); just
+				 * use ConditionVariableSleep directly.
+				 */
 				cv = &state->origin_cv;
 
 				LWLockRelease(ReplicationOriginLock);
-				ConditionVariablePrepareToSleep(cv);
+
 				ConditionVariableSleep(cv, WAIT_EVENT_REPLICATION_ORIGIN_DROP);
-				ConditionVariableCancelSleep();
 				goto restart;
 			}
 
-			/* first WAL log */
+			/* first make a WAL log entry */
 			{
 				xl_replorigin_drop xlrec;
 
@@ -380,7 +395,7 @@ restart:
 				XLogInsert(RM_REPLORIGIN_ID, XLOG_REPLORIGIN_DROP);
 			}
 
-			/* then reset the in-memory entry */
+			/* then clear the in-memory slot */
 			state->roident = InvalidRepOriginId;
 			state->remote_lsn = InvalidXLogRecPtr;
 			state->local_lsn = InvalidXLogRecPtr;
@@ -388,7 +403,11 @@ restart:
 		}
 	}
 	LWLockRelease(ReplicationOriginLock);
+	ConditionVariableCancelSleep();
 
+	/*
+	 * Now, we can delete the catalog entry.
+	 */
 	tuple = SearchSysCache1(REPLORIGIDENT, ObjectIdGetDatum(roident));
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "cache lookup failed for replication origin with oid %u",
@@ -400,7 +419,7 @@ restart:
 	CommandCounterIncrement();
 
 	/* now release lock again */
-	heap_close(rel, ExclusiveLock);
+	table_close(rel, ExclusiveLock);
 }
 
 
@@ -437,8 +456,10 @@ replorigin_by_oid(RepOriginId roident, bool missing_ok, char **roname)
 		*roname = NULL;
 
 		if (!missing_ok)
-			elog(ERROR, "cache lookup failed for replication origin with oid %u",
-				 roident);
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_OBJECT),
+					 errmsg("replication origin with OID %u does not exist",
+							roident)));
 
 		return false;
 	}
@@ -546,9 +567,8 @@ CheckPointReplicationOrigin(void)
 	 * no other backend can perform this at the same time, we're protected by
 	 * CheckpointLock.
 	 */
-	tmpfd = OpenTransientFile((char *) tmppath,
-							  O_CREAT | O_EXCL | O_WRONLY | PG_BINARY,
-							  S_IRUSR | S_IWUSR);
+	tmpfd = OpenTransientFile(tmppath,
+							  O_CREAT | O_EXCL | O_WRONLY | PG_BINARY);
 	if (tmpfd < 0)
 		ereport(PANIC,
 				(errcode_for_file_access(),
@@ -556,9 +576,12 @@ CheckPointReplicationOrigin(void)
 						tmppath)));
 
 	/* write magic */
+	errno = 0;
 	if ((write(tmpfd, &magic, sizeof(magic))) != sizeof(magic))
 	{
-		CloseTransientFile(tmpfd);
+		/* if write didn't set errno, assume problem is no disk space */
+		if (errno == 0)
+			errno = ENOSPC;
 		ereport(PANIC,
 				(errcode_for_file_access(),
 				 errmsg("could not write to file \"%s\": %m",
@@ -594,10 +617,13 @@ CheckPointReplicationOrigin(void)
 		/* make sure we only write out a commit that's persistent */
 		XLogFlush(local_lsn);
 
+		errno = 0;
 		if ((write(tmpfd, &disk_state, sizeof(disk_state))) !=
 			sizeof(disk_state))
 		{
-			CloseTransientFile(tmpfd);
+			/* if write didn't set errno, assume problem is no disk space */
+			if (errno == 0)
+				errno = ENOSPC;
 			ereport(PANIC,
 					(errcode_for_file_access(),
 					 errmsg("could not write to file \"%s\": %m",
@@ -611,16 +637,23 @@ CheckPointReplicationOrigin(void)
 
 	/* write out the CRC */
 	FIN_CRC32C(crc);
+	errno = 0;
 	if ((write(tmpfd, &crc, sizeof(crc))) != sizeof(crc))
 	{
-		CloseTransientFile(tmpfd);
+		/* if write didn't set errno, assume problem is no disk space */
+		if (errno == 0)
+			errno = ENOSPC;
 		ereport(PANIC,
 				(errcode_for_file_access(),
 				 errmsg("could not write to file \"%s\": %m",
 						tmppath)));
 	}
 
-	CloseTransientFile(tmpfd);
+	if (CloseTransientFile(tmpfd))
+		ereport(PANIC,
+				(errcode_for_file_access(),
+				 errmsg("could not close file \"%s\": %m",
+						tmppath)));
 
 	/* fsync, rename to permanent file, fsync file and directory */
 	durable_rename(tmppath, path, PANIC);
@@ -660,7 +693,7 @@ StartupReplicationOrigin(void)
 
 	elog(DEBUG2, "starting up replication origin progress state");
 
-	fd = OpenTransientFile((char *) path, O_RDONLY | PG_BINARY, 0);
+	fd = OpenTransientFile(path, O_RDONLY | PG_BINARY);
 
 	/*
 	 * might have had max_replication_slots == 0 last run, or we just brought
@@ -677,9 +710,18 @@ StartupReplicationOrigin(void)
 	/* verify magic, that is written even if nothing was active */
 	readBytes = read(fd, &magic, sizeof(magic));
 	if (readBytes != sizeof(magic))
-		ereport(PANIC,
-				(errmsg("could not read file \"%s\": %m",
-						path)));
+	{
+		if (readBytes < 0)
+			ereport(PANIC,
+					(errcode_for_file_access(),
+					 errmsg("could not read file \"%s\": %m",
+							path)));
+		else
+			ereport(PANIC,
+					(errcode(ERRCODE_DATA_CORRUPTED),
+					 errmsg("could not read file \"%s\": read %d of %zu",
+							path, readBytes, sizeof(magic))));
+	}
 	COMP_CRC32C(crc, &magic, sizeof(magic));
 
 	if (magic != REPLICATION_STATE_MAGIC)
@@ -746,7 +788,11 @@ StartupReplicationOrigin(void)
 				 errmsg("replication slot checkpoint has wrong checksum %u, expected %u",
 						crc, file_crc)));
 
-	CloseTransientFile(fd);
+	if (CloseTransientFile(fd))
+		ereport(PANIC,
+				(errcode_for_file_access(),
+				 errmsg("could not close file \"%s\": %m",
+						path)));
 }
 
 void
@@ -1413,7 +1459,7 @@ pg_show_replication_origin_status(PG_FUNCTION_ARGS)
 	int			i;
 #define REPLICATION_ORIGIN_PROGRESS_COLS 4
 
-	/* we we want to return 0 rows if slot is set to zero */
+	/* we want to return 0 rows if slot is set to zero */
 	replorigin_check_prerequisites(false, true);
 
 	if (rsinfo == NULL || !IsA(rsinfo, ReturnSetInfo))

@@ -10,10 +10,18 @@ top_builddir = ../../..
 include $(top_builddir)/src/Makefile.global
 
 override CPPFLAGS := -I$(srcdir) -I$(libpq_srcdir) -I$(srcdir)/../regress $(CPPFLAGS)
+LDFLAGS_INTERNAL += -L$(top_builddir)/src/fe_utils -lpgfeutils
 
 OBJS =  specparse.o isolationtester.o $(WIN32RES)
 
 all: isolationtester$(X) pg_isolation_regress$(X)
+
+# Though we don't install these binaries, build them during installation
+# (including temp-install).  Otherwise, "make -j check-world" and "make -j
+# installcheck-world" would spawn multiple, concurrent builds in this
+# directory.  Later builds would overwrite files while earlier builds are
+# reading them, causing occasional failures.
+install: | all
 
 submake-regress:
 	$(MAKE) -C $(top_builddir)/src/test/regress pg_regress.o
@@ -24,19 +32,10 @@ pg_regress.o: | submake-regress
 pg_isolation_regress$(X): isolation_main.o pg_regress.o $(WIN32RES)
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@
 
-isolationtester$(X): $(OBJS) | submake-libpq submake-libpgport
+isolationtester$(X): $(OBJS) | submake-libpq submake-libpgport submake-libpgfeutils
 	$(CC) $(CFLAGS) $^ $(libpq_pgport) $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@
 
 distprep: specparse.c specscanner.c
-
-# There is no correct way to write a rule that generates two files.
-# Rules with two targets don't have that meaning, they are merely
-# shorthand for two otherwise separate rules.  To be safe for parallel
-# make, we must chain the dependencies like this.  The semicolon is
-# important, otherwise make will choose the built-in rule for
-# gram.y=>gram.c.
-
-specparse.h: specparse.c ;
 
 # specscanner is compiled as part of specparse
 specparse.o: specscanner.c

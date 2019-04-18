@@ -9,7 +9,7 @@
  *	  more likely to break across PostgreSQL releases than code that uses
  *	  only the official API.
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/interfaces/libpq/libpq-int.h
@@ -208,6 +208,8 @@ struct pg_result
 	PGresult_data *curBlock;	/* most recently allocated block */
 	int			curOffset;		/* start offset of free space in block */
 	int			spaceLeft;		/* number of free bytes remaining in block */
+
+	size_t		memorySize;		/* total space allocated for this PGresult */
 };
 
 /* PGAsyncStatusType defines the state of the query-execution state machine */
@@ -290,6 +292,7 @@ typedef struct pgDataValue
 	const char *value;			/* data value, without zero-termination */
 } PGdataValue;
 
+/* Host address type enum for struct pg_conn_host */
 typedef enum pg_conn_host_type
 {
 	CHT_HOST_NAME,
@@ -298,21 +301,19 @@ typedef enum pg_conn_host_type
 } pg_conn_host_type;
 
 /*
- * pg_conn_host stores all information about one of possibly several hosts
- * mentioned in the connection string.  Derived by splitting the pghost
- * on the comma character and then parsing each segment.
+ * pg_conn_host stores all information about each of possibly several hosts
+ * mentioned in the connection string.  Most fields are derived by splitting
+ * the relevant connection parameter (e.g., pghost) at commas.
  */
 typedef struct pg_conn_host
 {
-	pg_conn_host_type type;		/* type of host */
+	pg_conn_host_type type;		/* type of host address */
 	char	   *host;			/* host name or socket path */
-	char	   *hostaddr;		/* host address */
-	char	   *port;			/* port number for this host; if not NULL,
-								 * overrides the PGConn's pgport */
+	char	   *hostaddr;		/* host numeric IP address */
+	char	   *port;			/* port number (always provided) */
 	char	   *password;		/* password for this host, read from the
-								 * password file.  only set if the PGconn's
-								 * pgpass field is NULL. */
-	struct addrinfo *addrlist;	/* list of possible backend addresses */
+								 * password file; NULL if not sought or not
+								 * found in password file. */
 } pg_conn_host;
 
 /*
@@ -325,15 +326,17 @@ struct pg_conn
 	char	   *pghost;			/* the machine on which the server is running,
 								 * or a path to a UNIX-domain socket, or a
 								 * comma-separated list of machines and/or
-								 * paths, optionally with port suffixes; if
-								 * NULL, use DEFAULT_PGSOCKET_DIR */
+								 * paths; if NULL, use DEFAULT_PGSOCKET_DIR */
 	char	   *pghostaddr;		/* the numeric IP address of the machine on
-								 * which the server is running.  Takes
-								 * precedence over above. */
-	char	   *pgport;			/* the server's communication port number */
+								 * which the server is running, or a
+								 * comma-separated list of same.  Takes
+								 * precedence over pghost. */
+	char	   *pgport;			/* the server's communication port number, or
+								 * a comma-separated list of ports */
 	char	   *pgtty;			/* tty on which the backend messages is
 								 * displayed (OBSOLETE, NOT USED) */
 	char	   *connect_timeout;	/* connection timeout (numeric string) */
+	char	   *pgtcp_user_timeout; /* tcp user timeout (numeric string) */
 	char	   *client_encoding_initial;	/* encoding to use */
 	char	   *pgoptions;		/* options to start the backend with */
 	char	   *appname;		/* application name */
@@ -392,9 +395,10 @@ struct pg_conn
 	PGnotify   *notifyTail;		/* newest unreported Notify msg */
 
 	/* Support for multiple hosts in connection string */
-	int			nconnhost;		/* # of possible hosts */
-	int			whichhost;		/* host we're currently considering */
-	pg_conn_host *connhost;		/* details about each possible host */
+	int			nconnhost;		/* # of hosts named in conn string */
+	int			whichhost;		/* host we're currently trying/connected to */
+	pg_conn_host *connhost;		/* details about each named host */
+	char	   *connip;			/* IP address for current network connection */
 
 	/* Connection data */
 	pgsocket	sock;			/* FD for socket, PGINVALID_SOCKET if
@@ -405,12 +409,17 @@ struct pg_conn
 	int			sversion;		/* server version, e.g. 70401 for 7.4.1 */
 	bool		auth_req_received;	/* true if any type of auth req received */
 	bool		password_needed;	/* true if server demanded a password */
-	bool		pgpassfile_used;	/* true if password is from pgpassfile */
 	bool		sigpipe_so;		/* have we masked SIGPIPE via SO_NOSIGPIPE? */
 	bool		sigpipe_flag;	/* can we mask SIGPIPE via MSG_NOSIGNAL? */
+	bool		write_failed;	/* have we had a write failure on sock? */
+	char	   *write_err_msg;	/* write error message, or NULL if OOM */
 
 	/* Transient state needed while establishing connection */
-	struct addrinfo *addr_cur;	/* backend address currently being tried */
+	bool		try_next_addr;	/* time to advance to next address/host? */
+	bool		try_next_host;	/* time to advance to next connhost[]? */
+	struct addrinfo *addrlist;	/* list of addresses for current connhost */
+	struct addrinfo *addr_cur;	/* the one currently being tried */
+	int			addrlist_family;	/* needed to know how to free addrlist */
 	PGSetenvStatusType setenv_state;	/* for 2.0 protocol only */
 	const PQEnvironmentOption *next_eo;
 	bool		send_appname;	/* okay to send application_name? */
@@ -453,11 +462,13 @@ struct pg_conn
 	/* Assorted state for SASL, SSL, GSS, etc */
 	void	   *sasl_state;
 
+	/* SSL structures */
+	bool		ssl_in_use;
+
 #ifdef USE_SSL
 	bool		allow_ssl_try;	/* Allowed to try SSL negotiation */
 	bool		wait_ssl_try;	/* Delay SSL negotiation until after
 								 * attempting normal connection */
-	bool		ssl_in_use;
 #ifdef USE_OPENSSL
 	SSL		   *ssl;			/* SSL status, if have SSL connection */
 	X509	   *peer;			/* X509 cert of server */
@@ -470,9 +481,15 @@ struct pg_conn
 #endif							/* USE_OPENSSL */
 #endif							/* USE_SSL */
 
+	char	   *gssencmode;		/* GSS mode (require,prefer,disable) */
 #ifdef ENABLE_GSS
 	gss_ctx_id_t gctx;			/* GSS context */
 	gss_name_t	gtarg_nam;		/* GSS target name */
+
+	/* The following are encryption-only */
+	bool		try_gss;		/* GSS attempting permitted */
+	bool		gssenc;			/* GSS encryption is usable */
+	gss_cred_id_t gcred;		/* GSS credential temp storage. */
 #endif
 
 #ifdef ENABLE_SSPI
@@ -577,7 +594,6 @@ extern void pqSaveMessageField(PGresult *res, char code,
 extern void pqSaveParameterStatus(PGconn *conn, const char *name,
 					  const char *value);
 extern int	pqRowProcessor(PGconn *conn, const char **errmsgp);
-extern void pqHandleSendFailure(PGconn *conn);
 
 /* === in fe-protocol2.c === */
 
@@ -658,16 +674,106 @@ extern void pq_reset_sigpipe(sigset_t *osigset, bool sigpipe_pending,
 				 bool got_epipe);
 #endif
 
+/* === SSL === */
+
 /*
- * The SSL implementation provides these functions (fe-secure-openssl.c)
+ * The SSL implementation provides these functions.
+ */
+
+/*
+ *	Implementation of PQinitSSL().
  */
 extern void pgtls_init_library(bool do_ssl, int do_crypto);
+
+/*
+ * Initialize SSL library.
+ *
+ * The conn parameter is only used to be able to pass back an error
+ * message - no connection-local setup is made here.
+ *
+ * Returns 0 if OK, -1 on failure (with a message in conn->errorMessage).
+ */
 extern int	pgtls_init(PGconn *conn);
+
+/*
+ *	Begin or continue negotiating a secure session.
+ */
 extern PostgresPollingStatusType pgtls_open_client(PGconn *conn);
+
+/*
+ *	Close SSL connection.
+ */
 extern void pgtls_close(PGconn *conn);
+
+/*
+ *	Read data from a secure connection.
+ *
+ * On failure, this function is responsible for putting a suitable message
+ * into conn->errorMessage.  The caller must still inspect errno, but only
+ * to determine whether to continue/retry after error.
+ */
 extern ssize_t pgtls_read(PGconn *conn, void *ptr, size_t len);
+
+/*
+ *	Is there unread data waiting in the SSL read buffer?
+ */
 extern bool pgtls_read_pending(PGconn *conn);
+
+/*
+ *	Write data to a secure connection.
+ *
+ * On failure, this function is responsible for putting a suitable message
+ * into conn->errorMessage.  The caller must still inspect errno, but only
+ * to determine whether to continue/retry after error.
+ */
 extern ssize_t pgtls_write(PGconn *conn, const void *ptr, size_t len);
+
+/*
+ * Get the hash of the server certificate, for SCRAM channel binding type
+ * tls-server-end-point.
+ *
+ * NULL is sent back to the caller in the event of an error, with an
+ * error message for the caller to consume.
+ *
+ * This is not supported with old versions of OpenSSL that don't have
+ * the X509_get_signature_nid() function.
+ */
+#if defined(USE_OPENSSL) && defined(HAVE_X509_GET_SIGNATURE_NID)
+#define HAVE_PGTLS_GET_PEER_CERTIFICATE_HASH
+extern char *pgtls_get_peer_certificate_hash(PGconn *conn, size_t *len);
+#endif
+
+/*
+ * Verify that the server certificate matches the host name we connected to.
+ *
+ * The certificate's Common Name and Subject Alternative Names are considered.
+ *
+ * Returns 1 if the name matches, and 0 if it does not. On error, returns
+ * -1, and sets the libpq error message.
+ *
+ */
+extern int pgtls_verify_peer_name_matches_certificate_guts(PGconn *conn,
+												int *names_examined,
+												char **first_name);
+
+/* === GSSAPI === */
+
+#ifdef ENABLE_GSS
+
+/*
+ * Establish a GSSAPI-encrypted connection.
+ */
+extern PostgresPollingStatusType pqsecure_open_gss(PGconn *conn);
+
+/*
+ * Read and write functions for GSSAPI-encrypted connections, with internal
+ * buffering to handle nonblocking sockets.
+ */
+extern ssize_t pg_GSS_write(PGconn *conn, const void *ptr, size_t len);
+extern ssize_t pg_GSS_read(PGconn *conn, void *ptr, size_t len);
+#endif
+
+/* === miscellaneous macros === */
 
 /*
  * this is so that we can check if a connection is non-blocking internally
@@ -693,7 +799,7 @@ extern char *libpq_ngettext(const char *msgid, const char *msgid_plural, unsigne
 #define SOCK_ERRNO_SET(e) WSASetLastError(e)
 #else
 #define SOCK_ERRNO errno
-#define SOCK_STRERROR pqStrerror
+#define SOCK_STRERROR strerror_r
 #define SOCK_ERRNO_SET(e) (errno = (e))
 #endif
 

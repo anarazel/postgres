@@ -7,7 +7,7 @@
  * accessed via the extended FE/BE query protocol.
  *
  *
- * Copyright (c) 2002-2017, PostgreSQL Global Development Group
+ * Copyright (c) 2002-2019, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  src/backend/commands/prepare.c
@@ -239,7 +239,7 @@ ExecuteQuery(ExecuteStmt *stmt, IntoClause *intoClause,
 	portal->visible = false;
 
 	/* Copy the plan's saved query string into the portal's memory */
-	query_string = MemoryContextStrdup(PortalGetHeapMemory(portal),
+	query_string = MemoryContextStrdup(portal->portalContext,
 									   entry->plansource->query_string);
 
 	/* Replan if needed, and increment plan refcount for portal */
@@ -393,16 +393,7 @@ EvaluateParams(PreparedStatement *pstmt, List *params,
 	/* Prepare the expressions for execution */
 	exprstates = ExecPrepareExprList(params, estate);
 
-	paramLI = (ParamListInfo)
-		palloc(offsetof(ParamListInfoData, params) +
-			   num_params * sizeof(ParamExternData));
-	/* we have static list of params, so no hooks needed */
-	paramLI->paramFetch = NULL;
-	paramLI->paramFetchArg = NULL;
-	paramLI->parserSetup = NULL;
-	paramLI->parserSetupArg = NULL;
-	paramLI->numParams = num_params;
-	paramLI->paramMask = NULL;
+	paramLI = makeParamList(num_params);
 
 	i = 0;
 	foreach(l, exprstates)
@@ -733,7 +724,7 @@ pg_prepared_statement(PG_FUNCTION_ARGS)
 	 * build tupdesc for result tuples. This must match the definition of the
 	 * pg_prepared_statements view in system_views.sql
 	 */
-	tupdesc = CreateTemplateTupleDesc(5, false);
+	tupdesc = CreateTemplateTupleDesc(5);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 1, "name",
 					   TEXTOID, -1, 0);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 2, "statement",

@@ -3,7 +3,7 @@
  * parse_expr.c
  *	  handle expressions in parser
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -20,8 +20,7 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
-#include "optimizer/tlist.h"
-#include "optimizer/var.h"
+#include "optimizer/optimizer.h"
 #include "parser/analyze.h"
 #include "parser/parse_clause.h"
 #include "parser/parse_coerce.h"
@@ -386,7 +385,7 @@ transformExprRecurse(ParseState *pstate, Node *expr)
  * selection from an arbitrary node needs it.)
  */
 static void
-unknown_attribute(ParseState *pstate, Node *relref, char *attname,
+unknown_attribute(ParseState *pstate, Node *relref, const char *attname,
 				  int location)
 {
 	RangeTblEntry *rte;
@@ -466,13 +465,13 @@ transformIndirection(ParseState *pstate, A_Indirection *ind)
 
 			/* process subscripts before this field selection */
 			if (subscripts)
-				result = (Node *) transformArraySubscripts(pstate,
-														   result,
-														   exprType(result),
-														   InvalidOid,
-														   exprTypmod(result),
-														   subscripts,
-														   NULL);
+				result = (Node *) transformContainerSubscripts(pstate,
+															   result,
+															   exprType(result),
+															   InvalidOid,
+															   exprTypmod(result),
+															   subscripts,
+															   NULL);
 			subscripts = NIL;
 
 			newresult = ParseFuncOrColumn(pstate,
@@ -480,6 +479,7 @@ transformIndirection(ParseState *pstate, A_Indirection *ind)
 										  list_make1(result),
 										  last_srf,
 										  NULL,
+										  false,
 										  location);
 			if (newresult == NULL)
 				unknown_attribute(pstate, result, strVal(n), location);
@@ -488,13 +488,13 @@ transformIndirection(ParseState *pstate, A_Indirection *ind)
 	}
 	/* process trailing subscripts, if any */
 	if (subscripts)
-		result = (Node *) transformArraySubscripts(pstate,
-												   result,
-												   exprType(result),
-												   InvalidOid,
-												   exprTypmod(result),
-												   subscripts,
-												   NULL);
+		result = (Node *) transformContainerSubscripts(pstate,
+													   result,
+													   exprType(result),
+													   InvalidOid,
+													   exprTypmod(result),
+													   subscripts,
+													   NULL);
 
 	return result;
 }
@@ -520,6 +520,80 @@ transformColumnRef(ParseState *pstate, ColumnRef *cref)
 		CRERR_WRONG_DB,
 		CRERR_TOO_MANY
 	}			crerr = CRERR_NO_COLUMN;
+	const char *err;
+
+	/*
+	 * Check to see if the column reference is in an invalid place within the
+	 * query.  We allow column references in most places, except in default
+	 * expressions and partition bound expressions.
+	 */
+	err = NULL;
+	switch (pstate->p_expr_kind)
+	{
+		case EXPR_KIND_NONE:
+			Assert(false);		/* can't happen */
+			break;
+		case EXPR_KIND_OTHER:
+		case EXPR_KIND_JOIN_ON:
+		case EXPR_KIND_JOIN_USING:
+		case EXPR_KIND_FROM_SUBSELECT:
+		case EXPR_KIND_FROM_FUNCTION:
+		case EXPR_KIND_WHERE:
+		case EXPR_KIND_POLICY:
+		case EXPR_KIND_HAVING:
+		case EXPR_KIND_FILTER:
+		case EXPR_KIND_WINDOW_PARTITION:
+		case EXPR_KIND_WINDOW_ORDER:
+		case EXPR_KIND_WINDOW_FRAME_RANGE:
+		case EXPR_KIND_WINDOW_FRAME_ROWS:
+		case EXPR_KIND_WINDOW_FRAME_GROUPS:
+		case EXPR_KIND_SELECT_TARGET:
+		case EXPR_KIND_INSERT_TARGET:
+		case EXPR_KIND_UPDATE_SOURCE:
+		case EXPR_KIND_UPDATE_TARGET:
+		case EXPR_KIND_GROUP_BY:
+		case EXPR_KIND_ORDER_BY:
+		case EXPR_KIND_DISTINCT_ON:
+		case EXPR_KIND_LIMIT:
+		case EXPR_KIND_OFFSET:
+		case EXPR_KIND_RETURNING:
+		case EXPR_KIND_VALUES:
+		case EXPR_KIND_VALUES_SINGLE:
+		case EXPR_KIND_CHECK_CONSTRAINT:
+		case EXPR_KIND_DOMAIN_CHECK:
+		case EXPR_KIND_FUNCTION_DEFAULT:
+		case EXPR_KIND_INDEX_EXPRESSION:
+		case EXPR_KIND_INDEX_PREDICATE:
+		case EXPR_KIND_ALTER_COL_TRANSFORM:
+		case EXPR_KIND_EXECUTE_PARAMETER:
+		case EXPR_KIND_TRIGGER_WHEN:
+		case EXPR_KIND_PARTITION_EXPRESSION:
+		case EXPR_KIND_CALL_ARGUMENT:
+		case EXPR_KIND_COPY_WHERE:
+		case EXPR_KIND_GENERATED_COLUMN:
+			/* okay */
+			break;
+
+		case EXPR_KIND_COLUMN_DEFAULT:
+			err = _("cannot use column reference in DEFAULT expression");
+			break;
+		case EXPR_KIND_PARTITION_BOUND:
+			err = _("cannot use column reference in partition bound expression");
+			break;
+
+			/*
+			 * There is intentionally no default: case here, so that the
+			 * compiler will warn if we add a new ParseExprKind without
+			 * extending this switch.  If we do see an unrecognized value at
+			 * runtime, the behavior will be the same as for EXPR_KIND_OTHER,
+			 * which is sane anyway.
+			 */
+	}
+	if (err)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg_internal("%s", err),
+				 parser_errposition(pstate, cref->location)));
 
 	/*
 	 * Give the PreParseColumnRefHook, if any, first shot.  If it returns
@@ -629,6 +703,7 @@ transformColumnRef(ParseState *pstate, ColumnRef *cref)
 											 list_make1(node),
 											 pstate->p_last_srf,
 											 NULL,
+											 false,
 											 cref->location);
 				}
 				break;
@@ -676,6 +751,7 @@ transformColumnRef(ParseState *pstate, ColumnRef *cref)
 											 list_make1(node),
 											 pstate->p_last_srf,
 											 NULL,
+											 false,
 											 cref->location);
 				}
 				break;
@@ -736,6 +812,7 @@ transformColumnRef(ParseState *pstate, ColumnRef *cref)
 											 list_make1(node),
 											 pstate->p_last_srf,
 											 NULL,
+											 false,
 											 cref->location);
 				}
 				break;
@@ -1477,6 +1554,7 @@ transformFuncCall(ParseState *pstate, FuncCall *fn)
 							 targs,
 							 last_srf,
 							 fn,
+							 false,
 							 fn->location);
 }
 
@@ -1800,6 +1878,7 @@ transformSubLink(ParseState *pstate, SubLink *sublink)
 		case EXPR_KIND_WINDOW_ORDER:
 		case EXPR_KIND_WINDOW_FRAME_RANGE:
 		case EXPR_KIND_WINDOW_FRAME_ROWS:
+		case EXPR_KIND_WINDOW_FRAME_GROUPS:
 		case EXPR_KIND_SELECT_TARGET:
 		case EXPR_KIND_INSERT_TARGET:
 		case EXPR_KIND_UPDATE_SOURCE:
@@ -1837,8 +1916,20 @@ transformSubLink(ParseState *pstate, SubLink *sublink)
 		case EXPR_KIND_TRIGGER_WHEN:
 			err = _("cannot use subquery in trigger WHEN condition");
 			break;
+		case EXPR_KIND_PARTITION_BOUND:
+			err = _("cannot use subquery in partition bound");
+			break;
 		case EXPR_KIND_PARTITION_EXPRESSION:
 			err = _("cannot use subquery in partition key expression");
+			break;
+		case EXPR_KIND_CALL_ARGUMENT:
+			err = _("cannot use subquery in CALL argument");
+			break;
+		case EXPR_KIND_COPY_WHERE:
+			err = _("cannot use subquery in COPY FROM WHERE condition");
+			break;
+		case EXPR_KIND_GENERATED_COLUMN:
+			err = _("cannot use subquery in column generation expression");
 			break;
 
 			/*
@@ -3145,7 +3236,7 @@ operator_precedence_group(Node *node, const char **nodename)
 				*nodename = strVal(linitial(aexpr->name));
 				/* Ignore if op was always higher priority than IS-tests */
 				if (strcmp(*nodename, "+") == 0 ||
-					strcmp(*nodename, "-"))
+					strcmp(*nodename, "-") == 0)
 					group = 0;
 				else
 					group = PREC_GROUP_PREFIX_OP;
@@ -3422,6 +3513,8 @@ ParseExprKindName(ParseExprKind exprKind)
 			return "window RANGE";
 		case EXPR_KIND_WINDOW_FRAME_ROWS:
 			return "window ROWS";
+		case EXPR_KIND_WINDOW_FRAME_GROUPS:
+			return "window GROUPS";
 		case EXPR_KIND_SELECT_TARGET:
 			return "SELECT";
 		case EXPR_KIND_INSERT_TARGET:
@@ -3460,8 +3553,16 @@ ParseExprKindName(ParseExprKind exprKind)
 			return "EXECUTE";
 		case EXPR_KIND_TRIGGER_WHEN:
 			return "WHEN";
+		case EXPR_KIND_PARTITION_BOUND:
+			return "partition bound";
 		case EXPR_KIND_PARTITION_EXPRESSION:
 			return "PARTITION BY";
+		case EXPR_KIND_CALL_ARGUMENT:
+			return "CALL";
+		case EXPR_KIND_COPY_WHERE:
+			return "WHERE";
+		case EXPR_KIND_GENERATED_COLUMN:
+			return "GENERATED AS";
 
 			/*
 			 * There is intentionally no default: case here, so that the

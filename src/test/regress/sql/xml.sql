@@ -149,10 +149,17 @@ PREPARE foo (xml) AS SELECT xmlconcat('<foo/>', $1);
 SET XML OPTION DOCUMENT;
 EXECUTE foo ('<bar/>');
 EXECUTE foo ('bad');
+SELECT xml '<!DOCTYPE a><a/><b/>';
 
 SET XML OPTION CONTENT;
 EXECUTE foo ('<bar/>');
 EXECUTE foo ('good');
+SELECT xml '<!-- in SQL:2006+ a doc is content too--> <?y z?> <!DOCTYPE a><a/>';
+SELECT xml '<?xml version="1.0"?> <!-- hi--> <!DOCTYPE a><a/>';
+SELECT xml '<!DOCTYPE a><a/>';
+SELECT xml '<!-- hi--> oops <!DOCTYPE a><a/>';
+SELECT xml '<!-- hi--> <oops/> <!DOCTYPE a><a/>';
+SELECT xml '<!DOCTYPE a><a/><b/>';
 
 
 -- Test backwards parsing
@@ -188,6 +195,43 @@ SELECT xpath('count(//*)=0', '<root><sub/><sub/></root>');
 SELECT xpath('count(//*)=3', '<root><sub/><sub/></root>');
 SELECT xpath('name(/*)', '<root><sub/><sub/></root>');
 SELECT xpath('/nosuchtag', '<root/>');
+SELECT xpath('root', '<root/>');
+
+-- Round-trip non-ASCII data through xpath().
+DO $$
+DECLARE
+  xml_declaration text := '<?xml version="1.0" encoding="ISO-8859-1"?>';
+  degree_symbol text;
+  res xml[];
+BEGIN
+  -- Per the documentation, except when the server encoding is UTF8, xpath()
+  -- may not work on non-ASCII data.  The untranslatable_character and
+  -- undefined_function traps below, currently dead code, will become relevant
+  -- if we remove this limitation.
+  IF current_setting('server_encoding') <> 'UTF8' THEN
+    RAISE LOG 'skip: encoding % unsupported for xpath',
+      current_setting('server_encoding');
+    RETURN;
+  END IF;
+
+  degree_symbol := convert_from('\xc2b0', 'UTF8');
+  res := xpath('text()', (xml_declaration ||
+    '<x>' || degree_symbol || '</x>')::xml);
+  IF degree_symbol <> res[1]::text THEN
+    RAISE 'expected % (%), got % (%)',
+      degree_symbol, convert_to(degree_symbol, 'UTF8'),
+      res[1], convert_to(res[1]::text, 'UTF8');
+  END IF;
+EXCEPTION
+  -- character with byte sequence 0xc2 0xb0 in encoding "UTF8" has no equivalent in encoding "LATIN8"
+  WHEN untranslatable_character
+  -- default conversion function for encoding "UTF8" to "MULE_INTERNAL" does not exist
+  OR undefined_function
+  -- unsupported XML feature
+  OR feature_not_supported THEN
+    RAISE LOG 'skip: %', SQLERRM;
+END
+$$;
 
 -- Test xmlexists and xpath_exists
 SELECT xmlexists('//town[text() = ''Toronto'']' PASSING BY REF '<towns><town>Bidford-on-Avon</town><town>Cwmbran</town><town>Bristol</town></towns>');
@@ -313,7 +357,7 @@ SELECT  xmltable.*
                          PASSING data
                          COLUMNS id int PATH '@id',
                                   _id FOR ORDINALITY,
-                                  country_name text PATH 'COUNTRY_NAME' NOT NULL,
+                                  country_name text PATH 'COUNTRY_NAME/text()' NOT NULL,
                                   country_id text PATH 'COUNTRY_ID',
                                   region_id int PATH 'REGION_ID',
                                   size float PATH 'SIZE',
@@ -326,7 +370,7 @@ CREATE VIEW xmltableview1 AS SELECT  xmltable.*
                          PASSING data
                          COLUMNS id int PATH '@id',
                                   _id FOR ORDINALITY,
-                                  country_name text PATH 'COUNTRY_NAME' NOT NULL,
+                                  country_name text PATH 'COUNTRY_NAME/text()' NOT NULL,
                                   country_id text PATH 'COUNTRY_ID',
                                   region_id int PATH 'REGION_ID',
                                   size float PATH 'SIZE',
@@ -387,7 +431,7 @@ SELECT * FROM xmltable('/root' passing '<root><element>a1a<!-- aaaa -->a2a<?aaaa
 SELECT * FROM xmltable('/root' passing '<root><element>a1a<!-- aaaa -->a2a<?aaaaa?> <!--z-->  bbbb<x>xxx</x>cccc</element></root>' COLUMNS element text PATH 'element/text()'); -- should fail
 
 -- CDATA test
-select * from xmltable('r' passing '<d><r><c><![CDATA[<hello> &"<>!<a>foo</a>]]></c></r><r><c>2</c></r></d>' columns c text);
+select * from xmltable('d/r' passing '<d><r><c><![CDATA[<hello> &"<>!<a>foo</a>]]></c></r><r><c>2</c></r></d>' columns c text);
 
 -- XML builtin entities
 SELECT * FROM xmltable('/x/a' PASSING '<x><a><ent>&apos;</ent></a><a><ent>&quot;</ent></a><a><ent>&amp;</ent></a><a><ent>&lt;</ent></a><a><ent>&gt;</ent></a></x>' COLUMNS ent text);
@@ -558,3 +602,11 @@ INSERT INTO xmltest2 VALUES('<d><r><dc>2</dc></r></d>', 'D');
 SELECT xmltable.* FROM xmltest2, LATERAL xmltable('/d/r' PASSING x COLUMNS a int PATH '' || lower(_path) || 'c');
 SELECT xmltable.* FROM xmltest2, LATERAL xmltable(('/d/r/' || lower(_path) || 'c') PASSING x COLUMNS a int PATH '.');
 SELECT xmltable.* FROM xmltest2, LATERAL xmltable(('/d/r/' || lower(_path) || 'c') PASSING x COLUMNS a int PATH 'x' DEFAULT ascii(_path) - 54);
+
+-- XPath result can be boolean or number too
+SELECT * FROM XMLTABLE('*' PASSING '<a>a</a>' COLUMNS a xml PATH '.', b text PATH '.', c text PATH '"hi"', d boolean PATH '. = "a"', e integer PATH 'string-length(.)');
+\x
+SELECT * FROM XMLTABLE('*' PASSING '<e>pre<!--c1--><?pi arg?><![CDATA[&ent1]]><n2>&amp;deep</n2>post</e>' COLUMNS x xml PATH 'node()', y xml PATH '/');
+\x
+
+SELECT * FROM XMLTABLE('.' PASSING XMLELEMENT(NAME a) columns a varchar(20) PATH '"<foo/>"', b xml PATH '"<foo/>"');

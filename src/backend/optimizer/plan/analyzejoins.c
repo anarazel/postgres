@@ -11,7 +11,7 @@
  * is that we have to work harder to clean up after ourselves when we modify
  * the query, since the derived data structures have to be updated too.
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -25,11 +25,11 @@
 #include "nodes/nodeFuncs.h"
 #include "optimizer/clauses.h"
 #include "optimizer/joininfo.h"
+#include "optimizer/optimizer.h"
 #include "optimizer/pathnode.h"
 #include "optimizer/paths.h"
 #include "optimizer/planmain.h"
 #include "optimizer/tlist.h"
-#include "optimizer/var.h"
 #include "utils/lsyscache.h"
 
 /* local functions */
@@ -42,6 +42,7 @@ static bool rel_is_distinct_for(PlannerInfo *root, RelOptInfo *rel,
 					List *clause_list);
 static Oid	distinct_col_search(int colno, List *colnos, List *opids);
 static bool is_innerrel_unique_for(PlannerInfo *root,
+					   Relids joinrelids,
 					   Relids outerrelids,
 					   RelOptInfo *innerrel,
 					   JoinType jointype,
@@ -253,8 +254,7 @@ join_is_removable(PlannerInfo *root, SpecialJoinInfo *sjinfo)
 		 * above the outer join, even if it references no other rels (it might
 		 * be from WHERE, for example).
 		 */
-		if (restrictinfo->is_pushed_down ||
-			!bms_equal(restrictinfo->required_relids, joinrelids))
+		if (RINFO_IS_PUSHED_DOWN(restrictinfo, joinrelids))
 		{
 			/*
 			 * If such a clause actually references the inner rel then join
@@ -422,8 +422,7 @@ remove_rel_from_query(PlannerInfo *root, int relid, Relids joinrelids)
 
 		remove_join_clause_from_rels(root, rinfo, rinfo->required_relids);
 
-		if (rinfo->is_pushed_down ||
-			!bms_equal(rinfo->required_relids, joinrelids))
+		if (RINFO_IS_PUSHED_DOWN(rinfo, joinrelids))
 		{
 			/* Recheck that qual doesn't actually reference the target rel */
 			Assert(!bms_is_member(relid, rinfo->clause_relids));
@@ -567,7 +566,8 @@ reduce_unique_semijoins(PlannerInfo *root)
 						innerrel->joininfo);
 
 		/* Test whether the innerrel is unique for those clauses. */
-		if (!innerrel_is_unique(root, sjinfo->min_lefthand, innerrel,
+		if (!innerrel_is_unique(root,
+								joinrelids, sjinfo->min_lefthand, innerrel,
 								JOIN_SEMI, restrictlist, true))
 			continue;
 
@@ -582,7 +582,7 @@ reduce_unique_semijoins(PlannerInfo *root)
  *		Could the relation possibly be proven distinct on some set of columns?
  *
  * This is effectively a pre-checking function for rel_is_distinct_for().
- * It must return TRUE if rel_is_distinct_for() could possibly return TRUE
+ * It must return true if rel_is_distinct_for() could possibly return true
  * with this rel, but it should not expend a lot of cycles.  The idea is
  * that callers can avoid doing possibly-expensive processing to compute
  * rel_is_distinct_for()'s argument lists if the call could not possibly
@@ -735,7 +735,7 @@ rel_is_distinct_for(PlannerInfo *root, RelOptInfo *rel, List *clause_list)
  *		on some set of output columns?
  *
  * This is effectively a pre-checking function for query_is_distinct_for().
- * It must return TRUE if query_is_distinct_for() could possibly return TRUE
+ * It must return true if query_is_distinct_for() could possibly return true
  * with this query, but it should not expend a lot of cycles.  The idea is
  * that callers can avoid doing possibly-expensive processing to compute
  * query_is_distinct_for()'s argument lists if the call could not possibly
@@ -744,8 +744,8 @@ rel_is_distinct_for(PlannerInfo *root, RelOptInfo *rel, List *clause_list)
 bool
 query_supports_distinctness(Query *query)
 {
-	/* we don't cope with SRFs, see comment below */
-	if (query->hasTargetSRFs)
+	/* SRFs break distinctness except with DISTINCT, see below */
+	if (query->hasTargetSRFs && query->distinctClause == NIL)
 		return false;
 
 	/* check for features we can prove distinctness with */
@@ -787,20 +787,10 @@ query_is_distinct_for(Query *query, List *colnos, List *opids)
 	Assert(list_length(colnos) == list_length(opids));
 
 	/*
-	 * A set-returning function in the query's targetlist can result in
-	 * returning duplicate rows, if the SRF is evaluated after the
-	 * de-duplication step; so we play it safe and say "no" if there are any
-	 * SRFs.  (We could be certain that it's okay if SRFs appear only in the
-	 * specified columns, since those must be evaluated before de-duplication;
-	 * but it doesn't presently seem worth the complication to check that.)
-	 */
-	if (query->hasTargetSRFs)
-		return false;
-
-	/*
 	 * DISTINCT (including DISTINCT ON) guarantees uniqueness if all the
 	 * columns in the DISTINCT clause appear in colnos and operator semantics
-	 * match.
+	 * match.  This is true even if there are SRFs in the DISTINCT columns or
+	 * elsewhere in the tlist.
 	 */
 	if (query->distinctClause)
 	{
@@ -818,6 +808,16 @@ query_is_distinct_for(Query *query, List *colnos, List *opids)
 		if (l == NULL)			/* had matches for all? */
 			return true;
 	}
+
+	/*
+	 * Otherwise, a set-returning function in the query's targetlist can
+	 * result in returning duplicate rows, despite any grouping that might
+	 * occur before tlist evaluation.  (If all tlist SRFs are within GROUP BY
+	 * columns, it would be safe because they'd be expanded before grouping.
+	 * But it doesn't currently seem worth the effort to check for that.)
+	 */
+	if (query->hasTargetSRFs)
+		return false;
 
 	/*
 	 * Similarly, GROUP BY without GROUPING SETS guarantees uniqueness if all
@@ -949,7 +949,8 @@ distinct_col_search(int colno, List *colnos, List *opids)
  *
  * We need an actual RelOptInfo for the innerrel, but it's sufficient to
  * identify the outerrel by its Relids.  This asymmetry supports use of this
- * function before joinrels have been built.
+ * function before joinrels have been built.  (The caller is expected to
+ * also supply the joinrelids, just to save recalculating that.)
  *
  * The proof must be made based only on clauses that will be "joinquals"
  * rather than "otherquals" at execution.  For an inner join there's no
@@ -968,6 +969,7 @@ distinct_col_search(int colno, List *colnos, List *opids)
  */
 bool
 innerrel_is_unique(PlannerInfo *root,
+				   Relids joinrelids,
 				   Relids outerrelids,
 				   RelOptInfo *innerrel,
 				   JoinType jointype,
@@ -1016,7 +1018,7 @@ innerrel_is_unique(PlannerInfo *root,
 	}
 
 	/* No cached information, so try to make the proof. */
-	if (is_innerrel_unique_for(root, outerrelids, innerrel,
+	if (is_innerrel_unique_for(root, joinrelids, outerrelids, innerrel,
 							   jointype, restrictlist))
 	{
 		/*
@@ -1075,6 +1077,7 @@ innerrel_is_unique(PlannerInfo *root,
  */
 static bool
 is_innerrel_unique_for(PlannerInfo *root,
+					   Relids joinrelids,
 					   Relids outerrelids,
 					   RelOptInfo *innerrel,
 					   JoinType jointype,
@@ -1098,7 +1101,8 @@ is_innerrel_unique_for(PlannerInfo *root,
 		 * As noted above, if it's a pushed-down clause and we're at an outer
 		 * join, we can't use it.
 		 */
-		if (restrictinfo->is_pushed_down && IS_OUTER_JOIN(jointype))
+		if (IS_OUTER_JOIN(jointype) &&
+			RINFO_IS_PUSHED_DOWN(restrictinfo, joinrelids))
 			continue;
 
 		/* Ignore if it's not a mergejoinable clause */

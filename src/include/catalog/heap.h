@@ -4,7 +4,7 @@
  *	  prototypes for functions in backend/catalog/heap.c
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/catalog/heap.h
@@ -19,10 +19,16 @@
 #include "parser/parse_node.h"
 
 
+/* flag bits for CheckAttributeType/CheckAttributeNamesTypes */
+#define CHKATYPE_ANYARRAY		0x01	/* allow ANYARRAY */
+#define CHKATYPE_ANYRECORD		0x02	/* allow RECORD and RECORD[] */
+
 typedef struct RawColumnDefault
 {
 	AttrNumber	attnum;			/* attribute to attach default to */
 	Node	   *raw_default;	/* default value (untransformed parse tree) */
+	bool		missingMode;	/* true if part of add column processing */
+	char		generated;		/* attgenerated setting */
 } RawColumnDefault;
 
 typedef struct CookedConstraint
@@ -44,12 +50,15 @@ extern Relation heap_create(const char *relname,
 			Oid reltablespace,
 			Oid relid,
 			Oid relfilenode,
+			Oid accessmtd,
 			TupleDesc tupDesc,
 			char relkind,
 			char relpersistence,
 			bool shared_relation,
 			bool mapped_relation,
-			bool allow_system_table_mods);
+			bool allow_system_table_mods,
+			TransactionId *relfrozenxid,
+			MultiXactId *relminmxid);
 
 extern Oid heap_create_with_catalog(const char *relname,
 						 Oid relnamespace,
@@ -58,22 +67,20 @@ extern Oid heap_create_with_catalog(const char *relname,
 						 Oid reltypeid,
 						 Oid reloftypeid,
 						 Oid ownerid,
+						 Oid accessmtd,
 						 TupleDesc tupdesc,
 						 List *cooked_constraints,
 						 char relkind,
 						 char relpersistence,
 						 bool shared_relation,
 						 bool mapped_relation,
-						 bool oidislocal,
-						 int oidinhcount,
 						 OnCommitAction oncommit,
 						 Datum reloptions,
 						 bool use_user_acl,
 						 bool allow_system_table_mods,
 						 bool is_internal,
+						 Oid relrewrite,
 						 ObjectAddress *typaddress);
-
-extern void heap_create_init_fork(Relation rel);
 
 extern void heap_drop_with_catalog(Oid relid);
 
@@ -100,16 +107,22 @@ extern List *AddRelationNewConstraints(Relation rel,
 						  List *newConstraints,
 						  bool allow_merge,
 						  bool is_local,
-						  bool is_internal);
+						  bool is_internal,
+						  const char *queryString);
+
+extern void RelationClearMissing(Relation rel);
+extern void SetAttrMissing(Oid relid, char *attname, char *value);
 
 extern Oid StoreAttrDefault(Relation rel, AttrNumber attnum,
-				 Node *expr, bool is_internal);
+				 Node *expr, bool is_internal,
+				 bool add_column_mode);
 
 extern Node *cookDefault(ParseState *pstate,
 			Node *raw_default,
 			Oid atttypid,
 			int32 atttypmod,
-			char *attname);
+			const char *attname,
+			char attgenerated);
 
 extern void DeleteRelationTuple(Oid relid);
 extern void DeleteAttributeTuples(Oid relid);
@@ -120,19 +133,17 @@ extern void RemoveAttrDefault(Oid relid, AttrNumber attnum,
 extern void RemoveAttrDefaultById(Oid attrdefId);
 extern void RemoveStatistics(Oid relid, AttrNumber attnum);
 
-extern Form_pg_attribute SystemAttributeDefinition(AttrNumber attno,
-						  bool relhasoids);
+extern const FormData_pg_attribute *SystemAttributeDefinition(AttrNumber attno);
 
-extern Form_pg_attribute SystemAttributeByName(const char *attname,
-					  bool relhasoids);
+extern const FormData_pg_attribute *SystemAttributeByName(const char *attname);
 
 extern void CheckAttributeNamesTypes(TupleDesc tupdesc, char relkind,
-						 bool allow_system_table_mods);
+						 int flags);
 
 extern void CheckAttributeType(const char *attname,
 				   Oid atttypid, Oid attcollation,
 				   List *containing_rowtypes,
-				   bool allow_system_table_mods);
+				   int flags);
 
 /* pg_partitioned_table catalog manipulation functions */
 extern void StorePartitionKey(Relation rel,

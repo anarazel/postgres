@@ -14,7 +14,7 @@
  * hard postmaster crash, remaining segments will be removed, if they
  * still exist, at the next postmaster startup.
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -150,10 +150,6 @@ dsm_postmaster_startup(PGShmemHeader *shim)
 
 	Assert(!IsUnderPostmaster);
 
-	/* If dynamic shared memory is disabled, there's nothing to do. */
-	if (dynamic_shared_memory_type == DSM_IMPL_NONE)
-		return;
-
 	/*
 	 * If we're using the mmap implementations, clean up any leftovers.
 	 * Cleanup isn't needed on Windows, and happens earlier in startup for
@@ -218,10 +214,6 @@ dsm_cleanup_using_control_segment(dsm_handle old_control_handle)
 	uint32		nitems;
 	uint32		i;
 	dsm_control_header *old_control;
-
-	/* If dynamic shared memory is disabled, there's nothing to do. */
-	if (dynamic_shared_memory_type == DSM_IMPL_NONE)
-		return;
 
 	/*
 	 * Try to attach the segment.  If this fails, it probably just means that
@@ -294,14 +286,9 @@ dsm_cleanup_for_mmap(void)
 	DIR		   *dir;
 	struct dirent *dent;
 
-	/* Open the directory; can't use AllocateDir in postmaster. */
-	if ((dir = AllocateDir(PG_DYNSHMEM_DIR)) == NULL)
-		ereport(ERROR,
-				(errcode_for_file_access(),
-				 errmsg("could not open directory \"%s\": %m",
-						PG_DYNSHMEM_DIR)));
+	/* Scan the directory for something with a name of the correct format. */
+	dir = AllocateDir(PG_DYNSHMEM_DIR);
 
-	/* Scan for something with a name of the correct format. */
 	while ((dent = ReadDir(dir, PG_DYNSHMEM_DIR)) != NULL)
 	{
 		if (strncmp(dent->d_name, PG_DYNSHMEM_MMAP_FILE_PREFIX,
@@ -315,17 +302,9 @@ dsm_cleanup_for_mmap(void)
 
 			/* We found a matching file; so remove it. */
 			if (unlink(buf) != 0)
-			{
-				int			save_errno;
-
-				save_errno = errno;
-				closedir(dir);
-				errno = save_errno;
-
 				ereport(ERROR,
 						(errcode_for_file_access(),
 						 errmsg("could not remove file \"%s\": %m", buf)));
-			}
 		}
 	}
 
@@ -404,13 +383,6 @@ dsm_postmaster_shutdown(int code, Datum arg)
 static void
 dsm_backend_startup(void)
 {
-	/* If dynamic shared memory is disabled, reject this. */
-	if (dynamic_shared_memory_type == DSM_IMPL_NONE)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("dynamic shared memory is disabled"),
-				 errhint("Set dynamic_shared_memory_type to a value other than \"none\".")));
-
 #ifdef EXEC_BACKEND
 	{
 		void	   *control_address = NULL;
@@ -457,7 +429,7 @@ dsm_set_control_handle(dsm_handle h)
  * If there is a non-NULL CurrentResourceOwner, the new segment is associated
  * with it and must be detached before the resource owner releases, or a
  * warning will be logged.  If CurrentResourceOwner is NULL, the segment
- * remains attached until explicitely detached or the session ends.
+ * remains attached until explicitly detached or the session ends.
  * Creating with a NULL CurrentResourceOwner is equivalent to creating
  * with a non-NULL CurrentResourceOwner and then calling dsm_pin_mapping.
  */
@@ -555,7 +527,7 @@ dsm_create(Size size, int flags)
  * If there is a non-NULL CurrentResourceOwner, the attached segment is
  * associated with it and must be detached before the resource owner releases,
  * or a warning will be logged.  Otherwise the segment remains attached until
- * explicitely detached or the session ends.  See the note atop dsm_create().
+ * explicitly detached or the session ends.  See the note atop dsm_create().
  */
 dsm_segment *
 dsm_attach(dsm_handle h)
@@ -597,21 +569,19 @@ dsm_attach(dsm_handle h)
 	nitems = dsm_control->nitems;
 	for (i = 0; i < nitems; ++i)
 	{
-		/* If the reference count is 0, the slot is actually unused. */
-		if (dsm_control->item[i].refcnt == 0)
+		/*
+		 * If the reference count is 0, the slot is actually unused.  If the
+		 * reference count is 1, the slot is still in use, but the segment is
+		 * in the process of going away; even if the handle matches, another
+		 * slot may already have started using the same handle value by
+		 * coincidence so we have to keep searching.
+		 */
+		if (dsm_control->item[i].refcnt <= 1)
 			continue;
 
 		/* If the handle doesn't match, it's not the slot we want. */
 		if (dsm_control->item[i].handle != seg->handle)
 			continue;
-
-		/*
-		 * If the reference count is 1, the slot is still in use, but the
-		 * segment is in the process of going away.  Treat that as if we
-		 * didn't find a match.
-		 */
-		if (dsm_control->item[i].refcnt == 1)
-			break;
 
 		/* Otherwise we've found a match. */
 		dsm_control->item[i].refcnt++;
@@ -679,38 +649,6 @@ dsm_detach_all(void)
 		dsm_impl_op(DSM_OP_DETACH, dsm_control_handle, 0,
 					&dsm_control_impl_private, &control_address,
 					&dsm_control_mapped_size, ERROR);
-}
-
-/*
- * Resize an existing shared memory segment.
- *
- * This may cause the shared memory segment to be remapped at a different
- * address.  For the caller's convenience, we return the mapped address.
- */
-void *
-dsm_resize(dsm_segment *seg, Size size)
-{
-	Assert(seg->control_slot != INVALID_CONTROL_SLOT);
-	dsm_impl_op(DSM_OP_RESIZE, seg->handle, size, &seg->impl_private,
-				&seg->mapped_address, &seg->mapped_size, ERROR);
-	return seg->mapped_address;
-}
-
-/*
- * Remap an existing shared memory segment.
- *
- * This is intended to be used when some other process has extended the
- * mapping using dsm_resize(), but we've still only got the initial
- * portion mapped.  Since this might change the address at which the
- * segment is mapped, we return the new mapped address.
- */
-void *
-dsm_remap(dsm_segment *seg)
-{
-	dsm_impl_op(DSM_OP_ATTACH, seg->handle, 0, &seg->impl_private,
-				&seg->mapped_address, &seg->mapped_size, ERROR);
-
-	return seg->mapped_address;
 }
 
 /*
@@ -906,8 +844,8 @@ dsm_unpin_segment(dsm_handle handle)
 	LWLockAcquire(DynamicSharedMemoryControlLock, LW_EXCLUSIVE);
 	for (i = 0; i < dsm_control->nitems; ++i)
 	{
-		/* Skip unused slots. */
-		if (dsm_control->item[i].refcnt == 0)
+		/* Skip unused slots and segments that are concurrently going away. */
+		if (dsm_control->item[i].refcnt <= 1)
 			continue;
 
 		/* If we've found our handle, we can stop searching. */

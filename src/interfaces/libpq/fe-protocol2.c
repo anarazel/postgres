@@ -3,7 +3,7 @@
  * fe-protocol2.c
  *	  functions that are specific to frontend/backend protocol version 2
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -19,17 +19,16 @@
 
 #include "libpq-fe.h"
 #include "libpq-int.h"
+#include "port/pg_bswap.h"
 
 
 #ifdef WIN32
 #include "win32.h"
 #else
 #include <unistd.h>
-#include <netinet/in.h>
 #ifdef HAVE_NETINET_TCP_H
 #include <netinet/tcp.h>
 #endif
-#include <arpa/inet.h>
 #endif
 
 
@@ -584,7 +583,7 @@ pqParseInput2(PGconn *conn)
 					if (conn->result != NULL)
 					{
 						/* Read another tuple of a normal query response */
-						if (getAnotherTuple(conn, FALSE))
+						if (getAnotherTuple(conn, false))
 							return;
 						/* getAnotherTuple() moves inStart itself */
 						continue;
@@ -602,7 +601,7 @@ pqParseInput2(PGconn *conn)
 					if (conn->result != NULL)
 					{
 						/* Read another tuple of a normal query response */
-						if (getAnotherTuple(conn, TRUE))
+						if (getAnotherTuple(conn, true))
 							return;
 						/* getAnotherTuple() moves inStart itself */
 						continue;
@@ -680,7 +679,7 @@ getRowDescriptions(PGconn *conn)
 	if (nfields > 0)
 	{
 		result->attDescs = (PGresAttDesc *)
-			pqResultAlloc(result, nfields * sizeof(PGresAttDesc), TRUE);
+			pqResultAlloc(result, nfields * sizeof(PGresAttDesc), true);
 		if (!result->attDescs)
 		{
 			errmsg = NULL;		/* means "out of memory", see below */
@@ -968,6 +967,14 @@ pqGetErrorNotice2(PGconn *conn, bool isError)
 	char	   *splitp;
 
 	/*
+	 * If this is an error message, pre-emptively clear any incomplete query
+	 * result we may have.  We'd just throw it away below anyway, and
+	 * releasing it before collecting the error might avoid out-of-memory.
+	 */
+	if (isError)
+		pqClearAsyncResult(conn);
+
+	/*
 	 * Since the message might be pretty long, we create a temporary
 	 * PQExpBuffer rather than using conn->workBuffer.  workBuffer is intended
 	 * for stuff that is expected to be short.
@@ -1039,7 +1046,7 @@ pqGetErrorNotice2(PGconn *conn, bool isError)
 	 */
 	if (isError)
 	{
-		pqClearAsyncResult(conn);
+		pqClearAsyncResult(conn);	/* redundant, but be safe */
 		conn->result = res;
 		resetPQExpBuffer(&conn->errorMessage);
 		if (res && !PQExpBufferDataBroken(workBuf) && res->errMsg)
@@ -1219,7 +1226,7 @@ nodata:
 		if (async)
 			return 0;
 		/* Need to load more data */
-		if (pqWait(TRUE, FALSE, conn) ||
+		if (pqWait(true, false, conn) ||
 			pqReadData(conn) < 0)
 			return -2;
 	}
@@ -1264,7 +1271,7 @@ pqGetline2(PGconn *conn, char *s, int maxlen)
 		else
 		{
 			/* need to load more data */
-			if (pqWait(TRUE, FALSE, conn) ||
+			if (pqWait(true, false, conn) ||
 				pqReadData(conn) < 0)
 			{
 				result = EOF;
@@ -1443,49 +1450,37 @@ pqFunctionCall2(PGconn *conn, Oid fnid,
 		pqPutInt(fnid, 4, conn) != 0 || /* function id */
 		pqPutInt(nargs, 4, conn) != 0)	/* # of args */
 	{
-		pqHandleSendFailure(conn);
+		/* error message should be set up already */
 		return NULL;
 	}
 
 	for (i = 0; i < nargs; ++i)
 	{							/* len.int4 + contents	   */
 		if (pqPutInt(args[i].len, 4, conn))
-		{
-			pqHandleSendFailure(conn);
 			return NULL;
-		}
 
 		if (args[i].isint)
 		{
 			if (pqPutInt(args[i].u.integer, 4, conn))
-			{
-				pqHandleSendFailure(conn);
 				return NULL;
-			}
 		}
 		else
 		{
 			if (pqPutnchar((char *) args[i].u.ptr, args[i].len, conn))
-			{
-				pqHandleSendFailure(conn);
 				return NULL;
-			}
 		}
 	}
 
 	if (pqPutMsgEnd(conn) < 0 ||
 		pqFlush(conn))
-	{
-		pqHandleSendFailure(conn);
 		return NULL;
-	}
 
 	for (;;)
 	{
 		if (needInput)
 		{
 			/* Wait for some data to arrive (or for the channel to close) */
-			if (pqWait(TRUE, FALSE, conn) ||
+			if (pqWait(true, false, conn) ||
 				pqReadData(conn) < 0)
 				break;
 		}
@@ -1609,7 +1604,7 @@ pqBuildStartupPacket2(PGconn *conn, int *packetlen,
 
 	MemSet(startpacket, 0, sizeof(StartupPacket));
 
-	startpacket->protoVersion = htonl(conn->pversion);
+	startpacket->protoVersion = pg_hton32(conn->pversion);
 
 	/* strncpy is safe here: postmaster will handle full fields correctly */
 	strncpy(startpacket->user, conn->pguser, SM_USER);

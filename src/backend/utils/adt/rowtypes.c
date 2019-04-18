@@ -3,7 +3,7 @@
  * rowtypes.c
  *	  I/O and comparison functions for generic composite types.
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -23,6 +23,7 @@
 #include "libpq/pqformat.h"
 #include "miscadmin.h"
 #include "utils/builtins.h"
+#include "utils/datum.h"
 #include "utils/lsyscache.h"
 #include "utils/typcache.h"
 
@@ -718,7 +719,7 @@ record_send(PG_FUNCTION_ARGS)
 		if (!TupleDescAttr(tupdesc, i)->attisdropped)
 			validcols++;
 	}
-	pq_sendint(&buf, validcols, 4);
+	pq_sendint32(&buf, validcols);
 
 	for (i = 0; i < ncolumns; i++)
 	{
@@ -732,12 +733,12 @@ record_send(PG_FUNCTION_ARGS)
 		if (att->attisdropped)
 			continue;
 
-		pq_sendint(&buf, column_type, sizeof(Oid));
+		pq_sendint32(&buf, column_type);
 
 		if (nulls[i])
 		{
 			/* emit -1 data length to signify a NULL */
-			pq_sendint(&buf, -1, 4);
+			pq_sendint32(&buf, -1);
 			continue;
 		}
 
@@ -756,7 +757,7 @@ record_send(PG_FUNCTION_ARGS)
 
 		attr = values[i];
 		outputbytes = SendFunctionCall(&column_info->proc, attr);
-		pq_sendint(&buf, VARSIZE(outputbytes) - VARHDRSZ, 4);
+		pq_sendint32(&buf, VARSIZE(outputbytes) - VARHDRSZ);
 		pq_sendbytes(&buf, VARDATA(outputbytes),
 					 VARSIZE(outputbytes) - VARHDRSZ);
 	}
@@ -942,7 +943,7 @@ record_cmp(FunctionCallInfo fcinfo)
 		 */
 		if (!nulls1[i1] || !nulls2[i2])
 		{
-			FunctionCallInfoData locfcinfo;
+			LOCAL_FCINFO(locfcinfo, 2);
 			int32		cmpresult;
 
 			if (nulls1[i1])
@@ -959,14 +960,14 @@ record_cmp(FunctionCallInfo fcinfo)
 			}
 
 			/* Compare the pair of elements */
-			InitFunctionCallInfoData(locfcinfo, &typentry->cmp_proc_finfo, 2,
+			InitFunctionCallInfoData(*locfcinfo, &typentry->cmp_proc_finfo, 2,
 									 collation, NULL, NULL);
-			locfcinfo.arg[0] = values1[i1];
-			locfcinfo.arg[1] = values2[i2];
-			locfcinfo.argnull[0] = false;
-			locfcinfo.argnull[1] = false;
-			locfcinfo.isnull = false;
-			cmpresult = DatumGetInt32(FunctionCallInvoke(&locfcinfo));
+			locfcinfo->args[0].value = values1[i1];
+			locfcinfo->args[0].isnull = false;
+			locfcinfo->args[1].value = values2[i2];
+			locfcinfo->args[1].isnull = false;
+			locfcinfo->isnull = false;
+			cmpresult = DatumGetInt32(FunctionCallInvoke(locfcinfo));
 
 			if (cmpresult < 0)
 			{
@@ -1119,11 +1120,11 @@ record_eq(PG_FUNCTION_ARGS)
 	i1 = i2 = j = 0;
 	while (i1 < ncolumns1 || i2 < ncolumns2)
 	{
+		LOCAL_FCINFO(locfcinfo, 2);
 		Form_pg_attribute att1;
 		Form_pg_attribute att2;
 		TypeCacheEntry *typentry;
 		Oid			collation;
-		FunctionCallInfoData locfcinfo;
 		bool		oprresult;
 
 		/*
@@ -1193,14 +1194,14 @@ record_eq(PG_FUNCTION_ARGS)
 			}
 
 			/* Compare the pair of elements */
-			InitFunctionCallInfoData(locfcinfo, &typentry->eq_opr_finfo, 2,
+			InitFunctionCallInfoData(*locfcinfo, &typentry->eq_opr_finfo, 2,
 									 collation, NULL, NULL);
-			locfcinfo.arg[0] = values1[i1];
-			locfcinfo.arg[1] = values2[i2];
-			locfcinfo.argnull[0] = false;
-			locfcinfo.argnull[1] = false;
-			locfcinfo.isnull = false;
-			oprresult = DatumGetBool(FunctionCallInvoke(&locfcinfo));
+			locfcinfo->args[0].value = values1[i1];
+			locfcinfo->args[0].isnull = false;
+			locfcinfo->args[1].value = values2[i2];
+			locfcinfo->args[1].isnull = false;
+			locfcinfo->isnull = false;
+			oprresult = DatumGetBool(FunctionCallInvoke(locfcinfo));
 			if (!oprresult)
 			{
 				result = false;
@@ -1467,45 +1468,8 @@ record_image_cmp(FunctionCallInfo fcinfo)
 			}
 			else if (att1->attbyval)
 			{
-				switch (att1->attlen)
-				{
-					case 1:
-						if (GET_1_BYTE(values1[i1]) !=
-							GET_1_BYTE(values2[i2]))
-						{
-							cmpresult = (GET_1_BYTE(values1[i1]) <
-										 GET_1_BYTE(values2[i2])) ? -1 : 1;
-						}
-						break;
-					case 2:
-						if (GET_2_BYTES(values1[i1]) !=
-							GET_2_BYTES(values2[i2]))
-						{
-							cmpresult = (GET_2_BYTES(values1[i1]) <
-										 GET_2_BYTES(values2[i2])) ? -1 : 1;
-						}
-						break;
-					case 4:
-						if (GET_4_BYTES(values1[i1]) !=
-							GET_4_BYTES(values2[i2]))
-						{
-							cmpresult = (GET_4_BYTES(values1[i1]) <
-										 GET_4_BYTES(values2[i2])) ? -1 : 1;
-						}
-						break;
-#if SIZEOF_DATUM == 8
-					case 8:
-						if (GET_8_BYTES(values1[i1]) !=
-							GET_8_BYTES(values2[i2]))
-						{
-							cmpresult = (GET_8_BYTES(values1[i1]) <
-										 GET_8_BYTES(values2[i2])) ? -1 : 1;
-						}
-						break;
-#endif
-					default:
-						Assert(false);	/* cannot happen */
-				}
+				if (values1[i1] != values2[i2])
+					cmpresult = (values1[i1] < values2[i2]) ? -1 : 1;
 			}
 			else
 			{
@@ -1708,67 +1672,7 @@ record_image_eq(PG_FUNCTION_ARGS)
 			}
 
 			/* Compare the pair of elements */
-			if (att1->attlen == -1)
-			{
-				Size		len1,
-							len2;
-
-				len1 = toast_raw_datum_size(values1[i1]);
-				len2 = toast_raw_datum_size(values2[i2]);
-				/* No need to de-toast if lengths don't match. */
-				if (len1 != len2)
-					result = false;
-				else
-				{
-					struct varlena *arg1val;
-					struct varlena *arg2val;
-
-					arg1val = PG_DETOAST_DATUM_PACKED(values1[i1]);
-					arg2val = PG_DETOAST_DATUM_PACKED(values2[i2]);
-
-					result = (memcmp(VARDATA_ANY(arg1val),
-									 VARDATA_ANY(arg2val),
-									 len1 - VARHDRSZ) == 0);
-
-					/* Only free memory if it's a copy made here. */
-					if ((Pointer) arg1val != (Pointer) values1[i1])
-						pfree(arg1val);
-					if ((Pointer) arg2val != (Pointer) values2[i2])
-						pfree(arg2val);
-				}
-			}
-			else if (att1->attbyval)
-			{
-				switch (att1->attlen)
-				{
-					case 1:
-						result = (GET_1_BYTE(values1[i1]) ==
-								  GET_1_BYTE(values2[i2]));
-						break;
-					case 2:
-						result = (GET_2_BYTES(values1[i1]) ==
-								  GET_2_BYTES(values2[i2]));
-						break;
-					case 4:
-						result = (GET_4_BYTES(values1[i1]) ==
-								  GET_4_BYTES(values2[i2]));
-						break;
-#if SIZEOF_DATUM == 8
-					case 8:
-						result = (GET_8_BYTES(values1[i1]) ==
-								  GET_8_BYTES(values2[i2]));
-						break;
-#endif
-					default:
-						Assert(false);	/* cannot happen */
-				}
-			}
-			else
-			{
-				result = (memcmp(DatumGetPointer(values1[i1]),
-								 DatumGetPointer(values2[i2]),
-								 att1->attlen) == 0);
-			}
+			result = datum_image_eq(values1[i1], values2[i2], att1->attbyval, att2->attlen);
 			if (!result)
 				break;
 		}

@@ -1,4 +1,7 @@
+/* Layout and location of TZif files.  */
+
 #ifndef TZFILE_H
+
 #define TZFILE_H
 
 /*
@@ -21,14 +24,14 @@
  * Information about time zone files.
  */
 
-#define TZDEFAULT	"localtime"
+#define TZDEFAULT	"/etc/localtime"
 #define TZDEFRULES	"posixrules"
 
 /*
  * Each file begins with. . .
  */
 
-#define TZ_MAGIC	"TZif"
+#define	TZ_MAGIC	"TZif"
 
 struct tzhead
 {
@@ -50,8 +53,8 @@ struct tzhead
  *	tzh_timecnt (unsigned char)s	types of local time starting at above
  *	tzh_typecnt repetitions of
  *		one (char [4])		coded UT offset in seconds
- *		one (unsigned char) used to set tm_isdst
- *		one (unsigned char) that's an abbreviation list index
+ *		one (unsigned char)	used to set tm_isdst
+ *		one (unsigned char)	that's an abbreviation list index
  *	tzh_charcnt (char)s		'\0'-terminated zone abbreviations
  *	tzh_leapcnt repetitions of
  *		one (char [4])		coded leap second transition times

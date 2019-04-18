@@ -4,7 +4,7 @@
  *	  prototypes for parse_relation.c.
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/parser/parse_relation.h
@@ -54,9 +54,9 @@ extern RangeTblEntry *GetRTEByRangeTablePosn(ParseState *pstate,
 extern CommonTableExpr *GetCTEForRTE(ParseState *pstate, RangeTblEntry *rte,
 			 int rtelevelsup);
 extern Node *scanRTEForColumn(ParseState *pstate, RangeTblEntry *rte,
-				 char *colname, int location,
+				 const char *colname, int location,
 				 int fuzzy_rte_penalty, FuzzyAttrMatchState *fuzzystate);
-extern Node *colNameToVar(ParseState *pstate, char *colname, bool localonly,
+extern Node *colNameToVar(ParseState *pstate, const char *colname, bool localonly,
 			 int location);
 extern void markVarForSelectPriv(ParseState *pstate, Var *var,
 					 RangeTblEntry *rte);
@@ -69,6 +69,7 @@ extern RangeTblEntry *addRangeTableEntry(ParseState *pstate,
 				   bool inFromCl);
 extern RangeTblEntry *addRangeTableEntryForRelation(ParseState *pstate,
 							  Relation rel,
+							  int lockmode,
 							  Alias *alias,
 							  bool inh,
 							  bool inFromCl);
@@ -117,14 +118,14 @@ extern void addRTEtoQuery(ParseState *pstate, RangeTblEntry *rte,
 			  bool addToRelNameSpace, bool addToVarNameSpace);
 extern void errorMissingRTE(ParseState *pstate, RangeVar *relation) pg_attribute_noreturn();
 extern void errorMissingColumn(ParseState *pstate,
-				   char *relname, char *colname, int location) pg_attribute_noreturn();
+				   const char *relname, const char *colname, int location) pg_attribute_noreturn();
 extern void expandRTE(RangeTblEntry *rte, int rtindex, int sublevels_up,
 		  int location, bool include_dropped,
 		  List **colnames, List **colvars);
 extern List *expandRelAttrs(ParseState *pstate, RangeTblEntry *rte,
 			   int rtindex, int sublevels_up, int location);
 extern int	attnameAttNum(Relation rd, const char *attname, bool sysColOK);
-extern Name attnumAttName(Relation rd, int attid);
+extern const NameData *attnumAttName(Relation rd, int attid);
 extern Oid	attnumTypeId(Relation rd, int attid);
 extern Oid	attnumCollationId(Relation rd, int attid);
 extern bool isQueryUsingTempRelation(Query *query);

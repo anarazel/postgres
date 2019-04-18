@@ -4,7 +4,7 @@
  * External declarations pertaining to backend/utils/misc/guc.c and
  * backend/utils/misc/guc-file.l
  *
- * Copyright (c) 2000-2017, PostgreSQL Global Development Group
+ * Copyright (c) 2000-2019, PostgreSQL Global Development Group
  * Written by Peter Eisentraut <peter_e@gmx.net>.
  *
  * src/include/utils/guc.h
@@ -227,6 +227,8 @@ typedef enum
 #define GUC_UNIT_MIN		   0x30000	/* value is in minutes */
 #define GUC_UNIT_TIME		   0xF0000	/* mask for time-related units */
 
+#define GUC_EXPLAIN			  0x100000	/* include in explain */
+
 #define GUC_UNIT				(GUC_UNIT_MEMORY | GUC_UNIT_TIME)
 
 
@@ -244,29 +246,32 @@ extern bool log_statement_stats;
 extern bool log_btree_build_stats;
 
 extern PGDLLIMPORT bool check_function_bodies;
-extern bool default_with_oids;
+extern bool session_auth_is_superuser;
 
 extern int	log_min_error_statement;
-extern int	log_min_messages;
-extern int	client_min_messages;
+extern PGDLLIMPORT int log_min_messages;
+extern PGDLLIMPORT int client_min_messages;
 extern int	log_min_duration_statement;
 extern int	log_temp_files;
+extern double log_statement_sample_rate;
+extern double log_xact_sample_rate;
 
 extern int	temp_file_limit;
 
 extern int	num_temp_buffers;
 
 extern char *cluster_name;
-extern char *ConfigFileName;
+extern PGDLLIMPORT char *ConfigFileName;
 extern char *HbaFileName;
 extern char *IdentFileName;
 extern char *external_pid_file;
 
-extern char *application_name;
+extern PGDLLIMPORT char *application_name;
 
 extern int	tcp_keepalives_idle;
 extern int	tcp_keepalives_interval;
 extern int	tcp_keepalives_count;
+extern int	tcp_user_timeout;
 
 #ifdef TRACE_SORT
 extern bool trace_sort;
@@ -346,8 +351,9 @@ extern void DefineCustomEnumVariable(
 extern void EmitWarningsOnPlaceholders(const char *className);
 
 extern const char *GetConfigOption(const char *name, bool missing_ok,
-				bool restrict_superuser);
+				bool restrict_privileged);
 extern const char *GetConfigOptionResetString(const char *name);
+extern int	GetConfigOptionFlags(const char *name, bool missing_ok);
 extern void ProcessConfigFile(GucContext context);
 extern void InitializeGUCOptions(void);
 extern bool SelectConfigFiles(const char *userDoption, const char *progname);
@@ -359,7 +365,8 @@ extern void BeginReportingGUCOptions(void);
 extern void ParseLongOption(const char *string, char **name, char **value);
 extern bool parse_int(const char *value, int *result, int flags,
 		  const char **hintmsg);
-extern bool parse_real(const char *value, double *result);
+extern bool parse_real(const char *value, double *result, int flags,
+		   const char **hintmsg);
 extern int set_config_option(const char *name, const char *value,
 				  GucContext context, GucSource source,
 				  GucAction action, bool changeVal, int elevel,

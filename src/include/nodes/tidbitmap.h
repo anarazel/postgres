@@ -13,7 +13,7 @@
  * fact that a particular page needs to be visited.
  *
  *
- * Copyright (c) 2003-2017, PostgreSQL Global Development Group
+ * Copyright (c) 2003-2019, PostgreSQL Global Development Group
  *
  * src/include/nodes/tidbitmap.h
  *
@@ -37,7 +37,7 @@ typedef struct TBMIterator TBMIterator;
 typedef struct TBMSharedIterator TBMSharedIterator;
 
 /* Result structure for tbm_iterate */
-typedef struct
+typedef struct TBMIterateResult
 {
 	BlockNumber blockno;		/* page number containing tuples */
 	int			ntuples;		/* -1 indicates lossy result */
@@ -70,5 +70,6 @@ extern void tbm_end_iterate(TBMIterator *iterator);
 extern void tbm_end_shared_iterate(TBMSharedIterator *iterator);
 extern TBMSharedIterator *tbm_attach_shared_iterate(dsa_area *dsa,
 						  dsa_pointer dp);
+extern long tbm_calculate_entries(double maxbytes);
 
 #endif							/* TIDBITMAP_H */

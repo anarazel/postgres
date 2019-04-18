@@ -3,7 +3,7 @@
  * nodeCtescan.c
  *	  routines to handle CteScan nodes.
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -108,6 +108,13 @@ CteScanNext(CteScanState *node)
 		}
 
 		/*
+		 * There are corner cases where the subplan could change which
+		 * tuplestore read pointer is active, so be sure to reselect ours
+		 * before storing the tuple we got.
+		 */
+		tuplestore_select_read_pointer(tuplestorestate, node->readptr);
+
+		/*
 		 * Append a copy of the returned tuple to tuplestore.  NOTE: because
 		 * our read pointer is certainly in EOF state, its read position will
 		 * move forward over the added tuple.  This is what we want.  Also,
@@ -178,6 +185,12 @@ ExecInitCteScan(CteScan *node, EState *estate, int eflags)
 	 * we might be asked to rescan the CTE even though upper levels didn't
 	 * tell us to be prepared to do it efficiently.  Annoying, since this
 	 * prevents truncation of the tuplestore.  XXX FIXME
+	 *
+	 * Note: if we are in an EPQ recheck plan tree, it's likely that no access
+	 * to the tuplestore is needed at all, making this even more annoying.
+	 * It's not worth improving that as long as all the read pointers would
+	 * have REWIND anyway, but if we ever improve this logic then that aspect
+	 * should be considered too.
 	 */
 	eflags |= EXEC_FLAG_REWIND;
 
@@ -243,29 +256,24 @@ ExecInitCteScan(CteScan *node, EState *estate, int eflags)
 	ExecAssignExprContext(estate, &scanstate->ss.ps);
 
 	/*
+	 * The scan tuple type (ie, the rowtype we expect to find in the work
+	 * table) is the same as the result rowtype of the CTE query.
+	 */
+	ExecInitScanTupleSlot(estate, &scanstate->ss,
+						  ExecGetResultType(scanstate->cteplanstate),
+						  &TTSOpsMinimalTuple);
+
+	/*
+	 * Initialize result type and projection.
+	 */
+	ExecInitResultTypeTL(&scanstate->ss.ps);
+	ExecAssignScanProjectionInfo(&scanstate->ss);
+
+	/*
 	 * initialize child expressions
 	 */
 	scanstate->ss.ps.qual =
 		ExecInitQual(node->scan.plan.qual, (PlanState *) scanstate);
-
-	/*
-	 * tuple table initialization
-	 */
-	ExecInitResultTupleSlot(estate, &scanstate->ss.ps);
-	ExecInitScanTupleSlot(estate, &scanstate->ss);
-
-	/*
-	 * The scan tuple type (ie, the rowtype we expect to find in the work
-	 * table) is the same as the result rowtype of the CTE query.
-	 */
-	ExecAssignScanType(&scanstate->ss,
-					   ExecGetResultType(scanstate->cteplanstate));
-
-	/*
-	 * Initialize result tuple type and projection info.
-	 */
-	ExecAssignResultTypeFromTL(&scanstate->ss.ps);
-	ExecAssignScanProjectionInfo(&scanstate->ss);
 
 	return scanstate;
 }
@@ -287,7 +295,8 @@ ExecEndCteScan(CteScanState *node)
 	/*
 	 * clean out the tuple table
 	 */
-	ExecClearTuple(node->ss.ps.ps_ResultTupleSlot);
+	if (node->ss.ps.ps_ResultTupleSlot)
+		ExecClearTuple(node->ss.ps.ps_ResultTupleSlot);
 	ExecClearTuple(node->ss.ss_ScanTupleSlot);
 
 	/*
@@ -311,7 +320,8 @@ ExecReScanCteScan(CteScanState *node)
 {
 	Tuplestorestate *tuplestorestate = node->leader->cte_table;
 
-	ExecClearTuple(node->ss.ps.ps_ResultTupleSlot);
+	if (node->ss.ps.ps_ResultTupleSlot)
+		ExecClearTuple(node->ss.ps.ps_ResultTupleSlot);
 
 	ExecScanReScan(&node->ss);
 

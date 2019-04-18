@@ -99,8 +99,8 @@ SELECT *, pg_typeof(f1) FROM
 
 -- ... unless there's context to suggest differently
 
-explain verbose select '42' union all select '43';
-explain verbose select '42' union all select 43;
+explain (verbose, costs off) select '42' union all select '43';
+explain (verbose, costs off) select '42' union all select 43;
 
 -- check materialization of an initplan reference (bug #14524)
 explain (verbose, costs off)
@@ -377,6 +377,24 @@ with q as (select max(f1) from int4_tbl group by f1 order by f1)
   select q from q;
 
 --
+-- Test case for sublinks pulled up into joinaliasvars lists in an
+-- inherited update/delete query
+--
+
+begin;  --  this shouldn't delete anything, but be safe
+
+delete from road
+where exists (
+  select 1
+  from
+    int4_tbl cross join
+    ( select f1, array(select q1 from int8_tbl) as arr
+      from text_tbl ) ss
+  where road.name = ss.f1 );
+
+rollback;
+
+--
 -- Test case for sublinks pushed down into subselects via join alias expansion
 --
 
@@ -418,6 +436,23 @@ insert into inner_7597 values(0, null);
 select * from outer_7597 where (f1, f2) not in (select * from inner_7597);
 
 --
+-- Similar test case using text that verifies that collation
+-- information is passed through by execTuplesEqual() in nodeSubplan.c
+-- (otherwise it would error in texteq())
+--
+
+create temp table outer_text (f1 text, f2 text);
+insert into outer_text values ('a', 'a');
+insert into outer_text values ('b', 'a');
+insert into outer_text values ('a', null);
+insert into outer_text values ('b', null);
+
+create temp table inner_text (c1 text, c2 text);
+insert into inner_text values ('a', null);
+
+select * from outer_text where (f1, f2) not in (select * from inner_text);
+
+--
 -- Test case for premature memory release during hashing of subplan output
 --
 
@@ -449,10 +484,29 @@ explain (verbose, costs off)
     (select (select random() where y=y) as x from (values(1),(2)) v(y)) ss;
 
 --
+-- Check we don't misoptimize a NOT IN where the subquery returns no rows.
+--
+create temp table notinouter (a int);
+create temp table notininner (b int not null);
+insert into notinouter values (null), (1);
+
+select * from notinouter where a not in (select b from notininner);
+
+--
 -- Check we behave sanely in corner case of empty SELECT list (bug #8648)
 --
 create temp table nocolumns();
 select exists(select * from nocolumns);
+
+--
+-- Check behavior with a SubPlan in VALUES (bug #14924)
+--
+select val.x
+  from generate_series(1,10) as s(i),
+  lateral (
+    values ((select s.i + 1)), (s.i + 101)
+  ) as val(x)
+where s.i < 10 and (select val.x) < 110;
 
 --
 -- Check sane behavior with nested IN SubLinks
@@ -470,9 +524,9 @@ select * from int4_tbl where
 --
 explain (verbose, costs off)
 select * from int4_tbl o where (f1, f1) in
-  (select f1, generate_series(1,2) / 10 g from int4_tbl i group by f1);
+  (select f1, generate_series(1,50) / 10 g from int4_tbl i group by f1);
 select * from int4_tbl o where (f1, f1) in
-  (select f1, generate_series(1,2) / 10 g from int4_tbl i group by f1);
+  (select f1, generate_series(1,50) / 10 g from int4_tbl i group by f1);
 
 --
 -- check for over-optimization of whole-row Var referencing an Append plan
@@ -581,3 +635,112 @@ select * from (select pk,c2 from sq_limit order by c1,pk) as x limit 3;
 drop function explain_sq_limit();
 
 drop table sq_limit;
+
+--
+-- Ensure that backward scan direction isn't propagated into
+-- expression subqueries (bug #15336)
+--
+
+begin;
+
+declare c1 scroll cursor for
+ select * from generate_series(1,4) i
+  where i <> all (values (2),(3));
+
+move forward all in c1;
+fetch backward all in c1;
+
+commit;
+
+--
+-- Tests for CTE inlining behavior
+--
+
+-- Basic subquery that can be inlined
+explain (verbose, costs off)
+with x as (select * from (select f1 from subselect_tbl) ss)
+select * from x where f1 = 1;
+
+-- Explicitly request materialization
+explain (verbose, costs off)
+with x as materialized (select * from (select f1 from subselect_tbl) ss)
+select * from x where f1 = 1;
+
+-- Stable functions are safe to inline
+explain (verbose, costs off)
+with x as (select * from (select f1, now() from subselect_tbl) ss)
+select * from x where f1 = 1;
+
+-- Volatile functions prevent inlining
+explain (verbose, costs off)
+with x as (select * from (select f1, random() from subselect_tbl) ss)
+select * from x where f1 = 1;
+
+-- SELECT FOR UPDATE cannot be inlined
+explain (verbose, costs off)
+with x as (select * from (select f1 from subselect_tbl for update) ss)
+select * from x where f1 = 1;
+
+-- Multiply-referenced CTEs are inlined only when requested
+explain (verbose, costs off)
+with x as (select * from (select f1, now() as n from subselect_tbl) ss)
+select * from x, x x2 where x.n = x2.n;
+
+explain (verbose, costs off)
+with x as not materialized (select * from (select f1, now() as n from subselect_tbl) ss)
+select * from x, x x2 where x.n = x2.n;
+
+-- Multiply-referenced CTEs can't be inlined if they contain outer self-refs
+explain (verbose, costs off)
+with recursive x(a) as
+  ((values ('a'), ('b'))
+   union all
+   (with z as not materialized (select * from x)
+    select z.a || z1.a as a from z cross join z as z1
+    where length(z.a || z1.a) < 5))
+select * from x;
+
+with recursive x(a) as
+  ((values ('a'), ('b'))
+   union all
+   (with z as not materialized (select * from x)
+    select z.a || z1.a as a from z cross join z as z1
+    where length(z.a || z1.a) < 5))
+select * from x;
+
+explain (verbose, costs off)
+with recursive x(a) as
+  ((values ('a'), ('b'))
+   union all
+   (with z as not materialized (select * from x)
+    select z.a || z.a as a from z
+    where length(z.a || z.a) < 5))
+select * from x;
+
+with recursive x(a) as
+  ((values ('a'), ('b'))
+   union all
+   (with z as not materialized (select * from x)
+    select z.a || z.a as a from z
+    where length(z.a || z.a) < 5))
+select * from x;
+
+-- Check handling of outer references
+explain (verbose, costs off)
+with x as (select * from int4_tbl)
+select * from (with y as (select * from x) select * from y) ss;
+
+explain (verbose, costs off)
+with x as materialized (select * from int4_tbl)
+select * from (with y as (select * from x) select * from y) ss;
+
+-- Ensure that we inline the currect CTE when there are
+-- multiple CTEs with the same name
+explain (verbose, costs off)
+with x as (select 1 as y)
+select * from (with x as (select 2 as y) select * from x) ss;
+
+-- Row marks are not pushed into CTEs
+explain (verbose, costs off)
+with x as (select * from subselect_tbl)
+select * from x for update;

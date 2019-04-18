@@ -4,7 +4,7 @@
  *	  Support routines for scanning Values lists
  *	  ("VALUES (...), (...), ..." in rangetable).
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -25,6 +25,7 @@
 
 #include "executor/executor.h"
 #include "executor/nodeValuesscan.h"
+#include "jit/jit.h"
 #include "utils/expandeddatum.h"
 
 
@@ -92,11 +93,13 @@ ValuesNext(ValuesScanState *node)
 	if (exprlist)
 	{
 		MemoryContext oldContext;
+		List	   *oldsubplans;
 		List	   *exprstatelist;
 		Datum	   *values;
 		bool	   *isnull;
 		ListCell   *lc;
 		int			resind;
+		int			saved_jit_flags;
 
 		/*
 		 * Get rid of any prior cycle's leftovers.  We use ReScanExprContext
@@ -114,12 +117,30 @@ ValuesNext(ValuesScanState *node)
 		oldContext = MemoryContextSwitchTo(econtext->ecxt_per_tuple_memory);
 
 		/*
-		 * Pass NULL, not my plan node, because we don't want anything in this
-		 * transient state linking into permanent state.  The only possibility
-		 * is a SubPlan, and there shouldn't be any (any subselects in the
-		 * VALUES list should be InitPlans).
+		 * The expressions might contain SubPlans (this is currently only
+		 * possible if there's a sub-select containing a LATERAL reference,
+		 * otherwise sub-selects in a VALUES list should be InitPlans). Those
+		 * subplans will want to hook themselves into our subPlan list, which
+		 * would result in a corrupted list after we delete the eval state. We
+		 * can work around this by saving and restoring the subPlan list.
+		 * (There's no need for the functionality that would be enabled by
+		 * having the list entries, since the SubPlans aren't going to be
+		 * re-executed anyway.)
 		 */
-		exprstatelist = ExecInitExprList(exprlist, NULL);
+		oldsubplans = node->ss.ps.subPlan;
+		node->ss.ps.subPlan = NIL;
+
+		/*
+		 * As the expressions are only ever used once, disable JIT for them.
+		 * This is worthwhile because it's common to insert significant
+		 * amounts of data via VALUES().
+		 */
+		saved_jit_flags = econtext->ecxt_estate->es_jit_flags;
+		econtext->ecxt_estate->es_jit_flags = PGJIT_NONE;
+		exprstatelist = ExecInitExprList(exprlist, &node->ss.ps);
+		econtext->ecxt_estate->es_jit_flags = saved_jit_flags;
+
+		node->ss.ps.subPlan = oldsubplans;
 
 		/* parser should have checked all sublists are the same length */
 		Assert(list_length(exprstatelist) == slot->tts_tupleDescriptor->natts);
@@ -237,23 +258,22 @@ ExecInitValuesScan(ValuesScan *node, EState *estate, int eflags)
 	ExecAssignExprContext(estate, planstate);
 
 	/*
-	 * tuple table initialization
+	 * Get info about values list, initialize scan slot with it.
 	 */
-	ExecInitResultTupleSlot(estate, &scanstate->ss.ps);
-	ExecInitScanTupleSlot(estate, &scanstate->ss);
+	tupdesc = ExecTypeFromExprList((List *) linitial(node->values_lists));
+	ExecInitScanTupleSlot(estate, &scanstate->ss, tupdesc, &TTSOpsVirtual);
+
+	/*
+	 * Initialize result type and projection.
+	 */
+	ExecInitResultTypeTL(&scanstate->ss.ps);
+	ExecAssignScanProjectionInfo(&scanstate->ss);
 
 	/*
 	 * initialize child expressions
 	 */
 	scanstate->ss.ps.qual =
 		ExecInitQual(node->scan.plan.qual, (PlanState *) scanstate);
-
-	/*
-	 * get info about values list
-	 */
-	tupdesc = ExecTypeFromExprList((List *) linitial(node->values_lists));
-
-	ExecAssignScanType(&scanstate->ss, tupdesc);
 
 	/*
 	 * Other node-specific setup
@@ -269,12 +289,6 @@ ExecInitValuesScan(ValuesScan *node, EState *estate, int eflags)
 	{
 		scanstate->exprlists[i++] = (List *) lfirst(vtl);
 	}
-
-	/*
-	 * Initialize result tuple type and projection info.
-	 */
-	ExecAssignResultTypeFromTL(&scanstate->ss.ps);
-	ExecAssignScanProjectionInfo(&scanstate->ss);
 
 	return scanstate;
 }
@@ -298,7 +312,8 @@ ExecEndValuesScan(ValuesScanState *node)
 	/*
 	 * clean out the tuple table
 	 */
-	ExecClearTuple(node->ss.ps.ps_ResultTupleSlot);
+	if (node->ss.ps.ps_ResultTupleSlot)
+		ExecClearTuple(node->ss.ps.ps_ResultTupleSlot);
 	ExecClearTuple(node->ss.ss_ScanTupleSlot);
 }
 
@@ -311,7 +326,8 @@ ExecEndValuesScan(ValuesScanState *node)
 void
 ExecReScanValuesScan(ValuesScanState *node)
 {
-	ExecClearTuple(node->ss.ps.ps_ResultTupleSlot);
+	if (node->ss.ps.ps_ResultTupleSlot)
+		ExecClearTuple(node->ss.ps.ps_ResultTupleSlot);
 
 	ExecScanReScan(&node->ss);
 

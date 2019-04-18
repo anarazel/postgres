@@ -3,7 +3,7 @@
  * nodeSort.c
  *	  Routines to handle sorting of relations.
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -93,7 +93,7 @@ ExecSort(PlanState *pstate)
 											  plannode->collations,
 											  plannode->nullsFirst,
 											  work_mem,
-											  node->randomAccess);
+											  NULL, node->randomAccess);
 		if (node->bounded)
 			tuplesort_set_bound(tuplesortstate, node->bound);
 		node->tuplesortstate = (void *) tuplesortstate;
@@ -199,14 +199,6 @@ ExecInitSort(Sort *node, EState *estate, int eflags)
 	 */
 
 	/*
-	 * tuple table initialization
-	 *
-	 * sort nodes only return scan tuples from their sorted relation.
-	 */
-	ExecInitResultTupleSlot(estate, &sortstate->ss.ps);
-	ExecInitScanTupleSlot(estate, &sortstate->ss);
-
-	/*
 	 * initialize child nodes
 	 *
 	 * We shield the child node from the need to support REWIND, BACKWARD, or
@@ -217,11 +209,15 @@ ExecInitSort(Sort *node, EState *estate, int eflags)
 	outerPlanState(sortstate) = ExecInitNode(outerPlan(node), estate, eflags);
 
 	/*
-	 * initialize tuple type.  no need to initialize projection info because
-	 * this node doesn't do projections.
+	 * Initialize scan slot and type.
 	 */
-	ExecAssignResultTypeFromTL(&sortstate->ss.ps);
-	ExecAssignScanTypeFromOuterPlan(&sortstate->ss);
+	ExecCreateScanSlotFromOuterPlan(estate, &sortstate->ss, &TTSOpsVirtual);
+
+	/*
+	 * Initialize return slot and type. No need to initialize projection info
+	 * because this node doesn't do projections.
+	 */
+	ExecInitResultTupleSlotTL(&sortstate->ss.ps, &TTSOpsMinimalTuple);
 	sortstate->ss.ps.ps_ProjInfo = NULL;
 
 	SO1_printf("ExecInitSort: %s\n",
@@ -397,33 +393,16 @@ ExecSortInitializeDSM(SortState *node, ParallelContext *pcxt)
 }
 
 /* ----------------------------------------------------------------
- *		ExecSortReInitializeDSM
- *
- *		Reset shared state before beginning a fresh scan.
- * ----------------------------------------------------------------
- */
-void
-ExecSortReInitializeDSM(SortState *node, ParallelContext *pcxt)
-{
-	/* If there's any instrumentation space, clear it for next time */
-	if (node->shared_info != NULL)
-	{
-		memset(node->shared_info->sinstrument, 0,
-			   node->shared_info->num_workers * sizeof(TuplesortInstrumentation));
-	}
-}
-
-/* ----------------------------------------------------------------
  *		ExecSortInitializeWorker
  *
  *		Attach worker to DSM space for sort statistics.
  * ----------------------------------------------------------------
  */
 void
-ExecSortInitializeWorker(SortState *node, shm_toc *toc)
+ExecSortInitializeWorker(SortState *node, ParallelWorkerContext *pwcxt)
 {
 	node->shared_info =
-		shm_toc_lookup(toc, node->ss.ps.plan->plan_node_id, true);
+		shm_toc_lookup(pwcxt->toc, node->ss.ps.plan->plan_node_id, true);
 	node->am_worker = true;
 }
 

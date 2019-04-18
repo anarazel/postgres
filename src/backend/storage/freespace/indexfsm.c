@@ -4,7 +4,7 @@
  *	  POSTGRES free space map for quickly finding free pages in relations
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -37,7 +37,7 @@
 BlockNumber
 GetFreeIndexPage(Relation rel)
 {
-	BlockNumber blkno = GetPageWithFreeSpace(rel, BLCKSZ / 2);
+	BlockNumber blkno = GetPageWithFreeSpace(rel, BLCKSZ / 2, true);
 
 	if (blkno != InvalidBlockNumber)
 		RecordUsedIndexPage(rel, blkno);
@@ -51,7 +51,7 @@ GetFreeIndexPage(Relation rel)
 void
 RecordFreeIndexPage(Relation rel, BlockNumber freeBlock)
 {
-	RecordPageWithFreeSpace(rel, freeBlock, BLCKSZ - 1);
+	RecordPageWithFreeSpace(rel, freeBlock, BLCKSZ - 1, InvalidBlockNumber);
 }
 
 
@@ -61,7 +61,7 @@ RecordFreeIndexPage(Relation rel, BlockNumber freeBlock)
 void
 RecordUsedIndexPage(Relation rel, BlockNumber usedBlock)
 {
-	RecordPageWithFreeSpace(rel, usedBlock, 0);
+	RecordPageWithFreeSpace(rel, usedBlock, 0, InvalidBlockNumber);
 }
 
 /*

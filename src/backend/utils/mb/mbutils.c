@@ -23,7 +23,7 @@
  * the result is validly encoded according to the destination encoding.
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -40,17 +40,6 @@
 #include "utils/builtins.h"
 #include "utils/memutils.h"
 #include "utils/syscache.h"
-
-/*
- * When converting strings between different encodings, we assume that space
- * for converted result is 4-to-1 growth in the worst case. The rate for
- * currently supported encoding pairs are within 3 (SJIS JIS X0201 half width
- * kanna -> UTF8 is the worst case).  So "4" should be enough for the moment.
- *
- * Note that this is not the same as the maximum character width in any
- * particular encoding.
- */
-#define MAX_CONVERSION_GROWTH  4
 
 /*
  * We maintain a simple linked list caching the fmgr lookup info for the
@@ -475,7 +464,7 @@ pg_convert(PG_FUNCTION_ARGS)
 	pg_verify_mbstr_len(src_encoding, src_str, len, false);
 
 	/* perform conversion */
-	dest_str = (char *) pg_do_encoding_conversion((unsigned char *) src_str,
+	dest_str = (char *) pg_do_encoding_conversion((unsigned char *) unconstify(char *, src_str),
 												  len,
 												  src_encoding,
 												  dest_encoding);
@@ -572,7 +561,7 @@ char *
 pg_any_to_server(const char *s, int len, int encoding)
 {
 	if (len <= 0)
-		return (char *) s;		/* empty string is always valid */
+		return unconstify(char *, s);		/* empty string is always valid */
 
 	if (encoding == DatabaseEncoding->encoding ||
 		encoding == PG_SQL_ASCII)
@@ -581,7 +570,7 @@ pg_any_to_server(const char *s, int len, int encoding)
 		 * No conversion is needed, but we must still validate the data.
 		 */
 		(void) pg_verify_mbstr(DatabaseEncoding->encoding, s, len, false);
-		return (char *) s;
+		return unconstify(char *, s);
 	}
 
 	if (DatabaseEncoding->encoding == PG_SQL_ASCII)
@@ -611,7 +600,7 @@ pg_any_to_server(const char *s, int len, int encoding)
 									(unsigned char) s[i])));
 			}
 		}
-		return (char *) s;
+		return unconstify(char *, s);
 	}
 
 	/* Fast path if we can use cached conversion function */
@@ -619,7 +608,7 @@ pg_any_to_server(const char *s, int len, int encoding)
 		return perform_default_encoding_conversion(s, len, true);
 
 	/* General case ... will not work outside transactions */
-	return (char *) pg_do_encoding_conversion((unsigned char *) s,
+	return (char *) pg_do_encoding_conversion((unsigned char *) unconstify(char *, s),
 											  len,
 											  encoding,
 											  DatabaseEncoding->encoding);
@@ -645,17 +634,17 @@ char *
 pg_server_to_any(const char *s, int len, int encoding)
 {
 	if (len <= 0)
-		return (char *) s;		/* empty string is always valid */
+		return unconstify(char *, s);		/* empty string is always valid */
 
 	if (encoding == DatabaseEncoding->encoding ||
 		encoding == PG_SQL_ASCII)
-		return (char *) s;		/* assume data is valid */
+		return unconstify(char *, s);		/* assume data is valid */
 
 	if (DatabaseEncoding->encoding == PG_SQL_ASCII)
 	{
 		/* No conversion is possible, but we must validate the result */
 		(void) pg_verify_mbstr(encoding, s, len, false);
-		return (char *) s;
+		return unconstify(char *, s);
 	}
 
 	/* Fast path if we can use cached conversion function */
@@ -663,7 +652,7 @@ pg_server_to_any(const char *s, int len, int encoding)
 		return perform_default_encoding_conversion(s, len, false);
 
 	/* General case ... will not work outside transactions */
-	return (char *) pg_do_encoding_conversion((unsigned char *) s,
+	return (char *) pg_do_encoding_conversion((unsigned char *) unconstify(char *, s),
 											  len,
 											  DatabaseEncoding->encoding,
 											  encoding);
@@ -698,7 +687,7 @@ perform_default_encoding_conversion(const char *src, int len,
 	}
 
 	if (flinfo == NULL)
-		return (char *) src;
+		return unconstify(char *, src);
 
 	/*
 	 * Allocate space for conversion result, being wary of integer overflow
@@ -1049,8 +1038,10 @@ GetMessageEncoding(void)
 
 #ifdef WIN32
 /*
- * Result is palloc'ed null-terminated utf16 string. The character length
- * is also passed to utf16len if not null. Returns NULL iff failed.
+ * Convert from MessageEncoding to a palloc'ed, null-terminated utf16
+ * string. The character length is also passed to utf16len if not
+ * null. Returns NULL iff failed. Before MessageEncoding initialization, "str"
+ * should be ASCII-only; this will function as though MessageEncoding is UTF8.
  */
 WCHAR *
 pgwin32_message_to_UTF16(const char *str, int len, int *utf16len)

@@ -13,7 +13,7 @@
  * "delta" type.  Delta rows will be deleted by this worker and their values
  * aggregated into the total.
  *
- * Copyright (c) 2013-2017, PostgreSQL Global Development Group
+ * Copyright (c) 2013-2019, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *		src/test/modules/worker_spi/worker_spi.c
@@ -111,7 +111,7 @@ initialize_worker_spi(worktable *table)
 	StartTransactionCommand();
 	SPI_connect();
 	PushActiveSnapshot(GetTransactionSnapshot());
-	pgstat_report_activity(STATE_RUNNING, "initializing spi_worker schema");
+	pgstat_report_activity(STATE_RUNNING, "initializing worker_spi schema");
 
 	/* XXX could we use CREATE SCHEMA IF NOT EXISTS? */
 	initStringInfo(&buf);
@@ -179,7 +179,7 @@ worker_spi_main(Datum main_arg)
 	BackgroundWorkerUnblockSignals();
 
 	/* Connect to our database */
-	BackgroundWorkerInitializeConnection("postgres", NULL);
+	BackgroundWorkerInitializeConnection("postgres", NULL, 0);
 
 	elog(LOG, "%s initialized with %s.%s",
 		 MyBgworkerEntry->bgw_name, table->schema, table->name);
@@ -217,7 +217,6 @@ worker_spi_main(Datum main_arg)
 	while (!got_sigterm)
 	{
 		int			ret;
-		int			rc;
 
 		/*
 		 * Background workers mustn't call usleep() or any direct equivalent:
@@ -225,15 +224,11 @@ worker_spi_main(Datum main_arg)
 		 * necessary, but is awakened if postmaster dies.  That way the
 		 * background process goes away immediately in an emergency.
 		 */
-		rc = WaitLatch(MyLatch,
-					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
-					   worker_spi_naptime * 1000L,
-					   PG_WAIT_EXTENSION);
+		(void) WaitLatch(MyLatch,
+						 WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH,
+						 worker_spi_naptime * 1000L,
+						 PG_WAIT_EXTENSION);
 		ResetLatch(MyLatch);
-
-		/* emergency bailout if postmaster has died */
-		if (rc & WL_POSTMASTER_DEATH)
-			proc_exit(1);
 
 		CHECK_FOR_INTERRUPTS();
 
@@ -359,7 +354,8 @@ _PG_init(void)
 	 */
 	for (i = 1; i <= worker_spi_total_workers; i++)
 	{
-		snprintf(worker.bgw_name, BGW_MAXLEN, "worker %d", i);
+		snprintf(worker.bgw_name, BGW_MAXLEN, "worker_spi worker %d", i);
+		snprintf(worker.bgw_type, BGW_MAXLEN, "worker_spi");
 		worker.bgw_main_arg = Int32GetDatum(i);
 
 		RegisterBackgroundWorker(&worker);
@@ -385,7 +381,8 @@ worker_spi_launch(PG_FUNCTION_ARGS)
 	worker.bgw_restart_time = BGW_NEVER_RESTART;
 	sprintf(worker.bgw_library_name, "worker_spi");
 	sprintf(worker.bgw_function_name, "worker_spi_main");
-	snprintf(worker.bgw_name, BGW_MAXLEN, "worker %d", i);
+	snprintf(worker.bgw_name, BGW_MAXLEN, "worker_spi worker %d", i);
+	snprintf(worker.bgw_type, BGW_MAXLEN, "worker_spi");
 	worker.bgw_main_arg = Int32GetDatum(i);
 	/* set bgw_notify_pid so that we can use WaitForBackgroundWorkerStartup */
 	worker.bgw_notify_pid = MyProcPid;

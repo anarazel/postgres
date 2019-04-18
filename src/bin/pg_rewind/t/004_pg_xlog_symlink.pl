@@ -17,6 +17,9 @@ else
 	plan tests => 4;
 }
 
+use FindBin;
+use lib $FindBin::RealBin;
+
 use RewindTest;
 
 sub run_test
@@ -72,6 +75,7 @@ in standby, after promotion
 		'table content');
 
 	RewindTest::clean_rewind_test();
+	return;
 }
 
 # Run the test in both modes

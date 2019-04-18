@@ -28,7 +28,7 @@
  * all these files commit in a single map file update rather than being tied
  * to transaction commit.
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -92,6 +92,16 @@ typedef struct RelMapFile
 } RelMapFile;
 
 /*
+ * State for serializing local and shared relmappings for parallel workers
+ * (active states only).  See notes on active_* and pending_* updates state.
+ */
+typedef struct SerializedActiveRelMaps
+{
+	RelMapFile	active_shared_updates;
+	RelMapFile	active_local_updates;
+} SerializedActiveRelMaps;
+
+/*
  * The currently known contents of the shared map file and our database's
  * local map file are stored here.  These can be reloaded from disk
  * immediately whenever we receive an update sinval message.
@@ -111,6 +121,9 @@ static RelMapFile local_map;
  * they will become active at the next CommandCounterIncrement.  This setup
  * lets map updates act similarly to updates of pg_class rows, ie, they
  * become visible only at the next CommandCounterIncrement boundary.
+ *
+ * Active shared and active local updates are serialized by the parallel
+ * infrastructure, and deserialized within parallel workers.
  */
 static RelMapFile active_shared_updates;
 static RelMapFile active_local_updates;
@@ -263,12 +276,15 @@ RelationMapUpdateMap(Oid relationId, Oid fileNode, bool shared,
 	else
 	{
 		/*
-		 * We don't currently support map changes within subtransactions. This
-		 * could be done with more bookkeeping infrastructure, but it doesn't
-		 * presently seem worth it.
+		 * We don't currently support map changes within subtransactions, or
+		 * when in parallel mode.  This could be done with more bookkeeping
+		 * infrastructure, but it doesn't presently seem worth it.
 		 */
 		if (GetCurrentTransactionNestLevel() > 1)
 			elog(ERROR, "cannot change relation mapping within subtransaction");
+
+		if (IsInParallelMode())
+			elog(ERROR, "cannot change relation mapping in parallel mode");
 
 		if (immediate)
 		{
@@ -452,11 +468,14 @@ AtCCI_RelationMap(void)
  *
  * During abort, we just have to throw away any pending map changes.
  * Normal post-abort cleanup will take care of fixing relcache entries.
+ * Parallel worker commit/abort is handled by resetting active mappings
+ * that may have been received from the leader process.  (There should be
+ * no pending updates in parallel workers.)
  */
 void
-AtEOXact_RelationMap(bool isCommit)
+AtEOXact_RelationMap(bool isCommit, bool isParallelWorker)
 {
-	if (isCommit)
+	if (isCommit && !isParallelWorker)
 	{
 		/*
 		 * We should not get here with any "pending" updates.  (We could
@@ -482,7 +501,10 @@ AtEOXact_RelationMap(bool isCommit)
 	}
 	else
 	{
-		/* Abort --- drop all local and pending updates */
+		/* Abort or parallel worker --- drop all local and pending updates */
+		Assert(!isParallelWorker || pending_shared_updates.num_mappings == 0);
+		Assert(!isParallelWorker || pending_local_updates.num_mappings == 0);
+
 		active_shared_updates.num_mappings = 0;
 		active_local_updates.num_mappings = 0;
 		pending_shared_updates.num_mappings = 0;
@@ -615,6 +637,56 @@ RelationMapInitializePhase3(void)
 }
 
 /*
+ * EstimateRelationMapSpace
+ *
+ * Estimate space needed to pass active shared and local relmaps to parallel
+ * workers.
+ */
+Size
+EstimateRelationMapSpace(void)
+{
+	return sizeof(SerializedActiveRelMaps);
+}
+
+/*
+ * SerializeRelationMap
+ *
+ * Serialize active shared and local relmap state for parallel workers.
+ */
+void
+SerializeRelationMap(Size maxSize, char *startAddress)
+{
+	SerializedActiveRelMaps	   *relmaps;
+
+	Assert(maxSize >= EstimateRelationMapSpace());
+
+	relmaps = (SerializedActiveRelMaps *) startAddress;
+	relmaps->active_shared_updates = active_shared_updates;
+	relmaps->active_local_updates = active_local_updates;
+}
+
+/*
+ * RestoreRelationMap
+ *
+ * Restore active shared and local relmap state within a parallel worker.
+ */
+void
+RestoreRelationMap(char *startAddress)
+{
+	SerializedActiveRelMaps	   *relmaps;
+
+	if (active_shared_updates.num_mappings != 0 ||
+		active_local_updates.num_mappings != 0 ||
+		pending_shared_updates.num_mappings != 0 ||
+		pending_local_updates.num_mappings != 0)
+		elog(ERROR, "parallel worker has existing mappings");
+
+	relmaps = (SerializedActiveRelMaps *) startAddress;
+	active_shared_updates = relmaps->active_shared_updates;
+	active_local_updates = relmaps->active_local_updates;
+}
+
+/*
  * load_relmap_file -- load data from the shared or local map file
  *
  * Because the map file is essential for access to core system catalogs,
@@ -629,6 +701,7 @@ load_relmap_file(bool shared)
 	char		mapfilename[MAXPGPATH];
 	pg_crc32c	crc;
 	int			fd;
+	int			r;
 
 	if (shared)
 	{
@@ -644,12 +717,11 @@ load_relmap_file(bool shared)
 	}
 
 	/* Read data ... */
-	fd = OpenTransientFile(mapfilename,
-						   O_RDONLY | PG_BINARY, S_IRUSR | S_IWUSR);
+	fd = OpenTransientFile(mapfilename, O_RDONLY | PG_BINARY);
 	if (fd < 0)
 		ereport(FATAL,
 				(errcode_for_file_access(),
-				 errmsg("could not open relation mapping file \"%s\": %m",
+				 errmsg("could not open file \"%s\": %m",
 						mapfilename)));
 
 	/*
@@ -660,14 +732,26 @@ load_relmap_file(bool shared)
 	 * are able to access any relation that's affected by the change.
 	 */
 	pgstat_report_wait_start(WAIT_EVENT_RELATION_MAP_READ);
-	if (read(fd, map, sizeof(RelMapFile)) != sizeof(RelMapFile))
-		ereport(FATAL,
-				(errcode_for_file_access(),
-				 errmsg("could not read relation mapping file \"%s\": %m",
-						mapfilename)));
+	r = read(fd, map, sizeof(RelMapFile));
+	if (r != sizeof(RelMapFile))
+	{
+		if (r < 0)
+			ereport(FATAL,
+					(errcode_for_file_access(),
+					 errmsg("could not read file \"%s\": %m", mapfilename)));
+		else
+			ereport(FATAL,
+					(errcode(ERRCODE_DATA_CORRUPTED),
+					 errmsg("could not read file \"%s\": read %d of %zu",
+							mapfilename, r, sizeof(RelMapFile))));
+	}
 	pgstat_report_wait_end();
 
-	CloseTransientFile(fd);
+	if (CloseTransientFile(fd))
+		ereport(FATAL,
+				(errcode_for_file_access(),
+				 errmsg("could not close file \"%s\": %m",
+						mapfilename)));
 
 	/* check for correct magic number, etc */
 	if (map->magic != RELMAPPER_FILEMAGIC ||
@@ -694,13 +778,13 @@ load_relmap_file(bool shared)
  * The magic number and CRC are automatically updated in *newmap.  On
  * success, we copy the data to the appropriate permanent static variable.
  *
- * If write_wal is TRUE then an appropriate WAL message is emitted.
+ * If write_wal is true then an appropriate WAL message is emitted.
  * (It will be false for bootstrap and WAL replay cases.)
  *
- * If send_sinval is TRUE then a SI invalidation message is sent.
+ * If send_sinval is true then a SI invalidation message is sent.
  * (This should be true except in bootstrap case.)
  *
- * If preserve_files is TRUE then the storage manager is warned not to
+ * If preserve_files is true then the storage manager is warned not to
  * delete the files listed in the map.
  *
  * Because this may be called during WAL replay when MyDatabaseId,
@@ -745,13 +829,11 @@ write_relmap_file(bool shared, RelMapFile *newmap,
 		realmap = &local_map;
 	}
 
-	fd = OpenTransientFile(mapfilename,
-						   O_WRONLY | O_CREAT | PG_BINARY,
-						   S_IRUSR | S_IWUSR);
+	fd = OpenTransientFile(mapfilename, O_WRONLY | O_CREAT | PG_BINARY);
 	if (fd < 0)
 		ereport(ERROR,
 				(errcode_for_file_access(),
-				 errmsg("could not open relation mapping file \"%s\": %m",
+				 errmsg("could not open file \"%s\": %m",
 						mapfilename)));
 
 	if (write_wal)
@@ -785,7 +867,7 @@ write_relmap_file(bool shared, RelMapFile *newmap,
 			errno = ENOSPC;
 		ereport(ERROR,
 				(errcode_for_file_access(),
-				 errmsg("could not write to relation mapping file \"%s\": %m",
+				 errmsg("could not write file \"%s\": %m",
 						mapfilename)));
 	}
 	pgstat_report_wait_end();
@@ -798,16 +880,16 @@ write_relmap_file(bool shared, RelMapFile *newmap,
 	 */
 	pgstat_report_wait_start(WAIT_EVENT_RELATION_MAP_SYNC);
 	if (pg_fsync(fd) != 0)
-		ereport(ERROR,
+		ereport(data_sync_elevel(ERROR),
 				(errcode_for_file_access(),
-				 errmsg("could not fsync relation mapping file \"%s\": %m",
+				 errmsg("could not fsync file \"%s\": %m",
 						mapfilename)));
 	pgstat_report_wait_end();
 
 	if (CloseTransientFile(fd))
 		ereport(ERROR,
 				(errcode_for_file_access(),
-				 errmsg("could not close relation mapping file \"%s\": %m",
+				 errmsg("could not close file \"%s\": %m",
 						mapfilename)));
 
 	/*

@@ -4,7 +4,7 @@
  *	  POSTGRES generalized index access method definitions.
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/access/genam.h
@@ -45,6 +45,7 @@ typedef struct IndexVacuumInfo
 {
 	Relation	index;			/* the index being vacuumed */
 	bool		analyze_only;	/* ANALYZE (without any actual vacuum) */
+	bool		report_progress;	/* emit progress.h status reports */
 	bool		estimated_count;	/* num_heap_tuples is an estimate */
 	int			message_level;	/* ereport level for progress messages */
 	double		num_heap_tuples;	/* tuples remaining in heap */
@@ -159,8 +160,10 @@ extern IndexScanDesc index_beginscan_parallel(Relation heaprel,
 						 ParallelIndexScanDesc pscan);
 extern ItemPointer index_getnext_tid(IndexScanDesc scan,
 				  ScanDirection direction);
-extern HeapTuple index_fetch_heap(IndexScanDesc scan);
-extern HeapTuple index_getnext(IndexScanDesc scan, ScanDirection direction);
+struct TupleTableSlot;
+extern bool index_fetch_heap(IndexScanDesc scan, struct TupleTableSlot *slot);
+extern bool index_getnext_slot(IndexScanDesc scan, ScanDirection direction,
+				   struct TupleTableSlot *slot);
 extern int64 index_getbitmap(IndexScanDesc scan, TIDBitmap *bitmap);
 
 extern IndexBulkDeleteResult *index_bulk_delete(IndexVacuumInfo *info,
@@ -174,6 +177,9 @@ extern RegProcedure index_getprocid(Relation irel, AttrNumber attnum,
 				uint16 procnum);
 extern FmgrInfo *index_getprocinfo(Relation irel, AttrNumber attnum,
 				  uint16 procnum);
+extern void index_store_float8_orderby_distances(IndexScanDesc scan,
+									 Oid *orderByTypes, double *distances,
+									 bool recheckOrderBy);
 
 /*
  * index access method support routines (in genam.c)
@@ -183,6 +189,11 @@ extern IndexScanDesc RelationGetIndexScan(Relation indexRelation,
 extern void IndexScanEnd(IndexScanDesc scan);
 extern char *BuildIndexValueDescription(Relation indexRelation,
 						   Datum *values, bool *isnull);
+extern TransactionId index_compute_xid_horizon_for_tuples(Relation irel,
+									 Relation hrel,
+									 Buffer ibuf,
+									 OffsetNumber *itemnos,
+									 int nitems);
 
 /*
  * heap-or-index access to system catalogs (in genam.c)

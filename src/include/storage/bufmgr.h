@@ -4,7 +4,7 @@
  *	  POSTGRES buffer manager definitions.
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/storage/bufmgr.h
@@ -20,7 +20,6 @@
 #include "storage/relfilenode.h"
 #include "utils/relcache.h"
 #include "utils/snapmgr.h"
-#include "utils/tqual.h"
 
 typedef void *Block;
 
@@ -268,8 +267,8 @@ TestForOldSnapshot(Snapshot snapshot, Relation relation, Page page)
 
 	if (old_snapshot_threshold >= 0
 		&& (snapshot) != NULL
-		&& ((snapshot)->satisfies == HeapTupleSatisfiesMVCC
-			|| (snapshot)->satisfies == HeapTupleSatisfiesToast)
+		&& ((snapshot)->snapshot_type == SNAPSHOT_MVCC
+			|| (snapshot)->snapshot_type == SNAPSHOT_TOAST)
 		&& !XLogRecPtrIsInvalid((snapshot)->lsn)
 		&& PageGetLSN(page) > (snapshot)->lsn)
 		TestForOldSnapshot_impl(snapshot, relation);

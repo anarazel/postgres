@@ -6,7 +6,7 @@
  * The type cache exists to speed lookup of certain information about data
  * types that is not directly available from a type's pg_type row.
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/utils/typcache.h
@@ -40,6 +40,8 @@ typedef struct TypeCacheEntry
 	char		typstorage;
 	char		typtype;
 	Oid			typrelid;
+	Oid			typelem;
+	Oid			typcollation;
 
 	/*
 	 * Information obtained from opfamily entries
@@ -76,8 +78,13 @@ typedef struct TypeCacheEntry
 	 * Tuple descriptor if it's a composite type (row type).  NULL if not
 	 * composite or information hasn't yet been requested.  (NOTE: this is a
 	 * reference-counted tupledesc.)
+	 *
+	 * To simplify caching dependent info, tupDesc_identifier is an identifier
+	 * for this tupledesc that is unique for the life of the process, and
+	 * changes anytime the tupledesc does.  Zero if not yet determined.
 	 */
 	TupleDesc	tupDesc;
+	uint64		tupDesc_identifier;
 
 	/*
 	 * Fields computed when TYPECACHE_RANGE_INFO is requested.  Zeroes if not
@@ -90,6 +97,13 @@ typedef struct TypeCacheEntry
 	FmgrInfo	rng_cmp_proc_finfo; /* comparison function */
 	FmgrInfo	rng_canonical_finfo;	/* canonicalization function, if any */
 	FmgrInfo	rng_subdiff_finfo;	/* difference function, if any */
+
+	/*
+	 * Domain's base type and typmod if it's a domain type.  Zeroes if not
+	 * domain, or if information hasn't been requested.
+	 */
+	Oid			domainBaseType;
+	int32		domainBaseTypmod;
 
 	/*
 	 * Domain constraint data if it's a domain type.  NULL if not domain, or
@@ -123,9 +137,13 @@ typedef struct TypeCacheEntry
 #define TYPECACHE_BTREE_OPFAMILY	0x0200
 #define TYPECACHE_HASH_OPFAMILY		0x0400
 #define TYPECACHE_RANGE_INFO		0x0800
-#define TYPECACHE_DOMAIN_INFO		0x1000
-#define TYPECACHE_HASH_EXTENDED_PROC		0x2000
-#define TYPECACHE_HASH_EXTENDED_PROC_FINFO	0x4000
+#define TYPECACHE_DOMAIN_BASE_INFO			0x1000
+#define TYPECACHE_DOMAIN_CONSTR_INFO		0x2000
+#define TYPECACHE_HASH_EXTENDED_PROC		0x4000
+#define TYPECACHE_HASH_EXTENDED_PROC_FINFO	0x8000
+
+/* This value will not equal any valid tupledesc identifier, nor 0 */
+#define INVALID_TUPLEDESC_IDENTIFIER ((uint64) 1)
 
 /*
  * Callers wishing to maintain a long-lived reference to a domain's constraint
@@ -163,7 +181,12 @@ extern TupleDesc lookup_rowtype_tupdesc_noerror(Oid type_id, int32 typmod,
 
 extern TupleDesc lookup_rowtype_tupdesc_copy(Oid type_id, int32 typmod);
 
+extern TupleDesc lookup_rowtype_tupdesc_domain(Oid type_id, int32 typmod,
+							  bool noError);
+
 extern void assign_record_type_typmod(TupleDesc tupDesc);
+
+extern uint64 assign_record_type_identifier(Oid type_id, int32 typmod);
 
 extern int	compare_values_of_enum(TypeCacheEntry *tcache, Oid arg1, Oid arg2);
 

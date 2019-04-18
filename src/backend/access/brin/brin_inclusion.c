@@ -16,7 +16,7 @@
  * writing is the INET type, where IPv6 values cannot be merged with IPv4
  * values.
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -59,10 +59,14 @@
 /*-
  * The values stored in the bv_values arrays correspond to:
  *
- * 0 - the union of the values in the block range
- * 1 - whether an empty value is present in any tuple in the block range
- * 2 - whether the values in the block range cannot be merged (e.g. an IPv6
- *	   address amidst IPv4 addresses).
+ * INCLUSION_UNION
+ *		the union of the values in the block range
+ * INCLUSION_UNMERGEABLE
+ *		whether the values in the block range cannot be merged
+ *		(e.g. an IPv6 address amidst IPv4 addresses)
+ * INCLUSION_CONTAINS_EMPTY
+ *		whether an empty value is present in any tuple
+ *		in the block range
  */
 #define INCLUSION_UNION				0
 #define INCLUSION_UNMERGEABLE		1

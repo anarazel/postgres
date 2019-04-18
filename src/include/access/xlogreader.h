@@ -3,7 +3,7 @@
  * xlogreader.h
  *		Definitions for the generic XLog reading facility
  *
- * Portions Copyright (c) 2013-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 2013-2019, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *		src/include/access/xlogreader.h
@@ -72,6 +72,11 @@ struct XLogReaderState
 	 * Public parameters
 	 * ----------------------------------------
 	 */
+
+	/*
+	 * Segment size of the to-be-parsed data (mandatory).
+	 */
+	int			wal_segment_size;
 
 	/*
 	 * Data input callback (mandatory).
@@ -180,7 +185,10 @@ struct XLogReaderState
 	 */
 	TimeLineID	nextTLI;
 
-	/* Buffer for current ReadRecord result (expandable) */
+	/*
+	 * Buffer for current ReadRecord result (expandable), used when a record
+	 * crosses a page boundary.
+	 */
 	char	   *readRecordBuf;
 	uint32		readRecordBufSize;
 
@@ -189,7 +197,8 @@ struct XLogReaderState
 };
 
 /* Get a new XLogReader */
-extern XLogReaderState *XLogReaderAllocate(XLogPageReadCB pagereadfunc,
+extern XLogReaderState *XLogReaderAllocate(int wal_segment_size,
+				   XLogPageReadCB pagereadfunc,
 				   void *private_data);
 
 /* Free an XLogReader */
@@ -198,6 +207,10 @@ extern void XLogReaderFree(XLogReaderState *state);
 /* Read the next XLog record. Returns NULL on end-of-WAL or failure */
 extern struct XLogRecord *XLogReadRecord(XLogReaderState *state,
 			   XLogRecPtr recptr, char **errormsg);
+
+/* Validate a page */
+extern bool XLogReaderValidatePageHeader(XLogReaderState *state,
+							 XLogRecPtr recptr, char *phdr);
 
 /* Invalidate read state */
 extern void XLogReaderInvalReadState(XLogReaderState *state);

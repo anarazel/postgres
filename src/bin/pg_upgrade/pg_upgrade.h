@@ -1,7 +1,7 @@
 /*
  *	pg_upgrade.h
  *
- *	Copyright (c) 2010-2017, PostgreSQL Global Development Group
+ *	Copyright (c) 2010-2019, PostgreSQL Global Development Group
  *	src/bin/pg_upgrade/pg_upgrade.h
  */
 
@@ -147,6 +147,8 @@ typedef struct
 	char	   *tablespace;		/* tablespace path; "" for cluster default */
 	bool		nsp_alloc;		/* should nspname be freed? */
 	bool		tblsp_alloc;	/* should tablespace be freed? */
+	int32		relpages;		/* # of pages -- see pg_class.h */
+	char		relkind;		/* relation kind -- see pg_class.h */
 } RelInfo;
 
 typedef struct
@@ -173,6 +175,10 @@ typedef struct
 	 */
 	Oid			old_relfilenode;
 	Oid			new_relfilenode;
+
+	int32		relpages;		/* # of pages -- see pg_class.h */
+	char		relkind;		/* relation kind -- see pg_class.h */
+
 	/* the rest are used only for logging and error reporting */
 	char	   *nspname;		/* namespaces */
 	char	   *relname;
@@ -230,10 +236,11 @@ typedef struct
 } ControlData;
 
 /*
- * Enumeration to denote link modes
+ * Enumeration to denote transfer modes
  */
 typedef enum
 {
+	TRANSFER_MODE_CLONE,
 	TRANSFER_MODE_COPY,
 	TRANSFER_MODE_LINK
 } transferMode;
@@ -284,7 +291,7 @@ typedef struct
 typedef struct
 {
 	FILE	   *internal;		/* internal log FILE */
-	bool		verbose;		/* TRUE -> be verbose in messages */
+	bool		verbose;		/* true -> be verbose in messages */
 	bool		retain;			/* retain log files on success */
 } LogOpts;
 
@@ -294,12 +301,18 @@ typedef struct
 */
 typedef struct
 {
-	bool		check;			/* TRUE -> ask user for permission to make
+	bool		check;			/* true -> ask user for permission to make
 								 * changes */
 	transferMode transfer_mode; /* copy files or link them? */
-	int			jobs;
+	int			jobs;			/* number of processes/threads to use */
+	char	   *socketdir;		/* directory to use for Unix sockets */
 } UserOpts;
 
+typedef struct
+{
+	char	   *name;
+	int			dbnum;
+} LibraryInfo;
 
 /*
  * OSInfo
@@ -312,7 +325,7 @@ typedef struct
 	bool		user_specified; /* user specified on command-line */
 	char	  **old_tablespaces;	/* tablespaces */
 	int			num_old_tablespaces;
-	char	  **libraries;		/* loadable libraries */
+	LibraryInfo *libraries;		/* loadable libraries */
 	int			num_libraries;
 	ClusterInfo *running_cluster;
 } OSInfo;
@@ -360,21 +373,26 @@ void		generate_old_dump(void);
 #define EXEC_PSQL_ARGS "--echo-queries --set ON_ERROR_STOP=on --no-psqlrc --dbname=template1"
 
 bool exec_prog(const char *log_file, const char *opt_log_file,
-		  bool throw_error, const char *fmt,...) pg_attribute_printf(4, 5);
+		  bool report_error, bool exit_on_error, const char *fmt,...) pg_attribute_printf(5, 6);
 void		verify_directories(void);
 bool		pid_lock_file_exists(const char *datadir);
 
 
 /* file.c */
 
+void cloneFile(const char *src, const char *dst,
+		  const char *schemaName, const char *relName);
 void copyFile(const char *src, const char *dst,
 		 const char *schemaName, const char *relName);
 void linkFile(const char *src, const char *dst,
 		 const char *schemaName, const char *relName);
 void rewriteVisibilityMap(const char *fromfile, const char *tofile,
 					 const char *schemaName, const char *relName);
+void		check_file_clone(void);
 void		check_hard_link(void);
-FILE	   *fopen_priv(const char *path, const char *mode);
+
+/* fopen_priv() is no longer different from fopen() */
+#define fopen_priv(path, mode)	fopen(path, mode)
 
 /* function.c */
 
@@ -416,8 +434,8 @@ PGresult   *executeQueryOrDie(PGconn *conn, const char *fmt,...) pg_attribute_pr
 
 char	   *cluster_conn_opts(ClusterInfo *cluster);
 
-bool		start_postmaster(ClusterInfo *cluster, bool throw_error);
-void		stop_postmaster(bool fast);
+bool		start_postmaster(ClusterInfo *cluster, bool report_and_exit_on_error);
+void		stop_postmaster(bool in_atexit);
 uint32		get_major_server_version(ClusterInfo *cluster);
 void		check_pghost_envvar(void);
 

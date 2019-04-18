@@ -4,7 +4,7 @@
  *	  header file for postgres hash access method implementation
  *
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/access/hash.h
@@ -24,6 +24,7 @@
 #include "lib/stringinfo.h"
 #include "storage/bufmgr.h"
 #include "storage/lockdefs.h"
+#include "utils/hashutils.h"
 #include "utils/hsearch.h"
 #include "utils/relcache.h"
 
@@ -37,17 +38,6 @@ typedef uint32 Bucket;
 
 #define BUCKET_TO_BLKNO(metap,B) \
 		((BlockNumber) ((B) + ((B) ? (metap)->hashm_spares[_hash_spareindex((B)+1)-1] : 0)) + 1)
-
-/*
- * Rotate the high 32 bits and the low 32 bits separately.  The standard
- * hash function sometimes rotates the low 32 bits by one bit when
- * combining elements.  We want extended hash functions to be compatible with
- * that algorithm when the seed is 0, so we can't just do a normal rotation.
- * This works, though.
- */
-#define ROTATE_HIGH_AND_LOW_32BITS(v) \
-	((((v) << 1) & UINT64CONST(0xfffffffefffffffe)) | \
-	(((v) >> 31) & UINT64CONST(0x100000001)))
 
 /*
  * Special space for hash index pages.
@@ -114,6 +104,51 @@ typedef struct HashScanPosItem	/* what we remember about each match */
 	OffsetNumber indexOffset;	/* index item's location within page */
 } HashScanPosItem;
 
+typedef struct HashScanPosData
+{
+	Buffer		buf;			/* if valid, the buffer is pinned */
+	BlockNumber currPage;		/* current hash index page */
+	BlockNumber nextPage;		/* next overflow page */
+	BlockNumber prevPage;		/* prev overflow or bucket page */
+
+	/*
+	 * The items array is always ordered in index order (ie, increasing
+	 * indexoffset).  When scanning backwards it is convenient to fill the
+	 * array back-to-front, so we start at the last slot and fill downwards.
+	 * Hence we need both a first-valid-entry and a last-valid-entry counter.
+	 * itemIndex is a cursor showing which entry was last returned to caller.
+	 */
+	int			firstItem;		/* first valid index in items[] */
+	int			lastItem;		/* last valid index in items[] */
+	int			itemIndex;		/* current index in items[] */
+
+	HashScanPosItem items[MaxIndexTuplesPerPage];	/* MUST BE LAST */
+} HashScanPosData;
+
+#define HashScanPosIsPinned(scanpos) \
+( \
+	AssertMacro(BlockNumberIsValid((scanpos).currPage) || \
+				!BufferIsValid((scanpos).buf)), \
+	BufferIsValid((scanpos).buf) \
+)
+
+#define HashScanPosIsValid(scanpos) \
+( \
+	AssertMacro(BlockNumberIsValid((scanpos).currPage) || \
+				!BufferIsValid((scanpos).buf)), \
+	BlockNumberIsValid((scanpos).currPage) \
+)
+
+#define HashScanPosInvalidate(scanpos) \
+	do { \
+		(scanpos).buf = InvalidBuffer; \
+		(scanpos).currPage = InvalidBlockNumber; \
+		(scanpos).nextPage = InvalidBlockNumber; \
+		(scanpos).prevPage = InvalidBlockNumber; \
+		(scanpos).firstItem = 0; \
+		(scanpos).lastItem = 0; \
+		(scanpos).itemIndex = 0; \
+	} while (0);
 
 /*
  *	HashScanOpaqueData is private state for a hash index scan.
@@ -122,14 +157,6 @@ typedef struct HashScanOpaqueData
 {
 	/* Hash value of the scan key, ie, the hash key we seek */
 	uint32		hashso_sk_hash;
-
-	/*
-	 * We also want to remember which buffer we're currently examining in the
-	 * scan. We keep the buffer pinned (but not locked) across hashgettuple
-	 * calls, in order to avoid doing a ReadBuffer() for every tuple in the
-	 * index.
-	 */
-	Buffer		hashso_curbuf;
 
 	/* remember the buffer associated with primary bucket */
 	Buffer		hashso_bucket_buf;
@@ -141,12 +168,6 @@ typedef struct HashScanOpaqueData
 	 */
 	Buffer		hashso_split_bucket_buf;
 
-	/* Current position of the scan, as an index TID */
-	ItemPointerData hashso_curpos;
-
-	/* Current position of the scan, as a heap TID */
-	ItemPointerData hashso_heappos;
-
 	/* Whether scan starts on bucket being populated due to split */
 	bool		hashso_buc_populated;
 
@@ -156,8 +177,14 @@ typedef struct HashScanOpaqueData
 	 */
 	bool		hashso_buc_split;
 	/* info about killed items if any (killedItems is NULL if never used) */
-	HashScanPosItem *killedItems;	/* tids and offset numbers of killed items */
+	int		   *killedItems;	/* currPos.items indexes of killed items */
 	int			numKilled;		/* number of currently stored items */
+
+	/*
+	 * Identify all the matching items on a page and save them in
+	 * HashScanPosData
+	 */
+	HashScanPosData currPos;	/* current position data */
 } HashScanOpaqueData;
 
 typedef HashScanOpaqueData *HashScanOpaque;
@@ -193,16 +220,19 @@ typedef HashScanOpaqueData *HashScanOpaque;
  *
  * There is no particular upper limit on the size of mapp[], other than
  * needing to fit into the metapage.  (With 8K block size, 1024 bitmaps
- * limit us to 256 GB of overflow space...)
+ * limit us to 256 GB of overflow space...).  For smaller block size we
+ * can not use 1024 bitmaps as it will lead to the meta page data crossing
+ * the block size boundary.  So we use BLCKSZ to determine the maximum number
+ * of bitmaps.
  */
-#define HASH_MAX_BITMAPS			1024
+#define HASH_MAX_BITMAPS			Min(BLCKSZ / 8, 1024)
 
 #define HASH_SPLITPOINT_PHASE_BITS	2
 #define HASH_SPLITPOINT_PHASES_PER_GRP	(1 << HASH_SPLITPOINT_PHASE_BITS)
 #define HASH_SPLITPOINT_PHASE_MASK		(HASH_SPLITPOINT_PHASES_PER_GRP - 1)
 #define HASH_SPLITPOINT_GROUPS_WITH_ONE_PHASE	10
 
-/* defines max number of splitpoit phases a hash index can have */
+/* defines max number of splitpoint phases a hash index can have */
 #define HASH_MAX_SPLITPOINT_GROUP	32
 #define HASH_MAX_SPLITPOINTS \
 	(((HASH_MAX_SPLITPOINT_GROUP - HASH_SPLITPOINT_GROUPS_WITH_ONE_PHASE) * \
@@ -226,7 +256,7 @@ typedef struct HashMetaPageData
 									 * allocated */
 	uint32		hashm_firstfree;	/* lowest-number free ovflpage (bit#) */
 	uint32		hashm_nmaps;	/* number of bitmap pages */
-	RegProcedure hashm_procid;	/* hash procedure id from pg_proc */
+	RegProcedure hashm_procid;	/* hash function id from pg_proc */
 	uint32		hashm_spares[HASH_MAX_SPLITPOINTS]; /* spare pages before each
 													 * splitpoint */
 	BlockNumber hashm_mapp[HASH_MAX_BITMAPS];	/* blknos of ovfl bitmaps */
@@ -243,7 +273,7 @@ typedef HashMetaPageData *HashMetaPage;
 				  sizeof(ItemIdData) - \
 				  MAXALIGN(sizeof(HashPageOpaqueData)))
 
-#define INDEX_MOVED_BY_SPLIT_MASK	0x2000
+#define INDEX_MOVED_BY_SPLIT_MASK	INDEX_AM_RESERVED_BIT
 
 #define HASH_MIN_FILLFACTOR			10
 #define HASH_DEFAULT_FILLFACTOR		75
@@ -294,22 +324,16 @@ typedef HashMetaPageData *HashMetaPage;
 #define HASH_NOLOCK		(-1)
 
 /*
- *	Strategy number. There's only one valid strategy for hashing: equality.
- */
-#define HTEqualStrategyNumber			1
-#define HTMaxStrategyNumber				1
-
-/*
  * When a new operator class is declared, we require that the user supply
- * us with an amproc procudure for hashing a key of the new type, returning
- * a 32-bit hash value.  We call this the "standard" hash procedure.  We
- * also allow an optional "extended" hash procedure which accepts a salt and
+ * us with an amproc function for hashing a key of the new type, returning
+ * a 32-bit hash value.  We call this the "standard" hash function.  We
+ * also allow an optional "extended" hash function which accepts a salt and
  * returns a 64-bit hash value.  This is highly recommended but, for reasons
  * of backward compatibility, optional.
  *
  * When the salt is 0, the low 32 bits of the value returned by the extended
- * hash procedure should match the value that would have been returned by the
- * standard hash procedure.
+ * hash function should match the value that would have been returned by the
+ * standard hash function.
  */
 #define HASHSTANDARD_PROC		1
 #define HASHEXTENDED_PROC		2
@@ -339,12 +363,6 @@ extern IndexBulkDeleteResult *hashvacuumcleanup(IndexVacuumInfo *info,
 				  IndexBulkDeleteResult *stats);
 extern bytea *hashoptions(Datum reloptions, bool validate);
 extern bool hashvalidate(Oid opclassoid);
-
-extern Datum hash_any(register const unsigned char *k, register int keylen);
-extern Datum hash_any_extended(register const unsigned char *k,
-				  register int keylen, uint64 seed);
-extern Datum hash_uint32(uint32 k);
-extern Datum hash_uint32_extended(uint32 k, uint64 seed);
 
 /* private routines */
 
@@ -401,7 +419,6 @@ extern void _hash_finish_split(Relation rel, Buffer metabuf, Buffer obuf,
 /* hashsearch.c */
 extern bool _hash_next(IndexScanDesc scan, ScanDirection dir);
 extern bool _hash_first(IndexScanDesc scan, ScanDirection dir);
-extern bool _hash_step(IndexScanDesc scan, Buffer *bufP, ScanDirection dir);
 
 /* hashsort.c */
 typedef struct HSpool HSpool;	/* opaque struct in hashsort.c */

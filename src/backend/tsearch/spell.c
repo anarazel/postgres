@@ -3,7 +3,7 @@
  * spell.c
  *		Normalizing word with ISpell
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  *
  * Ispell dictionary
  * -----------------
@@ -202,7 +202,7 @@ static int
 cmpspellaffix(const void *s1, const void *s2)
 {
 	return strcmp((*(SPELL *const *) s1)->p.flag,
-				   (*(SPELL *const *) s2)->p.flag);
+				  (*(SPELL *const *) s2)->p.flag);
 }
 
 static int
@@ -450,7 +450,7 @@ getNextFlagFromString(IspellDict *Conf, char **sflagset, char *sflag)
  * otherwise returns false.
  */
 static bool
-IsAffixFlagInUse(IspellDict *Conf, int affix, char *affixflag)
+IsAffixFlagInUse(IspellDict *Conf, int affix, const char *affixflag)
 {
 	char	   *flagcur;
 	char		flag[BUFSIZ];
@@ -596,7 +596,7 @@ NIImportDictionary(IspellDict *Conf, const char *filename)
  * Returns 1 if the word was found in the prefix tree, else returns 0.
  */
 static int
-FindWord(IspellDict *Conf, const char *word, char *affixflag, int flag)
+FindWord(IspellDict *Conf, const char *word, const char *affixflag, int flag)
 {
 	SPNode	   *node = Conf->Dictionary;
 	SPNodeData *StopLow,
@@ -776,7 +776,7 @@ NIAddAffix(IspellDict *Conf, const char *flag, char flagflags, const char *mask,
  *
  * The buffer at "next" must be of size BUFSIZ; we truncate the input to fit.
  *
- * Returns TRUE if we found a field, FALSE if not.
+ * Returns true if we found a field, false if not.
  */
 static bool
 get_nextfield(char **str, char *next)
@@ -1303,7 +1303,7 @@ NIImportOOAffixes(IspellDict *Conf, const char *filename)
 			{
 				Conf->useFlagAliases = true;
 				naffix = atoi(sflag);
-				if (naffix == 0)
+				if (naffix <= 0)
 					ereport(ERROR,
 							(errcode(ERRCODE_CONFIG_FILE_ERROR),
 							 errmsg("invalid number of flag vector aliases")));
@@ -1318,7 +1318,7 @@ NIImportOOAffixes(IspellDict *Conf, const char *filename)
 				Conf->AffixData[curaffix] = VoidString;
 				curaffix++;
 			}
-			/* Other lines is aliases */
+			/* Other lines are aliases */
 			else
 			{
 				if (curaffix < naffix)
@@ -1326,6 +1326,11 @@ NIImportOOAffixes(IspellDict *Conf, const char *filename)
 					Conf->AffixData[curaffix] = cpstrdup(Conf, sflag);
 					curaffix++;
 				}
+				else
+					ereport(ERROR,
+							(errcode(ERRCODE_CONFIG_FILE_ERROR),
+							 errmsg("number of aliases exceeds specified number %d",
+									naffix - 1)));
 			}
 			goto nextline;
 		}
@@ -1744,8 +1749,8 @@ NISortDictionary(IspellDict *Conf)
 		naffix = 0;
 		for (i = 0; i < Conf->nspell; i++)
 		{
-			if (i == 0
-				|| strcmp(Conf->Spell[i]->p.flag, Conf->Spell[i - 1]->p.flag))
+			if (i == 0 ||
+				strcmp(Conf->Spell[i]->p.flag, Conf->Spell[i - 1]->p.flag) != 0)
 				naffix++;
 		}
 
@@ -1759,8 +1764,8 @@ NISortDictionary(IspellDict *Conf)
 		curaffix = -1;
 		for (i = 0; i < Conf->nspell; i++)
 		{
-			if (i == 0
-				|| strcmp(Conf->Spell[i]->p.flag, Conf->AffixData[curaffix]))
+			if (i == 0 ||
+				strcmp(Conf->Spell[i]->p.flag, Conf->AffixData[curaffix]) != 0)
 			{
 				curaffix++;
 				Assert(curaffix < naffix);
@@ -1963,8 +1968,10 @@ NISortAffixes(IspellDict *Conf)
 		if ((Affix->flagflags & FF_COMPOUNDFLAG) && Affix->replen > 0 &&
 			isAffixInUse(Conf, Affix->flag))
 		{
+			bool		issuffix = (Affix->type == FF_SUFFIX);
+
 			if (ptr == Conf->CompoundAffix ||
-				ptr->issuffix != (ptr - 1)->issuffix ||
+				issuffix != (ptr - 1)->issuffix ||
 				strbncmp((const unsigned char *) (ptr - 1)->affix,
 						 (const unsigned char *) Affix->repl,
 						 (ptr - 1)->len))
@@ -1972,7 +1979,7 @@ NISortAffixes(IspellDict *Conf)
 				/* leave only unique and minimals suffixes */
 				ptr->affix = Affix->repl;
 				ptr->len = Affix->replen;
-				ptr->issuffix = (Affix->type == FF_SUFFIX);
+				ptr->issuffix = issuffix;
 				ptr++;
 			}
 		}

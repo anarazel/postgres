@@ -36,7 +36,7 @@
  * the probability of unintended failure) than to fix the total time
  * spent.
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -251,7 +251,7 @@ static void
 tas_dummy()
 {
 	__asm__ __volatile__(
-#if defined(__NetBSD__) && defined(__ELF__)
+#if (defined(__NetBSD__) || defined(__OpenBSD__)) && defined(__ELF__)
 /* no underscore for label and % for registers */
 						 "\
 .global		tas 				\n\
@@ -276,7 +276,7 @@ _tas:							\n\
 _success:						\n\
 			moveq 	#0,d0		\n\
 			rts					\n"
-#endif							/* __NetBSD__ && __ELF__ */
+#endif							/* (__NetBSD__ || __OpenBSD__) && __ELF__ */
 		);
 }
 #endif							/* __m68k__ && !__linux__ */

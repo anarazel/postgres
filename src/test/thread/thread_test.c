@@ -3,7 +3,7 @@
  * test_thread_funcs.c
  *		libc thread test program
  *
- * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *	src/test/thread/thread_test.c
@@ -22,6 +22,9 @@
 
 #if !defined(IN_CONFIGURE) && !defined(WIN32)
 #include "postgres.h"
+
+/* we want to know what the native strerror does, not pg_strerror */
+#undef strerror
 #endif
 
 #include <stdio.h>
@@ -80,23 +83,23 @@ static volatile int errno2_set = 0;
 #ifndef HAVE_STRERROR_R
 static char *strerror_p1;
 static char *strerror_p2;
-static int strerror_threadsafe = 0;
+static int	strerror_threadsafe = 0;
 #endif
 
 #if !defined(WIN32) && !defined(HAVE_GETPWUID_R)
 static struct passwd *passwd_p1;
 static struct passwd *passwd_p2;
-static int getpwuid_threadsafe = 0;
+static int	getpwuid_threadsafe = 0;
 #endif
 
 #if !defined(HAVE_GETADDRINFO) && !defined(HAVE_GETHOSTBYNAME_R)
 static struct hostent *hostent_p1;
 static struct hostent *hostent_p2;
 static char myhostname[MAXHOSTNAMELEN];
-static int gethostbyname_threadsafe = 0;
+static int	gethostbyname_threadsafe = 0;
 #endif
 
-static int platform_is_threadsafe = 1;
+static int	platform_is_threadsafe = 1;
 
 int
 main(int argc, char *argv[])
@@ -197,7 +200,7 @@ main(int argc, char *argv[])
 	/* report results */
 
 #ifdef HAVE_STRERROR_R
-	printf("Your system has sterror_r();  it does not need strerror().\n");
+	printf("Your system has strerror_r(); it does not need strerror().\n");
 #else
 	printf("Your system uses strerror() which is ");
 	if (strerror_threadsafe)

@@ -3,7 +3,7 @@
  * bloom.h
  *	  Header for bloom index.
  *
- * Copyright (c) 2016-2017, PostgreSQL Global Development Group
+ * Copyright (c) 2016-2019, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  contrib/bloom/bloom.h
@@ -17,7 +17,7 @@
 #include "access/generic_xlog.h"
 #include "access/itup.h"
 #include "access/xlog.h"
-#include "nodes/relation.h"
+#include "nodes/pathnodes.h"
 #include "fmgr.h"
 
 /* Support procedures numbers */
@@ -137,6 +137,7 @@ typedef struct BloomMetaPageData
 typedef struct BloomState
 {
 	FmgrInfo	hashFn[INDEX_MAX_KEYS];
+	Oid			collations[INDEX_MAX_KEYS];
 	BloomOptions opts;			/* copy of options on index's metapage */
 	int32		nColumns;
 

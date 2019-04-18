@@ -2,7 +2,7 @@
 #
 # Makefile for src/bin/pg_resetwal
 #
-# Copyright (c) 1998-2017, PostgreSQL Global Development Group
+# Copyright (c) 1998-2019, PostgreSQL Global Development Group
 #
 # src/bin/pg_resetwal/Makefile
 #
@@ -15,11 +15,13 @@ subdir = src/bin/pg_resetwal
 top_builddir = ../../..
 include $(top_builddir)/src/Makefile.global
 
+LDFLAGS_INTERNAL += -L$(top_builddir)/src/fe_utils -lpgfeutils
+
 OBJS= pg_resetwal.o $(WIN32RES)
 
 all: pg_resetwal
 
-pg_resetwal: $(OBJS) | submake-libpgport
+pg_resetwal: $(OBJS) | submake-libpgport submake-libpgfeutils
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 install: all installdirs
@@ -33,3 +35,10 @@ uninstall:
 
 clean distclean maintainer-clean:
 	rm -f pg_resetwal$(X) $(OBJS)
+	rm -rf tmp_check
+
+check:
+	$(prove_check)
+
+installcheck:
+	$(prove_installcheck)

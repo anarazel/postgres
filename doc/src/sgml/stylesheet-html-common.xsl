@@ -14,7 +14,8 @@
 <!-- Parameters -->
 <xsl:param name="make.valid.html" select="1"></xsl:param>
 <xsl:param name="generate.id.attributes" select="1"></xsl:param>
-<xsl:param name="link.mailto.url">pgsql-docs@postgresql.org</xsl:param>
+<xsl:param name="make.graphic.viewport" select="0"/>
+<xsl:param name="link.mailto.url">pgsql-docs@lists.postgresql.org</xsl:param>
 <xsl:param name="toc.max.depth">2</xsl:param>
 
 
@@ -261,6 +262,31 @@ set       toc,title
       </a>
     </xsl:if>
   </xsl:if>
+</xsl:template>
+
+
+<!-- upper case HTML anchors for backward compatibility -->
+
+<xsl:template name="object.id">
+  <xsl:param name="object" select="."/>
+  <xsl:choose>
+    <xsl:when test="$object/@id">
+      <xsl:value-of select="translate($object/@id, &lowercase;, &uppercase;)"/>
+    </xsl:when>
+    <xsl:when test="$object/@xml:id">
+      <xsl:value-of select="$object/@xml:id"/>
+    </xsl:when>
+    <xsl:when test="$generate.consistent.ids != 0">
+      <!-- Make $object the current node -->
+      <xsl:for-each select="$object">
+        <xsl:text>id-</xsl:text>
+        <xsl:number level="multiple" count="*"/>
+      </xsl:for-each>
+    </xsl:when>
+    <xsl:otherwise>
+      <xsl:value-of select="generate-id($object)"/>
+    </xsl:otherwise>
+  </xsl:choose>
 </xsl:template>
 
 </xsl:stylesheet>
