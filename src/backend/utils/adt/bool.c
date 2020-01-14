@@ -189,7 +189,7 @@ boolsend(PG_FUNCTION_ARGS)
 	bool		arg1 = PG_GETARG_BOOL(0);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 1);
 	pq_sendbyte(&buf, arg1 ? 1 : 0);
 	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
 }

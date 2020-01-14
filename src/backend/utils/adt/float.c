@@ -351,7 +351,7 @@ float4send(PG_FUNCTION_ARGS)
 	float4		num = PG_GETARG_FLOAT4(0);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 4);
 	pq_sendfloat4(&buf, num);
 	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
 }
@@ -568,7 +568,7 @@ float8send(PG_FUNCTION_ARGS)
 	float8		num = PG_GETARG_FLOAT8(0);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 8);
 	pq_sendfloat8(&buf, num);
 	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
 }

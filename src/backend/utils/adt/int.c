@@ -100,7 +100,7 @@ int2send(PG_FUNCTION_ARGS)
 	int16		arg1 = PG_GETARG_INT16(0);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 2);
 	pq_sendint16(&buf, arg1);
 	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
 }
@@ -324,7 +324,7 @@ int4send(PG_FUNCTION_ARGS)
 	int32		arg1 = PG_GETARG_INT32(0);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 4);
 	pq_sendint32(&buf, arg1);
 	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
 }

@@ -97,7 +97,7 @@ int8send(PG_FUNCTION_ARGS)
 	int64		arg1 = PG_GETARG_INT64(0);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 8);
 	pq_sendint64(&buf, arg1);
 	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
 }
