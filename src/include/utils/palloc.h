@@ -75,7 +75,11 @@ extern void *MemoryContextAllocExtended(MemoryContext context,
 extern void *MemoryContextAllocAligned(MemoryContext context,
 									   Size size, Size alignto, int flags);
 
-extern void *palloc(Size size);
+extern void *palloc(Size size)
+#if __has_attribute(malloc) && __has_attribute(assume_aligned) && __has_attribute(returns_nonnull) && __has_attribute(warn_unused_result)
+	__attribute__((malloc, assume_aligned(MAXIMUM_ALIGNOF), returns_nonnull, warn_unused_result))
+#endif
+	;
 extern void *palloc0(Size size);
 extern void *palloc_extended(Size size, int flags);
 extern void *palloc_aligned(Size size, Size alignto, int flags);
