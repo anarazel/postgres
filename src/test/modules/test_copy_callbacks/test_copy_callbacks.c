@@ -25,8 +25,8 @@ static void
 to_cb(void *data, int len)
 {
 	ereport(NOTICE,
-			(errmsg("COPY TO callback called with data \"%s\" and length %d",
-					(char *) data, len)));
+			(errmsg("COPY TO callback called with data \"%.*s\" and length %d",
+					len, (char *) data, len)));
 }
 
 PG_FUNCTION_INFO_V1(test_copy_to_callback);

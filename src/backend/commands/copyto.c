@@ -175,13 +175,13 @@ SendCopyEnd(CopyToState cstate)
 static void
 CopySendData(CopyToState cstate, const void *databuf, int datasize)
 {
-	appendBinaryStringInfo(cstate->fe_msgbuf, databuf, datasize);
+	appendBinaryStringInfoNT(cstate->fe_msgbuf, databuf, datasize);
 }
 
 static void
 CopySendString(CopyToState cstate, const char *str)
 {
-	appendBinaryStringInfo(cstate->fe_msgbuf, str, strlen(str));
+	appendBinaryStringInfoNT(cstate->fe_msgbuf, str, strlen(str));
 }
 
 static void
