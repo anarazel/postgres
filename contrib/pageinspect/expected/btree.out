@@ -158,7 +158,7 @@ ctid       | (0,1)
 itemlen    | 16
 nulls      | f
 vars       | f
-data       | 01 00 00 00 00 00 00 01
+data       | (a)=(72057594037927937)
 dead       | f
 htid       | (0,1)
 tids       | 

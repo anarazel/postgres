@@ -182,19 +182,25 @@ IndexScanEnd(IndexScanDesc scan)
  * change.
  */
 char *
-BuildIndexValueDescription(Relation indexRelation,
-						   const Datum *values, const bool *isnull)
+BuildIndexValueDescription(Relation indexRelation, const Datum *values,
+						   const bool *isnull)
+{
+	return BuildIndexValueDescriptionNatts(indexRelation,
+										   IndexRelationGetNumberOfKeyAttributes(indexRelation),
+										   values, isnull);
+}
+
+char *
+BuildIndexValueDescriptionNatts(Relation indexRelation, int indnkeyatts,
+								const Datum *values, const bool *isnull)
 {
 	StringInfoData buf;
 	Form_pg_index idxrec;
-	int			indnkeyatts;
 	int			i;
 	int			keyno;
 	Oid			indexrelid = RelationGetRelid(indexRelation);
 	Oid			indrelid;
 	AclResult	aclresult;
-
-	indnkeyatts = IndexRelationGetNumberOfKeyAttributes(indexRelation);
 
 	/*
 	 * Check permissions- if the user does not have access to view all of the
