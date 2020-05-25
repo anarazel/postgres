@@ -51,20 +51,19 @@ slist_delete(slist_head *head, slist_node *node)
 	slist_check(head);
 }
 
-#ifdef ILIST_DEBUG
 /*
  * Verify integrity of a doubly linked list
  */
-void
-dlist_check(dlist_head *head)
+dlist_head*
+dlist_check_force(dlist_head *head)
 {
 	dlist_node *cur;
 
 	if (head == NULL)
-		elog(ERROR, "doubly linked list head address is NULL");
+		elog(PANIC, "doubly linked list head address is NULL");
 
 	if (head->head.next == NULL && head->head.prev == NULL)
-		return;					/* OK, initialized as zeroes */
+		return head;					/* OK, initialized as zeroes */
 
 	/* iterate in forward direction */
 	for (cur = head->head.next; cur != &head->head; cur = cur->next)
@@ -74,7 +73,7 @@ dlist_check(dlist_head *head)
 			cur->prev == NULL ||
 			cur->prev->next != cur ||
 			cur->next->prev != cur)
-			elog(ERROR, "doubly linked list is corrupted");
+			elog(PANIC, "doubly linked list is corrupted");
 	}
 
 	/* iterate in backward direction */
@@ -85,20 +84,22 @@ dlist_check(dlist_head *head)
 			cur->prev == NULL ||
 			cur->prev->next != cur ||
 			cur->next->prev != cur)
-			elog(ERROR, "doubly linked list is corrupted");
+			elog(PANIC, "doubly linked list is corrupted");
 	}
+
+	return head;
 }
 
 /*
  * Verify integrity of a singly linked list
  */
-void
-slist_check(slist_head *head)
+slist_head *
+slist_check_force(slist_head *head)
 {
 	slist_node *cur;
 
 	if (head == NULL)
-		elog(ERROR, "singly linked list head address is NULL");
+		elog(PANIC, "singly linked list head address is NULL");
 
 	/*
 	 * there isn't much we can test in a singly linked list except that it
@@ -106,6 +107,20 @@ slist_check(slist_head *head)
 	 */
 	for (cur = head->head.next; cur != NULL; cur = cur->next)
 		;
+
+	return head;
 }
 
-#endif							/* ILIST_DEBUG */
+bool
+dlist_is_member(dlist_head *head, dlist_node *node)
+{
+	dlist_iter iter;
+
+	dlist_foreach(iter, head)
+	{
+		if (iter.cur == node)
+			return true;
+	}
+
+	return false;
+}

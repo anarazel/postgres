@@ -254,9 +254,18 @@ typedef struct slist_mutable_iter
 /* Caution: this is O(n); consider using slist_delete_current() instead */
 extern void slist_delete(slist_head *head, slist_node *node);
 
+extern dlist_head* dlist_check_force(dlist_head *head);
+extern slist_head* slist_check_force(slist_head *head);
+
 #ifdef ILIST_DEBUG
-extern void dlist_check(dlist_head *head);
-extern void slist_check(slist_head *head);
+static inline dlist_head* dlist_check(dlist_head *head)
+{
+	return dlist_check_force(head);
+}
+static inline slist_head* slist_check(slist_head *head)
+{
+	return slist_check_force(head);
+}
 #else
 /*
  * These seemingly useless casts to void are here to keep the compiler quiet
@@ -264,7 +273,10 @@ extern void slist_check(slist_head *head);
  * in which functions the only point of passing the list head pointer is to be
  * able to run these checks.
  */
-#define dlist_check(head)	((void) (head))
+static inline dlist_head *dlist_check(dlist_head *head)
+{
+	return head;
+}
 #define slist_check(head)	((void) (head))
 #endif							/* ILIST_DEBUG */
 
@@ -294,11 +306,22 @@ dlist_is_empty(dlist_head *head)
 }
 
 /*
+ * Is node member of the list?
+ *
+ * NB: This is O(N)!
+ */
+extern bool dlist_is_member(dlist_head *head, dlist_node *node);
+
+/*
  * Insert a node at the beginning of the list.
  */
 static inline void
 dlist_push_head(dlist_head *head, dlist_node *node)
 {
+#ifdef ILIST_DEBUG
+	Assert(!dlist_is_member(head, node));
+#endif
+
 	if (head->head.next == NULL)	/* convert NULL header to circular */
 		dlist_init(head);
 
@@ -316,6 +339,11 @@ dlist_push_head(dlist_head *head, dlist_node *node)
 static inline void
 dlist_push_tail(dlist_head *head, dlist_node *node)
 {
+#ifdef ILIST_DEBUG
+	Assert(!dlist_is_member(head, node));
+#endif
+	dlist_check(head);
+
 	if (head->head.next == NULL)	/* convert NULL header to circular */
 		dlist_init(head);
 
@@ -362,6 +390,20 @@ dlist_delete(dlist_node *node)
 }
 
 /*
+ * Delete 'node' from its list (it must be in one).
+ */
+static inline void
+dlist_delete_from(dlist_head *head, dlist_node *node)
+{
+	dlist_check(head);
+#ifdef ILIST_DEBUG
+	Assert(dlist_is_member(head, node));
+#endif
+	node->prev->next = node->next;
+	node->next->prev = node->prev;
+}
+
+/*
  * Remove and return the first node from a list (there must be one).
  */
 static inline dlist_node *
@@ -369,9 +411,17 @@ dlist_pop_head_node(dlist_head *head)
 {
 	dlist_node *node;
 
+	dlist_check(head);
+
+#ifdef ILIST_DEBUG
 	Assert(!dlist_is_empty(head));
+#endif
+
 	node = head->head.next;
 	dlist_delete(node);
+
+	dlist_check(head);
+
 	return node;
 }
 
@@ -507,7 +557,7 @@ dlist_tail_node(dlist_head *head)
 #define dlist_foreach(iter, lhead)											\
 	for (AssertVariableIsOfTypeMacro(iter, dlist_iter),						\
 		 AssertVariableIsOfTypeMacro(lhead, dlist_head *),					\
-		 (iter).end = &(lhead)->head,										\
+		 (iter).end = &dlist_check(lhead)->head,							\
 		 (iter).cur = (iter).end->next ? (iter).end->next : (iter).end;		\
 		 (iter).cur != (iter).end;											\
 		 (iter).cur = (iter).cur->next)
@@ -524,7 +574,7 @@ dlist_tail_node(dlist_head *head)
 #define dlist_foreach_modify(iter, lhead)									\
 	for (AssertVariableIsOfTypeMacro(iter, dlist_mutable_iter),				\
 		 AssertVariableIsOfTypeMacro(lhead, dlist_head *),					\
-		 (iter).end = &(lhead)->head,										\
+		 (iter).end = &dlist_check(lhead)->head,							\
 		 (iter).cur = (iter).end->next ? (iter).end->next : (iter).end,		\
 		 (iter).next = (iter).cur->next;									\
 		 (iter).cur != (iter).end;											\
