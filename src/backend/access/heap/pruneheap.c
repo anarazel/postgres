@@ -62,6 +62,7 @@ typedef struct
 
 /* Local functions */
 static int	heap_prune_chain(Buffer buffer,
+							 BlockNumber blockno,
 							 OffsetNumber rootoffnum,
 							 PruneState *prstate);
 static void heap_prune_record_prunable(PruneState *prstate, TransactionId xid);
@@ -233,6 +234,7 @@ heap_page_prune(Relation relation, Buffer buffer,
 	OffsetNumber offnum,
 				maxoff;
 	PruneState	prstate;
+	BlockNumber	blockno = BufferGetBlockNumber(buffer);
 
 	/*
 	 * Our strategy is to scan the page and make lists of items to change,
@@ -280,7 +282,7 @@ heap_page_prune(Relation relation, Buffer buffer,
 			continue;
 
 		/* Process this item or chain of items */
-		ndeleted += heap_prune_chain(buffer, offnum, &prstate);
+		ndeleted += heap_prune_chain(buffer, blockno, offnum, &prstate);
 	}
 
 	/* Clear the offset information once we have processed the given page. */
@@ -490,7 +492,8 @@ heap_prune_satisfies_vacuum(PruneState *prstate, HeapTuple tup, Buffer buffer)
  * Returns the number of tuples (to be) deleted from the page.
  */
 static int
-heap_prune_chain(Buffer buffer, OffsetNumber rootoffnum, PruneState *prstate)
+heap_prune_chain(Buffer buffer, BlockNumber blockno, OffsetNumber rootoffnum,
+				 PruneState *prstate)
 {
 	int			ndeleted = 0;
 	Page		dp = (Page) BufferGetPage(buffer);
@@ -518,7 +521,7 @@ heap_prune_chain(Buffer buffer, OffsetNumber rootoffnum, PruneState *prstate)
 
 		tup.t_data = htup;
 		tup.t_len = ItemIdGetLength(rootlp);
-		ItemPointerSet(&(tup.t_self), BufferGetBlockNumber(buffer), rootoffnum);
+		ItemPointerSet(&(tup.t_self), blockno, rootoffnum);
 
 		if (HeapTupleHeaderIsHeapOnly(htup))
 		{
