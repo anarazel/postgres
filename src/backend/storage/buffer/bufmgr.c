@@ -918,6 +918,8 @@ ReadBuffer_common(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 
 			if (track_io_timing)
 				INSTR_TIME_SET_CURRENT(io_start);
+			else
+				INSTR_TIME_SET_ZERO(io_start);
 
 			smgrread(smgr, forkNum, blockNum, (char *) bufBlock);
 
@@ -2812,6 +2814,8 @@ FlushBuffer(BufferDesc *buf, SMgrRelation reln)
 
 	if (track_io_timing)
 		INSTR_TIME_SET_CURRENT(io_start);
+	else
+		INSTR_TIME_SET_ZERO(io_start);
 
 	/*
 	 * bufToWrite is either the shared buffer or a copy, as appropriate.

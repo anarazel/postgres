@@ -83,63 +83,53 @@
 #define PG_INSTR_CLOCK	CLOCK_REALTIME
 #endif
 
-typedef struct timespec instr_time;
+typedef int64 instr_time;
+#define NS_PER_S INT64CONST(1000000000)
+#define US_PER_S INT64CONST(1000000)
+#define MS_PER_S INT64CONST(1000)
 
-#define INSTR_TIME_IS_ZERO(t)	((t).tv_nsec == 0 && (t).tv_sec == 0)
+#define NS_PER_MS INT64CONST(1000000)
+#define NS_PER_US INT64CONST(1000)
 
-#define INSTR_TIME_SET_ZERO(t)	((t).tv_sec = 0, (t).tv_nsec = 0)
+#define INSTR_TIME_IS_ZERO(t)	((t) == 0)
 
-#define INSTR_TIME_SET_CURRENT(t)	((void) clock_gettime(PG_INSTR_CLOCK, &(t)))
+#define INSTR_TIME_SET_ZERO(t)	((t) = 0)
+
+static inline instr_time pg_clock_gettime_ns(void)
+{
+	struct timespec tmp;
+
+	clock_gettime(PG_INSTR_CLOCK, &tmp);
+
+	return tmp.tv_sec * NS_PER_S + tmp.tv_nsec;
+}
+
+#define INSTR_TIME_SET_CURRENT(t) \
+	(t) = pg_clock_gettime_ns()
 
 #define INSTR_TIME_ADD(x,y) \
 	do { \
-		(x).tv_sec += (y).tv_sec; \
-		(x).tv_nsec += (y).tv_nsec; \
-		/* Normalize */ \
-		while ((x).tv_nsec >= 1000000000) \
-		{ \
-			(x).tv_nsec -= 1000000000; \
-			(x).tv_sec++; \
-		} \
+		(x) += (y); \
 	} while (0)
 
 #define INSTR_TIME_SUBTRACT(x,y) \
 	do { \
-		(x).tv_sec -= (y).tv_sec; \
-		(x).tv_nsec -= (y).tv_nsec; \
-		/* Normalize */ \
-		while ((x).tv_nsec < 0) \
-		{ \
-			(x).tv_nsec += 1000000000; \
-			(x).tv_sec--; \
-		} \
+		(x) -= (y); \
 	} while (0)
 
 #define INSTR_TIME_ACCUM_DIFF(x,y,z) \
 	do { \
-		(x).tv_sec += (y).tv_sec - (z).tv_sec; \
-		(x).tv_nsec += (y).tv_nsec - (z).tv_nsec; \
-		/* Normalize after each add to avoid overflow/underflow of tv_nsec */ \
-		while ((x).tv_nsec < 0) \
-		{ \
-			(x).tv_nsec += 1000000000; \
-			(x).tv_sec--; \
-		} \
-		while ((x).tv_nsec >= 1000000000) \
-		{ \
-			(x).tv_nsec -= 1000000000; \
-			(x).tv_sec++; \
-		} \
+		(x) += (y) - (z); \
 	} while (0)
 
 #define INSTR_TIME_GET_DOUBLE(t) \
-	(((double) (t).tv_sec) + ((double) (t).tv_nsec) / 1000000000.0)
+	((double) (t) / NS_PER_S)
 
 #define INSTR_TIME_GET_MILLISEC(t) \
-	(((double) (t).tv_sec * 1000.0) + ((double) (t).tv_nsec) / 1000000.0)
+	((double) (t) / NS_PER_MS)
 
 #define INSTR_TIME_GET_MICROSEC(t) \
-	(((uint64) (t).tv_sec * (uint64) 1000000) + (uint64) ((t).tv_nsec / 1000))
+	((double) (t) / NS_PER_US)
 
 #else							/* !HAVE_CLOCK_GETTIME */
 
