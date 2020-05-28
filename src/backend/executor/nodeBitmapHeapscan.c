@@ -45,6 +45,7 @@
 #include "executor/nodeBitmapHeapscan.h"
 #include "miscadmin.h"
 #include "pgstat.h"
+#include "storage/aio.h"
 #include "storage/bufmgr.h"
 #include "storage/predicate.h"
 #include "utils/memutils.h"
@@ -463,8 +464,15 @@ BitmapAdjustPrefetchTarget(BitmapHeapScanState *node)
 static inline void
 BitmapPrefetch(BitmapHeapScanState *node, TableScanDesc scan)
 {
+	/*
+	 * FIXME: This really should just all be replaced by using one iterator
+	 * and a PgStreamingRead. tbm_iterate() actually does a fair bit of work,
+	 * we don't want to repeat that. Nor is it good to do the buffer mapping
+	 * lookups twice.
+	 */
 #ifdef USE_PREFETCH
 	ParallelBitmapHeapState *pstate = node->pstate;
+	bool		issued_prefetch = false;
 
 	if (pstate == NULL)
 	{
@@ -504,7 +512,10 @@ BitmapPrefetch(BitmapHeapScanState *node, TableScanDesc scan)
 											 &node->pvmbuffer));
 
 				if (!skip_fetch)
+				{
 					PrefetchBuffer(scan->rs_rd, MAIN_FORKNUM, tbmpre->blockno);
+					issued_prefetch = true;
+				}
 			}
 		}
 
@@ -555,10 +566,21 @@ BitmapPrefetch(BitmapHeapScanState *node, TableScanDesc scan)
 											 &node->pvmbuffer));
 
 				if (!skip_fetch)
+				{
 					PrefetchBuffer(scan->rs_rd, MAIN_FORKNUM, tbmpre->blockno);
+					issued_prefetch = true;
+				}
 			}
 		}
 	}
+
+	/*
+	 * The PrefetchBuffer() calls staged IOs, but didn't necessarily submit
+	 * them, as it is more efficient to amortize the syscall cost across
+	 * multiple calls.
+	 */
+	if (issued_prefetch)
+		pgaio_submit_pending(true);
 #endif							/* USE_PREFETCH */
 }
 
