@@ -257,8 +257,32 @@ heap_page_prune(Relation relation, Buffer buffer,
 	prstate.nredirected = prstate.ndead = prstate.nunused = 0;
 	memset(prstate.marked, 0, sizeof(prstate.marked));
 
-	/* Scan the page */
 	maxoff = PageGetMaxOffsetNumber(page);
+
+#if 1
+	for (char *p = (char *) PageGetItemId(page, FirstOffsetNumber);
+		 p < (char *) PageGetItemId(page, maxoff);
+		 p += 64)
+	{
+		pg_prefetch_mem((ItemId)p);
+	}
+
+	for (offnum = FirstOffsetNumber;
+		 offnum <= maxoff;
+		 offnum = OffsetNumberNext(offnum))
+	{
+		ItemId		itemid;
+
+		itemid = PageGetItemId(page, offnum);
+		if (!ItemIdIsUsed(itemid) || ItemIdIsDead(itemid) || !ItemIdHasStorage(itemid))
+			continue;
+
+		pg_prefetch_mem((HeapTupleHeader) PageGetItem(page, itemid));
+		pg_prefetch_mem(PageGetItem(page, itemid) + sizeof(HeapTupleHeaderData) - 1);
+	}
+#endif
+
+	/* Scan the page */
 	for (offnum = FirstOffsetNumber;
 		 offnum <= maxoff;
 		 offnum = OffsetNumberNext(offnum))
