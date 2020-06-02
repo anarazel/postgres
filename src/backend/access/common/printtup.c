@@ -49,6 +49,15 @@ typedef struct
 	bool		typisvarlena;	/* is it varlena (ie possibly toastable)? */
 	int16		format;			/* format code for this column */
 	FmgrInfo	finfo;			/* Precomputed call info for output fn */
+
+	/* use union with FunctionCallInfoBaseData to guarantee alignment */
+	union
+	{
+		FunctionCallInfoBaseData fcinfo;
+		/* ensure enough space for nargs args is available */
+		char		fcinfo_data[SizeForFunctionCallInfo(1)];
+	}			fcinfo_data;
+
 } PrinttupAttrInfo;
 
 typedef struct
@@ -278,6 +287,9 @@ printtup_prepare_info(DR_printtup *myState, TupleDesc typeinfo, int numAttrs)
 							  &thisState->typoutput,
 							  &thisState->typisvarlena);
 			fmgr_info(thisState->typoutput, &thisState->finfo);
+			InitFunctionCallInfoData(thisState->fcinfo_data.fcinfo,
+									 &thisState->finfo, 1, InvalidOid,
+									 NULL, NULL);
 		}
 		else if (format == 1)
 		{
@@ -285,6 +297,9 @@ printtup_prepare_info(DR_printtup *myState, TupleDesc typeinfo, int numAttrs)
 									&thisState->typsend,
 									&thisState->typisvarlena);
 			fmgr_info(thisState->typsend, &thisState->finfo);
+			InitFunctionCallInfoData(thisState->fcinfo_data.fcinfo,
+									 &thisState->finfo, 1, InvalidOid,
+									 NULL, NULL);
 		}
 		else
 			ereport(ERROR,
@@ -361,11 +376,28 @@ printtup(TupleTableSlot *slot, DestReceiver *self)
 		{
 			/* Binary output */
 			bytea	   *outputbytes;
+			int			outputlen;
+			Datum		result;
+			FunctionCallInfo fcinfo = &thisState->fcinfo_data.fcinfo;
 
-			outputbytes = SendFunctionCall(&thisState->finfo, attr);
-			pq_sendint32(buf, VARSIZE(outputbytes) - VARHDRSZ);
-			pq_sendbytes(buf, VARDATA(outputbytes),
-						 VARSIZE(outputbytes) - VARHDRSZ);
+			fcinfo->args[0].value = attr;
+			fcinfo->args[0].isnull = false;
+			result = FunctionCallInvoke(fcinfo);
+
+			/*
+			 * Check for null result, since caller is clearly not expecting
+			 * one
+			 */
+			if (unlikely(fcinfo->isnull))
+				elog(ERROR, "send function return null");
+
+			outputbytes = DatumGetByteaP(result);
+			outputlen = VARSIZE(outputbytes) - VARHDRSZ;
+
+			Assert(outputlen > 0);
+
+			pq_sendint32(buf, outputlen);
+			pq_sendbytes(buf, VARDATA(outputbytes), outputlen);
 		}
 	}
 
