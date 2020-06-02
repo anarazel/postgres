@@ -54,6 +54,20 @@ typedef enum CopyDest
 	COPY_CALLBACK,				/* to callback function */
 } CopyDest;
 
+typedef struct CopyOutAttributeInfo
+{
+	AttrNumber	num;
+	const char *name;
+	int32		typid;
+
+	FmgrInfo	out_finfo;
+	union
+	{
+		FunctionCallInfoBaseData fcinfo;
+		char		fcinfo_data[SizeForFunctionCallInfo(1)];
+	}			out_fcinfo;
+} CopyOutAttributeInfo;
+
 /*
  * This struct contains all the state variables used throughout a COPY TO
  * operation.
@@ -96,7 +110,8 @@ typedef struct CopyToStateData
 	 */
 	MemoryContext copycontext;	/* per-copy execution context */
 
-	FmgrInfo   *out_functions;	/* lookup info for output functions */
+	CopyOutAttributeInfo *out_attributes;
+
 	MemoryContext rowcontext;	/* per-row evaluation context */
 	uint64		bytes_processed;	/* number of bytes processed so far */
 } CopyToStateData;
@@ -768,23 +783,34 @@ DoCopyTo(CopyToState cstate)
 	cstate->fe_msgbuf = makeStringInfo();
 
 	/* Get info about the columns we need to process. */
-	cstate->out_functions = (FmgrInfo *) palloc(num_phys_attrs * sizeof(FmgrInfo));
+	cstate->out_attributes =
+		(CopyOutAttributeInfo *) palloc(num_phys_attrs * sizeof(CopyOutAttributeInfo));
 	foreach(cur, cstate->attnumlist)
 	{
 		int			attnum = lfirst_int(cur);
+		CopyOutAttributeInfo *attr = &cstate->out_attributes[attnum - 1];
+		Form_pg_attribute pgatt;
 		Oid			out_func_oid;
 		bool		isvarlena;
-		Form_pg_attribute attr = TupleDescAttr(tupDesc, attnum - 1);
+
+		pgatt = TupleDescAttr(tupDesc, attnum - 1);
+		attr->num = attnum;
+		attr->name = NameStr(pgatt->attname);
+		attr->typid = pgatt->atttypid;
 
 		if (cstate->opts.binary)
-			getTypeBinaryOutputInfo(attr->atttypid,
+			getTypeBinaryOutputInfo(attr->typid,
 									&out_func_oid,
 									&isvarlena);
 		else
-			getTypeOutputInfo(attr->atttypid,
+			getTypeOutputInfo(attr->typid,
 							  &out_func_oid,
 							  &isvarlena);
-		fmgr_info(out_func_oid, &cstate->out_functions[attnum - 1]);
+
+		fmgr_info(out_func_oid, &attr->out_finfo);
+		InitFunctionCallInfoData(attr->out_fcinfo.fcinfo, &attr->out_finfo,
+								 1, InvalidOid,
+								 NULL, NULL);
 	}
 
 	/*
@@ -908,7 +934,7 @@ static void
 CopyOneRowTo(CopyToState cstate, TupleTableSlot *slot)
 {
 	bool		need_delim = false;
-	FmgrInfo   *out_functions = cstate->out_functions;
+	CopyOutAttributeInfo *out_attributes = cstate->out_attributes;
 	MemoryContext oldcontext;
 	ListCell   *cur;
 	char	   *string;
@@ -928,6 +954,8 @@ CopyOneRowTo(CopyToState cstate, TupleTableSlot *slot)
 	foreach(cur, cstate->attnumlist)
 	{
 		int			attnum = lfirst_int(cur);
+		CopyOutAttributeInfo *attr = &out_attributes[attnum - 1];
+		FunctionCallInfo fcinfo = &attr->out_fcinfo.fcinfo;
 		Datum		value = slot->tts_values[attnum - 1];
 		bool		isnull = slot->tts_isnull[attnum - 1];
 
@@ -949,8 +977,22 @@ CopyOneRowTo(CopyToState cstate, TupleTableSlot *slot)
 		{
 			if (!cstate->opts.binary)
 			{
-				string = OutputFunctionCall(&out_functions[attnum - 1],
-											value);
+				Datum		result;
+
+				fcinfo->args[0].value = value;
+				fcinfo->args[0].isnull = false;
+
+				result = FunctionCallInvoke(fcinfo);
+
+				/*
+				 * Check for null result, since caller is clearly not
+				 * expecting one
+				 */
+				if (unlikely(fcinfo->isnull))
+					elog(ERROR, "send function return null");
+
+				string = DatumGetCString(result);
+
 				if (cstate->opts.csv_mode)
 					CopyAttributeOutCSV(cstate, string,
 										cstate->opts.force_quote_flags[attnum - 1]);
@@ -959,13 +1001,26 @@ CopyOneRowTo(CopyToState cstate, TupleTableSlot *slot)
 			}
 			else
 			{
+				int			outputlen;
+				Datum		result;
 				bytea	   *outputbytes;
 
-				outputbytes = SendFunctionCall(&out_functions[attnum - 1],
-											   value);
-				CopySendInt32(cstate, VARSIZE(outputbytes) - VARHDRSZ);
-				CopySendData(cstate, VARDATA(outputbytes),
-							 VARSIZE(outputbytes) - VARHDRSZ);
+				fcinfo->args[0].value = value;
+				fcinfo->args[0].isnull = false;
+				result = FunctionCallInvoke(fcinfo);
+
+				/*
+				 * Check for null result, since caller is clearly not
+				 * expecting one
+				 */
+				if (unlikely(fcinfo->isnull))
+					elog(ERROR, "send function return null");
+
+				outputbytes = DatumGetByteaP(result);
+				outputlen = VARSIZE(outputbytes) - VARHDRSZ;
+
+				CopySendInt32(cstate, outputlen);
+				CopySendData(cstate, VARDATA(outputbytes), outputlen);
 			}
 		}
 	}

@@ -52,6 +52,23 @@ typedef enum CopyInsertMethod
 								 * ExecForeignBatchInsert only if valid */
 } CopyInsertMethod;
 
+typedef struct CopyInAttributeInfo
+{
+	AttrNumber	num;
+	const char *name;
+
+	Oid			typioparam;
+	int32		typmod;
+
+	FmgrInfo	in_finfo;
+	union
+	{
+		FunctionCallInfoBaseData fcinfo;
+		char		fcinfo_data[SizeForFunctionCallInfo(3)];
+	}			in_fcinfo;
+
+} CopyInAttributeInfo;
+
 /*
  * This struct contains all the state variables used throughout a COPY FROM
  * operation.
@@ -93,9 +110,8 @@ typedef struct CopyFromStateData
 
 	AttrNumber	num_defaults;	/* count of att that are missing and have
 								 * default value */
-	FmgrInfo   *in_functions;	/* array of input functions for each attrs */
-	Oid		   *typioparams;	/* array of element types for in_functions */
-	ErrorSaveContext *escontext;	/* soft error trapper during in_functions
+	CopyInAttributeInfo *in_attributes;
+	ErrorSaveContext *escontext;	/* soft error trapper during in_attributes
 									 * execution */
 	uint64		num_errors;		/* total number of rows which contained soft
 								 * errors */

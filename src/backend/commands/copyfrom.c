@@ -1384,8 +1384,7 @@ BeginCopyFrom(ParseState *pstate,
 	TupleDesc	tupDesc;
 	AttrNumber	num_phys_attrs,
 				num_defaults;
-	FmgrInfo   *in_functions;
-	Oid		   *typioparams;
+	CopyInAttributeInfo *in_attributes;
 	Oid			in_func_oid;
 	int		   *defmap;
 	ExprState **defexprs;
@@ -1608,27 +1607,36 @@ BeginCopyFrom(ParseState *pstate,
 	 * the input function), and info about defaults and constraints. (Which
 	 * input function we use depends on text/binary format choice.)
 	 */
-	in_functions = (FmgrInfo *) palloc(num_phys_attrs * sizeof(FmgrInfo));
-	typioparams = (Oid *) palloc(num_phys_attrs * sizeof(Oid));
+	in_attributes = (CopyInAttributeInfo *)
+		palloc0(num_phys_attrs * sizeof(CopyInAttributeInfo));
 	defmap = (int *) palloc(num_phys_attrs * sizeof(int));
 	defexprs = (ExprState **) palloc(num_phys_attrs * sizeof(ExprState *));
 
 	for (int attnum = 1; attnum <= num_phys_attrs; attnum++)
 	{
-		Form_pg_attribute att = TupleDescAttr(tupDesc, attnum - 1);
+		CopyInAttributeInfo *attr = &in_attributes[attnum - 1];
+		Form_pg_attribute pgatt = TupleDescAttr(tupDesc, attnum - 1);
 
 		/* We don't need info for dropped attributes */
-		if (att->attisdropped)
+		if (pgatt->attisdropped)
 			continue;
+
+		attr->num = attnum;
+		attr->typmod = pgatt->atttypmod;
+		attr->name = NameStr(pgatt->attname);
 
 		/* Fetch the input function and typioparam info */
 		if (cstate->opts.binary)
-			getTypeBinaryInputInfo(att->atttypid,
-								   &in_func_oid, &typioparams[attnum - 1]);
+			getTypeBinaryInputInfo(pgatt->atttypid,
+								   &in_func_oid, &attr->typioparam);
 		else
-			getTypeInputInfo(att->atttypid,
-							 &in_func_oid, &typioparams[attnum - 1]);
-		fmgr_info(in_func_oid, &in_functions[attnum - 1]);
+			getTypeInputInfo(pgatt->atttypid,
+							 &in_func_oid, &attr->typioparam);
+		fmgr_info(in_func_oid, &attr->in_finfo);
+		InitFunctionCallInfoData(attr->in_fcinfo.fcinfo, &attr->in_finfo, 3,
+								 InvalidOid, (fmNodePtr) cstate->escontext,
+								 NULL);
+
 
 		/* Get default info if available */
 		defexprs[attnum - 1] = NULL;
@@ -1640,7 +1648,7 @@ BeginCopyFrom(ParseState *pstate,
 		 */
 		if ((cstate->opts.default_print != NULL ||
 			 !list_member_int(cstate->attnumlist, attnum)) &&
-			!att->attgenerated)
+			!pgatt->attgenerated)
 		{
 			Expr	   *defexpr = (Expr *) build_column_default(cstate->rel,
 																attnum);
@@ -1689,8 +1697,7 @@ BeginCopyFrom(ParseState *pstate,
 	cstate->bytes_processed = 0;
 
 	/* We keep those variables in cstate. */
-	cstate->in_functions = in_functions;
-	cstate->typioparams = typioparams;
+	cstate->in_attributes = in_attributes;
 	cstate->defmap = defmap;
 	cstate->defexprs = defexprs;
 	cstate->volatile_defexprs = volatile_defexprs;

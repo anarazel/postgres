@@ -154,8 +154,8 @@ static bool CopyReadLine(CopyFromState cstate);
 static bool CopyReadLineText(CopyFromState cstate);
 static int	CopyReadAttributesText(CopyFromState cstate);
 static int	CopyReadAttributesCSV(CopyFromState cstate);
-static Datum CopyReadBinaryAttribute(CopyFromState cstate, FmgrInfo *flinfo,
-									 Oid typioparam, int32 typmod,
+static Datum CopyReadBinaryAttribute(CopyFromState cstate,
+									 CopyInAttributeInfo *att,
 									 bool *isnull);
 
 
@@ -859,8 +859,7 @@ NextCopyFrom(CopyFromState cstate, ExprContext *econtext,
 	AttrNumber	num_phys_attrs,
 				attr_count,
 				num_defaults = cstate->num_defaults;
-	FmgrInfo   *in_functions = cstate->in_functions;
-	Oid		   *typioparams = cstate->typioparams;
+	CopyInAttributeInfo *in_attributes = cstate->in_attributes;
 	int			i;
 	int		   *defmap = cstate->defmap;
 	ExprState **defexprs = cstate->defexprs;
@@ -899,13 +898,14 @@ NextCopyFrom(CopyFromState cstate, ExprContext *econtext,
 		{
 			int			attnum = lfirst_int(cur);
 			int			m = attnum - 1;
-			Form_pg_attribute att = TupleDescAttr(tupDesc, m);
+			CopyInAttributeInfo *attr = &in_attributes[m];
+			FunctionCallInfo fcinfo = &attr->in_fcinfo.fcinfo;
 
 			if (fieldno >= fldct)
 				ereport(ERROR,
 						(errcode(ERRCODE_BAD_COPY_FILE_FORMAT),
 						 errmsg("missing data for column \"%s\"",
-								NameStr(att->attname))));
+								attr->name)));
 			string = field_strings[fieldno++];
 
 			if (cstate->convert_select_flags &&
@@ -939,7 +939,7 @@ NextCopyFrom(CopyFromState cstate, ExprContext *econtext,
 				}
 			}
 
-			cstate->cur_attname = NameStr(att->attname);
+			cstate->cur_attname = attr->name;
 			cstate->cur_attval = string;
 
 			if (string != NULL)
@@ -956,20 +956,47 @@ NextCopyFrom(CopyFromState cstate, ExprContext *econtext,
 
 				values[m] = ExecEvalExpr(defexprs[m], econtext, &nulls[m]);
 			}
-
-			/*
-			 * If ON_ERROR is specified with IGNORE, skip rows with soft
-			 * errors
-			 */
-			else if (!InputFunctionCallSafe(&in_functions[m],
-											string,
-											typioparams[m],
-											att->atttypmod,
-											(Node *) cstate->escontext,
-											&values[m]))
+			else if (string == NULL && fcinfo->flinfo->fn_strict)
 			{
-				cstate->num_errors++;
-				return true;
+				/* FIXME: shouldn't be reachable */
+				nulls[m] = true;
+			}
+			else
+			{
+				fcinfo->args[0].value = CStringGetDatum(string);
+				fcinfo->args[0].isnull = false;
+				fcinfo->args[1].value = ObjectIdGetDatum(attr->typioparam);
+				fcinfo->args[1].isnull = false;
+				fcinfo->args[2].value = Int32GetDatum(attr->typmod);
+				fcinfo->args[2].isnull = false;
+
+				values[m] = FunctionCallInvoke(fcinfo);
+
+				if (SOFT_ERROR_OCCURRED(cstate->escontext))
+				{
+					/*
+					 * If ON_ERROR is specified with IGNORE, skip rows with
+					 * soft errors
+					 */
+					cstate->num_errors++;
+					return true;
+				}
+
+				/* Should get null result if and only if str is NULL */
+				if (string == NULL)
+				{
+					if (unlikely(!fcinfo->isnull))
+						elog(ERROR, "input function %u returned non-NULL",
+							 fcinfo->flinfo->fn_oid);
+				}
+				else
+				{
+					if (unlikely(fcinfo->isnull))
+						elog(ERROR, "input function %u returned NULL",
+							 fcinfo->flinfo->fn_oid);
+				}
+
+				nulls[m] = string == NULL;
 			}
 
 			cstate->cur_attname = NULL;
@@ -1021,13 +1048,11 @@ NextCopyFrom(CopyFromState cstate, ExprContext *econtext,
 		{
 			int			attnum = lfirst_int(cur);
 			int			m = attnum - 1;
-			Form_pg_attribute att = TupleDescAttr(tupDesc, m);
+			CopyInAttributeInfo *attr = &in_attributes[m];
 
-			cstate->cur_attname = NameStr(att->attname);
+			cstate->cur_attname = attr->name;
 			values[m] = CopyReadBinaryAttribute(cstate,
-												&in_functions[m],
-												typioparams[m],
-												att->atttypmod,
+												attr,
 												&nulls[m]);
 			cstate->cur_attname = NULL;
 		}
@@ -1952,12 +1977,13 @@ endfield:
  * Read a binary attribute
  */
 static Datum
-CopyReadBinaryAttribute(CopyFromState cstate, FmgrInfo *flinfo,
-						Oid typioparam, int32 typmod,
+CopyReadBinaryAttribute(CopyFromState cstate,
+						CopyInAttributeInfo *attr,
 						bool *isnull)
 {
 	int32		fld_size;
 	Datum		result;
+	FunctionCallInfo fcinfo = &attr->in_fcinfo.fcinfo;
 
 	if (!CopyGetInt32(cstate, &fld_size))
 		ereport(ERROR,
@@ -1966,7 +1992,7 @@ CopyReadBinaryAttribute(CopyFromState cstate, FmgrInfo *flinfo,
 	if (fld_size == -1)
 	{
 		*isnull = true;
-		return ReceiveFunctionCall(flinfo, NULL, typioparam, typmod);
+		return ReceiveFunctionCall(fcinfo->flinfo, NULL, attr->typioparam, attr->typmod);
 	}
 	if (fld_size < 0)
 		ereport(ERROR,
@@ -1987,8 +2013,18 @@ CopyReadBinaryAttribute(CopyFromState cstate, FmgrInfo *flinfo,
 	cstate->attribute_buf.data[fld_size] = '\0';
 
 	/* Call the column type's binary input converter */
-	result = ReceiveFunctionCall(flinfo, &cstate->attribute_buf,
-								 typioparam, typmod);
+	fcinfo->args[0].value = PointerGetDatum(&cstate->attribute_buf);
+	fcinfo->args[0].isnull = false;
+	fcinfo->args[1].value = ObjectIdGetDatum(attr->typioparam);
+	fcinfo->args[1].isnull = false;
+	fcinfo->args[2].value = Int32GetDatum(attr->typmod);
+	fcinfo->args[2].isnull = false;
+
+	result = FunctionCallInvoke(fcinfo);
+
+	if (unlikely(fcinfo->isnull))
+		elog(ERROR, "receive function %u returned NULL",
+			 fcinfo->flinfo->fn_oid);
 
 	/* Trouble if it didn't eat the whole buffer */
 	if (cstate->attribute_buf.cursor != cstate->attribute_buf.len)

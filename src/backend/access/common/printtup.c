@@ -394,7 +394,7 @@ printtup(TupleTableSlot *slot, DestReceiver *self)
 			outputbytes = DatumGetByteaP(result);
 			outputlen = VARSIZE(outputbytes) - VARHDRSZ;
 
-			Assert(outputlen > 0);
+			Assert(outputlen >= 0);
 
 			pq_sendint32(buf, outputlen);
 			pq_sendbytes(buf, VARDATA(outputbytes), outputlen);
