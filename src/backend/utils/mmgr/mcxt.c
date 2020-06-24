@@ -59,6 +59,18 @@ static void MemoryContextStatsInternal(MemoryContext context, int level,
 static void MemoryContextStatsPrint(MemoryContext context, void *passthru,
 									const char *stats_string);
 
+static void AlignedAllocFree(MemoryContext context, void *pointer);
+
+
+static const MemoryContextMethods AlignedRedirectMethods = {
+	.free_p = AlignedAllocFree,
+};
+
+static const MemoryContextData AlignedRedirectContext = {
+	.type = T_AlignedAllocRedirectContext,
+	.methods = &AlignedRedirectMethods
+};
+
 /*
  * You should not do memory allocations within a critical section, because
  * an out-of-memory error will be escalated to a PANIC. To enforce that
@@ -1059,7 +1071,9 @@ pfree(void *pointer)
 	MemoryContext context = GetMemoryChunkContext(pointer);
 
 	context->methods->free_p(context, pointer);
-	VALGRIND_MEMPOOL_FREE(context, pointer);
+
+	if (context != &AlignedRedirectContext)
+		VALGRIND_MEMPOOL_FREE(context, pointer);
 }
 
 /*
@@ -1220,4 +1234,69 @@ pchomp(const char *in)
 	while (n > 0 && in[n - 1] == '\n')
 		n--;
 	return pnstrdup(in, n);
+}
+
+static void
+AlignedAllocFree(MemoryContext context, void *pointer)
+{
+	void *unaligned;
+
+	unaligned = (void *)*(uintptr_t*)((char *) pointer - sizeof(uintptr_t) - sizeof(uintptr_t));
+
+	pfree(unaligned);
+}
+
+void *
+MemoryContextAllocAligned(MemoryContext context,
+						  Size size, Size alignto, int flags)
+{
+	Size		constant_overhead =
+		sizeof(uintptr_t) /* pointer to fake memory context */
+		+ sizeof(uintptr_t) /* pointer to actual allocation */
+		;
+
+	Size		alloc_size;
+	void	   *unaligned;
+	void	   *aligned;
+
+	/* wouldn't make much sense to waste that much space */
+	AssertArg(alignto < (128 * 1024 * 1024));
+
+	if (alignto < MAXIMUM_ALIGNOF)
+		return palloc_extended(size, flags);
+
+	/* allocate enough space for alignment padding */
+	alloc_size = size + alignto + constant_overhead;
+
+	unaligned = MemoryContextAllocExtended(context, alloc_size, flags);
+
+	aligned = (char *) unaligned + constant_overhead;
+	aligned = (void *) TYPEALIGN(alignto, aligned);
+
+	Assert((uintptr_t)aligned - (uintptr_t)unaligned >= constant_overhead);
+
+	*(uintptr_t*)((char *)aligned - sizeof(uintptr_t)) = (uintptr_t) &AlignedRedirectContext;
+	*(uintptr_t*)((char *)aligned - sizeof(uintptr_t) - sizeof(uintptr_t)) = (uintptr_t) unaligned;
+
+	/* XXX: should we adjust valgrind state here? */
+	return aligned;
+}
+
+void *
+MemoryContextAllocIOAligned(MemoryContext context, Size size, int flags)
+{
+	// FIXME: don't hardcode page size
+	return MemoryContextAllocAligned(context, size, 4096, flags);
+}
+
+void *
+palloc_aligned(Size size, Size alignto, int flags)
+{
+	return MemoryContextAllocAligned(CurrentMemoryContext, size, alignto, flags);
+}
+
+void *
+palloc_io_aligned(Size size, int flags)
+{
+	return MemoryContextAllocIOAligned(CurrentMemoryContext, size, flags);
 }

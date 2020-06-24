@@ -186,8 +186,9 @@ gistAllocateNewPageBuffer(GISTBuildBuffers *gfbb)
 {
 	GISTNodeBufferPage *pageBuffer;
 
-	pageBuffer = (GISTNodeBufferPage *) MemoryContextAllocZero(gfbb->context,
-															   BLCKSZ);
+	pageBuffer = (GISTNodeBufferPage *)
+		MemoryContextAllocIOAligned(gfbb->context,
+									BLCKSZ, MCXT_ALLOC_ZERO);
 	pageBuffer->prev = InvalidBlockNumber;
 
 	/* Set page free space */

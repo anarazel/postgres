@@ -1405,7 +1405,7 @@ PageSetChecksumCopy(Page page, BlockNumber blkno)
 	 * and second to avoid wasting space in processes that never call this.
 	 */
 	if (pageCopy == NULL)
-		pageCopy = MemoryContextAlloc(TopMemoryContext, BLCKSZ);
+		pageCopy = MemoryContextAllocIOAligned(TopMemoryContext, BLCKSZ, 0);
 
 	memcpy(pageCopy, (char *) page, BLCKSZ);
 	((PageHeader) pageCopy)->pd_checksum = pg_checksum_page(pageCopy, blkno);

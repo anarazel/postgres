@@ -158,7 +158,7 @@ spgbuildempty(Relation index)
 	Page		page;
 
 	/* Construct metapage. */
-	page = (Page) palloc(BLCKSZ);
+	page = (Page) palloc_io_aligned(BLCKSZ, 0);
 	SpGistInitMetapage(page);
 
 	/*

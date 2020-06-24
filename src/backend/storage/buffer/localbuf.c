@@ -525,8 +525,8 @@ GetLocalBufferStorage(void)
 		/* And don't overflow MaxAllocSize, either */
 		num_bufs = Min(num_bufs, MaxAllocSize / BLCKSZ);
 
-		cur_block = (char *) MemoryContextAlloc(LocalBufferContext,
-												num_bufs * BLCKSZ);
+		cur_block = (char *) MemoryContextAllocIOAligned(LocalBufferContext,
+														 num_bufs * BLCKSZ, 0);
 		next_buf_in_block = 0;
 		num_bufs_in_block = num_bufs;
 	}

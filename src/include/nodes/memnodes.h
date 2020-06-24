@@ -99,10 +99,11 @@ typedef struct MemoryContextData
  *
  * Add new context types to the set accepted by this macro.
  */
-#define MemoryContextIsValid(context) \
+#define MemoryContextIsValid(context)                                         \
 	((context) != NULL && \
 	 (IsA((context), AllocSetContext) || \
 	  IsA((context), SlabContext) || \
-	  IsA((context), GenerationContext)))
+	  IsA((context), GenerationContext) || \
+	  IsA((context), AlignedAllocRedirectContext)))
 
 #endif							/* MEMNODES_H */

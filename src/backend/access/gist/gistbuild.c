@@ -408,7 +408,7 @@ gist_indexsortbuild(GISTBuildState *state)
 	 * Write an empty page as a placeholder for the root page. It will be
 	 * replaced with the real root page at the end.
 	 */
-	page = palloc0(BLCKSZ);
+	page = palloc_io_aligned(BLCKSZ, MCXT_ALLOC_ZERO);
 	RelationOpenSmgr(state->indexrel);
 	smgrextend(state->indexrel->rd_smgr, MAIN_FORKNUM, GIST_ROOT_BLKNO,
 			   page, true);
@@ -530,7 +530,7 @@ gist_indexsortbuild_pagestate_flush(GISTBuildState *state,
 	if (parent == NULL)
 	{
 		parent = palloc(sizeof(GistSortedBuildPageState));
-		parent->page = (Page) palloc(BLCKSZ);
+		parent->page = (Page) palloc_io_aligned(BLCKSZ, 0);
 		parent->parent = NULL;
 		gistinitpage(parent->page, 0);
 
@@ -539,7 +539,7 @@ gist_indexsortbuild_pagestate_flush(GISTBuildState *state,
 	gist_indexsortbuild_pagestate_add(state, parent, union_tuple);
 
 	/* Re-initialize the page buffer for next page on this level. */
-	pagestate->page = palloc(BLCKSZ);
+	pagestate->page = palloc_io_aligned(BLCKSZ, 0);
 	gistinitpage(pagestate->page, isleaf ? F_LEAF : 0);
 
 	/*
