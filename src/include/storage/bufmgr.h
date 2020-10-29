@@ -77,6 +77,7 @@ extern int	backend_flush_after;
 extern int	bgwriter_flush_after;
 
 extern bool io_data_direct;
+extern bool io_data_force_async;
 extern bool io_wal_direct;
 extern bool io_wal_init_direct;
 
@@ -175,7 +176,8 @@ extern PGDLLIMPORT int32 *LocalRefCount;
 /*
  * prototypes for functions in bufmgr.c
  */
-extern PrefetchBufferResult PrefetchSharedBuffer(struct SMgrRelationData *smgr_reln,
+extern PrefetchBufferResult PrefetchSharedBuffer(Relation reln,
+												 struct SMgrRelationData *smgr_reln,
 												 ForkNumber forkNum,
 												 BlockNumber blockNum);
 extern PrefetchBufferResult PrefetchBuffer(Relation reln, ForkNumber forkNum,
@@ -187,6 +189,13 @@ extern Buffer ReadBufferExtended(Relation reln, ForkNumber forkNum,
 extern Buffer ReadBufferWithoutRelcache(RelFileNode rnode,
 										ForkNumber forkNum, BlockNumber blockNum,
 										ReadBufferMode mode, BufferAccessStrategy strategy);
+struct PgAioInProgress;
+extern Buffer ReadBufferAsync(Relation reln, ForkNumber forkNum, BlockNumber blockNum,
+							  ReadBufferMode mode, BufferAccessStrategy strategy,
+							  bool *already_valid, struct PgAioInProgress** aio);
+extern Buffer BulkExtendBuffered(Relation relation, ForkNumber forkNum,
+								 int *extendby,
+								 BufferAccessStrategy strategy);
 extern void ReleaseBuffer(Buffer buffer);
 extern void UnlockReleaseBuffer(Buffer buffer);
 extern void MarkBufferDirty(Buffer buffer);

@@ -85,7 +85,7 @@ typedef struct
  * possible auxiliary process type.  (This scheme assumes there is not
  * more than one of any auxiliary process type at a time.)
  */
-#define NumProcSignalSlots	(MaxBackends + NUM_AUXPROCTYPES)
+#define NumProcSignalSlots	(MaxBackends + NUM_AUXPROCTYPES + MAX_IO_WORKERS)
 
 /* Check whether the relevant type bit is set in the flags. */
 #define BARRIER_SHOULD_CHECK(flags, type) \
@@ -155,7 +155,7 @@ ProcSignalShmemInit(void)
  *		Register the current process in the procsignal array
  *
  * The passed index should be my BackendId if the process has one,
- * or MaxBackends + aux process type if not.
+ * or a unique value above MaxBackends for auxiliary processes.
  */
 void
 ProcSignalInit(int pss_idx)

@@ -175,7 +175,11 @@ static const char *const BuiltinTrancheNames[] = {
 	/* LWTRANCHE_PARALLEL_APPEND: */
 	"ParallelAppend",
 	/* LWTRANCHE_PER_XACT_PREDICATE_LIST: */
-	"PerXactPredicateList"
+	"PerXactPredicateList",
+	/* LWTRANCHE_AIO_CONTEXT_SUBMISSION: */
+	"AioContextSubmission",
+	/* LWTRANCHE_AIO_CONTEXT_COMPLETION: */
+	"AioContextCompletion"
 };
 
 StaticAssertDecl(lengthof(BuiltinTrancheNames) ==

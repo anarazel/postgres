@@ -34,6 +34,7 @@
 #include "catalog/namespace.h"
 #include "catalog/pg_enum.h"
 #include "catalog/storage.h"
+#include "storage/aio.h"
 #include "commands/async.h"
 #include "commands/tablecmds.h"
 #include "commands/trigger.h"
@@ -2211,6 +2212,8 @@ CommitTransaction(void)
 	 */
 	ProcArrayEndTransaction(MyProc, latestXid);
 
+	pgaio_at_commit();
+
 	/*
 	 * This is all post-commit cleanup.  Note that if an error is raised here,
 	 * it's too late to abort the transaction.  This should be just
@@ -2610,6 +2613,8 @@ AbortTransaction(void)
 	/* Make sure we have a valid memory context and resource owner */
 	AtAbort_Memory();
 	AtAbort_ResourceOwner();
+
+	pgaio_at_abort();
 
 	/*
 	 * Release any LW locks we might be holding as quickly as possible.

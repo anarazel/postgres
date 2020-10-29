@@ -1767,6 +1767,31 @@ pg_stat_activity| SELECT s.datid,
    FROM ((pg_stat_get_activity(NULL::integer) s(datid, pid, usesysid, application_name, state, query, wait_event_type, wait_event, xact_start, query_start, backend_start, state_change, client_addr, client_hostname, client_port, backend_xid, backend_xmin, backend_type, ssl, sslversion, sslcipher, sslbits, sslcompression, ssl_client_dn, ssl_client_serial, ssl_issuer_dn, gss_auth, gss_princ, gss_enc, leader_pid)
      LEFT JOIN pg_database d ON ((s.datid = d.oid)))
      LEFT JOIN pg_authid u ON ((s.usesysid = u.oid)));
+pg_stat_aio_backends| SELECT s.pid,
+    s.executed_total_count,
+    s.issued_total_count,
+    s.submissions_total_count,
+    s.foreign_completed_total_count,
+    s.retry_total_count,
+    s.inflight_count,
+    s.unused_count,
+    s.outstanding_count,
+    s.pending_count,
+    s.local_completed_count,
+    s.foreign_completed_count,
+    s.last_context
+   FROM pg_stat_get_aio_backends() s(pid, executed_total_count, issued_total_count, submissions_total_count, foreign_completed_total_count, retry_total_count, inflight_count, unused_count, outstanding_count, pending_count, local_completed_count, foreign_completed_count, last_context);
+pg_stat_aios| SELECT s.id,
+    s.gen,
+    s.op,
+    s.scb,
+    s.flags,
+    s.ring,
+    s.owner_pid,
+    s.merge_with,
+    s.result,
+    s."desc"
+   FROM pg_stat_get_aios() s(id, gen, op, scb, flags, ring, owner_pid, merge_with, result, "desc");
 pg_stat_all_indexes| SELECT c.oid AS relid,
     i.oid AS indexrelid,
     n.nspname AS schemaname,

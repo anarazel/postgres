@@ -17,6 +17,7 @@
 
 #include "port/atomics.h"
 #include "storage/buf.h"
+#include "storage/aio.h"
 #include "storage/bufmgr.h"
 #include "storage/condition_variable.h"
 #include "storage/latch.h"
@@ -186,6 +187,7 @@ typedef struct BufferDesc
 	int			wait_backend_pid;	/* backend PID of pin-count waiter */
 	int			freeNext;		/* link in freelist chain */
 
+	PgAioIoRef	io_in_progress;
 	LWLock		content_lock;	/* to lock access to buffer contents */
 } BufferDesc;
 
@@ -305,6 +307,17 @@ extern void WritebackContextInit(WritebackContext *context, int *max_pending);
 extern void IssuePendingWritebacks(WritebackContext *context);
 extern void ScheduleBufferTagForWriteback(WritebackContext *context, BufferTag *tag);
 
+extern void ReadBufferPrepRead(PgAioInProgress *aio, Buffer buffer);
+extern void ReadBufferPrepWrite(PgAioInProgress *aio, Buffer buffer, bool release_lock);
+extern void ReadBufferCompleteRead(Buffer buffer, char *bufdata, int mode, bool failed);
+extern void ReadBufferCompleteRawRead(const AioBufferTag *tag, char *bufdata, bool failed);
+extern void ReadBufferCompleteWrite(Buffer buffer, bool release_lock, bool failed);
+
+extern Buffer AsyncGetVictimBuffer(BufferAccessStrategy strategy, XLogRecPtr *lsn, PgAioIoRef *aio_ref);
+extern bool AsyncFlushVictim(Buffer buffer, XLogRecPtr *lsn, PgAioIoRef *aio_ref);
+extern bool TryReuseBuffer(Buffer buffer);
+extern void OwnUnusedBuffer(Buffer buffer);
+
 /* freelist.c */
 extern BufferDesc *StrategyGetBuffer(BufferAccessStrategy strategy,
 									 uint32 *buf_state);
@@ -326,6 +339,11 @@ extern uint32 BufTableHashCode(BufferTag *tagPtr);
 extern int	BufTableLookup(BufferTag *tagPtr, uint32 hashcode);
 extern int	BufTableInsert(BufferTag *tagPtr, uint32 hashcode, int buf_id);
 extern void BufTableDelete(BufferTag *tagPtr, uint32 hashcode);
+
+/* in buf_reserve.c */
+
+extern BufferDesc *BufReserveGetFree(BufferAccessStrategy strategy, bool block);
+extern void BufReserveInit(void);
 
 /* localbuf.c */
 extern PrefetchBufferResult PrefetchLocalBuffer(SMgrRelation smgr,

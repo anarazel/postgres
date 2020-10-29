@@ -23,6 +23,7 @@
 #include "common/cryptohash.h"
 #include "common/hashfn.h"
 #include "jit/jit.h"
+#include "storage/aio.h"
 #include "storage/bufmgr.h"
 #include "storage/ipc.h"
 #include "storage/predicate.h"
@@ -130,6 +131,7 @@ typedef struct ResourceOwnerData
 	ResourceArray dsmarr;		/* dynamic shmem segments */
 	ResourceArray jitarr;		/* JIT contexts */
 	ResourceArray cryptohasharr;	/* cryptohash contexts */
+	ResourceArray aiobbarr;		/* AIO BB references */
 
 	/* We can remember up to MAX_RESOWNER_LOCKS references to local locks. */
 	int			nlocks;			/* number of owned locks */
@@ -178,6 +180,7 @@ static void PrintSnapshotLeakWarning(Snapshot snapshot);
 static void PrintFileLeakWarning(File file);
 static void PrintDSMLeakWarning(dsm_segment *seg);
 static void PrintCryptoHashLeakWarning(Datum handle);
+static void PrintAioBBLeakWarning(Datum handle);
 
 
 /*****************************************************************************
@@ -567,6 +570,18 @@ ResourceOwnerReleaseInternal(ResourceOwner owner,
 			if (isCommit)
 				PrintCryptoHashLeakWarning(foundres);
 			pg_cryptohash_free(context);
+		}
+
+		/* Ditto for AIO BBs */
+		/* XXX: reconsider phase? */
+		while (ResourceArrayGetAny(&(owner->aiobbarr), &foundres))
+		{
+			PgAioBounceBuffer *bb = (PgAioBounceBuffer *) PointerGetDatum(foundres);
+
+			if (isCommit)
+				PrintAioBBLeakWarning(foundres);
+
+			pgaio_bounce_buffer_release(bb);
 		}
 	}
 	else if (phase == RESOURCE_RELEASE_LOCKS)
@@ -1427,4 +1442,31 @@ PrintCryptoHashLeakWarning(Datum handle)
 {
 	elog(WARNING, "cryptohash context reference leak: context %p still referenced",
 		 DatumGetPointer(handle));
+}
+
+void
+ResourceOwnerEnlargeAioBB(ResourceOwner owner)
+{
+	ResourceArrayEnlarge(&(owner->aiobbarr));
+}
+
+void
+ResourceOwnerRememberAioBB(ResourceOwner owner, PgAioBounceBuffer *bb)
+{
+	ResourceArrayAdd(&(owner->aiobbarr), PointerGetDatum(bb));
+}
+
+void
+ResourceOwnerForgetAioBB(ResourceOwner owner, PgAioBounceBuffer *bb)
+{
+	if (!ResourceArrayRemove(&(owner->aiobbarr), PointerGetDatum(bb)))
+		elog(ERROR, "aio BB %p is not owned by resource owner %s",
+			 DatumGetPointer(bb), owner->name);
+}
+
+static void
+PrintAioBBLeakWarning(Datum handle)
+{
+	elog(WARNING, "aio BB reference leak: bb %zu still referenced",
+		 handle);
 }

@@ -184,12 +184,14 @@ with_perl	= @with_perl@
 with_python	= @with_python@
 with_tcl	= @with_tcl@
 with_ssl	= @with_ssl@
+with_posix_aio	= @with_posix_aio@
 with_readline	= @with_readline@
 with_selinux	= @with_selinux@
 with_systemd	= @with_systemd@
 with_gssapi	= @with_gssapi@
 with_krb_srvnam	= @with_krb_srvnam@
 with_ldap	= @with_ldap@
+with_liburing	= @with_liburing@
 with_libxml	= @with_libxml@
 with_libxslt	= @with_libxslt@
 with_llvm	= @with_llvm@
@@ -215,6 +217,9 @@ krb_srvtab = @krb_srvtab@
 
 ICU_CFLAGS		= @ICU_CFLAGS@
 ICU_LIBS		= @ICU_LIBS@
+
+LIBURING_CFLAGS		= @LIBURING_CFLAGS@
+LIBURING_LIBS		= @LIBURING_LIBS@
 
 TCLSH			= @TCLSH@
 TCL_LIBS		= @TCL_LIBS@

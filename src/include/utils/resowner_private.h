@@ -102,4 +102,12 @@ extern void ResourceOwnerRememberCryptoHash(ResourceOwner owner,
 extern void ResourceOwnerForgetCryptoHash(ResourceOwner owner,
 										  Datum handle);
 
+/* support for AIO bounce buffer management */
+struct PgAioBounceBuffer;
+extern void ResourceOwnerEnlargeAioBB(ResourceOwner owner);
+extern void ResourceOwnerRememberAioBB(ResourceOwner owner,
+									   struct PgAioBounceBuffer *bb);
+extern void ResourceOwnerForgetAioBB(ResourceOwner owner,
+									 struct PgAioBounceBuffer *bb);
+
 #endif							/* RESOWNER_PRIVATE_H */

@@ -123,6 +123,8 @@ InitBufferPool(void)
 
 			buf->buf_id = i;
 
+			pgaio_io_ref_clear(&buf->io_in_progress);
+
 			/*
 			 * Initially link all the buffers together as unused. Subsequent
 			 * management of this list is done by freelist.c.
@@ -138,6 +140,8 @@ InitBufferPool(void)
 		/* Correct last entry of linked list */
 		GetBufferDescriptor(NBuffers - 1)->freeNext = FREENEXT_END_OF_LIST;
 	}
+
+	BufReserveInit();
 
 	/* Init other shared buffer-management stuff */
 	StrategyInitialize(!foundDescs);

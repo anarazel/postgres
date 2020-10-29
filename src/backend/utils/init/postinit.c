@@ -41,6 +41,7 @@
 #include "postmaster/autovacuum.h"
 #include "postmaster/postmaster.h"
 #include "replication/walsender.h"
+#include "storage/aio.h"
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
@@ -622,6 +623,10 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 						IdleInTransactionSessionTimeoutHandler);
 		RegisterTimeout(IDLE_SESSION_TIMEOUT, IdleSessionTimeoutHandler);
 	}
+
+	/* in bootstrap this is already set up */
+	if (!bootstrap)
+		pgaio_postmaster_child_init();
 
 	/*
 	 * bufmgr needs another initialization call too

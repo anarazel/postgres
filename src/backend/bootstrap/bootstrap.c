@@ -37,6 +37,7 @@
 #include "postmaster/startup.h"
 #include "postmaster/walwriter.h"
 #include "replication/walreceiver.h"
+#include "storage/aio.h"
 #include "storage/bufmgr.h"
 #include "storage/bufpage.h"
 #include "storage/condition_variable.h"
@@ -224,7 +225,7 @@ AuxiliaryProcessMain(int argc, char *argv[])
 	/* If no -x argument, we are a CheckerProcess */
 	MyAuxProcType = CheckerProcess;
 
-	while ((flag = getopt(argc, argv, "B:c:d:D:Fkr:x:X:-:")) != -1)
+	while ((flag = getopt(argc, argv, "B:c:d:D:Fkr:x:Z:X:-:")) != -1)
 	{
 		switch (flag)
 		{
@@ -258,6 +259,9 @@ AuxiliaryProcessMain(int argc, char *argv[])
 				break;
 			case 'x':
 				MyAuxProcType = atoi(optarg);
+				break;
+			case 'Z':
+				MyIoWorkerId = atoi(optarg);
 				break;
 			case 'X':
 				{
@@ -329,6 +333,9 @@ AuxiliaryProcessMain(int argc, char *argv[])
 		case WalReceiverProcess:
 			MyBackendType = B_WAL_RECEIVER;
 			break;
+		case IoWorkerProcess:
+			MyBackendType = B_IO_WORKER;
+			break;
 		default:
 			MyBackendType = B_INVALID;
 	}
@@ -385,13 +392,23 @@ AuxiliaryProcessMain(int argc, char *argv[])
 		 * doesn't have a BackendId, the slot is statically allocated based on
 		 * the auxiliary process type (MyAuxProcType).  Backends use slots
 		 * indexed in the range from 1 to MaxBackends (inclusive), so we use
-		 * MaxBackends + AuxProcType + 1 as the index of the slot for an
-		 * auxiliary process.
-		 *
-		 * This will need rethinking if we ever want more than one of a
-		 * particular auxiliary process type.
+		 * slots above MaxBackends for auxiliary processes.
 		 */
-		ProcSignalInit(MaxBackends + MyAuxProcType + 1);
+		if (MyAuxProcType == IoWorkerProcess)
+		{
+			/* Use the IO worker ID to choose a slot. */
+			if (MyIoWorkerId < 0 || MyIoWorkerId > MAX_IO_WORKERS)
+				elog(ERROR, "unexpected or missing io worker ID: %d",
+					 MyIoWorkerId);
+			ProcSignalInit(MaxBackends + MyIoWorkerId + 1);
+		}
+		else
+		{
+			/* The other auxiliary process types have only one process each. */
+			ProcSignalInit(MaxBackends + MAX_IO_WORKERS + MyAuxProcType + 1);
+		}
+
+		pgaio_postmaster_child_init();
 
 		/* finish setting up bufmgr.c */
 		InitBufferPoolBackend();
@@ -432,6 +449,8 @@ AuxiliaryProcessMain(int argc, char *argv[])
 			 */
 			SetProcessingMode(BootstrapProcessing);
 			bootstrap_signals();
+			InitProcess();
+			pgaio_postmaster_child_init();
 			BootStrapXLOG();
 			BootstrapModeMain();
 			proc_exit(1);		/* should never return */
@@ -460,6 +479,11 @@ AuxiliaryProcessMain(int argc, char *argv[])
 		case WalReceiverProcess:
 			/* don't set signals, walreceiver has its own agenda */
 			WalReceiverMain();
+			proc_exit(1);		/* should never return */
+
+		case IoWorkerProcess:
+			/* don't set signals, io worker has its own agenda */
+			IoWorkerMain();
 			proc_exit(1);		/* should never return */
 
 		default:
@@ -501,11 +525,6 @@ BootstrapModeMain(void)
 	 */
 	if (pg_link_canary_is_frontend())
 		elog(ERROR, "backend is incorrectly linked to frontend functions");
-
-	/*
-	 * Do backend-like initialization for bootstrap mode
-	 */
-	InitProcess();
 
 	InitPostgres(NULL, InvalidOid, NULL, InvalidOid, NULL, false);
 

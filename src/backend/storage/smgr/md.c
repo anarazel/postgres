@@ -32,6 +32,7 @@
 #include "pg_trace.h"
 #include "pgstat.h"
 #include "postmaster/bgwriter.h"
+#include "storage/aio.h"
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
 #include "storage/md.h"
@@ -674,6 +675,59 @@ mdwriteback(SMgrRelation reln, ForkNumber forknum,
 }
 
 /*
+ * mdstartwriteback() -- Tell the kernel to write pages back to storage.
+ *
+ * This accepts a range of blocks because flushing several pages at once is
+ * considerably more efficient than doing so individually.
+ *
+ * Returns the number of blocks writeback was initated for. Note that this may
+ * be less than what was requested (e.g. when the request would have crossed a
+ * segment boundary).  If no IO needed to be issued, InvalidBlockNumber is
+ * returned.
+ */
+BlockNumber
+mdstartwriteback(struct PgAioInProgress *aio,
+				 SMgrRelation reln, ForkNumber forknum,
+				 BlockNumber blocknum, BlockNumber nblocks)
+{
+	BlockNumber nflush = nblocks;
+	off_t		seekpos;
+	MdfdVec    *v;
+	int			segnum_start,
+				segnum_end;
+
+	Assert(!io_data_direct);
+
+	v = _mdfd_getseg(reln, forknum, blocknum, true /* not used */ ,
+					 EXTENSION_RETURN_NULL);
+
+	/*
+	 * We might be flushing buffers of already removed relations, that's
+	 * ok, just ignore that case.
+	 */
+	if (!v)
+		return InvalidBlockNumber;
+
+	/* compute offset inside the current segment */
+	segnum_start = blocknum / RELSEG_SIZE;
+
+	/* compute number of desired writes within the current segment */
+	segnum_end = (blocknum + nblocks - 1) / RELSEG_SIZE;
+	if (segnum_start != segnum_end)
+		nflush = RELSEG_SIZE - (blocknum % ((BlockNumber) RELSEG_SIZE));
+
+	Assert(nflush >= 1);
+	Assert(nflush <= nblocks);
+
+	seekpos = (off_t) BLCKSZ * (blocknum % ((BlockNumber) RELSEG_SIZE));
+
+	if (FileStartWriteback(aio, v->mdfd_vfd, seekpos, (off_t) BLCKSZ * nflush))
+		return nflush;
+	else
+		return InvalidBlockNumber;
+}
+
+/*
  *	mdread() -- Read the specified block from a relation.
  */
 void
@@ -734,6 +788,36 @@ mdread(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 							blocknum, FilePathName(v->mdfd_vfd),
 							nbytes, BLCKSZ)));
 	}
+}
+
+/*
+ *	mdread() -- Read the specified block from a relation.
+ */
+void
+mdstartread(PgAioInProgress *io, SMgrRelation reln,
+			ForkNumber forknum, BlockNumber blocknum,
+			char *buffer)
+{
+	off_t		seekpos;
+	MdfdVec    *v;
+
+	AssertPointerAlignment(buffer, 4096);
+
+	v = _mdfd_getseg(reln, forknum, blocknum, false,
+					 EXTENSION_FAIL | EXTENSION_CREATE_RECOVERY);
+
+	seekpos = (off_t) BLCKSZ * (blocknum % ((BlockNumber) RELSEG_SIZE));
+
+	Assert(seekpos < (off_t) BLCKSZ * RELSEG_SIZE);
+
+	if (!FileStartRead(io, v->mdfd_vfd, buffer, BLCKSZ, seekpos))
+	{
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not write block %u in file \"%s\": %m",
+						blocknum, FilePathName(v->mdfd_vfd))));
+	}
+
 }
 
 /*
@@ -800,6 +884,52 @@ mdwrite(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 
 	if (!skipFsync && !SmgrIsTemp(reln))
 		register_dirty_segment(reln, forknum, v);
+}
+
+/*
+ *	mdstartwrite() -- Asynchronously start a Write the supplied block at the
+ *  appropriate location.
+ */
+void
+mdstartwrite(PgAioInProgress *io, SMgrRelation reln,
+			 ForkNumber forknum, BlockNumber blocknum,
+			 char *buffer, bool skipFsync)
+{
+	off_t		seekpos;
+	MdfdVec    *v;
+
+	/* This assert is too expensive to have on normally ... */
+#ifdef CHECK_WRITE_VS_EXTEND
+	Assert(blocknum < mdnblocks(reln, forknum));
+#endif
+
+	TRACE_POSTGRESQL_SMGR_MD_WRITE_START(forknum, blocknum,
+										 reln->smgr_rnode.node.spcNode,
+										 reln->smgr_rnode.node.dbNode,
+										 reln->smgr_rnode.node.relNode,
+										 reln->smgr_rnode.backend);
+
+	v = _mdfd_getseg(reln, forknum, blocknum, skipFsync,
+					 EXTENSION_FAIL | EXTENSION_CREATE_RECOVERY);
+
+	seekpos = (off_t) BLCKSZ * (blocknum % ((BlockNumber) RELSEG_SIZE));
+
+	Assert(seekpos < (off_t) BLCKSZ * RELSEG_SIZE);
+
+	/*
+	 * XXX: In the synchronous case this is after the write - should be fine,
+	 * I think?
+	 */
+	if (!skipFsync && !SmgrIsTemp(reln))
+		register_dirty_segment(reln, forknum, v);
+
+	if (!FileStartWrite(io, v->mdfd_vfd, buffer, BLCKSZ, seekpos))
+	{
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not write block %u in file \"%s\": %m",
+						blocknum, FilePathName(v->mdfd_vfd))));
+	}
 }
 
 /*
@@ -1043,6 +1173,21 @@ register_dirty_segment(SMgrRelation reln, ForkNumber forknum, MdfdVec *seg)
 					 errmsg("could not fsync file \"%s\": %m",
 							FilePathName(seg->mdfd_vfd))));
 	}
+}
+
+int
+mdfd(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum, uint32 *off)
+{
+	MdfdVec    *v = mdopenfork(reln, forknum, EXTENSION_FAIL);
+
+	v = _mdfd_getseg(reln, forknum, blocknum, false,
+					 EXTENSION_FAIL);
+
+	*off = (off_t) BLCKSZ * (blocknum % ((BlockNumber) RELSEG_SIZE));
+
+	Assert(*off < (off_t) BLCKSZ * RELSEG_SIZE);
+
+	return FileGetRawDesc(v->mdfd_vfd);
 }
 
 /*
