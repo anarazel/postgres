@@ -363,6 +363,21 @@ CheckpointerMain(void)
 			BgWriterStats.m_requested_checkpoints++;
 		}
 
+		/* Check for archive_timeout and switch xlog files if necessary. */
+		CheckArchiveTimeout();
+
+		/*
+		 * Send off activity statistics to the stats collector.  (The reason
+		 * why we re-use bgwriter-related code for this is that the bgwriter
+		 * and checkpointer used to be just one process.  It's probably not
+		 * worth the trouble to split the stats support into two independent
+		 * stats message types.)
+		 */
+		pgstat_send_bgwriter();
+
+		/* Send WAL statistics to the stats collector. */
+		pgstat_send_wal();
+
 		/*
 		 * Force a checkpoint if too much time has elapsed since the last one.
 		 * Note that we count a timed checkpoint in stats only when this
@@ -380,9 +395,29 @@ CheckpointerMain(void)
 		}
 
 		/*
-		 * Do a checkpoint if requested.
+		 * Do a checkpoint if requested, or wait until it's time to do so.
 		 */
-		if (do_checkpoint)
+		if (!do_checkpoint)
+		{
+			/*
+			 * Sleep until we are signaled or it's time for another checkpoint or
+			 * xlog file switch.
+			 */
+			cur_timeout = CheckPointTimeout - elapsed_secs;
+			if (XLogArchiveTimeout > 0 && !RecoveryInProgress())
+			{
+				elapsed_secs = now - last_xlog_switch_time;
+				if (elapsed_secs >= XLogArchiveTimeout)
+					continue;		/* no sleep for us ... */
+				cur_timeout = Min(cur_timeout, XLogArchiveTimeout - elapsed_secs);
+			}
+
+			(void) WaitLatch(MyLatch,
+							 WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH,
+							 cur_timeout * 1000L /* convert to ms */ ,
+							 WAIT_EVENT_CHECKPOINTER_MAIN);
+		}
+		else
 		{
 			bool		ckpt_performed = false;
 			bool		do_restartpoint;
@@ -491,50 +526,6 @@ CheckpointerMain(void)
 
 			ckpt_active = false;
 		}
-
-		/* Check for archive_timeout and switch xlog files if necessary. */
-		CheckArchiveTimeout();
-
-		/*
-		 * Send off activity statistics to the stats collector.  (The reason
-		 * why we re-use bgwriter-related code for this is that the bgwriter
-		 * and checkpointer used to be just one process.  It's probably not
-		 * worth the trouble to split the stats support into two independent
-		 * stats message types.)
-		 */
-		pgstat_send_bgwriter();
-
-		/* Send WAL statistics to the stats collector. */
-		pgstat_send_wal();
-
-		/*
-		 * If any checkpoint flags have been set, redo the loop to handle the
-		 * checkpoint without sleeping.
-		 */
-		if (((volatile CheckpointerShmemStruct *) CheckpointerShmem)->ckpt_flags)
-			continue;
-
-		/*
-		 * Sleep until we are signaled or it's time for another checkpoint or
-		 * xlog file switch.
-		 */
-		now = (pg_time_t) time(NULL);
-		elapsed_secs = now - last_checkpoint_time;
-		if (elapsed_secs >= CheckPointTimeout)
-			continue;			/* no sleep for us ... */
-		cur_timeout = CheckPointTimeout - elapsed_secs;
-		if (XLogArchiveTimeout > 0 && !RecoveryInProgress())
-		{
-			elapsed_secs = now - last_xlog_switch_time;
-			if (elapsed_secs >= XLogArchiveTimeout)
-				continue;		/* no sleep for us ... */
-			cur_timeout = Min(cur_timeout, XLogArchiveTimeout - elapsed_secs);
-		}
-
-		(void) WaitLatch(MyLatch,
-						 WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH,
-						 cur_timeout * 1000L /* convert to ms */ ,
-						 WAIT_EVENT_CHECKPOINTER_MAIN);
 	}
 }
 
