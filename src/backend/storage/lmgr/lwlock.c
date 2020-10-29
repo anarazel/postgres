@@ -1695,7 +1695,7 @@ LWLockWaitForVar(LWLock *lock, uint64 *valptr, uint64 oldval, uint64 *newval)
 		lwstats->block_count++;
 #endif
 
-		LWLockReportWaitStart(lock);
+		/* Don't use LWLockReportWaitStart here, we're not actually waiting for the lock */
 		TRACE_POSTGRESQL_LWLOCK_WAIT_START(T_NAME(lock), LW_EXCLUSIVE);
 
 		for (;;)
@@ -1716,7 +1716,6 @@ LWLockWaitForVar(LWLock *lock, uint64 *valptr, uint64 oldval, uint64 *newval)
 #endif
 
 		TRACE_POSTGRESQL_LWLOCK_WAIT_DONE(T_NAME(lock), LW_EXCLUSIVE);
-		LWLockReportWaitEnd();
 
 		LOG_LWDEBUG("LWLockWaitForVar", lock, "awakened");
 
