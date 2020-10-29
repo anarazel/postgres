@@ -146,8 +146,6 @@ static const char *const BuiltinTrancheNames[] = {
 	"WALInsert",
 	/* LWTRANCHE_BUFFER_CONTENT: */
 	"BufferContent",
-	/* LWTRANCHE_BUFFER_IO: */
-	"BufferIO",
 	/* LWTRANCHE_REPLICATION_ORIGIN_STATE: */
 	"ReplicationOriginState",
 	/* LWTRANCHE_REPLICATION_SLOT_IO: */
