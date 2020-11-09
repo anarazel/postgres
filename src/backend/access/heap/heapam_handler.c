@@ -2329,7 +2329,7 @@ heapam_scan_sample_next_block(TableScanDesc scan, SampleScanState *scanstate)
 		return false;
 	}
 
-	heapgetpage(scan, blockno);
+	heapgetpage(scan, blockno, InvalidBuffer);
 	hscan->rs_inited = true;
 
 	return true;
