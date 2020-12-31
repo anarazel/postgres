@@ -225,7 +225,7 @@ ConditionVariableTimedSleep(ConditionVariable *cv, long timeout,
  * during transaction abort to clean up any unfinished CV sleep.
  */
 void
-ConditionVariableCancelSleep(void)
+ConditionVariableCancelSleepEx(bool only_broadcasts)
 {
 	ConditionVariable *cv = cv_sleep_target;
 	bool		signaled = false;
@@ -245,10 +245,16 @@ ConditionVariableCancelSleep(void)
 	 * there is one.  Otherwise a call to ConditionVariableSignal() might get
 	 * lost, despite there being another process ready to handle it.
 	 */
-	if (signaled)
+	if (signaled && !only_broadcasts)
 		ConditionVariableSignal(cv);
 
 	cv_sleep_target = NULL;
+}
+
+void
+ConditionVariableCancelSleep(void)
+{
+	ConditionVariableCancelSleepEx(false);
 }
 
 /*
