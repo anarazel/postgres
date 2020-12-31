@@ -474,6 +474,15 @@ typedef struct PgStat_MsgWal
 	PgStat_Counter m_wal_fpi;
 	uint64		m_wal_bytes;
 	PgStat_Counter m_wal_buffers_full;
+	PgStat_Counter m_wal_writes;
+	PgStat_Counter m_wal_already_done_unlocked;
+	PgStat_Counter m_wal_already_done_locked;
+	PgStat_Counter m_wal_just_wait;
+	PgStat_Counter m_wal_lock_immed;
+	PgStat_Counter m_wal_lock_wait;
+	PgStat_Counter m_wal_partial_wait;
+	PgStat_Counter m_wal_partial_pad;
+	PgStat_Counter m_wal_partial_pad_bytes;
 } PgStat_MsgWal;
 
 /* ----------
@@ -839,6 +848,15 @@ typedef struct PgStat_WalStats
 	PgStat_Counter wal_fpi;
 	uint64		wal_bytes;
 	PgStat_Counter wal_buffers_full;
+	PgStat_Counter wal_writes;
+	PgStat_Counter wal_already_done_unlocked;
+	PgStat_Counter wal_already_done_locked;
+	PgStat_Counter wal_just_wait;
+	PgStat_Counter wal_lock_immed;
+	PgStat_Counter wal_lock_wait;
+	PgStat_Counter wal_partial_wait;
+	PgStat_Counter wal_partial_pad;
+	PgStat_Counter wal_partial_pad_bytes;
 	TimestampTz stat_reset_timestamp;
 } PgStat_WalStats;
 

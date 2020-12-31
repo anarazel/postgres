@@ -3480,6 +3480,9 @@ show_wal_usage(ExplainState *es, const WalUsage *usage)
 			if (usage->wal_bytes > 0)
 				appendStringInfo(es->str, " bytes=" UINT64_FORMAT,
 								 usage->wal_bytes);
+			if (usage->wal_partial_pad_bytes > 0)
+				appendStringInfo(es->str, " pad_bytes=" UINT64_FORMAT,
+								 usage->wal_partial_pad_bytes);
 			appendStringInfoChar(es->str, '\n');
 		}
 	}

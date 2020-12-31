@@ -250,6 +250,15 @@ WalUsageAdd(WalUsage *dst, WalUsage *add)
 	dst->wal_records += add->wal_records;
 	dst->wal_fpi += add->wal_fpi;
 	dst->wal_buffers_full += add->wal_buffers_full;
+	dst->wal_writes += add->wal_writes;
+	dst->wal_already_done_unlocked += add->wal_already_done_unlocked;
+	dst->wal_already_done_locked += add->wal_already_done_locked;
+	dst->wal_just_wait += add->wal_just_wait;
+	dst->wal_lock_immed += add->wal_lock_immed;
+	dst->wal_lock_wait += add->wal_lock_wait;
+	dst->wal_partial_wait += add->wal_partial_wait;
+	dst->wal_partial_pad += add->wal_partial_pad;
+	dst->wal_partial_pad_bytes += add->wal_partial_pad_bytes;
 }
 
 void
@@ -259,4 +268,13 @@ WalUsageAccumDiff(WalUsage *dst, const WalUsage *add, const WalUsage *sub)
 	dst->wal_records += add->wal_records - sub->wal_records;
 	dst->wal_fpi += add->wal_fpi - sub->wal_fpi;
 	dst->wal_buffers_full += add->wal_buffers_full - sub->wal_buffers_full;
+	dst->wal_writes += add->wal_writes - sub->wal_writes;
+	dst->wal_already_done_unlocked += add->wal_already_done_unlocked - sub->wal_already_done_unlocked;
+	dst->wal_already_done_locked += add->wal_already_done_locked - sub->wal_already_done_locked;
+	dst->wal_just_wait += add->wal_just_wait - sub->wal_just_wait;
+	dst->wal_lock_immed += add->wal_lock_immed - sub->wal_lock_immed;
+	dst->wal_lock_wait += add->wal_lock_wait - sub->wal_lock_wait;
+	dst->wal_partial_wait += add->wal_partial_wait - sub->wal_partial_wait;
+	dst->wal_partial_pad += add->wal_partial_pad - sub->wal_partial_pad;
+	dst->wal_partial_pad_bytes += add->wal_partial_pad_bytes - sub->wal_partial_pad_bytes;
 }

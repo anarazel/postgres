@@ -4727,6 +4727,15 @@ pgstat_send_wal(void)
 	WalStats.m_wal_fpi = walusage.wal_fpi;
 	WalStats.m_wal_bytes = walusage.wal_bytes;
 	WalStats.m_wal_buffers_full = walusage.wal_buffers_full;
+	WalStats.m_wal_writes = walusage.wal_writes;
+	WalStats.m_wal_already_done_unlocked = walusage.wal_already_done_unlocked;
+	WalStats.m_wal_already_done_locked = walusage.wal_already_done_locked;
+	WalStats.m_wal_just_wait = walusage.wal_just_wait;
+	WalStats.m_wal_lock_immed = walusage.wal_lock_immed;
+	WalStats.m_wal_lock_wait = walusage.wal_lock_wait;
+	WalStats.m_wal_partial_wait = walusage.wal_partial_wait;
+	WalStats.m_wal_partial_pad = walusage.wal_partial_pad;
+	WalStats.m_wal_partial_pad_bytes = walusage.wal_partial_pad_bytes;
 
 	/*
 	 * This function can be called even if nothing at all has happened. In
@@ -6928,6 +6937,15 @@ pgstat_recv_wal(PgStat_MsgWal *msg, int len)
 	walStats.wal_fpi += msg->m_wal_fpi;
 	walStats.wal_bytes += msg->m_wal_bytes;
 	walStats.wal_buffers_full += msg->m_wal_buffers_full;
+	walStats.wal_writes += msg->m_wal_writes;
+	walStats.wal_already_done_unlocked += msg->m_wal_already_done_unlocked;
+	walStats.wal_already_done_locked += msg->m_wal_already_done_locked;
+	walStats.wal_just_wait += msg->m_wal_just_wait;
+	walStats.wal_lock_immed += msg->m_wal_lock_immed;
+	walStats.wal_lock_wait += msg->m_wal_lock_wait;
+	walStats.wal_partial_wait += msg->m_wal_partial_wait;
+	walStats.wal_partial_pad += msg->m_wal_partial_pad;
+	walStats.wal_partial_pad_bytes += msg->m_wal_partial_pad_bytes;
 }
 
 /* ----------

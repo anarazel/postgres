@@ -2185,8 +2185,17 @@ pg_stat_wal| SELECT w.wal_records,
     w.wal_fpi,
     w.wal_bytes,
     w.wal_buffers_full,
+    w.wal_writes,
+    w.wal_already_done_unlocked,
+    w.wal_already_done_locked,
+    w.wal_just_wait,
+    w.wal_lock_immed,
+    w.wal_lock_wait,
+    w.wal_partial_wait,
+    w.wal_partial_pad,
+    w.wal_partial_pad_bytes,
     w.stats_reset
-   FROM pg_stat_get_wal() w(wal_records, wal_fpi, wal_bytes, wal_buffers_full, stats_reset);
+   FROM pg_stat_get_wal() w(wal_records, wal_fpi, wal_bytes, wal_buffers_full, wal_writes, wal_already_done_unlocked, wal_already_done_locked, wal_just_wait, wal_lock_immed, wal_lock_wait, wal_partial_wait, wal_partial_pad, wal_partial_pad_bytes, stats_reset);
 pg_stat_wal_receiver| SELECT s.pid,
     s.status,
     s.receive_start_lsn,
