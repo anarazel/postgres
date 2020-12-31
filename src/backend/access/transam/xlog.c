@@ -1925,14 +1925,33 @@ AdvanceXLInsertBuffer(XLogRecPtr upto, TimeLineID tli, bool opportunistic)
 	XLogPageHeader NewPage;
 	int			npages pg_attribute_unused() = 0;
 
-	LWLockAcquire(WALBufMappingLock, LW_EXCLUSIVE);
+retry:
+	if (opportunistic)
+	{
+		if (!LWLockConditionalAcquire(WALBufMappingLock, LW_EXCLUSIVE))
+			return;
+	}
+	else if (!LWLockAcquireOrWait(WALBufMappingLock, LW_EXCLUSIVE))
+	{
+		if (upto < XLogCtl->InitializedUpTo)
+			return;
+		goto retry;
+	}
 
 	/*
 	 * Now that we have the lock, check if someone initialized the page
 	 * already.
 	 */
-	while (upto >= XLogCtl->InitializedUpTo || opportunistic)
+	while (true)
 	{
+		if (!opportunistic && upto < XLogCtl->InitializedUpTo)
+		{
+			ereport(DEBUG3, errmsg("moving to opportunistic"),
+					errhidestmt(true),
+					errhidecontext(true));
+			opportunistic = true;
+		}
+
 		nextidx = XLogRecPtrToBufIdx(XLogCtl->InitializedUpTo);
 
 		/*
@@ -1982,9 +2001,7 @@ AdvanceXLInsertBuffer(XLogRecPtr upto, TimeLineID tli, bool opportunistic)
 				PendingWalStats.wal_buffers_full++;
 				TRACE_POSTGRESQL_WAL_BUFFER_WRITE_DIRTY_DONE();
 
-				/* Re-acquire WALBufMappingLock and retry */
-				LWLockAcquire(WALBufMappingLock, LW_EXCLUSIVE);
-				continue;
+				goto retry;
 			}
 		}
 
@@ -2002,6 +2019,10 @@ AdvanceXLInsertBuffer(XLogRecPtr upto, TimeLineID tli, bool opportunistic)
 		/*
 		 * Be sure to re-zero the buffer so that bytes beyond what we've
 		 * written will look like zeroes and not valid XLOG records...
+		 *
+		 * FIXME: We should avoid doing this under the lock - that's pretty
+		 * slow. It's also not helpful to cause unnecessary cacheline pingpong
+		 * for the page(s) in concurrent workloads.
 		 */
 		MemSet((char *) NewPage, 0, XLOG_BLCKSZ);
 
