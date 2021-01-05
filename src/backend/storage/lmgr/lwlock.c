@@ -1794,51 +1794,35 @@ LWLockUpdateVar(LWLock *lock, uint64 *valptr, uint64 val)
 	}
 }
 
-
-/*
- * LWLockRelease - release a previously acquired lock
- */
-void
-LWLockRelease(LWLock *lock)
+static void
+LWLockReleaseInternal(LWLock *lock, LWLockMode mode)
 {
-	LWLockMode	mode;
 	uint32		oldstate;
 	bool		check_waiters;
-	int			i;
-
-	/*
-	 * Remove lock from list of locks held.  Usually, but not always, it will
-	 * be the latest-acquired lock; so search array backwards.
-	 */
-	for (i = num_held_lwlocks; --i >= 0;)
-		if (lock == held_lwlocks[i].lock)
-			break;
-
-	if (i < 0)
-		elog(ERROR, "lock %s is not held", T_NAME(lock));
-
-	mode = held_lwlocks[i].mode;
-
-	num_held_lwlocks--;
-	for (; i < num_held_lwlocks; i++)
-		held_lwlocks[i] = held_lwlocks[i + 1];
-
-	PRINT_LWDEBUG("LWLockRelease", lock, mode);
 
 	/*
 	 * Release my hold on lock, after that it can immediately be acquired by
 	 * others, even if we still have to wakeup other waiters.
 	 */
 	if (mode == LW_EXCLUSIVE)
-		oldstate = pg_atomic_sub_fetch_u32(&lock->state, LW_VAL_EXCLUSIVE);
+		oldstate = pg_atomic_fetch_sub_u32(&lock->state, LW_VAL_EXCLUSIVE);
 	else
-		oldstate = pg_atomic_sub_fetch_u32(&lock->state, LW_VAL_SHARED);
+		oldstate = pg_atomic_fetch_sub_u32(&lock->state, LW_VAL_SHARED);
 
 	/* nobody else can have that kind of lock */
-	Assert(!(oldstate & LW_VAL_EXCLUSIVE));
+	if (mode == LW_EXCLUSIVE)
+		Assert((oldstate & LW_LOCK_MASK) == LW_VAL_EXCLUSIVE);
+	else
+		Assert((oldstate & LW_LOCK_MASK) < LW_VAL_EXCLUSIVE &&
+			   (oldstate & LW_LOCK_MASK) >= LW_VAL_SHARED);
 
 	if (TRACE_POSTGRESQL_LWLOCK_RELEASE_ENABLED())
 		TRACE_POSTGRESQL_LWLOCK_RELEASE(T_NAME(lock));
+
+	if (mode == LW_EXCLUSIVE)
+		oldstate -= LW_VAL_EXCLUSIVE;
+	else
+		oldstate -= LW_VAL_SHARED;
 
 	/*
 	 * We're still waiting for backends to get scheduled, don't wake them up
@@ -1861,6 +1845,58 @@ LWLockRelease(LWLock *lock)
 		LOG_LWDEBUG("LWLockRelease", lock, "releasing waiters");
 		LWLockWakeup(lock);
 	}
+
+	TRACE_POSTGRESQL_LWLOCK_RELEASE(T_NAME(lock));
+}
+
+void
+LWLockReleaseUnowned(LWLock *lock, LWLockMode mode)
+{
+	LWLockReleaseInternal(lock, mode);
+}
+
+/*
+ * XXX: this doesn't do a RESUME_INTERRUPTS(), responsibility of the caller.
+ */
+LWLockMode
+LWLockReleaseOwnership(LWLock *lock)
+{
+	LWLockMode	mode;
+	int			i;
+
+	/*
+	 * Remove lock from list of locks held.  Usually, but not always, it will
+	 * be the latest-acquired lock; so search array backwards.
+	 */
+	for (i = num_held_lwlocks; --i >= 0;)
+		if (lock == held_lwlocks[i].lock)
+			break;
+
+	if (i < 0)
+		elog(ERROR, "lock %s is not held", T_NAME(lock));
+
+	mode = held_lwlocks[i].mode;
+
+	num_held_lwlocks--;
+	for (; i < num_held_lwlocks; i++)
+		held_lwlocks[i] = held_lwlocks[i + 1];
+
+	return mode;
+}
+
+/*
+ * LWLockRelease - release a previously acquired lock
+ */
+void
+LWLockRelease(LWLock *lock)
+{
+	LWLockMode	mode;
+
+	mode = LWLockReleaseOwnership(lock);
+
+	PRINT_LWDEBUG("LWLockRelease", lock, mode);
+
+	LWLockReleaseInternal(lock, mode);
 
 	/*
 	 * Now okay to allow cancel/die interrupts.
