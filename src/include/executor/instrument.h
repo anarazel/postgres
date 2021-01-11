@@ -37,6 +37,7 @@ typedef struct WalUsage
 	long		wal_records;	/* # of WAL records produced */
 	long		wal_fpi;		/* # of WAL full page images produced */
 	uint64		wal_bytes;		/* size of WAL records produced */
+	uint64      wal_buffers_full;
 } WalUsage;
 
 /* Flag bits included in InstrAlloc's instrument_options bitmask */

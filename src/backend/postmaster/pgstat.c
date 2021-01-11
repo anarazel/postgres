@@ -4691,6 +4691,7 @@ pgstat_send_wal(void)
 	WalStats.m_wal_records = walusage.wal_records;
 	WalStats.m_wal_fpi = walusage.wal_fpi;
 	WalStats.m_wal_bytes = walusage.wal_bytes;
+	WalStats.m_wal_buffers_full = walusage.wal_buffers_full;
 
 	/*
 	 * This function can be called even if nothing at all has happened. In
