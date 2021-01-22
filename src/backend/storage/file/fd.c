@@ -251,6 +251,23 @@ typedef struct
 	}			desc;
 } AllocateDesc;
 
+/*
+ * Helpers for AIO use in SyncDataDirectory().
+ */
+typedef struct sync_entry
+{
+	int fd;
+	bool isdir;
+	char fname[MAXPGPATH];
+} sync_entry;
+
+typedef struct sync_walkdir_state
+{
+	int elevel;
+	PgStreamingWrite *pgsw;
+} sync_walkdir_state;
+
+
 static int	numAllocatedDescs = 0;
 static int	maxAllocatedDescs = 0;
 static AllocateDesc *allocatedDescs = NULL;
@@ -329,17 +346,21 @@ static void RemovePgTempRelationFiles(const char *tsdirname);
 static void RemovePgTempRelationFilesInDbspace(const char *dbspacedirname);
 
 static void walkdir(const char *path,
-					void (*action) (const char *fname, bool isdir, int elevel),
+					void (*action) (const char *fname, bool isdir, int elevel, uintptr_t state),
 					bool process_symlinks,
-					int elevel);
+					int elevel,
+					uintptr_t state);
+
 #ifdef PG_FLUSH_DATA_WORKS
-static void pre_sync_fname(const char *fname, bool isdir, int elevel);
+static void pre_sync_fname(const char *fname, bool isdir, int elevel, uintptr_t state);
 #endif
-static void datadir_fsync_fname(const char *fname, bool isdir, int elevel);
-static void unlink_if_exists_fname(const char *fname, bool isdir, int elevel);
+static void datadir_fsync_fname(const char *fname, bool isdir, int elevel, uintptr_t state);
+static void unlink_if_exists_fname(const char *fname, bool isdir, int elevel, uintptr_t state);
 
 static int	fsync_parent_path(const char *fname, int elevel);
 
+static bool fsync_fname_open(const char *fname, bool isdir, bool ignore_perm, int elevel, int *ret);
+static int fsync_fname_close(int fd, bool failed, const char *fname, bool isdir, int elevel);
 
 /*
  * pg_fsync --- do fsync with or without writethrough
@@ -1583,13 +1604,13 @@ PathNameDeleteTemporaryDir(const char *dirname)
 		return;
 
 	/*
-	 * Currently, walkdir doesn't offer a way for our passed in function to
-	 * maintain state.  Perhaps it should, so that we could tell the caller
-	 * whether this operation succeeded or failed.  Since this operation is
-	 * used in a cleanup path, we wouldn't actually behave differently: we'll
-	 * just log failures.
+	 * Walkdir used to not offer a way for our passed in function to maintain
+	 * state.  Now that it does, perhaps we should tell the caller whether
+	 * this operation succeeded or failed? But since this operation is used in
+	 * a cleanup path, we wouldn't actually behave differently: We'd just log
+	 * failures.
 	 */
-	walkdir(dirname, unlink_if_exists_fname, false, LOG);
+	walkdir(dirname, unlink_if_exists_fname, false, LOG, 0);
 }
 
 /*
@@ -3382,6 +3403,31 @@ looks_like_temp_rel_name(const char *name)
 	return true;
 }
 
+static void
+sync_completed(PgStreamingWrite *pgsw, void *pgsw_private, int result, void *write_private)
+{
+	sync_walkdir_state *sync_state = (sync_walkdir_state *) pgsw_private;
+	sync_entry *entry = (sync_entry *) write_private;
+
+	if (result < 0)
+		errno = -result;
+	fsync_fname_close(entry->fd, result < 0, entry->fname, entry->isdir, sync_state->elevel);
+	pfree(entry);
+}
+
+static bool
+sync_retry(PgStreamingWrite *pgsw, void *pgsw_private, PgAioInProgress *aio, void *write_private)
+{
+	int result = pgaio_io_result(aio);
+
+	if (result == -EINTR || result == -EAGAIN)
+	{
+		pgaio_io_retry(aio);
+		return true;
+	}
+
+	return false;
+}
 
 /*
  * Issue fsync recursively on PGDATA and all its contents.
@@ -3407,6 +3453,7 @@ looks_like_temp_rel_name(const char *name)
 void
 SyncDataDirectory(void)
 {
+	sync_walkdir_state sync_state;
 	bool		xlog_is_symlink;
 
 	/* We can skip this whole thing if fsync is disabled. */
@@ -3436,17 +3483,25 @@ SyncDataDirectory(void)
 		xlog_is_symlink = true;
 #endif
 
+	sync_state.pgsw = pg_streaming_write_alloc(32, &sync_state);
+
 	/*
 	 * If possible, hint to the kernel that we're soon going to fsync the data
 	 * directory and its contents.  Errors in this step are even less
 	 * interesting than normal, so log them only at DEBUG1.
 	 */
 #ifdef PG_FLUSH_DATA_WORKS
-	walkdir(".", pre_sync_fname, false, DEBUG1);
+	sync_state.elevel = DEBUG1;
+
+	walkdir(".", pre_sync_fname, false, DEBUG1, (uintptr_t) &sync_state);
 	if (xlog_is_symlink)
-		walkdir("pg_wal", pre_sync_fname, false, DEBUG1);
-	walkdir("pg_tblspc", pre_sync_fname, true, DEBUG1);
+		walkdir("pg_wal", pre_sync_fname, false, DEBUG1, (uintptr_t) &sync_state);
+	walkdir("pg_tblspc", pre_sync_fname, true, DEBUG1, (uintptr_t) &sync_state);
+
+	pg_streaming_write_wait_all(sync_state.pgsw);
 #endif
+
+	sync_state.elevel = LOG;
 
 	/*
 	 * Now we do the fsync()s in the same order.
@@ -3457,10 +3512,13 @@ SyncDataDirectory(void)
 	 * in pg_tblspc, they'll get fsync'd twice.  That's not an expected case
 	 * so we don't worry about optimizing it.
 	 */
-	walkdir(".", datadir_fsync_fname, false, LOG);
+	walkdir(".", datadir_fsync_fname, false, LOG, (uintptr_t) &sync_state);
 	if (xlog_is_symlink)
-		walkdir("pg_wal", datadir_fsync_fname, false, LOG);
-	walkdir("pg_tblspc", datadir_fsync_fname, true, LOG);
+		walkdir("pg_wal", datadir_fsync_fname, false, LOG, (uintptr_t) &sync_state);
+	walkdir("pg_tblspc", datadir_fsync_fname, true, LOG, (uintptr_t) &sync_state);
+
+	pg_streaming_write_wait_all(sync_state.pgsw);
+	pg_streaming_write_free(sync_state.pgsw);
 }
 
 /*
@@ -3480,9 +3538,10 @@ SyncDataDirectory(void)
  */
 static void
 walkdir(const char *path,
-		void (*action) (const char *fname, bool isdir, int elevel),
+		void (*action) (const char *fname, bool isdir, int elevel, uintptr_t state),
 		bool process_symlinks,
-		int elevel)
+		int elevel,
+		uintptr_t state)
 {
 	DIR		   *dir;
 	struct dirent *de;
@@ -3504,10 +3563,10 @@ walkdir(const char *path,
 		switch (get_dirent_type(subpath, de, process_symlinks, elevel))
 		{
 			case PGFILETYPE_REG:
-				(*action) (subpath, false, elevel);
+				(*action) (subpath, false, elevel, state);
 				break;
 			case PGFILETYPE_DIR:
-				walkdir(subpath, action, false, elevel);
+				walkdir(subpath, action, false, elevel, state);
 				break;
 			default:
 
@@ -3529,7 +3588,7 @@ walkdir(const char *path,
 	 * might not be robust against that.
 	 */
 	if (dir)
-		(*action) (path, true, elevel);
+		(*action) (path, true, elevel, state);
 }
 
 
@@ -3542,9 +3601,26 @@ walkdir(const char *path,
 #ifdef PG_FLUSH_DATA_WORKS
 
 static void
-pre_sync_fname(const char *fname, bool isdir, int elevel)
+pre_sync_completed(PgStreamingWrite *pgsw, void *pgsw_private, int result, void *write_private)
+{
+	sync_walkdir_state *sync_state = (sync_walkdir_state *) pgsw_private;
+	sync_entry *entry = (sync_entry *) write_private;
+
+	if (CloseTransientFile(entry->fd) != 0)
+		ereport(sync_state->elevel,
+				(errcode_for_file_access(),
+				 errmsg("could not close file \"%s\": %m", entry->fname)));
+
+	pfree(entry);
+}
+
+static void
+pre_sync_fname(const char *fname, bool isdir, int elevel, uintptr_t state)
 {
 	int			fd;
+	sync_walkdir_state *sync_state = (sync_walkdir_state *) state;
+	PgAioInProgress *aio;
+	sync_entry *entry;
 
 	/* Don't try to flush directories, it'll likely just fail */
 	if (isdir)
@@ -3562,39 +3638,58 @@ pre_sync_fname(const char *fname, bool isdir, int elevel)
 		return;
 	}
 
-	/*
-	 * pg_flush_data() ignores errors, which is ok because this is only a
-	 * hint.
-	 */
-	pg_flush_data(fd, 0, 0);
+	entry = palloc(sizeof(sync_entry));
+	entry->fd = fd;
+	entry->isdir = isdir;
+	strlcpy(entry->fname, fname, MAXPGPATH);
 
-	if (CloseTransientFile(fd) != 0)
-		ereport(elevel,
-				(errcode_for_file_access(),
-				 errmsg("could not close file \"%s\": %m", fname)));
+	aio = pg_streaming_write_get_io(sync_state->pgsw);
+	pgaio_io_start_flush_range_raw(aio, fd, 0, 0);
+	pg_streaming_write_write(sync_state->pgsw, aio, pre_sync_completed, NULL, entry);
 }
 
 #endif							/* PG_FLUSH_DATA_WORKS */
 
 static void
-datadir_fsync_fname(const char *fname, bool isdir, int elevel)
+datadir_fsync_fname(const char *fname, bool isdir, int elevel, uintptr_t state)
 {
+	sync_walkdir_state *sync_state = (sync_walkdir_state *) state;
+	PgAioInProgress *aio;
+	int fd;
+	sync_entry *entry;
+
 	/*
 	 * We want to silently ignoring errors about unreadable files.  Pass that
-	 * desire on to fsync_fname_ext().
+	 * desire on to fsync_fname_open().
+	 *
+	 * XXX: Probably need to limit the number of open FDs here. Practically
+	 * it's probably fine because SyncDataDirectory() is only used in the
+	 * startup process, but ...
 	 */
-	fsync_fname_ext(fname, isdir, true, elevel);
+	if (!fsync_fname_open(fname, isdir, true, elevel, &fd))
+		return;
+
+	entry = palloc(sizeof(sync_entry));
+	entry->fd = fd;
+	entry->isdir = isdir;
+	strlcpy(entry->fname, fname, MAXPGPATH);
+
+	aio = pg_streaming_write_get_io(sync_state->pgsw);
+	pgaio_io_start_fsync_raw(aio, fd, false);
+	pg_streaming_write_write(sync_state->pgsw, aio, sync_completed, sync_retry, entry);
 }
 
 static void
-unlink_if_exists_fname(const char *fname, bool isdir, int elevel)
+unlink_if_exists_fname(const char *fname, bool isdir, int elevel, uintptr_t state)
 {
 	if (isdir)
 	{
 		if (rmdir(fname) != 0 && errno != ENOENT)
+		{
 			ereport(elevel,
 					(errcode_for_file_access(),
 					 errmsg("could not remove directory \"%s\": %m", fname)));
+		}
 	}
 	else
 	{
@@ -3604,19 +3699,19 @@ unlink_if_exists_fname(const char *fname, bool isdir, int elevel)
 }
 
 /*
- * fsync_fname_ext -- Try to fsync a file or directory
+ * Helper for opening a file as part of fsync_fname_ext() and
+ * datadir_fsync_fname(). Split out because the latter uses AIO.
  *
- * If ignore_perm is true, ignore errors upon trying to open unreadable
- * files. Logs other errors at a caller-specified level.
+ * In case of failure to open the file false is returned; *ret is set to 0 if
+ * the failure does not signal a problem, -1 otherwise.
  *
- * Returns 0 if the operation succeeded, -1 otherwise.
+ * If the file was opened successfully, true is returned and *ret is set to
+ * the fd.
  */
-int
-fsync_fname_ext(const char *fname, bool isdir, bool ignore_perm, int elevel)
+static bool
+fsync_fname_open(const char *fname, bool isdir, bool ignore_perm, int elevel, int *ret)
 {
-	int			fd;
 	int			flags;
-	int			returncode;
 
 	/*
 	 * Some OSs require directories to be opened read-only whereas other
@@ -3630,32 +3725,46 @@ fsync_fname_ext(const char *fname, bool isdir, bool ignore_perm, int elevel)
 	else
 		flags |= O_RDONLY;
 
-	fd = OpenTransientFile(fname, flags);
+	*ret = OpenTransientFile(fname, flags);
 
 	/*
 	 * Some OSs don't allow us to open directories at all (Windows returns
 	 * EACCES), just ignore the error in that case.  If desired also silently
 	 * ignoring errors about unreadable files. Log others.
 	 */
-	if (fd < 0 && isdir && (errno == EISDIR || errno == EACCES))
-		return 0;
-	else if (fd < 0 && ignore_perm && errno == EACCES)
-		return 0;
-	else if (fd < 0)
+	if (*ret >= 0)
+		return true;
+	else if (isdir && (errno == EISDIR || errno == EACCES))
+	{
+		*ret = 0;
+		return false;
+	}
+	else if (ignore_perm && errno == EACCES)
+	{
+		*ret = 0;
+		return false;
+	}
+	else
 	{
 		ereport(elevel,
 				(errcode_for_file_access(),
 				 errmsg("could not open file \"%s\": %m", fname)));
-		return -1;
+		return false;
 	}
+}
 
-	returncode = pg_fsync(fd);
-
+/*
+ * Helper for closing a file as part of fsync_fname_ext() and
+ * datadir_fsync_fname(). Split out because the latter uses AIO.
+ */
+static int
+fsync_fname_close(int fd, bool failed, const char *fname, bool isdir, int elevel)
+{
 	/*
 	 * Some OSes don't allow us to fsync directories at all, so we can ignore
 	 * those errors. Anything else needs to be logged.
 	 */
-	if (returncode != 0 && !(isdir && (errno == EBADF || errno == EINVAL)))
+	if (failed && !(isdir && (errno == EBADF || errno == EINVAL)))
 	{
 		int			save_errno;
 
@@ -3679,6 +3788,30 @@ fsync_fname_ext(const char *fname, bool isdir, bool ignore_perm, int elevel)
 	}
 
 	return 0;
+}
+
+/*
+ * fsync_fname_ext -- Try to fsync a file or directory
+ *
+ * If ignore_perm is true, ignore errors upon trying to open unreadable
+ * files. Logs other errors at a caller-specified level.
+ *
+ * Returns 0 if the operation succeeded, -1 otherwise.
+ */
+int
+fsync_fname_ext(const char *fname, bool isdir, bool ignore_perm, int elevel)
+{
+	int			fd;
+	int			returncode;
+
+	if (!fsync_fname_open(fname, isdir, ignore_perm, elevel, &fd))
+		return fd;
+
+	Assert(fd >= 0);
+
+	returncode = pg_fsync(fd);
+
+	return fsync_fname_close(fd, returncode != 0, fname, isdir, elevel);
 }
 
 /*
