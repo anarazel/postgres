@@ -1,0 +1,280 @@
+# Special .cirrus.yml file to test combination of AIO/DIO features.  WIP.
+
+env:
+  # accelerate initial clone
+  CIRRUS_CLONE_DEPTH: 1
+
+task:
+  name: FreeBSD
+  freebsd_instance:
+    image_family: freebsd-12-2
+  env:
+    CCACHE_SIZE: "500M"
+    CCACHE_DIR: "/tmp/ccache_dir"
+  ccache_cache:
+    folder: "/tmp/ccache_dir"
+  install_script:
+    - uname -a
+    - pkg install -y readline flex bison gmake perl5 p5-IPC-Run ccache
+  info_script:
+    - type bison || true
+    - bison --version || true
+  create_user_script:
+    - pw useradd postgres
+    - chown -R postgres:postgres .
+    - mkdir -p /tmp/ccache_dir
+    - chown -R postgres:postgres /tmp/ccache_dir
+  build_script:
+    - su postgres -c './configure --enable-cassert --enable-debug --enable-tap-tests --with-posix-aio --with-includes=/usr/local/include --with-libs=/usr/local/lib CC="ccache cc"'
+    - su postgres -c 'make -s -j4'
+  freebsd_worker_buf_script:
+    - su postgres -c 'echo io_method=worker > /tmp/extra.conf'
+    - su postgres -c 'echo io_data_direct=off >> /tmp/extra.conf'
+    - su postgres -c 'echo io_wal_direct=off >> /tmp/extra.conf'
+    - su postgres -c 'echo io_wal_init_direct=off >> /tmp/extra.conf'
+    - su postgres -c 'TEMP_CONFIG=/tmp/extra.conf make -s check'
+  freebsd_worker_dio_script:
+    - su postgres -c 'echo io_method=worker > /tmp/extra.conf'
+    - su postgres -c 'echo io_data_direct=on >> /tmp/extra.conf'
+    - su postgres -c 'echo io_wal_direct=on >> /tmp/extra.conf'
+    - su postgres -c 'echo io_wal_init_direct=on >> /tmp/extra.conf'
+    - su postgres -c 'TEMP_CONFIG=/tmp/extra.conf make -s check'
+  freebsd_posix_buf_script:
+    - su postgres -c 'echo io_method=posix > /tmp/extra.conf'
+    - su postgres -c 'echo io_data_direct=off >> /tmp/extra.conf'
+    - su postgres -c 'echo io_wal_direct=off >> /tmp/extra.conf'
+    - su postgres -c 'echo io_wal_init_direct=off >> /tmp/extra.conf'
+    - su postgres -c 'TEMP_CONFIG=/tmp/extra.conf make -s check'
+  freebsd_posix_dio_script:
+    - su postgres -c 'echo io_method=posix > /tmp/extra.conf'
+    - su postgres -c 'echo io_data_direct=on >> /tmp/extra.conf'
+    - su postgres -c 'echo io_wal_direct=on >> /tmp/extra.conf'
+    - su postgres -c 'echo io_wal_init_direct=on >> /tmp/extra.conf'
+    - su postgres -c 'TEMP_CONFIG=/tmp/extra.conf make -s check'
+  on_failure:
+    debug_script:
+      - for F in ` find . -name initdb.log -o -name regression.diffs -o -name postmaster.log` ; do echo === $F === ; head -1000 $F ; done
+
+task:
+  name: macOS
+  osx_instance:
+    image: catalina-base
+  install_script:
+    - sudo chmod 777 /cores
+    - uname -a
+    - cpan -T IPC::Run
+  build_script:
+    - export PERL5LIB=~/perl5/lib/perl5
+    - ./configure --prefix=$HOME/install --enable-cassert --enable-debug --enable-tap-tests --without-readline --with-posix-aio CFLAGS="-O0"
+    - make -s -j12
+    - make -s install
+  macos_worker_buf_script:
+    - ulimit -c unlimited
+    - export PERL5LIB=~/perl5/lib/perl5
+    - echo io_method=worker > /tmp/extra.conf
+    - echo io_data_direct=off >> /tmp/extra.conf
+    - echo io_wal_direct=off >> /tmp/extra.conf
+    - echo io_wal_init_direct=off >> /tmp/extra.conf
+    - TEMP_CONFIG=/tmp/extra.conf make -s check
+  macos_worker_dio_script:
+    - ulimit -c unlimited
+    - export PERL5LIB=~/perl5/lib/perl5
+    - echo io_method=worker > /tmp/extra.conf
+    - echo io_data_direct=on >> /tmp/extra.conf
+    - echo io_wal_direct=on >> /tmp/extra.conf
+    - echo io_wal_init_direct=on >> /tmp/extra.conf
+    - TEMP_CONFIG=/tmp/extra.conf make -s check
+  macos_posix_buf_script:
+    - ulimit -c unlimited
+    - export PERL5LIB=~/perl5/lib/perl5
+    - echo io_method=posix > /tmp/extra.conf
+    - echo io_data_direct=off >> /tmp/extra.conf
+    - echo io_wal_direct=off >> /tmp/extra.conf
+    - echo io_wal_init_direct=off >> /tmp/extra.conf
+    - TEMP_CONFIG=/tmp/extra.conf make -s check
+  macos_posix_dio_script:
+    - ulimit -c unlimited
+    - export PERL5LIB=~/perl5/lib/perl5
+    - echo io_method=posix > /tmp/extra.conf
+    - echo io_data_direct=on >> /tmp/extra.conf
+    - echo io_wal_direct=on >> /tmp/extra.conf
+    - echo io_wal_init_direct=on >> /tmp/extra.conf
+    - TEMP_CONFIG=/tmp/extra.conf make -s check
+  on_failure:
+    debug_script:
+      - for F in ` find . -name initdb.log -o -name regression.diffs -o -name postmaster.log` ; do echo === $F === ; head -1000 $F ; done
+      - for corefile in $(find /cores/ -name 'core.*' 2>/dev/null) ; do lldb -c $corefile --batch -o 'thread backtrace all' -o 'quit' ; done
+
+task:
+  name: Linux
+  container:
+    dockerfile: ci/LinuxDockerfile
+    # kvm avoids the use of a broken kernel version - there's probably a better approach
+    kvm: true
+  env:
+    CCACHE_SIZE: "500M"
+    CCACHE_DIR: "/tmp/ccache_dir"
+  ccache_cache:
+    folder: "/tmp/ccache_dir"
+  early_info_script:
+    - id
+    - uname -a
+    - cat /proc/cmdline || true
+    - ulimit -a -H
+    - ulimit -a -S
+  create_user_script:
+    - useradd -m postgres
+    - chown -R postgres:postgres .
+    - mkdir -p /tmp/ccache_dir
+    - chown -R postgres:postgres /tmp/ccache_dir
+    # kvm kernel / image uses a low default ulimit
+    - echo '* - memlock 134217728' > /etc/security/limits.d/postgres.conf
+    - su postgres -c 'ulimit -l -H'
+    - su postgres -c 'ulimit -l -S'
+    - echo '/tmp/%e-%s-%p.core' > /proc/sys/kernel/core_pattern
+  build_script:
+    - su postgres -c './configure --enable-cassert --enable-debug --enable-tap-tests --with-posix-aio --with-liburing --with-tcl --with-python --with-perl --with-ldap --with-openssl --with-icu --with-llvm CC="ccache gcc" CXX="ccache g++" CLANG="ccache clang"'
+    - su postgres -c 'make -s -j4'
+  linux_worker_buf_script:
+    - echo io_method=worker > /tmp/extra.conf
+    - echo io_data_direct=off >> /tmp/extra.conf
+    - echo io_wal_direct=off >> /tmp/extra.conf
+    - echo io_wal_init_direct=off >> /tmp/extra.conf
+    - su postgres -c 'ulimit -c unlimited ; TEMP_CONFIG=/tmp/extra.conf make -s check'
+  linux_worker_dio_script:
+    - echo io_method=worker > /tmp/extra.conf
+    - echo io_data_direct=on >> /tmp/extra.conf
+    - echo io_wal_direct=on >> /tmp/extra.conf
+    - echo io_wal_init_direct=on >> /tmp/extra.conf
+    - su postgres -c 'ulimit -c unlimited ; TEMP_CONFIG=/tmp/extra.conf make -s check'
+  linux_io_uring_buf_script:
+    - echo io_method=io_uring > /tmp/extra.conf
+    - echo io_data_direct=off >> /tmp/extra.conf
+    - echo io_wal_direct=off >> /tmp/extra.conf
+    - echo io_wal_init_direct=off >> /tmp/extra.conf
+    - su postgres -c 'ulimit -c unlimited ; TEMP_CONFIG=/tmp/extra.conf make -s check'
+  linux_io_uring_dio_script:
+    - echo io_method=io_uring > /tmp/extra.conf
+    - echo io_data_direct=on >> /tmp/extra.conf
+    - echo io_wal_direct=on >> /tmp/extra.conf
+    - echo io_wal_init_direct=on >> /tmp/extra.conf
+    - echo restart_after_crash=false >> /tmp/extra.conf
+    - su postgres -c 'ulimit -c unlimited ; TEMP_CONFIG=/tmp/extra.conf make -s check'
+  on_failure:
+    debug_script:
+      - for F in ` find . -name initdb.log -o -name regression.diffs -o -name postmaster.log` ; do echo === $F === ; head -1000 $F ; done
+      - for corefile in $(find /tmp/ -name '*.core' 2>/dev/null) ; do binary=$(gdb -quiet -core $corefile -batch -ex 'info auxv' | grep AT_EXECFN | perl -pe "s/^.*\"(.*)\"\$/\$1/g") ; echo dumping $corefile for $binary ; gdb --batch --quiet -ex "thread apply all bt full" -ex "quit" $binary $corefile ; done
+
+task:
+  name: Windows
+  windows_container:
+    dockerfile: ci/WindowsDockerfile
+  build_script:
+    - cd "c:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools/VC/Auxiliary/Build"
+    - vcvarsall x64
+    - echo on
+    - cd C:\Users\ContainerAdministrator\AppData\Local\Temp\cirrus-ci-build
+    - set PATH=C:\strawberry\perl\bin;%PATH%
+    - perl src/tools/msvc/mkvcbuild.pl
+    - set IgnoreWarnIntDirInTempDetected=true
+    - msbuild -m pgsql.sln
+  pg_test_fsync_script:
+    - Debug\pg_test_fsync\pg_test_fsync.exe -s 1 || echo 1
+  windows_worker_buf_script:
+    - set PATH=C:\strawberry\perl\bin;%PATH%
+    - set TEMP_CONFIG=%TEMP%\extra.conf
+    - echo io_method=worker > %TEMP_CONFIG%
+    - echo io_data_direct=off >> %TEMP_CONFIG%
+    - echo io_wal_direct=off >> %TEMP_CONFIG%
+    - echo io_wal_init_direct=off >> %TEMP_CONFIG%
+    - perl src/tools/msvc/vcregress.pl check
+  windows_worker_dio_script:
+    - set PATH=C:\strawberry\perl\bin;%PATH%
+    - set TEMP_CONFIG=%TEMP%\extra.conf
+    - echo io_method=worker > %TEMP_CONFIG%
+    - echo io_data_direct=on >> %TEMP_CONFIG%
+    - echo io_wal_direct=on >> %TEMP_CONFIG%
+    - echo io_wal_init_direct=on >> %TEMP_CONFIG%
+    - perl src/tools/msvc/vcregress.pl check
+
+task:
+  name: CompilerWarnings
+  container:
+    dockerfile: ci/LinuxDockerfile
+  env:
+    CCACHE_SIZE: "4GB"
+    CCACHE_DIR: "/tmp/ccache_dir"
+  ccache_cache:
+    folder: "/tmp/ccache_dir"
+  setup_script:
+    - echo "COPT=-Werror" > src/Makefile.custom
+    - gcc -v
+    - clang -v
+  # gcc with asserts disabled
+  always:
+    gcc_warning_script:
+      - ./configure CC="ccache gcc"
+      - make -s clean && make -s -j4
+  always:
+    gcc_p_warning_script:
+      - ./configure --with-posix-aio CC="ccache gcc"
+      - make -s clean && make -s -j4
+  always:
+    gcc_u_warning_script:
+      - ./configure --with-liburing CC="ccache gcc"
+      - make -s clean && make -s -j4
+  always:
+    gcc_pu_warning_script:
+      - ./configure --with-posix-aio --with-liburing CC="ccache gcc"
+      - make -s clean && make -s -j4
+  # gcc with asserts enabled
+  always:
+    gcc_a_warning_script:
+      - ./configure --enable-cassert CC="ccache gcc"
+      - make -s clean && make -s -j4
+  always:
+    gcc_ap_warning_script:
+      - ./configure --enable-cassert --with-posix-aio CC="ccache gcc"
+      - make -s clean && make -s -j4
+  always:
+    gcc_au_warning_script:
+      - ./configure --enable-cassert --with-liburing CC="ccache gcc"
+      - make -s clean && make -s -j4
+  always:
+    gcc_apu_warning_script:
+      - ./configure --enable-cassert --with-posix-aio --with-liburing CC="ccache gcc"
+      - make -s clean && make -s -j4
+  # clang with asserts disabled
+  always:
+    clang_warning_script:
+      - ./configure CC="ccache clang"
+      - make -s clean && make -s -j4
+  always:
+    clang_p_warning_script:
+      - ./configure --with-posix-aio CC="ccache clang"
+      - make -s clean && make -s -j4
+  always:
+    clang_u_warning_script:
+      - ./configure --with-liburing CC="ccache clang"
+      - make -s clean && make -s -j4
+  always:
+    clang_pu_warning_script:
+      - ./configure --with-posix-aio --with-liburing CC="ccache clang"
+      - make -s clean && make -s -j4
+  # clang with asserts enabled
+  always:
+    clang_a_warning_script:
+      - ./configure --enable-cassert CC="ccache clang"
+      - make -s clean && make -s -j4
+  always:
+    clang_ap_warning_script:
+      - ./configure --enable-cassert --with-posix-aio CC="ccache clang"
+      - make -s clean && make -s -j4
+  always:
+    clang_au_warning_script:
+      - ./configure --enable-cassert --with-liburing CC="ccache clang"
+      - make -s clean && make -s -j4
+  always:
+    clang_apu_warning_script:
+      - ./configure --enable-cassert --with-posix-aio --with-liburing CC="ccache clang"
+      - make -s clean && make -s -j4
