@@ -23,6 +23,15 @@
 
 struct PGPROC;
 
+/* what state of the wait process is abackend in */
+typedef enum LWLockWaitState
+{
+	LW_WS_NOT_WAITING, /* not currently waiting / woken up */
+	LW_WS_RELEASED_ACQUIRE, /* woken up, should try to acquire lock */
+	LW_WS_RELEASED_DONE, /* woken up, no need to acquire lock */
+	LW_WS_WAITING /* currently waiting */
+} LWLockWaitState;
+
 /*
  * Code outside of lwlock.c should not manipulate the contents of this
  * structure directly, but we have to declare it here to allow LWLocks to be
@@ -160,6 +169,18 @@ extern void CreateLWLocks(void);
 extern void InitLWLockAccess(void);
 
 extern const char *GetLWLockIdentifier(uint32 classId, uint16 eventId);
+
+typedef enum LWLockWaitCheckRes
+{
+	LW_WAIT_NEEDS_LOCK, /* still needs lock */
+	LW_WAIT_DONE /* doesn't need to acquire lock */
+} LWLockWaitCheckRes;
+
+typedef LWLockWaitCheckRes (*LWLockAcquireWaitCB)(LWLock *lock, LWLockMode mode, uint64_t cb_data);
+typedef LWLockWaitCheckRes (*LWLockReleaseCheckCB)(LWLock *lock, LWLockMode mode, struct PGPROC *waked, uint64_t cb_data);
+
+extern bool LWLockAcquireEx(LWLock *lock, LWLockMode mode, LWLockAcquireWaitCB wait_cb, uint64_t cb_data);
+extern void LWLockReleaseEx(LWLock *lock, LWLockReleaseCheckCB wake_cb, uint64 cb_data);
 
 /*
  * Extensions (or core code) can obtain an LWLocks by calling
