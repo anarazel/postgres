@@ -5293,11 +5293,8 @@ rlocator_comparator(const void *p1, const void *p2)
 		return 0;
 }
 
-/*
- * Lock buffer header - set BM_LOCKED in buffer state.
- */
-uint32
-LockBufHdr(BufferDesc *desc)
+static uint32 pg_noinline
+LockBufHdrSlow(BufferDesc *desc)
 {
 	SpinDelayStatus delayStatus;
 	uint32		old_buf_state;
@@ -5308,14 +5305,35 @@ LockBufHdr(BufferDesc *desc)
 
 	while (true)
 	{
+		perform_spin_delay(&delayStatus);
+
 		/* set BM_LOCKED flag */
 		old_buf_state = pg_atomic_fetch_or_u32(&desc->state, BM_LOCKED);
 		/* if it wasn't set before we're OK */
 		if (!(old_buf_state & BM_LOCKED))
 			break;
-		perform_spin_delay(&delayStatus);
+
 	}
 	finish_spin_delay(&delayStatus);
+
+	return old_buf_state;
+}
+
+/*
+ * Lock buffer header - set BM_LOCKED in buffer state.
+ */
+uint32
+LockBufHdr(BufferDesc *desc)
+{
+	uint32		old_buf_state;
+
+	/* set BM_LOCKED flag */
+	old_buf_state = pg_atomic_fetch_or_u32(&desc->state, BM_LOCKED);
+
+	/* if it wasn't set before we're OK */
+	if (unlikely(old_buf_state & BM_LOCKED))
+		old_buf_state = LockBufHdrSlow(desc);
+
 	return old_buf_state | BM_LOCKED;
 }
 
