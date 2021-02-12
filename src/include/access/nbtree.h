@@ -324,6 +324,8 @@ typedef struct BTVacState
 	void	   *callback_state;
 	BTCycleId	cycleid;
 	MemoryContext pagedelcontext;
+	BlockNumber nextblock;
+	BlockNumber num_pages;
 } BTVacState;
 
 /*
