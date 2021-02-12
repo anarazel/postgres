@@ -343,6 +343,9 @@ typedef struct BTVacState
 	int			maxbufsize;		/* max bufsize that respects work_mem */
 	BTPendingFSM *pendingpages; /* One entry per newly deleted page */
 	int			npendingpages;	/* current # valid pendingpages */
+
+	BlockNumber nextblock;
+	BlockNumber num_pages;
 } BTVacState;
 
 /*
