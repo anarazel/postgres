@@ -80,6 +80,7 @@ extern bool io_data_direct;
 extern bool io_data_force_async;
 extern bool io_wal_direct;
 extern bool io_wal_init_direct;
+extern bool io_wal_pad_partial;
 extern int io_wal_concurrency;
 extern int io_wal_target_blocks;
 

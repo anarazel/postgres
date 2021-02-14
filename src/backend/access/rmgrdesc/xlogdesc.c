@@ -139,6 +139,10 @@ xlog_desc(StringInfo buf, XLogReaderState *record)
 						 xlrec.ThisTimeLineID, xlrec.PrevTimeLineID,
 						 timestamptz_to_str(xlrec.end_time));
 	}
+	else if (info == XLOG_WASTE)
+	{
+		appendStringInfo(buf, "waste");
+	}
 }
 
 const char *
