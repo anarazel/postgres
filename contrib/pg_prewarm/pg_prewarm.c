@@ -18,7 +18,9 @@
 #include "access/relation.h"
 #include "fmgr.h"
 #include "miscadmin.h"
+#include "storage/aio.h"
 #include "storage/bufmgr.h"
+#include "storage/bufpage.h"
 #include "storage/smgr.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
@@ -32,11 +34,116 @@ PG_FUNCTION_INFO_V1(pg_prewarm);
 typedef enum
 {
 	PREWARM_PREFETCH,
-	PREWARM_READ,
-	PREWARM_BUFFER
+	PREWARM_READ_AIO,
+	PREWARM_READ_NOAIO,
+	PREWARM_BUFFER_AIO,
+	PREWARM_BUFFER_NOAIO
 } PrewarmType;
 
 static PGIOAlignedBlock blockbuffer;
+
+typedef struct prefetch
+{
+	Relation rel;
+	ForkNumber forkNumber;
+	int64 curblock;
+	int64 lastblock;
+	List *bbs;
+} prefetch;
+
+static PgStreamingReadNextStatus
+prewarm_buffer_next(uintptr_t pgsr_private, PgAioInProgress *aio, uintptr_t *read_private)
+{
+	prefetch *p = (prefetch *) pgsr_private;
+	Buffer buf;
+	bool already_valid;
+	BlockNumber blockno;
+
+	if (p->curblock <= p->lastblock)
+		blockno = p->curblock++;
+	else
+		return PGSR_NEXT_END;
+
+	buf = ReadBufferAsync(p->rel, p->forkNumber, blockno,
+						  RBM_NORMAL, NULL, &already_valid,
+						  &aio);
+
+	*read_private = (uintptr_t) buf;
+
+	if (already_valid)
+	{
+		ereport(DEBUG3,
+				errmsg("pgsr %s: found block %d already in buf %d",
+					   NameStr(p->rel->rd_rel->relname),
+					   blockno, buf),
+				errhidestmt(true),
+				errhidecontext(true));
+		return PGSR_NEXT_NO_IO;
+	}
+	else
+	{
+		ereport(DEBUG3,
+				errmsg("pgsr %s: fetching block %d into buf %d",
+					   NameStr(p->rel->rd_rel->relname),
+					   blockno, buf),
+				errhidestmt(true),
+				errhidecontext(true));
+		return PGSR_NEXT_IO;
+	}
+}
+
+static void
+prewarm_buffer_release(uintptr_t pgsr_private, uintptr_t read_private)
+{
+	prefetch *p = (prefetch *) pgsr_private;
+	Buffer buf = (Buffer) read_private;
+
+	ereport(DEBUG2,
+			errmsg("pgsr %s: releasing buf %d",
+				   NameStr(p->rel->rd_rel->relname),
+				   buf),
+			errhidestmt(true),
+			errhidecontext(true));
+
+	Assert(BufferIsValid(buf));
+	ReleaseBuffer(buf);
+}
+
+
+static PgStreamingReadNextStatus
+prewarm_smgr_next(uintptr_t pgsr_private, PgAioInProgress *aio, uintptr_t *read_private)
+{
+	prefetch *p = (prefetch *) pgsr_private;
+	BlockNumber blockno;
+	PgAioBounceBuffer *bb;
+
+	if (p->curblock <= p->lastblock)
+		blockno = p->curblock++;
+	else
+		return PGSR_NEXT_END;
+
+	if (p->bbs != NIL)
+	{
+		bb = lfirst(list_tail(p->bbs));
+		p->bbs = list_delete_last(p->bbs);
+	}
+	else
+		bb = pgaio_bounce_buffer_get();
+
+	pgaio_assoc_bounce_buffer(aio, bb);
+
+	pgaio_io_start_read_smgr(aio, p->rel->rd_smgr, p->forkNumber, blockno,
+							 pgaio_bounce_buffer_buffer(bb));
+
+	*read_private = (uintptr_t) bb;
+
+	return PGSR_NEXT_IO;
+}
+
+static void
+prewarm_smgr_release(uintptr_t pgsr_private, uintptr_t read_private)
+{
+}
 
 /*
  * pg_prewarm(regclass, mode text, fork text,
@@ -83,15 +190,19 @@ pg_prewarm(PG_FUNCTION_ARGS)
 	if (strcmp(ttype, "prefetch") == 0)
 		ptype = PREWARM_PREFETCH;
 	else if (strcmp(ttype, "read") == 0)
-		ptype = PREWARM_READ;
+		ptype = PREWARM_READ_AIO;
 	else if (strcmp(ttype, "buffer") == 0)
-		ptype = PREWARM_BUFFER;
+		ptype = PREWARM_BUFFER_AIO;
+	else if (strcmp(ttype, "buffer_noaio") == 0)
+		ptype = PREWARM_BUFFER_NOAIO;
+	else if (strcmp(ttype, "read_aio") == 0)
+		ptype = PREWARM_READ_NOAIO;
 	else
 	{
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("invalid prewarm type"),
-				 errhint("Valid prewarm types are \"prefetch\", \"read\", and \"buffer\".")));
+				 errhint("Valid prewarm types are \"prefetch\", \"read\", \"read_noaio\", \"buffer\" and , \"buffer_noaio\".")));
 		PG_RETURN_INT64(0);		/* Placate compiler. */
 	}
 	if (PG_ARGISNULL(2))
@@ -167,7 +278,7 @@ pg_prewarm(PG_FUNCTION_ARGS)
 				 errmsg("prefetch is not supported by this build")));
 #endif
 	}
-	else if (ptype == PREWARM_READ)
+	else if (ptype == PREWARM_READ_NOAIO)
 	{
 		/*
 		 * In read mode, we actually read the blocks, but not into shared
@@ -181,7 +292,7 @@ pg_prewarm(PG_FUNCTION_ARGS)
 			++blocks_done;
 		}
 	}
-	else if (ptype == PREWARM_BUFFER)
+	else if (ptype == PREWARM_BUFFER_NOAIO)
 	{
 		/*
 		 * In buffer mode, we actually pull the data into shared_buffers.
@@ -194,6 +305,82 @@ pg_prewarm(PG_FUNCTION_ARGS)
 			buf = ReadBufferExtended(rel, forkNumber, block, RBM_NORMAL, NULL);
 			ReleaseBuffer(buf);
 			++blocks_done;
+		}
+	}
+	else if (ptype == PREWARM_BUFFER_AIO)
+	{
+		PgStreamingRead *pgsr;
+		prefetch p;
+
+		p.rel = rel;
+		p.forkNumber = forkNumber;
+		p.curblock = 0;
+		p.lastblock = last_block;
+		p.bbs = NIL;
+
+		pgsr = pg_streaming_read_alloc(512, (uintptr_t) &p,
+									   prewarm_buffer_next,
+									   prewarm_buffer_release);
+
+		for (block = first_block; block <= last_block; ++block)
+		{
+			Buffer		buf;
+
+			CHECK_FOR_INTERRUPTS();
+
+			buf = (Buffer) pg_streaming_read_get_next(pgsr);
+			if (BufferIsValid(buf))
+				ReleaseBuffer(buf);
+			else
+				elog(ERROR, "prefetch ended early");
+
+			++blocks_done;
+		}
+
+		if (BufferIsValid(pg_streaming_read_get_next(pgsr)))
+			elog(ERROR, "unexpected additional buffer");
+
+		pg_streaming_read_free(pgsr);
+	}
+	else if (ptype == PREWARM_READ_AIO)
+	{
+		PgStreamingRead *pgsr;
+		prefetch p;
+		ListCell *lc;
+
+		p.rel = rel;
+		p.forkNumber = forkNumber;
+		p.curblock = 0;
+		p.lastblock = last_block;
+		p.bbs = NIL;
+
+		pgsr = pg_streaming_read_alloc(512, (uintptr_t) &p,
+									   prewarm_smgr_next,
+									   prewarm_smgr_release);
+
+		for (block = first_block; block <= last_block; ++block)
+		{
+			PgAioBounceBuffer *bb;
+
+			CHECK_FOR_INTERRUPTS();
+
+			bb = (PgAioBounceBuffer *) pg_streaming_read_get_next(pgsr);
+			if (bb == NULL)
+				elog(ERROR, "prefetch ended early");
+
+			p.bbs = lappend(p.bbs, (void *) bb);
+
+			++blocks_done;
+		}
+
+		if (pg_streaming_read_get_next(pgsr) != 0)
+			elog(ERROR, "unexpected additional buffer");
+
+		pg_streaming_read_free(pgsr);
+
+		foreach(lc, p.bbs)
+		{
+			pgaio_bounce_buffer_release(lfirst(lc));
 		}
 	}
 
