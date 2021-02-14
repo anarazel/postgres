@@ -1932,6 +1932,173 @@ OwnUnusedBuffer(Buffer buf_id)
 }
 
 /*
+ * WIP interface to more efficient relation extension.
+ *
+ * Todo:
+ *
+ * - Write initialized buffers - otherwise we'll waste a lot of time doing
+ *   another set of memsets at PageInit(), as well as making PageIsVerified()
+ *   a lot more expensive (verifying all-zeroes).
+ * - De-duplication of work between concurrent extensions?
+ * - Chunking, to avoid pinning quite as many buffers at once
+ * - Strategy integration
+ * - cleanup
+ *
+ */
+extern Buffer
+BulkExtendBuffered(Relation relation, ForkNumber forkNum, int *extendby_p, BufferAccessStrategy strategy)
+{
+	bool		need_extension_lock = !RELATION_IS_LOCAL(relation);
+	BlockNumber start_nblocks;
+	SMgrRelation smgr;
+	BufferDesc *return_buf_hdr = NULL;
+	char relpersistence = relation->rd_rel->relpersistence;
+	BlockNumber extendto;
+	int extendby_target = *extendby_p;
+	int extendby_actual = 0;
+	BufferDesc **bufferdescs;
+
+	RelationOpenSmgr(relation);
+	smgr = relation->rd_smgr;
+
+	bufferdescs = (BufferDesc **) palloc0(sizeof(BufferDesc *) * extendby_target);
+
+	for (int i = 0; i < extendby_target; i++)
+	{
+		BufferDesc *cur_buf_hdr;
+
+		ReservePrivateRefCountEntry();
+		ResourceOwnerEnlargeBuffers(CurrentResourceOwner);
+
+		cur_buf_hdr = BufReserveGetFree(strategy, i == 0);
+
+		if (!cur_buf_hdr)
+		{
+			Assert(i > 0);
+			break;
+		}
+
+		bufferdescs[extendby_actual] = cur_buf_hdr;
+		extendby_actual++;
+	}
+
+	ereport(DEBUG3,
+			errmsg("extending by %d, requested %d", extendby_actual, extendby_target),
+			errhidestmt(true),
+			errhidecontext(true));
+
+	*extendby_p = extendby_actual;
+
+	/*
+	 * Now we have our hands on N buffers that are guaranteed to be clean
+	 * (since they are pinned they cannot be reused by other backends).
+	 *
+	 * Now acquire extension lock, extend relation, and try to point the
+	 * victim buffers acquired above to the extended part of the relation.
+	 */
+	if (need_extension_lock)
+		LockRelationForExtension(relation, ExclusiveLock);
+
+	start_nblocks = smgrnblocks(relation->rd_smgr, MAIN_FORKNUM);
+	extendto = start_nblocks;
+
+	/*
+	 * Set up identities of all the new buffers. This way there cannot be race
+	 * conditions where other backends lock the returned page first.
+	 */
+	for (int i = 0; i < extendby_actual; i++)
+	{
+		BufferDesc *new_buf_hdr = bufferdescs[i];
+		BufferTag	new_tag;
+		uint32		new_hash;
+		int			existing_buf;
+		uint32		buf_state;
+		LWLock	   *partition_lock;
+
+		Assert(extendto < start_nblocks + extendby_actual);
+
+		INIT_BUFFERTAG(new_tag, smgr->smgr_rnode.node, forkNum, extendto);
+		new_hash = BufTableHashCode(&new_tag);
+
+		partition_lock = BufMappingPartitionLock(new_hash);
+		LWLockAcquire(partition_lock, LW_EXCLUSIVE);
+
+		existing_buf = BufTableInsert(&new_tag, new_hash, new_buf_hdr->buf_id);
+		if (existing_buf >= 0)
+		{
+			/* FIXME: This is probably possible when extension fails due to ENOSPC or such */
+			elog(ERROR, "buffer beyond EOF");
+		}
+
+		/* lock to install new identity */
+		buf_state = LockBufHdr(new_buf_hdr);
+
+		buf_state |= BM_TAG_VALID | BM_IO_IN_PROGRESS | BUF_USAGECOUNT_ONE;
+
+		if (relpersistence == RELPERSISTENCE_PERMANENT || forkNum == INIT_FORKNUM)
+			buf_state |= BM_PERMANENT;
+
+		new_buf_hdr->tag = new_tag;
+		UnlockBufHdr(new_buf_hdr, buf_state);
+
+		LWLockRelease(partition_lock);
+
+		if (i == 0)
+		{
+			return_buf_hdr = new_buf_hdr;
+		}
+
+		extendto++;
+	}
+	Assert(extendto == start_nblocks + extendby_actual);
+
+	/* finally extend the relation */
+	smgrzeroextend(relation->rd_smgr, forkNum, start_nblocks,
+				   extendby_actual, false);
+
+	/* Ensure that the returned buffer cannot be reached by another backend first */
+	LWLockAcquire(BufferDescriptorGetContentLock(return_buf_hdr),
+				  LW_EXCLUSIVE);
+
+	/*
+	 * New buffers are zero-filled
+	*
+	 * This is a separate loop to avoid stalls due to locking operations
+	 */
+	for (int i = 0; i < extendby_actual; i++)
+	{
+		BufferDesc *new_buf_hdr = bufferdescs[i];
+		Block		new_buf_block;
+
+		new_buf_block = BufHdrGetBlock(new_buf_hdr);
+		memset((char *) new_buf_block, 0, BLCKSZ);
+	}
+
+	/* Mark all buffers as having completed */
+	for (int i = 0; i < extendby_actual; i++)
+	{
+		BufferDesc *new_buf_hdr = bufferdescs[i];
+		uint32		buf_state;
+
+		buf_state = LockBufHdr(new_buf_hdr);
+		buf_state &= ~(BM_IO_IN_PROGRESS | BM_IO_ERROR);
+		buf_state |= BM_VALID;
+		UnlockBufHdr(new_buf_hdr, buf_state);
+		ConditionVariableBroadcast(BufferDescriptorGetIOCV(new_buf_hdr));
+
+		if (new_buf_hdr != return_buf_hdr)
+			UnpinBuffer(new_buf_hdr, true);
+	}
+
+	if (need_extension_lock)
+		UnlockRelationForExtension(relation, ExclusiveLock);
+
+	pfree(bufferdescs);
+
+	return BufferDescriptorGetBuffer(return_buf_hdr);
+}
+
+/*
  * MarkBufferDirty
  *
  *		Marks buffer contents as dirty (actual write happens later).

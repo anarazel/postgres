@@ -30,6 +30,8 @@ typedef struct BulkInsertStateData
 {
 	BufferAccessStrategy strategy;	/* our BULKWRITE strategy object */
 	Buffer		current_buf;	/* current insertion target page */
+	BlockNumber	next_free;
+	BlockNumber	last_free;
 } BulkInsertStateData;
 
 

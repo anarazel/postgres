@@ -503,6 +503,143 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 	Assert(_mdnblocks(reln, forknum, v) <= ((BlockNumber) RELSEG_SIZE));
 }
 
+static void
+zeroextend_complete(PgStreamingWrite *pgsw, void *pgsw_private, int result, void *write_private)
+{
+	MdfdVec    *v = (MdfdVec *) write_private;
+
+	if (result < 0)
+	{
+		errno = -result;
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not extend file \"%s\": %m",
+						FilePathName(v->mdfd_vfd)),
+				 errhint("Check free disk space.")));
+	}
+
+	/* short write: complain appropriately */
+	if (result != BLCKSZ)
+	{
+		// FIXME: used to report block number, need to pass it in
+		ereport(ERROR,
+				(errcode(ERRCODE_DISK_FULL),
+				 errmsg("could not extend file \"%s\": wrote only %d of %d bytes",
+						FilePathName(v->mdfd_vfd),
+						result, BLCKSZ),
+				 errhint("Check free disk space.")));
+	}
+}
+
+BlockNumber
+mdzeroextend(SMgrRelation reln, ForkNumber forknum,
+			 BlockNumber blocknum, int nblocks, bool skipFsync)
+{
+	MdfdVec    *v;
+	PgAioBounceBuffer *bb;
+	char	   *zerobuf;
+	PgStreamingWrite *pgsw ;
+	BlockNumber latest;
+	BlockNumber curblocknum = blocknum;
+	int			remblocks = nblocks;
+
+	Assert(nblocks > 0);
+
+	pgsw = pg_streaming_write_alloc(Min(256, nblocks), &latest);
+
+	bb = pgaio_bounce_buffer_get();
+	zerobuf = pgaio_bounce_buffer_buffer(bb);
+	memset(zerobuf, 0, BLCKSZ);
+
+	/* This assert is too expensive to have on normally ... */
+#ifdef CHECK_WRITE_VS_EXTEND
+	Assert(blocknum >= mdnblocks(reln, forknum));
+#endif
+
+	/*
+	 * If a relation manages to grow to 2^32-1 blocks, refuse to extend it any
+	 * more --- we mustn't create a block whose number actually is
+	 * InvalidBlockNumber.
+	 */
+	// FIXME
+#if 0
+	if (blocknum == InvalidBlockNumber)
+		ereport(ERROR,
+				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
+				 errmsg("cannot extend file \"%s\" beyond %u blocks",
+						relpath(reln->smgr_rnode, forknum),
+						InvalidBlockNumber)));
+#endif
+
+	while (remblocks > 0)
+	{
+		int segstartblock = curblocknum % ((BlockNumber) RELSEG_SIZE);
+		int segendblock = (curblocknum % ((BlockNumber) RELSEG_SIZE)) + remblocks;
+		bool fallocate_succeeded = false;
+
+		if (segendblock > RELSEG_SIZE)
+			segendblock = RELSEG_SIZE;
+
+		v = _mdfd_getseg(reln, forknum, curblocknum, skipFsync, EXTENSION_CREATE);
+
+		Assert(segstartblock < RELSEG_SIZE);
+		Assert(segendblock <= RELSEG_SIZE);
+
+#ifdef HAVE_POSIX_FALLOCATE
+		{
+			int			fd = FileGetRawDesc(v->mdfd_vfd);
+			off_t		seekpos = (off_t) BLCKSZ * segstartblock;
+			int			ret;
+
+			ret = posix_fallocate(fd,
+								  seekpos,
+								  (off_t) BLCKSZ * (segendblock - segstartblock));
+
+			if (ret != 0)
+			{
+				if (ret != EINVAL && ret != EOPNOTSUPP)
+				{
+					errno = ret;
+					elog(ERROR, "fallocate failed: %m");
+				}
+				/* we'll extend as if we didn't have posix_fallocate() */
+			}
+			else
+				fallocate_succeeded = true;
+		}
+#endif
+		if (!fallocate_succeeded)
+		{
+			for (BlockNumber i = segstartblock; i < segendblock; i++)
+			{
+				PgAioInProgress *aio = pg_streaming_write_get_io(pgsw);
+
+				pgaio_assoc_bounce_buffer(aio, bb);
+
+				pgaio_io_start_write_smgr(aio, reln, forknum, i, zerobuf, skipFsync);
+
+				pg_streaming_write_write(pgsw, aio, zeroextend_complete, NULL, v);
+			}
+		}
+
+		if (!skipFsync && !SmgrIsTemp(reln))
+			register_dirty_segment(reln, forknum, v);
+
+		Assert(_mdnblocks(reln, forknum, v) <= ((BlockNumber) RELSEG_SIZE));
+
+		remblocks -= segendblock - segstartblock;
+		curblocknum += segendblock - segstartblock;
+	}
+
+	pgaio_bounce_buffer_release(bb);
+
+	pg_streaming_write_wait_all(pgsw);
+	pg_streaming_write_free(pgsw);
+
+	return blocknum + (nblocks - 1);
+}
+
+
 /*
  *	mdopenfork() -- Open one fork of the specified relation.
  *
