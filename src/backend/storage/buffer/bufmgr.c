@@ -485,8 +485,8 @@ static void UnpinBuffer(BufferDesc *buf, bool fixOwner);
 static void LockSharedBufferExclusive(BufferDesc *buf);
 static void BufferSync(int flags);
 static uint32 WaitBufHdrUnlocked(BufferDesc *buf);
-static int	SyncOneBuffer(int buf_id, bool skip_recently_used,
-						  WritebackContext *wb_context);
+static int	BgBufferSyncWriteOne(int buf_id, bool skip_recently_used,
+								 PgStreamingWrite *pgsw);
 static void WaitIO(BufferDesc *buf);
 static bool StartBufferIO(BufferDesc *buf, bool forInput);
 static void TerminateBufferIO(BufferDesc *buf, bool local, bool syncio,
@@ -2474,6 +2474,83 @@ UnpinBuffer(BufferDesc *buf, bool fixOwner)
 	}
 }
 
+static void
+buffer_sync_complete(PgStreamingWrite *pgsw, void *pgsw_private, int result, void *write_private)
+{
+	WritebackContext *wb_context = (WritebackContext *) pgsw_private;
+	BufferDesc *bufHdr = (BufferDesc *) write_private;
+	BufferTag	tag;
+
+	Assert(result == BLCKSZ);
+
+	/* the buffer lock has already been released by ReadBufferCompleteWrite */
+
+	tag = bufHdr->tag;
+	UnpinBuffer(bufHdr, true);
+
+	if (wb_context)
+		ScheduleBufferTagForWriteback(wb_context, pgsw, &tag);
+}
+
+static bool
+BufferSyncWriteOne(PgStreamingWrite *pgsw, BufferDesc *bufHdr)
+{
+	uint32 buf_state;
+	bool did_write = false;
+
+	ReservePrivateRefCountEntry();
+	ResourceOwnerEnlargeBuffers(CurrentResourceOwner);
+
+	buf_state = LockBufHdr(bufHdr);
+
+	if ((buf_state & BM_VALID) && (buf_state & BM_DIRTY))
+	{
+		LWLock *content_lock;
+		PgAioInProgress *aio;
+
+		PinBuffer_Locked(bufHdr);
+
+		content_lock = BufferDescriptorGetContentLock(bufHdr);
+
+		aio = pg_streaming_write_get_io(pgsw);
+
+		/*
+		 * If there are pre-existing IOs in-flight, we can't block on the
+		 * content lock, it could lead to a deadlock. If the lock cannot
+		 * immediately be acquired, first wait for all outstanding IO, and
+		 * then block on acquiring the lock.
+		 */
+		if (pg_streaming_write_inflight(pgsw) > 0 &&
+			LWLockConditionalAcquire(content_lock, LW_SHARED))
+		{
+		}
+		else
+		{
+			pg_streaming_write_wait_all(pgsw);
+			LWLockAcquire(content_lock, LW_SHARED);
+		}
+
+		if (AsyncFlushBuffer(aio, bufHdr, NULL))
+		{
+			pg_streaming_write_write(pgsw, aio, buffer_sync_complete, NULL, bufHdr);
+			BgWriterStats.m_buf_written_checkpoints++;
+			did_write = true;
+		}
+		else
+		{
+			LWLockRelease(content_lock);
+			pg_streaming_write_release_io(pgsw, aio);
+			UnpinBuffer(bufHdr, true);
+		}
+	}
+	else
+	{
+		UnlockBufHdr(bufHdr, buf_state);
+	}
+
+	return did_write;
+}
+
 /*
  * BufferSync -- Write out all dirty buffers in the pool.
  *
@@ -2498,6 +2575,7 @@ BufferSync(int flags)
 	binaryheap *ts_heap;
 	int			i;
 	int			mask = BM_DIRTY;
+	PgStreamingWrite *pgsw;
 	WritebackContext wb_context;
 
 	/* Make sure we can handle the pin inside SyncOneBuffer */
@@ -2511,6 +2589,8 @@ BufferSync(int flags)
 	if (!((flags & (CHECKPOINT_IS_SHUTDOWN | CHECKPOINT_END_OF_RECOVERY |
 					CHECKPOINT_FLUSH_ALL))))
 		mask |= BM_PERMANENT;
+
+	elog(DEBUG1, "checkpoint looking at buffers");
 
 	/*
 	 * Loop over all buffers, and mark the ones that need to be written with
@@ -2565,7 +2645,11 @@ BufferSync(int flags)
 
 	WritebackContextInit(&wb_context, &checkpoint_flush_after);
 
+	pgsw = pg_streaming_write_alloc(128, &wb_context);
+
 	TRACE_POSTGRESQL_BUFFER_SYNC_START(NBuffers, num_to_scan);
+
+	elog(DEBUG1, "checkpoint predicts to write %u buffers", num_to_scan);
 
 	/*
 	 * Sort buffers that need to be written to reduce the likelihood of random
@@ -2578,6 +2662,8 @@ BufferSync(int flags)
 		  ckpt_buforder_comparator);
 
 	num_spaces = 0;
+
+	elog(DEBUG1, "checkpoint done sorting");
 
 	/*
 	 * Allocate progress status for each tablespace with buffers that need to
@@ -2664,6 +2750,8 @@ BufferSync(int flags)
 
 	binaryheap_build(ts_heap);
 
+	elog(DEBUG1, "checkpoint done heaping");
+
 	/*
 	 * Iterate through to-be-checkpointed buffers and write the ones (still)
 	 * marked with BM_CHECKPOINT_NEEDED. The writes are balanced between
@@ -2699,7 +2787,7 @@ BufferSync(int flags)
 		 */
 		if (pg_atomic_read_u32(&bufHdr->state) & BM_CHECKPOINT_NEEDED)
 		{
-			if (SyncOneBuffer(buf_id, false, &wb_context) & BUF_WRITTEN)
+			if (BufferSyncWriteOne(pgsw, bufHdr))
 			{
 				TRACE_POSTGRESQL_BUFFER_SYNC_WRITTEN(buf_id);
 				BgWriterStats.m_buf_written_checkpoints++;
@@ -2731,11 +2819,17 @@ BufferSync(int flags)
 		 *
 		 * (This will check for barrier events even if it doesn't sleep.)
 		 */
-		CheckpointWriteDelay(flags, (double) num_processed / num_to_scan);
+		CheckpointWriteDelay(flags, pgsw,
+							 (double) num_processed / num_to_scan);
 	}
 
+	pg_streaming_write_wait_all(pgsw);
+
 	/* issue all pending flushes */
-	IssuePendingWritebacks(&wb_context);
+	IssuePendingWritebacks(&wb_context, pgsw);
+
+	pg_streaming_write_wait_all(pgsw);
+	pg_streaming_write_free(pgsw);
 
 	pfree(per_ts_stat);
 	per_ts_stat = NULL;
@@ -2762,7 +2856,7 @@ BufferSync(int flags)
  * bgwriter_lru_maxpages to 0.)
  */
 bool
-BgBufferSync(WritebackContext *wb_context)
+BgBufferSync(struct PgStreamingWrite *pgsw, WritebackContext *wb_context)
 {
 	/* info obtained from freelist.c */
 	int			strategy_buf_id;
@@ -2987,8 +3081,8 @@ BgBufferSync(WritebackContext *wb_context)
 	/* Execute the LRU scan */
 	while (num_to_scan > 0 && reusable_buffers < upcoming_alloc_est)
 	{
-		int			sync_state = SyncOneBuffer(next_to_clean, true,
-											   wb_context);
+		int			sync_state =
+			BgBufferSyncWriteOne(next_to_clean, true, pgsw);
 
 		if (++next_to_clean >= NBuffers)
 		{
@@ -3044,6 +3138,11 @@ BgBufferSync(WritebackContext *wb_context)
 #endif
 	}
 
+	IssuePendingWritebacks(wb_context, pgsw);
+
+	/* don't start sleeping with still pending IOs */
+	pgaio_submit_pending(true);
+
 	/* Return true if OK to hibernate */
 	return (bufs_to_lap == 0 && recent_alloc == 0);
 }
@@ -3065,14 +3164,17 @@ BgBufferSync(WritebackContext *wb_context)
  * Note: caller must have done ResourceOwnerEnlargeBuffers.
  */
 static int
-SyncOneBuffer(int buf_id, bool skip_recently_used, WritebackContext *wb_context)
+BgBufferSyncWriteOne(int buf_id, bool skip_recently_used,
+					 PgStreamingWrite *pgsw)
 {
 	BufferDesc *bufHdr = GetBufferDescriptor(buf_id);
 	int			result = 0;
 	uint32		buf_state;
-	BufferTag	tag;
+	LWLock *content_lock;
+	PgAioInProgress *aio;
 
 	ReservePrivateRefCountEntry();
+	ResourceOwnerEnlargeBuffers(CurrentResourceOwner);
 
 	/*
 	 * Check whether buffer needs writing.
@@ -3104,22 +3206,39 @@ SyncOneBuffer(int buf_id, bool skip_recently_used, WritebackContext *wb_context)
 		return result;
 	}
 
-	/*
-	 * Pin it, share-lock it, write it.  (FlushBuffer will do nothing if the
-	 * buffer is clean by the time we've locked it.)
-	 */
 	PinBuffer_Locked(bufHdr);
-	LWLockAcquire(BufferDescriptorGetContentLock(bufHdr), LW_SHARED);
 
-	FlushBuffer(bufHdr, NULL);
+	aio = pg_streaming_write_get_io(pgsw);
 
-	LWLockRelease(BufferDescriptorGetContentLock(bufHdr));
+	content_lock = BufferDescriptorGetContentLock(bufHdr);
 
-	tag = bufHdr->tag;
+	/*
+	 * If there are pre-existing IOs in-flight, we can't block on the
+	 * content lock, it could lead to a deadlock. So first wait for
+	 * outstanding IO, and then block on acquiring the lock.
+	 */
+	if (pg_streaming_write_inflight(pgsw) > 0 &&
+		LWLockConditionalAcquire(content_lock, LW_SHARED))
+	{
+	}
+	else
+	{
+		pg_streaming_write_wait_all(pgsw);
+		LWLockAcquire(content_lock, LW_SHARED);
+	}
 
-	UnpinBuffer(bufHdr, true);
+	if (AsyncFlushBuffer(aio, bufHdr, NULL))
+	{
+		pg_streaming_write_write(pgsw, aio, buffer_sync_complete, NULL, bufHdr);
+		result |= BUF_WRITTEN;
+	}
+	else
+	{
+		LWLockRelease(content_lock);
+		UnpinBuffer(bufHdr, true);
 
-	ScheduleBufferTagForWriteback(wb_context, &tag);
+		pg_streaming_write_release_io(pgsw, aio);
+	}
 
 	return result | BUF_WRITTEN;
 }
@@ -5567,7 +5686,7 @@ WritebackContextInit(WritebackContext *context, int *max_pending)
  * Add buffer to list of pending writeback requests.
  */
 void
-ScheduleBufferTagForWriteback(WritebackContext *context, BufferTag *tag)
+ScheduleBufferTagForWriteback(WritebackContext *context, PgStreamingWrite *pgsw, BufferTag *tag)
 {
 	PendingWriteback *pending;
 
@@ -5593,7 +5712,7 @@ ScheduleBufferTagForWriteback(WritebackContext *context, BufferTag *tag)
 	 * is now disabled.
 	 */
 	if (context->nr_pending >= *context->max_pending)
-		IssuePendingWritebacks(context);
+		IssuePendingWritebacks(context, pgsw);
 }
 
 /*
@@ -5604,7 +5723,7 @@ ScheduleBufferTagForWriteback(WritebackContext *context, BufferTag *tag)
  * error out - it's just a hint.
  */
 void
-IssuePendingWritebacks(WritebackContext *context)
+IssuePendingWritebacks(WritebackContext *context, PgStreamingWrite *pgsw)
 {
 	int			i;
 
@@ -5664,10 +5783,44 @@ IssuePendingWritebacks(WritebackContext *context)
 
 		/* and finally tell the kernel to write the data to storage */
 		reln = smgropen(tag.rnode, InvalidBackendId);
-		smgrwriteback(reln, tag.forkNum, tag.blockNum, nblocks);
+
+		if (io_data_direct)
+		{
+			/* could have been changed */
+		}
+		else if (!pgsw)
+		{
+			smgrwriteback(reln, tag.forkNum, tag.blockNum, nblocks);
+		}
+		else
+		{
+			BlockNumber startblock = tag.blockNum;
+
+			while (nblocks > 0)
+			{
+				PgAioInProgress *aio;
+				BlockNumber initblocks;
+
+				aio = pg_streaming_write_get_io(pgsw);
+				initblocks = pgaio_io_start_flush_range_smgr(aio, reln, tag.forkNum, startblock, nblocks);
+
+				if (initblocks == InvalidBlockNumber)
+				{
+					pg_streaming_write_release_io(pgsw, aio);
+					break;
+				}
+
+				pg_streaming_write_write(pgsw, aio, NULL, NULL, NULL);
+				startblock += initblocks;
+				nblocks -= initblocks;
+			}
+		}
 	}
 
 	context->nr_pending = 0;
+
+	if (i > 0)
+		pgaio_submit_pending(true);
 }
 
 

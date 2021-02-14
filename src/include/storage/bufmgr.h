@@ -248,7 +248,8 @@ extern bool HoldingBufferPinThatDelaysRecovery(void);
 extern void AbortBufferIO(void);
 
 extern void BufmgrCommit(void);
-extern bool BgBufferSync(struct WritebackContext *wb_context);
+struct PgStreamingWrite;
+extern bool BgBufferSync(struct PgStreamingWrite *pgsw, struct WritebackContext *wb_context);
 
 extern void AtProcExit_LocalBuffers(void);
 
