@@ -34,10 +34,10 @@ PG_FUNCTION_INFO_V1(pg_prewarm);
 typedef enum
 {
 	PREWARM_PREFETCH,
-	PREWARM_READ,
 	PREWARM_READ_AIO,
-	PREWARM_BUFFER,
-	PREWARM_BUFFER_AIO
+	PREWARM_READ_NOAIO,
+	PREWARM_BUFFER_AIO,
+	PREWARM_BUFFER_NOAIO
 } PrewarmType;
 
 static PGAlignedBlock blockbuffer;
@@ -190,19 +190,19 @@ pg_prewarm(PG_FUNCTION_ARGS)
 	if (strcmp(ttype, "prefetch") == 0)
 		ptype = PREWARM_PREFETCH;
 	else if (strcmp(ttype, "read") == 0)
-		ptype = PREWARM_READ;
-	else if (strcmp(ttype, "buffer") == 0)
-		ptype = PREWARM_BUFFER;
-	else if (strcmp(ttype, "buffer_aio") == 0)
-		ptype = PREWARM_BUFFER_AIO;
-	else if (strcmp(ttype, "read_aio") == 0)
 		ptype = PREWARM_READ_AIO;
+	else if (strcmp(ttype, "buffer") == 0)
+		ptype = PREWARM_BUFFER_AIO;
+	else if (strcmp(ttype, "buffer_noaio") == 0)
+		ptype = PREWARM_BUFFER_NOAIO;
+	else if (strcmp(ttype, "read_aio") == 0)
+		ptype = PREWARM_READ_NOAIO;
 	else
 	{
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("invalid prewarm type"),
-				 errhint("Valid prewarm types are \"prefetch\", \"read\", and \"buffer\".")));
+				 errhint("Valid prewarm types are \"prefetch\", \"read\", \"read_noaio\", \"buffer\" and , \"buffer_noaio\".")));
 		PG_RETURN_INT64(0);		/* Placate compiler. */
 	}
 	if (PG_ARGISNULL(2))
@@ -279,7 +279,7 @@ pg_prewarm(PG_FUNCTION_ARGS)
 				 errmsg("prefetch is not supported by this build")));
 #endif
 	}
-	else if (ptype == PREWARM_READ)
+	else if (ptype == PREWARM_READ_NOAIO)
 	{
 		/*
 		 * In read mode, we actually read the blocks, but not into shared
@@ -293,7 +293,7 @@ pg_prewarm(PG_FUNCTION_ARGS)
 			++blocks_done;
 		}
 	}
-	else if (ptype == PREWARM_BUFFER)
+	else if (ptype == PREWARM_BUFFER_NOAIO)
 	{
 		/*
 		 * In buffer mode, we actually pull the data into shared_buffers.
