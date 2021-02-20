@@ -3408,17 +3408,17 @@ pg_get_multixact_members(PG_FUNCTION_ARGS)
 /*
  * Entrypoint for sync.c to sync offsets files.
  */
-int
-multixactoffsetssyncfiletag(const FileTag *ftag, char *path)
+void
+multixactoffsetssyncfiletag(struct PgStreamingWrite *pgsw, InflightSyncEntry *entry)
 {
-	return SlruSyncFileTag(MultiXactOffsetCtl, ftag, path);
+	SlruSyncFileTag(MultiXactOffsetCtl, pgsw, entry);
 }
 
 /*
  * Entrypoint for sync.c to sync members files.
  */
-int
-multixactmemberssyncfiletag(const FileTag *ftag, char *path)
+void
+multixactmemberssyncfiletag(struct PgStreamingWrite *pgsw, InflightSyncEntry *entry)
 {
-	return SlruSyncFileTag(MultiXactMemberCtl, ftag, path);
+	SlruSyncFileTag(MultiXactMemberCtl, pgsw, entry);
 }

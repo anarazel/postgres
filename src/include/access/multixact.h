@@ -118,8 +118,8 @@ extern bool MultiXactIdPrecedes(MultiXactId multi1, MultiXactId multi2);
 extern bool MultiXactIdPrecedesOrEquals(MultiXactId multi1,
 										MultiXactId multi2);
 
-extern int	multixactoffsetssyncfiletag(const FileTag *ftag, char *path);
-extern int	multixactmemberssyncfiletag(const FileTag *ftag, char *path);
+extern void multixactoffsetssyncfiletag(struct PgStreamingWrite *pgsw, InflightSyncEntry *entry);
+extern void multixactmemberssyncfiletag(struct PgStreamingWrite *pgsw, InflightSyncEntry *entry);
 
 extern void AtEOXact_MultiXact(void);
 extern void AtPrepare_MultiXact(void);
