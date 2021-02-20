@@ -345,11 +345,20 @@ pgaio_posix_drain(PgAioContext *context)
 	{
 		PgAioInProgress *io = &aio_ctl->in_progress_io[io_index];
 		int merged_result;
+		uint32 submitter_id;
 
 		merged_result = io->result;
 		io->result = 0;
 
+		submitter_id = io->submitter_id;
+
 		pgaio_process_io_completion(io, merged_result);
+
+		/* Close a race with pgaio_posix_wait_one() in submitting process. */
+		/* XXX Could this be closed more efficiently with context locks? */
+		if (submitter_id != my_aio_id)
+			SetLatch(&ProcGlobal->allProcs[io->submitter_id].procLatch);
+
 		++ndrained;
 	}
 
