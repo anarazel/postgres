@@ -3,13 +3,14 @@
  * aio_posix.c
  *	  Routines for POSIX AIO.
  *
- * The kernel manages IOs submitted with aio_XXX() and lio_listio(), and
- * notifies us of completion with signals.  A signal handler pushes completion
- * events into a shared completion queue where they'll be processed by the next
- * backend to "drain" the queue.  That seems Rube Goldberg-esque, but avoids
- * the risk of deadlock when processes wait for IOs that were initiated by
- * other processes at arbitrary times.  Other less portable but more efficient
- * notification methods may be possible in the future.
+ * The kernel (or on some systems, a pool of threads) manages IOs submitted
+ * with aio_XXX() and lio_listio(), and notifies us of completion with signals.
+ * A signal handler pushes completion events into a shared completion queue
+ * where they'll be processed by the next backend to "drain" the queue.  That
+ * seems Rube Goldberg-esque, but avoids the risk of deadlock when processes
+ * wait for IOs that were initiated by other processes at arbitrary times.
+ * Other less portable but more efficient notification methods may be possible
+ * in the future.
  *
  * This method of AIO is available in --with-posix-aio builds.  It is
  * available on many Unix-like operating systems, but the quality of
@@ -47,10 +48,9 @@ static sig_atomic_t pgaio_posix_set_latch_on_return = false;
  * Realtime signals are missing on macOS systems.  We have to work harder in
  * that case, tracking all IOs in an array that we can safely scan from a
  * signal handler.  Also, macOS's lio_listio() facility is not suitable due to
- * lack of per-IO notifications.  XXX does this let us test all combinations
- * on a non-mac too?
+ * lack of per-IO notifications.
  */
-#if defined(SIGRTMIN) && !defined(MISSING_LIO_REALTIME_SIGNALS)
+#if defined(SIGRTMIN) && !defined(MISSING_POSIX_REALTIME_SIGNALS)
 #define PGAIO_POSIX_SIGNO SIGRTMIN
 #else
 #define MISSING_POSIX_REALTIME_SIGNALS
@@ -58,6 +58,22 @@ static sig_atomic_t pgaio_posix_set_latch_on_return = false;
 #define PGAIO_POSIX_SIGNO SIGIO
 volatile sig_atomic_t *my_inflight_io;
 volatile sig_atomic_t my_inflight_io_count;
+#endif
+
+/*
+ * Glibc's pthread-based fake AIO implementation can occasionally deadlock in
+ * the signal handler, because its aio_error() and aio_return() functions are
+ * not async-signal-safe (which they should be according to POSIX).
+ * Specifically, they use pthead mutexes that can deadlock against the user
+ * context while it's trying to submit.  We have no choice but to block the
+ * signal while submitting.  Define POSIX_AIO_ASYNC_SIG_UNSAFE to test those
+ * code paths on other systems.
+ */
+#if defined(__GLIBC__)
+#define POSIX_AIO_ASYNC_SIG_UNSAFE
+#endif
+#ifdef POSIX_AIO_ASYNC_SIG_UNSAFE
+static sigset_t pgaio_posix_sigmask;
 #endif
 
 static void pgaio_posix_signal_handler(int sig, siginfo_t *si, void *uap);
@@ -100,6 +116,27 @@ pgaio_posix_postmaster_child_init_local(void)
 	for (size_t i = 0; i < max_aio_in_flight; ++i)
 		my_inflight_io[i] = (sig_atomic_t) -1;
 	my_inflight_io_count = 0;
+#endif
+
+#ifdef POSIX_AIO_ASYNC_SIG_UNSAFE
+	sigemptyset(&pgaio_posix_sigmask);
+	sigaddset(&pgaio_posix_sigmask, PGAIO_POSIX_SIGNO);
+#endif
+}
+
+static inline void
+pgaio_posix_presubmit(void)
+{
+#ifdef POSIX_AIO_ASYNC_SIG_UNSAFE
+	sigprocmask(SIG_BLOCK, NULL, &pgaio_posix_sigmask);
+#endif
+}
+
+static inline void
+pgaio_posix_postsubmit(void)
+{
+#ifdef POSIX_AIO_ASYNC_SIG_UNSAFE
+	sigprocmask(SIG_UNBLOCK, NULL, &pgaio_posix_sigmask);
 #endif
 }
 
@@ -191,14 +228,6 @@ pgaio_posix_poll_aiocb(PgAioInProgress *io)
 	/* Spinlocks are not safe in this context. */
 #error "Cannot use squeue32 from signal handler without atomics"
 #endif
-
-	/*
-	 * XXX Unfortunately the glibc implementation can occasionally deadlock
-	 * here, because its aio_error() and aio_return() functions are not
-	 * async-signal safe, as required by POSIX.  Specifically, they use
-	 * pthead mutexes that can deadlock against the user context.  Would it
-	 * help if we blocked the signal while submitting?
-	 */
 
 	Assert(io->submitter_id == my_aio_id);
 
@@ -579,6 +608,7 @@ pgaio_posix_submit(int max_submit, bool drain)
 	int nios = 0;
 	pgaio_posix_listio_buffer listio_buffer = {0};
 
+	pgaio_posix_presubmit();
 	while (!dlist_is_empty(&my_aio->pending))
 	{
 		dlist_node *node;
@@ -615,6 +645,7 @@ pgaio_posix_submit(int max_submit, bool drain)
 		++nios;
 	}
 	pgaio_posix_flush_listio(&listio_buffer);
+	pgaio_posix_postsubmit();
 
 	/* XXXX copied from uring submit */
 	/*
@@ -663,6 +694,7 @@ pgaio_posix_io_retry(PgAioInProgress *io)
 
 	WRITE_ONCE_F(io->flags) |= PGAIOIP_INFLIGHT;
 
+	pgaio_posix_presubmit();
 	rc = pgaio_posix_submit_one(io, &listio_buffer);
 	if (rc < 0)
 	{
@@ -670,6 +702,7 @@ pgaio_posix_io_retry(PgAioInProgress *io)
 		pgaio_posix_postflight(io);
 	}
 	pgaio_posix_flush_listio(&listio_buffer);
+	pgaio_posix_postsubmit();
 
 	ConditionVariableBroadcast(&io->cv);
 }
