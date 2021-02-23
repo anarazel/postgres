@@ -160,6 +160,18 @@ task:
     - echo io_wal_init_direct=on >> /tmp/extra.conf
     - echo restart_after_crash=false >> /tmp/extra.conf
     - su postgres -c 'ulimit -c unlimited ; TEMP_CONFIG=/tmp/extra.conf make -s check'
+  linux_posix_buf_script:
+    - echo io_method=posix > /tmp/extra.conf
+    - echo io_data_direct=off >> /tmp/extra.conf
+    - echo io_wal_direct=off >> /tmp/extra.conf
+    - echo io_wal_init_direct=off >> /tmp/extra.conf
+    - su postgres -c 'ulimit -c unlimited ; TEMP_CONFIG=/tmp/extra.conf make -s check'
+  linux_posix_dio_script:
+    - echo io_method=posix > /tmp/extra.conf
+    - echo io_data_direct=on >> /tmp/extra.conf
+    - echo io_wal_direct=on >> /tmp/extra.conf
+    - echo io_wal_init_direct=on >> /tmp/extra.conf
+    - su postgres -c 'ulimit -c unlimited ; TEMP_CONFIG=/tmp/extra.conf make -s check'
   on_failure:
     debug_script:
       - for F in ` find . -name initdb.log -o -name regression.diffs -o -name postmaster.log` ; do echo === $F === ; head -1000 $F ; done
