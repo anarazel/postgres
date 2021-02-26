@@ -3321,6 +3321,8 @@ void
 InitBufferPoolBackend(void)
 {
 	on_shmem_exit(AtProcExit_Buffers, 0);
+
+	BufReserveInit();
 }
 
 /*
