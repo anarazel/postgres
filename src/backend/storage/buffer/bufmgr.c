@@ -171,6 +171,8 @@ bool		io_data_direct = 0;
 bool		io_data_force_async = 1;
 bool		io_wal_direct = 0;
 bool		io_wal_init_direct = 0;
+int			io_wal_concurrency = 32;
+int			io_wal_target_blocks = 8;
 
 /* local state for StartBufferIO and related functions */
 static BufferDesc *InProgressBuf = NULL;
@@ -1744,6 +1746,7 @@ AsyncGetVictimBuffer(BufferAccessStrategy strategy, XLogRecPtr *lsn, PgAioIoRef 
 	while (true)
 	{
 		uint32 cur_buf_state;
+		XLogRecPtr page_lsn = InvalidXLogRecPtr;
 
 		ReservePrivateRefCountEntry();
 		ResourceOwnerEnlargeBuffers(CurrentResourceOwner);
@@ -1773,6 +1776,24 @@ AsyncGetVictimBuffer(BufferAccessStrategy strategy, XLogRecPtr *lsn, PgAioIoRef 
 		else
 		{
 			LWLock *content_lock;
+
+			Assert(cur_buf_state & BM_PERMANENT);
+
+			page_lsn = BufferGetLSN(cur_buf_hdr);
+
+			if (cur_buf_state & BM_PERMANENT)
+			{
+				if (XLogAsyncFlush(page_lsn))
+				{
+					*lsn = page_lsn;
+					break;
+				}
+				else if (XLogNeedsFlush(page_lsn))
+				{
+					*lsn = page_lsn;
+					break;
+				}
+			}
 
 			if (aio == NULL)
 				aio = pgaio_io_get();
