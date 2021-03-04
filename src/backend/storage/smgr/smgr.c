@@ -298,6 +298,12 @@ smgrcloseall(void)
 		smgrclose(reln);
 }
 
+void
+smgrrelease(void)
+{
+	mdrelease();
+}
+
 /*
  *	smgrclosenode() -- Close SMgrRelation object for given RelFileNode,
  *					   if one exists.
