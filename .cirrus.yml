@@ -15,7 +15,7 @@ task:
     image: family/pg-aio-freebsd-12-2
     platform: freebsd
     cpu: 4
-    memory: 4G
+    memory: 8G
   env:
     CCACHE_SIZE: "500M"
     CCACHE_DIR: "/tmp/ccache_dir"
@@ -162,8 +162,8 @@ task:
   use_compute_credits: true
   windows_container:
     dockerfile: ci/WindowsDockerfile
-    cpu: 4
-    memory: 4G
+    cpu: 8
+    memory: 8G
   env:
     PROVE_FLAGS: -j10
     # Avoid re-installing over and over
