@@ -1,0 +1,20 @@
+backend_sources += files(
+  'auth-scram.c',
+  'auth.c',
+  'be-fsstubs.c',
+  'be-secure-common.c',
+  'be-secure.c',
+  'crypt.c',
+  'hba.c',
+  'ifaddr.c',
+  'pqcomm.c',
+  'pqformat.c',
+  'pqmq.c',
+  'pqsignal.c',
+)
+
+if ssl.found()
+  backend_sources += files('be-secure-openssl.c')
+endif
+
+install_data('pg_hba.conf.sample', 'pg_ident.conf.sample', install_dir: 'share/')

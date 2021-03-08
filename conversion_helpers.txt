@@ -1,0 +1,6 @@
+convert list of files to quoted-one-per-line:
+
+	?\b\(\(?:\w\|\d\|_\|-\)+\)\.o ?\(?:\\
+\)? →   '\1.c',
+
+

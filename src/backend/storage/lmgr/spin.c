@@ -114,7 +114,7 @@ static inline void
 s_check_valid(int lockndx)
 {
 	if (unlikely(lockndx <= 0 || lockndx > NUM_EMULATION_SEMAPHORES))
-		elog(ERROR, "invalid spinlock number: %d", lockndx);
+		elog(PANIC, "invalid spinlock number: %d", lockndx);
 }
 
 void

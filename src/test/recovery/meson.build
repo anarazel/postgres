@@ -1,0 +1,27 @@
+tap_tests += {
+  'sd': meson.current_source_dir(),
+  'name' : 'recovery',
+  'tests' : [
+    't/001_stream_rep.pl',
+    't/002_archiving.pl',
+    't/003_recovery_targets.pl',
+    't/004_timeline_switch.pl',
+    't/005_replay_delay.pl',
+    't/006_logical_decoding.pl',
+    't/007_sync_rep.pl',
+    't/008_fsm_truncation.pl',
+    't/009_twophase.pl',
+    't/010_logical_decoding_timelines.pl',
+    't/011_crash_recovery.pl',
+    't/012_subtransactions.pl',
+    't/013_crash_restart.pl',
+    't/014_unlogged_reinit.pl',
+    't/015_promotion_pages.pl',
+    't/016_min_consistency.pl',
+    't/017_shm.pl',
+    't/018_wal_optimize.pl',
+    't/019_replslot_limit.pl',
+    't/020_archive_status.pl',
+    't/021_row_visibility.pl'
+  ]
+}

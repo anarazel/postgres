@@ -1,0 +1,17 @@
+backend_sources += files(
+  'bitmapset.c',
+  'copyfuncs.c',
+  'equalfuncs.c',
+  'extensible.c',
+  'list.c',
+  'makefuncs.c',
+  'nodeFuncs.c',
+  'nodes.c',
+  'outfuncs.c',
+  'params.c',
+  'print.c',
+  'read.c',
+  'readfuncs.c',
+  'tidbitmap.c',
+  'value.c',
+)

@@ -1,0 +1,17 @@
+option('BLCKSZ', type : 'combo', choices : ['1', '2', '4', '8', '16', '32'], value : '8',
+  description: 'set table block size in kB')
+
+option('without_readline', type : 'boolean', value : false,
+  description: 'do not use GNU Readline nor BSD Libedit for editing')
+
+option('ssl', type : 'combo', choices : ['none', 'openssl'], value : 'none',
+  description: 'use LIB for SSL/TLS support (openssl)')
+
+option('atomics', type : 'boolean', value: true,
+  description: 'whether to use atomic operations')
+
+option('zlib', type : 'boolean', value: true,
+  description: 'whether to use zlib')
+
+option('llvm', type : 'boolean', value: false,
+  description: 'whether to use llvm')

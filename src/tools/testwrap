@@ -1,0 +1,19 @@
+#!/bin/bash
+#
+# FIXME: I should probably be a perl or python script
+#
+
+# FIXME: argument parsing
+
+basedir=$1
+testgroup=$2
+testname=$(basename -s .pl $3)
+shift 3
+
+testdir="$basedir/testrun/$testgroup/$testname"
+echo "# executing test in $testdir group $testgroup test $testname"
+mkdir -p "$testdir"
+rm -rf "testdir/*"
+export TESTDIR="$testdir"
+
+exec "$@"
