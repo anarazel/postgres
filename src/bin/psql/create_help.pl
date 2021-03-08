@@ -23,9 +23,12 @@ use strict;
 use warnings;
 
 my $docdir = $ARGV[0] or die "$0: missing required argument: docdir\n";
-my $hfile = $ARGV[1] . '.h'
+my $outdir = $ARGV[1] or die "$0: missing required argument: outdir\n";
+
+my $hfile = $ARGV[2] . '.h'
   or die "$0: missing required argument: output file\n";
-my $cfile = $ARGV[1] . '.c';
+my $cfile = $ARGV[2] . '.c';
+my $depfile = $ARGV[2] . '.dep';
 
 my $hfilebasename;
 if ($hfile =~ m!.*/([^/]+)$!)
@@ -43,10 +46,12 @@ $define =~ s/\W/_/g;
 
 opendir(DIR, $docdir)
   or die "$0: could not open documentation source dir '$docdir': $!\n";
-open(my $hfile_handle, '>', $hfile)
+open(my $hfile_handle, '>', $outdir . '/' . $hfile)
   or die "$0: could not open output file '$hfile': $!\n";
-open(my $cfile_handle, '>', $cfile)
+open(my $cfile_handle, '>', $outdir . '/' . $cfile)
   or die "$0: could not open output file '$cfile': $!\n";
+open(my $depfile_handle, '>', $outdir . '/' . $depfile)
+  or die "$0: could not open output file '$depfile': $!\n";
 
 print $hfile_handle "/*
  * *** Do not change this file by hand. It is automatically
@@ -97,6 +102,8 @@ foreach my $file (sort readdir DIR)
 {
 	my ($cmdid, @cmdnames, $cmddesc, $cmdsynopsis);
 	$file =~ /\.sgml$/ or next;
+
+	print $depfile_handle "$cfile $hfile: $docdir/$file\n";
 
 	open(my $fh, '<', "$docdir/$file") or next;
 	my $filecontent = join('', <$fh>);
@@ -216,4 +223,5 @@ print $hfile_handle "
 
 close $cfile_handle;
 close $hfile_handle;
+close $depfile_handle;
 closedir DIR;
