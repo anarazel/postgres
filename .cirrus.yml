@@ -1,0 +1,229 @@
+env:
+  # accelerate initial clone
+  CIRRUS_CLONE_DEPTH: 1
+  # target to test, for all but OSX and windows
+  CHECK: check-world
+  CHECKFLAGS: -Otarget
+
+
+task:
+  name: FreeBSD
+  compute_engine_instance:
+    image_project: pg-vm-images-aio
+    image: family/pg-aio-freebsd-12-2
+    platform: freebsd
+    cpu: 4
+    memory: 8G
+  env:
+    CCACHE_SIZE: "500M"
+    CCACHE_DIR: "/tmp/ccache_dir"
+  ccache_cache:
+    folder: "/tmp/ccache_dir"
+  sysconfig_script:
+    - sudo sysctl kern.corefile='/tmp/%N.%P.core'
+  create_user_script:
+    - pw useradd postgres
+    - chown -R postgres:postgres .
+    - mkdir -p /tmp/ccache_dir
+    - chown -R postgres:postgres /tmp/ccache_dir
+  build_script:
+    - su postgres -c './configure --enable-cassert --enable-debug --enable-tap-tests --with-includes=/usr/local/include --with-libs=/usr/local/lib CC="ccache cc"'
+    - su postgres -c 'gmake -s -j4'
+  freebsd_test_script:
+    - su postgres -c 'time gmake -s -j4 ${CHECK} ${CHECKFLAGS}' > test.log 2>&1
+  on_failure:
+    core_script:
+      for corefile in $(find /tmp -name '*.core' 2>/dev/null) ; do binary=$(gdb -quiet -core $corefile -batch -ex 'info auxv' | grep AT_EXECPATH | perl -pe "s/^.*\"(.*)\"\$/\$1/g") ; echo dumping $corefile for $binary ; gdb --batch --quiet -ex "thread apply all bt full" -ex "quit" $binary $corefile ; done
+    debug_script:
+      - for F in ` find . -name initdb.log -o -name regression.diffs -o -name 'postmaster*.log'` ; do echo === $F === ; head -1000 $F ; done
+    log_artifacts:
+      path: "**/**.log"
+      type: text/plain
+
+
+task:
+  name: Linux Debian Bullseye
+  compute_engine_instance:
+    image_project: pg-vm-images-aio
+    image: family/pg-aio-bullseye
+    platform: linux
+    cpu: 4
+    memory: 8G
+    nested_virtualization: false
+  env:
+    CCACHE_SIZE: "4GB"
+    CCACHE_DIR: "/tmp/ccache_dir"
+    DEBUGINFOD_URLS: "https://debuginfod.debian.net"
+    TIMEOUT_CMD: timeout -s KILL -v 25m
+  ccache_cache:
+    folder: "/tmp/ccache_dir"
+  test_script:
+    - id
+    - uname -a
+    - cat /proc/cmdline
+    - lsblk
+    - cat /proc/cmdline
+    - ulimit -a -H
+    - ulimit -a -S
+    - export
+  create_user_script:
+    - useradd -m postgres
+    - chown -R postgres:postgres .
+    - mkdir -p /tmp/ccache_dir
+    - chown -R postgres:postgres /tmp/ccache_dir
+    - echo '* - memlock 134217728' > /etc/security/limits.d/postgres.conf
+    - su postgres -c 'ulimit -l -H'
+    - su postgres -c 'ulimit -l -S'
+    - echo '/tmp/%e-%s-%p.core' > /proc/sys/kernel/core_pattern
+  configure_script:
+    - su postgres -c './configure --enable-cassert --enable-debug --enable-tap-tests --with-tcl --with-python --with-perl --with-ldap --with-openssl --with-icu --with-llvm CC="ccache gcc" CXX="ccache g++" CLANG="ccache clang"'
+  build_script:
+    - su postgres -c 'make -s -j4 && make -j4 -C contrib'
+  linux_test_script:
+    - su postgres -c 'ulimit -c unlimited ; ${TIMEOUT_CMD} make -s ${CHECK} ${CHECKFLAGS} -j8'
+  on_failure:
+    cores_script:
+      - for corefile in $(find /tmp/ -name '*.core' 2>/dev/null) ; do binary=$(gdb -quiet -core $corefile -batch -ex 'info auxv' | grep AT_EXECFN | perl -pe "s/^.*\"(.*)\"\$/\$1/g") ; echo dumping $corefile for $binary ; gdb --batch --quiet -ex "thread apply all bt full" -ex "quit" $binary $corefile ; done
+    debug_script:
+      - for F in ` find . -name initdb.log -o -name regression.diffs -o -name 'postmaster*.log'` ; do echo === $F === ; head -1000 $F ; done
+    log_artifacts:
+      path: "**/**.log"
+      type: text/plain
+
+
+task:
+  name: macOS
+  osx_instance:
+    image: catalina-base
+  env:
+    CHECK: check
+  install_script:
+    - sudo chmod 777 /cores
+    - uname -a
+    - brew install make coreutils
+    - cpan -T IPC::Run
+  build_script:
+    - export PERL5LIB=~/perl5/lib/perl5
+    - ./configure --prefix=$HOME/install --enable-cassert --enable-debug --enable-tap-tests --without-readline CFLAGS="-O0"
+    - gmake -s -j12
+    - gmake -s install
+  macos_test_script:
+    - ulimit -c unlimited
+    - export PERL5LIB=~/perl5/lib/perl5
+    - gtimeout -s KILL -v 15m gmake -s -j12 ${CHECK} ${CHECKFLAGS}
+  on_failure:
+    debug_script:
+      - for F in ` find . -name initdb.log -o -name regression.diffs -o -name 'postmaster*.log'` ; do echo === $F === ; head -1000 $F ; done
+      - for corefile in $(find /cores/ -name 'core.*' 2>/dev/null) ; do lldb -c $corefile --batch -o 'thread backtrace all' -o 'quit' ; done
+    log_artifacts:
+      path: "**/**.log"
+      type: text/plain
+
+
+task:
+  name: Windows
+  windows_container:
+    dockerfile: ci/WindowsDockerfile
+    cpu: 8
+    memory: 8G
+  env:
+    PROVE_FLAGS: -j10
+    # Avoid re-installing over and over
+    NO_TEMP_INSTALL: 1
+    TIMEOUT_CMD: timeout -k60s 30m
+
+  test_script:
+    - powershell -Command get-psdrive -psprovider filesystem
+    - set
+
+  config_script:
+    - copy ci\windows_build_config.pl src\tools\msvc\config.pl
+    - vcvarsall x64
+    - perl src/tools/msvc/mkvcbuild.pl
+  build_script:
+    - set IgnoreWarnIntDirInTempDetected=true
+    - vcvarsall x64
+    - msbuild -m pgsql.sln
+  install_script:
+    - perl src\tools\msvc\install.pl tmp_install
+
+  check_script:
+    - timeout -k60s 30m perl src/tools/msvc/vcregress.pl check parallel
+
+  ecpgcheck_script:
+    # tries to build additional stuff
+    - vcvarsall x64
+    # References ecpg_regression.proj in the current dir
+    - cd src\tools\msvc
+    - timeout -k60s 30m perl vcregress.pl ecpgcheck
+
+  startcreate_script:
+    - tmp_install\bin\pg_ctl.exe initdb -D tmp_check\db -l tmp_check\initdb.log
+    - tmp_install\bin\pg_ctl.exe start -D tmp_check\db -o -cmax_prepared_transactions=10 -l tmp_check\postmaster.log
+  modulescheck_script:
+    - timeout -k60s 30m perl src/tools/msvc/vcregress.pl modulescheck
+  isolationcheck_script:
+    - timeout -k60s 30m perl src/tools/msvc/vcregress.pl isolationcheck
+  contribcheck_script:
+    - timeout -k60s 30m perl src/tools/msvc/vcregress.pl contribcheck
+  plcheck_script:
+    - timeout -k60s 30m perl src/tools/msvc/vcregress.pl plcheck
+  stop_script:
+    # XXX: should ensure this gets called if previous steps fail
+    - tmp_install\bin\pg_ctl.exe stop -D tmp_check\db -l tmp_check\postmaster.log
+  recoverycheck_script:
+    - timeout -k60s 30m perl src/tools/msvc/vcregress.pl recoverycheck
+  bincheck_script:
+    - timeout -k60s 30m perl src/tools/msvc/vcregress.pl bincheck
+  upgradecheck_script:
+    - timeout -k60s 30m perl src/tools/msvc/vcregress.pl upgradecheck
+  on_failure:
+    log_artifacts:
+      path: "**/**.log"
+      type: text/plain
+    regress_log_artifacts:
+      path: "**/tmp_check/log/regress_log*"
+      type: text/plain
+    regress_diffs_artifacts:
+      path: "**/**.diffs*"
+      type: text/plain
+
+
+task:
+  name: CompilerWarnings
+  depends_on:
+  - FreeBSD
+  - Linux Debian Bullseye
+  - Windows
+  - macOS
+  container:
+    dockerfile: ci/LinuxDockerfile
+  env:
+    CCACHE_SIZE: "4GB"
+    CCACHE_DIR: "/tmp/ccache_dir"
+  ccache_cache:
+    folder: "/tmp/ccache_dir"
+  setup_script:
+    - echo "COPT=-Werror" > src/Makefile.custom
+    - gcc -v
+    - clang -v
+  # gcc with asserts disabled
+  always:
+    gcc_warning_script:
+      - ./configure --cache gcc.cache CC="ccache gcc"
+      - time make -s -j4 clean && time make -s -j4
+  # gcc with asserts enabled
+  always:
+    gcc_a_warning_script:
+      - ./configure --cache gcc.cache --enable-cassert CC="ccache gcc"
+      - time make -s -j4 clean && time make -s -j4
+  # clang with asserts disabled
+  always:
+    clang_warning_script:
+      - ./configure --cache clang.cache CC="ccache clang"
+      - time make -s -j4 clean && time make -s -j4
+  # clang with asserts enabled
+  always:
+    clang_a_warning_script:
+      - ./configure --cache clang.cache --enable-cassert CC="ccache clang"
+      - time make -s -j4 clean && time make -s -j4

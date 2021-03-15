@@ -1,0 +1,26 @@
+#FROM cirrusci/windowsservercore:2019
+FROM cirrusci/windowsservercore:cmake
+
+SHELL ["powershell", "-NoLogo", "-NoProfile", "-Command"]
+
+RUN powershell -NoLogo -NoProfile -Command \
+  choco install -y --no-progress strawberryperl ; \
+  choco install -y --no-progress winflexbison diffutils ; \
+  Rename-Item -Path c:\ProgramData\chocolatey\bin\win_flex.exe flex.exe ; \
+  Rename-Item -Path c:\ProgramData\chocolatey\bin\win_bison.exe bison.exe ; \
+  Remove-Item C:\ProgramData\chocolatey\logs\*.* -Force -Recurse ; \
+  Remove-Item C:\Users\ContainerAdministrator\AppData\Local\Temp\*.* -Force -Recurse
+
+# not needed anymore, installed in cmake image after
+# https://github.com/cirruslabs/docker-images-windows/pull/21/commits/437d7321d33198f27246dac11d80bac29a0aed0a
+#RUN powershell -NoLogo -NoProfile -Command \
+#  choco feature disable -n=usePackageExitCodes ; \
+#  choco install -d -y --no-progress visualstudio2019buildtools --parameters=\"--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --add Microsoft.VisualStudio.Component.Windows10SDK.18362 \" ; \
+#  Remove-Item C:\ProgramData\chocolatey\logs\*.* -Force -Recurse ; \
+#  Remove-Item C:\Users\ContainerAdministrator\AppData\Local\Temp\*.* -Force -Recurse
+
+SHELL ["cmd", "/s", "/c"]
+
+# Adding VS path to vcvarsall.bat so user of container doesn't need to know the full path
+# Ordered so strawberry perl wins over git perl
+RUN setx path /m "C:\strawberry\perl\bin;C:\Program Files\Git\usr\bin;c:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build;%PATH%"
