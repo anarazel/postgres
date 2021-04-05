@@ -76,6 +76,7 @@ task:
     - su postgres -c 'ulimit -l -S'
     - echo '/tmp/%e-%s-%p.core' > /proc/sys/kernel/core_pattern
   configure_script:
+    - echo "COPT=-O0 -ggdb" > src/Makefile.custom
     - su postgres -c './configure --enable-cassert --enable-debug --enable-tap-tests --with-tcl --with-python --with-perl --with-ldap --with-openssl --with-icu --with-llvm CC="ccache gcc" CXX="ccache g++" CLANG="ccache clang"'
   build_script:
     - su postgres -c 'make -s -j4 && make -j4 -C contrib'
