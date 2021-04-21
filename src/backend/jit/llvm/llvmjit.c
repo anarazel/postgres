@@ -101,6 +101,8 @@ static size_t llvm_jit_context_in_use_count = 0;
 static size_t llvm_llvm_context_reuse_count = 0;
 static const char *llvm_triple = NULL;
 static const char *llvm_layout = NULL;
+static char *llvm_cpu = NULL;
+static char *llvm_cpu_features = NULL;
 static LLVMContextRef llvm_context;
 
 
@@ -123,6 +125,7 @@ static void llvm_optimize_module(LLVMJitContext *context, LLVMModuleRef module);
 
 static void llvm_create_types(void);
 static void llvm_set_target(void);
+static void llvm_set_cpu_and_features(void);
 static void llvm_recreate_llvm_context(void);
 static uint64_t llvm_resolve_symbol(const char *name, void *ctx);
 
@@ -884,9 +887,6 @@ static void
 llvm_session_initialize(void)
 {
 	MemoryContext oldcontext;
-	char	   *error = NULL;
-	char	   *cpu = NULL;
-	char	   *features = NULL;
 	LLVMTargetMachineRef opt0_tm;
 	LLVMTargetMachineRef opt3_tm;
 
@@ -931,37 +931,20 @@ llvm_session_initialize(void)
 	 */
 	llvm_set_target();
 
-	if (LLVMGetTargetFromTriple(llvm_triple, &llvm_targetref, &error) != 0)
-	{
-		elog(FATAL, "failed to query triple %s", error);
-	}
-
-	/*
-	 * We want the generated code to use all available features. Therefore
-	 * grab the host CPU string and detect features of the current CPU. The
-	 * latter is needed because some CPU architectures default to enabling
-	 * features not all CPUs have (weird, huh).
-	 */
-	cpu = LLVMGetHostCPUName();
-	features = LLVMGetHostCPUFeatures();
-	elog(DEBUG2, "LLVMJIT detected CPU \"%s\", with features \"%s\"",
-		 cpu, features);
+	llvm_set_cpu_and_features();
 
 	opt0_tm =
-		LLVMCreateTargetMachine(llvm_targetref, llvm_triple, cpu, features,
+		LLVMCreateTargetMachine(llvm_targetref, llvm_triple,
+								llvm_cpu, llvm_cpu_features,
 								LLVMCodeGenLevelNone,
 								LLVMRelocDefault,
 								LLVMCodeModelJITDefault);
 	opt3_tm =
-		LLVMCreateTargetMachine(llvm_targetref, llvm_triple, cpu, features,
+		LLVMCreateTargetMachine(llvm_targetref, llvm_triple,
+								llvm_cpu, llvm_cpu_features,
 								LLVMCodeGenLevelAggressive,
 								LLVMRelocDefault,
 								LLVMCodeModelJITDefault);
-
-	LLVMDisposeMessage(cpu);
-	cpu = NULL;
-	LLVMDisposeMessage(features);
-	features = NULL;
 
 	/* force symbols in main binary to be loaded */
 	LLVMLoadLibraryPermanently(NULL);
@@ -1093,20 +1076,178 @@ load_return_type(LLVMModuleRef mod, const char *name)
 }
 
 /*
+ * Copies a string that needs to be freed with LLVMDisposeMessage() and then
+ * frees the source string.
+ */
+static char *
+llvm_to_pg_str(char *str)
+{
+	char	   *ret = pstrdup(str);
+
+	LLVMDisposeMessage(str);
+
+	return ret;
+}
+
+/*
+ * Return data layout for a target machine created with cpu and features
+ *
+ * The return value is a palloc'd string.
+ */
+static char *
+determine_data_layout(const char *cpu, const char *features)
+{
+	LLVMTargetMachineRef tm;
+	LLVMTargetDataRef layout;
+	char	   *layout_str;
+
+	tm = LLVMCreateTargetMachine(llvm_targetref, llvm_triple, cpu, features,
+								 LLVMCodeGenLevelNone,
+								 LLVMRelocDefault,
+								 LLVMCodeModelJITDefault);
+	layout = LLVMCreateTargetDataLayout(tm);
+	layout_str = LLVMCopyStringRepOfTargetData(layout);
+
+	LLVMDisposeTargetData(layout);
+	LLVMDisposeTargetMachine(tm);
+
+	return llvm_to_pg_str(layout_str);
+}
+
+/*
+ * Convenience wrapper around LLVMGetStringAttributeAtIndex &
+ * LLVMGetStringAttributeValue.
+ *
+ * The return value is a zero-terminated, palloc'd string.
+ */
+static char *
+get_string_attribute_value(LLVMValueRef v, uint32 index,
+						   const char *name, const char *fallback)
+{
+	LLVMAttributeRef attr;
+	const char *val;
+	unsigned	len;
+
+	attr = LLVMGetStringAttributeAtIndex(v, index, name, strlen(name));
+	if (!attr)
+		return fallback ? pstrdup(fallback) : NULL;
+
+	val = LLVMGetStringAttributeValue(attr, &len);
+
+	/*
+	 * LLVMGetStringAttributeValue() returns values not zero terminated, which
+	 * inconvenient to work with. Also has the advantage that the return value
+	 * is freed by memory context cleanup etc.
+	 */
+	return psprintf("%.*s", len, val);
+}
+
+/*
  * Load triple & layout from clang emitted file so we're guaranteed to be
  * compatible.
  */
 static void
 llvm_set_target(void)
 {
+	char	   *error = NULL;
+
 	if (!llvm_types_module)
 		elog(ERROR, "failed to extract target information, llvmjit_types.c not loaded");
+
+	/* can get called again after partial initialization */
 
 	if (llvm_triple == NULL)
 		llvm_triple = pstrdup(LLVMGetTarget(llvm_types_module));
 
 	if (llvm_layout == NULL)
 		llvm_layout = pstrdup(LLVMGetDataLayoutStr(llvm_types_module));
+
+	if (llvm_targetref == NULL)
+	{
+		if (LLVMGetTargetFromTriple(llvm_triple, &llvm_targetref, &error) != 0)
+			elog(FATAL, "failed to query triple %s", error);
+	}
+}
+
+/*
+ * Determine CPU and features to use for JIT.
+ *
+ * We want the generated code to use all available features. Therefore
+ * grab the host CPU string and detect features of the current CPU. The
+ * latter is needed because some CPU architectures default to enabling
+ * features not all CPUs have (weird, huh).
+ *
+ * Unfortunately there is at least one architecture on which LLVM doesn't play
+ * fair - on s390, LLVM will use a different ABI for the same triple,
+ * depending on host CPU (IMO not a sane decision, but ...). To work around
+ * that, if the layout of llvmjit_types.bc does not match what we get using
+ * the host cpu / features, try target-cpu/target-features that clang recorded
+ * in llvmjit_types.bc at compile time.
+ */
+static void
+llvm_set_cpu_and_features(void)
+{
+	char	   *host_cpu;
+	char	   *host_cpu_features;
+	char	   *host_layout_str;
+
+	/* can get called again after partial initialization */
+	if (llvm_cpu != NULL)
+		return;
+
+	/* determine runtime CPU / feature */
+	host_cpu = llvm_to_pg_str(LLVMGetHostCPUName());
+	host_cpu_features = llvm_to_pg_str(LLVMGetHostCPUFeatures());
+	host_layout_str = determine_data_layout(host_cpu, host_cpu_features);
+
+	elog(DEBUG2, "detected CPU \"%s\", with features \"%s\", resulting in layout \"%s\"",
+		 host_cpu, host_cpu_features, host_layout_str);
+
+	/* check if we can use detected values or if we need to fall back */
+	if (strcmp(host_layout_str, llvm_layout) == 0)
+	{
+		llvm_cpu = host_cpu;
+		llvm_cpu_features = host_cpu_features;
+		pfree(host_layout_str);
+	}
+	else
+	{
+		char	   *module_cpu;
+		char	   *module_cpu_features;
+		char	   *module_layout_str;
+
+		/* incompatible, try to fall back to module cpu / features */
+
+		module_cpu = get_string_attribute_value(AttributeTemplate,
+												LLVMAttributeFunctionIndex,
+												"target-cpu", "generic");
+		module_cpu_features = get_string_attribute_value(AttributeTemplate,
+														 LLVMAttributeFunctionIndex,
+														 "target-features", "");
+		module_layout_str = determine_data_layout(module_cpu, module_cpu_features);
+
+		if (strcmp(module_layout_str, llvm_layout) != 0)
+		{
+			/* leaking a few strings, this isn't expected to ever be hit */
+			ereport(ERROR,
+					errmsg_internal("could not determine working CPU / feature comination for JIT compilation"),
+					errdetail_internal("compile time data layout: \"%s\", host layout \"%s\", fallback layout \"%s\"",
+									   llvm_layout, host_layout_str, module_layout_str));
+		}
+
+		llvm_cpu = module_cpu;
+		llvm_cpu_features = module_cpu_features;
+
+		ereport(DEBUG2,
+				errmsg_internal("detected CPU / features yield incompatible data layout, using values from module instead"),
+				errdetail_internal("module CPU \"%s\", features \"%s\", resulting in layout \"%s\"",
+								   module_cpu, module_cpu_features, module_layout_str));
+
+		pfree(host_cpu);
+		pfree(host_cpu_features);
+		pfree(host_layout_str);
+		pfree(module_layout_str);
+	}
 }
 
 /*
