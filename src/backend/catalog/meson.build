@@ -32,4 +32,9 @@ backend_sources += files(
 )
 
 
-install_data('information_schema.sql', 'sql_features.txt', 'system_views.sql', install_dir: 'share/')
+install_data(
+  'information_schema.sql',
+  'sql_features.txt',
+  'system_functions.sql',
+  'system_views.sql',
+  install_dir: 'share/')

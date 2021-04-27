@@ -732,7 +732,7 @@ test('temp_install',
 # A high-priority test that removes files potentially left over from
 # the last run
 test('cleanup_old',
-    rm_bin, args: ['-rf', meson.build_root() / 'tmp_check'],
+    rm_bin, args: ['-rf', meson.build_root() / 'testrun'],
     env: {'DESTDIR':test_install_target},
     priority: 100,
     is_parallel: false,

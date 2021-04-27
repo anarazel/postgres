@@ -7,6 +7,7 @@ libpq_sources = files(
   'fe-print.c',
   'fe-protocol3.c',
   'fe-secure.c',
+  'fe-trace.c',
   'legacy-pqsignal.c',
   'libpq-events.c',
   'pqexpbuffer.c',

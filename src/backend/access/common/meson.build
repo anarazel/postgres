@@ -11,6 +11,7 @@ backend_sources += files(
   'scankey.c',
   'session.c',
   'syncscan.c',
+  'toast_compression.c',
   'toast_internals.c',
   'tupconvert.c',
   'tupdesc.c',

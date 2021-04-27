@@ -1,3 +1,4 @@
+subdir('activity')
 subdir('adt')
 subdir('cache')
 subdir('error')

@@ -1,5 +1,6 @@
 backend_sources += files(
   'execAmi.c',
+  'execAsync.c',
   'execCurrent.c',
   'execExpr.c',
   'execExprInterp.c',
@@ -46,6 +47,7 @@ backend_sources += files(
   'nodeProjectSet.c',
   'nodeRecursiveunion.c',
   'nodeResult.c',
+  'nodeResultCache.c',
   'nodeSamplescan.c',
   'nodeSeqscan.c',
   'nodeSetOp.c',

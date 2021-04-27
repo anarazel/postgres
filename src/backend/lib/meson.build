@@ -8,6 +8,5 @@ backend_sources += files(
   'integerset.c',
   'knapsack.c',
   'pairingheap.c',
-  'rbtree.c',
-  'squeue32.c',
+  'rbtree.c'
 )

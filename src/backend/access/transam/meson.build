@@ -17,6 +17,7 @@ backend_sources += files(
   'xlogarchive.c',
   'xlogfuncs.c',
   'xloginsert.c',
+  'xlogprefetch.c',
   'xlogutils.c',
 )
 

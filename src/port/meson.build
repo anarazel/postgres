@@ -1,4 +1,5 @@
 pgport_sources = [
+  'bsearch_arg.c',
   'chklocale.c',
   'erand48.c',
   'inet_net_ntop.c',

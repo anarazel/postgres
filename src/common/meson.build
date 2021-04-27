@@ -35,12 +35,14 @@ common_sources = files(
 # FIXME: implement openssl
 if ssl.found()
   common_sources += files(
-    'protocol_openssl.c',
     'cryptohash_openssl.c',
+    'hmac_openssl.c',
+    'protocol_openssl.c',
   )
 else
   common_sources += files(
     'cryptohash.c',
+    'hmac.c',
     'md5.c',
     'sha1.c',
     'sha2.c',
