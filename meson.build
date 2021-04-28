@@ -711,6 +711,7 @@ test('temp_install',
 
 test_result_dir = meson.build_root() / 'testrun'
 
+
 # Run all 'pg_regress' style tests
 foreach rt : regress_tests
 
@@ -723,6 +724,10 @@ foreach rt : regress_tests
     '--dlpath', rt['bd'],
     '--max-concurrent-tests=20',
   ]
+
+  if rt.has_key('regress_args')
+     test_command += rt['regress_args']
+  endif
 
   if rt.has_key('schedule')
      test_command += ['--schedule', rt['schedule'],]
@@ -754,6 +759,7 @@ foreach rt : regress_tests
   )
 endforeach
 
+
 # Run all 'isolationtester' style tests
 foreach it : isolation_tests
 
@@ -767,6 +773,10 @@ foreach it : isolation_tests
     '--dlpath', it['bd'],
     '--max-concurrent-tests=20',
   ]
+
+  if it.has_key('regress_args')
+     test_command += it['regress_args']
+  endif
 
   if it.has_key('schedule')
      test_command += ['--schedule', it['schedule'],]
