@@ -30,4 +30,9 @@ executable('pg_recvlogical',
 tap_tests += {
   'sd': meson.current_source_dir(),
   'name' : 'pg_basebackup',
-  'tests' :['t/010_pg_basebackup.pl', 't/020_pg_receivewal.pl', 't/030_pg_recvlogical.pl']}
+  'tests' :[
+    't/010_pg_basebackup.pl',
+    't/020_pg_receivewal.pl',
+    't/030_pg_recvlogical.pl',
+  ]
+}

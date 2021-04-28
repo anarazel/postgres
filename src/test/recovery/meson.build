@@ -22,6 +22,9 @@ tap_tests += {
     't/018_wal_optimize.pl',
     't/019_replslot_limit.pl',
     't/020_archive_status.pl',
-    't/021_row_visibility.pl'
+    't/021_row_visibility.pl',
+    't/022_crash_temp_files.pl',
+    't/023_pitr_prepared_xact.pl',
+    't/024_archive_recovery.pl'
   ]
 }

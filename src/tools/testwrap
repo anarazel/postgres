@@ -12,8 +12,8 @@ shift 3
 
 testdir="$basedir/testrun/$testgroup/$testname"
 echo "# executing test in $testdir group $testgroup test $testname"
+rm -rf "$testdir/"
 mkdir -p "$testdir"
-rm -rf "testdir/*"
 export TESTDIR="$testdir"
 
 exec "$@"

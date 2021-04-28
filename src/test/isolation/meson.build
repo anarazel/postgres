@@ -34,17 +34,13 @@ isolationtester = executable('isolationtester',
   install: false
 )
 
-test('pg_isolation_regress',
-  pg_isolation_regress,
-  args: [
-    '--temp-instance=./tmp_check_iso',
-    '--inputdir', meson.current_source_dir(),
-    '--bindir', '',
-    '--schedule', files('isolation_schedule'),
-    '--dlpath', meson.current_build_dir(),
-  ],
-  suite: ['isolation'],
-  depends: test_deps,
-  priority: 99,
-  timeout: 1000,
-)
+isolation_tests += {
+  'name': 'main',
+  'sd': meson.current_source_dir(),
+  'bd': meson.current_build_dir(),
+  'schedule': files('isolation_schedule'),
+  'test_kwargs': {
+    'priority': 40,
+    'timeout': 1000,
+  },
+}

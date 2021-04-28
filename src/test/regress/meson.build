@@ -38,40 +38,14 @@ shared_module('refint',
   name_prefix: '',
   install: false)
 
-#test('pg_regress',
-#  pg_regress,
-#  args: [
-#    '--temp-instance=./tmp_check',
-#    '--inputdir', meson.current_source_dir(),
-#    '--bindir', '',
-#    '--schedule', files('parallel_schedule'),
-#    '--dlpath', meson.current_build_dir(),
-#    '--max-concurrent-tests=20',
-#    ],
-#    workdir: meson.current_build_dir(),
-#    suite: ['regress'],
-#    depends: test_deps,
-#    priority: 50,
-#    timeout: 1000)
-#
 
-test('pg_regress',
-  testwrap,
-  args: [
-     meson.build_root(),
-    'pg_regress',
-    'parallel_schedule',
-    pg_regress,
-    '--temp-instance', meson.build_root() / 'testrun/pg_regress/parallel_schedule/tmp_check',
-    '--inputdir', meson.current_source_dir(),
-    '--outputdir', meson.build_root() / 'testrun/pg_regress/parallel_schedule/',
-    '--bindir', '',
-    '--schedule', files('parallel_schedule'),
-    '--dlpath', meson.current_build_dir(),
-    '--max-concurrent-tests=20',
-    ],
-    workdir: meson.current_build_dir(),
-    suite: ['regress'],
-    depends: [test_deps, pg_regress],
-    priority: 50,
-    timeout: 1000)
+regress_tests += {
+  'name': 'main',
+  'sd': meson.current_source_dir(),
+  'bd': meson.current_build_dir(),
+  'schedule': files('parallel_schedule'),
+  'test_kwargs': {
+    'priority': 50,
+    'timeout': 1000,
+  },
+}

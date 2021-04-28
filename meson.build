@@ -631,6 +631,8 @@ endforeach
 # everywhere is that they end up being too large. A second benefit is
 # that it'd make it easier to generate data for another runner.
 tap_tests = []
+isolation_tests = []
+regress_tests = []
 
 test_environment = environment()
 test_install_target = meson.build_root() / 'tmp_install/'
@@ -686,29 +688,7 @@ both_code = declare_dependency(
 # Test Infrastructure
 ###############################################################
 
-# Because it depends on non-existing files, this test will always run
-# before the tests themselves, ensuring that the test directory is
-# clean.
-# XXX: There got to be a nicer way...
-
 test_deps = []
-
-test_clean = custom_target('test clean',
-  command: [rm_bin, '-rf', meson.build_root() / 'tmp_check'],
-  build_by_default: false,
-  install: false,
-  input: [],
-  output: ['foo'])
-test_deps += test_clean
-
-#test_install = custom_target('test install',
-#  command: [meson_bin] + meson_args + ['install', '--quiet', '--only-changed'],
-#  env: {'DESTDIR':test_install_target},
-#  build_by_default: false,
-#  build_always_stale: true,
-#  input: [],
-#  output: ['test_install_i_dont_exist'])
-#test_deps += test_install
 
 
 subdir('src')
@@ -729,17 +709,97 @@ test('temp_install',
     is_parallel: false,
     suite: ['setup'])
 
-# A high-priority test that removes files potentially left over from
-# the last run
-test('cleanup_old',
-    rm_bin, args: ['-rf', meson.build_root() / 'testrun'],
-    env: {'DESTDIR':test_install_target},
-    priority: 100,
-    is_parallel: false,
-    suite: ['setup'])
+test_result_dir = meson.build_root() / 'testrun'
+
+# Run all 'pg_regress' style tests
+foreach rt : regress_tests
+
+  test_command = [
+    pg_regress,
+    '--temp-instance', test_result_dir / rt['name'] / 'pg_regress' / 'tmp_check',
+    '--inputdir', rt['sd'],
+    '--outputdir', test_result_dir / rt['name'] / 'pg_regress',
+    '--bindir', '',
+    '--dlpath', rt['bd'],
+    '--max-concurrent-tests=20',
+  ]
+
+  if rt.has_key('schedule')
+     test_command += ['--schedule', rt['schedule'],]
+  else
+     test_command += rt['sql']
+  endif
+
+  test_kwargs = {
+    'suite': ['pg_regress', rt['name']],
+    'priority': 10,
+    'timeout': 300,
+    'depends': test_deps,
+    'args': [
+      meson.build_root(),
+      rt['name'],
+      'pg_regress',
+      test_command,
+    ]
+  }
+
+  # Allow test definition to override arguments
+  if rt.has_key('test_kwargs')
+     test_kwargs += rt['test_kwargs']
+  endif
+
+  test(rt['name'] / 'pg_regress',
+    testwrap,
+    kwargs: test_kwargs,
+  )
+endforeach
+
+# Run all 'isolationtester' style tests
+foreach it : isolation_tests
+
+  test_command = [
+    pg_isolation_regress,
+    '--temp-instance', test_result_dir / it['name'] / 'isolation' / 'tmp_check',
+
+    '--inputdir', it['sd'],
+    '--outputdir', test_result_dir / it['name'] / 'isolation',
+    '--bindir', '',
+    '--dlpath', it['bd'],
+    '--max-concurrent-tests=20',
+  ]
+
+  if it.has_key('schedule')
+     test_command += ['--schedule', it['schedule'],]
+  else
+     test_command += it['specs']
+  endif
+
+  test_kwargs = {
+    'suite': ['isolation', it['name']],
+    'priority': 20,
+    'timeout': 300,
+    'depends': test_deps,
+    'args': [
+      meson.build_root(),
+      it['name'],
+      'isolation',
+      test_command,
+    ]
+  }
+
+  # Allow test definition to override arguments
+  if it.has_key('test_kwargs')
+     test_kwargs += it['test_kwargs']
+  endif
+
+  test(it['name'] / 'isolation',
+    testwrap,
+    kwargs: test_kwargs,
+  )
+endforeach
+
 
 # See comment above tap_test = [].
-# FIXME: use dedicated directories for each test
 # FIXME: dependencies for each test
 foreach tt : tap_tests
   env = environment()
@@ -763,7 +823,6 @@ foreach tt : tap_tests
       env: env,
       depends: test_deps,
       timeout: 300,
-      workdir: meson.build_root(),
       )
   endforeach
 endforeach
