@@ -340,7 +340,7 @@ cdata.set('HAVE__STATIC_ASSERT', 1)
 cdata.set('HAVE__BOOL', 1)
 cdata.set('PG_USE_STDBOOL', 1)
 
-cdata.set('USE_ASSERT_CHECKING', 1)
+cdata.set('USE_ASSERT_CHECKING', get_option('cassert'))
 
 cdata.set('USE_UNNAMED_POSIX_SEMAPHORES', 1)
 

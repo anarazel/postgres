@@ -15,3 +15,6 @@ option('zlib', type : 'boolean', value: true,
 
 option('llvm', type : 'boolean', value: false,
   description: 'whether to use llvm')
+
+option('cassert', type : 'boolean', value: false,
+  description: 'enable assertion checks (for debugging)')
