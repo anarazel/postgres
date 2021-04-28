@@ -4,9 +4,9 @@ project('postgresql', ['c'],
 	meson_version: '>=0.52',
 	default_options: [
 	  'warning_level=2',
-	  'werror=true',
 	  'b_pie=true',
-	  'b_pch=false'
+	  'b_pch=false',
+	  'buildtype=release',
 	])
 
 pg_version = meson.project_version()
@@ -740,6 +740,7 @@ foreach rt : regress_tests
     'priority': 10,
     'timeout': 300,
     'depends': test_deps,
+    'workdir': rt['sd'],
     'args': [
       meson.build_root(),
       rt['name'],
@@ -789,6 +790,7 @@ foreach it : isolation_tests
     'priority': 20,
     'timeout': 300,
     'depends': test_deps,
+    'workdir': it['sd'],
     'args': [
       meson.build_root(),
       it['name'],
