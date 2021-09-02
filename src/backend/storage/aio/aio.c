@@ -435,13 +435,12 @@ pgaio_at_abort(void)
 	Assert(dlist_is_empty(&my_aio->outstanding));
 	Assert(dlist_is_empty(&my_aio->issued));
 
-#if 0
 	/*
-	 * Submit pending requests *after* releasing all IO references. That
-	 * ensures that local callback won't get called.
+	 * Need to submit pending IO requests. It could be that the code staging
+	 * the IO errored out before getting to that - and this code might already
+	 * hold locks required for IO.
 	 */
 	pgaio_submit_pending(false);
-#endif
 }
 
 void
@@ -451,13 +450,8 @@ pgaio_at_subabort(void)
 	Assert(aio_local_callback_depth == 0);
 	Assert(dlist_is_empty(&local_recycle_requests));
 
-#if 0
-	/*
-	 * Submit pending requests *after* releasing all IO references. That
-	 * ensures that local callback won't get called.
-	 */
+	/* see pgaio_at_abort() */
 	pgaio_submit_pending(false);
-#endif
 }
 
 void

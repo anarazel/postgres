@@ -160,6 +160,7 @@ static void
 BufReserveFillClean(BufferAccessStrategy strategy, IOContext io_context)
 {
 	int refill_count;
+	bool staged_buffer_writes = false;
 
 	refill_count = bbr.clean_target_size - (bbr.clean_clean_size + bbr.clean_writeback_size);
 
@@ -205,6 +206,7 @@ BufReserveFillClean(BufferAccessStrategy strategy, IOContext io_context)
 			clean->in_walflush = false;
 			clean->in_writeback = true;
 			bbr.clean_writeback_size++;
+			staged_buffer_writes = true;
 			dlist_push_tail(&bbr.clean_writeback_list, &clean->node);
 		}
 		else
@@ -224,7 +226,14 @@ BufReserveFillClean(BufferAccessStrategy strategy, IOContext io_context)
 		ReleaseBuffer(clean->buffer);
 	}
 
-	pgaio_limit_pending(false, bbr.clean_batch_size / 2);
+	/*
+	 * If we staged a buffer write we need to submit that write, the buffer is
+	 * locked for that IO.
+	 */
+	if (staged_buffer_writes)
+		pgaio_submit_pending(false);
+	else
+		pgaio_limit_pending(false, bbr.clean_batch_size / 2);
 }
 
 static void
