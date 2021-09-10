@@ -286,6 +286,112 @@ task:
     image: family/pg-ci-sid
 
 
+linux_opensuse_template: &linux_opensuse_template
+  env:
+    CPUS: 4
+    BUILD_JOBS: 4
+    TEST_JOBS: 8 # experimentally derived to be a decent choice
+
+    CCACHE_DIR: /tmp/ccache_dir
+    DEBUGINFOD_URLS: "https://debuginfod.opensuse.org/"
+
+  only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*linux.*'
+
+  container:
+    dockerfile: src/tools/ci/docker/linux_opensuse_tumbleweed
+    cpu: $CPUS
+    memory: 4G
+
+  ccache_cache:
+    folder: ${CCACHE_DIR}
+
+  sysinfo_script: |
+    id
+    uname -a
+    cat /proc/cmdline
+    ulimit -a -H
+    ulimit -a -S
+    export
+  sysconfig_script: |
+    useradd -m -U postgres
+    chown -R postgres:postgres .
+    mkdir -p ${CCACHE_DIR}
+    chown -R postgres:postgres ${CCACHE_DIR}
+    su postgres -c 'ulimit -l -H'
+    su postgres -c 'ulimit -l -S'
+  setup_cores_script: |
+    mkdir -m 770 /tmp/cores
+    chown root:postgres /tmp/cores
+
+
+task:
+  <<: *linux_opensuse_template
+
+  name: Linux - OpenSuse Tumbleweed - Autoconf
+
+  configure_script: |
+    su postgres <<-EOF
+      export PATH="/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin" && \
+      ./configure \
+      --enable-cassert --enable-debug --enable-tap-tests \
+      --enable-nls \
+      \
+      --with-gssapi \
+      --with-icu \
+      --with-ldap \
+      --with-libxml \
+      --with-libxslt \
+      --with-llvm \
+      --with-lz4 \
+      --with-pam \
+      --with-perl \
+      --with-python \
+      --with-ssl=openssl \
+      --with-systemd \
+      --with-tcl --with-tclconfig=/usr/lib64/ \
+      --with-uuid=e2fs \
+      \
+      CC="ccache gcc"  \
+      CXX="ccache g++" \
+      CLANG="ccache clang" \
+      CFLAGS="-O0 -ggdb"
+    EOF
+  build_script: su postgres -c 'make -s -j${BUILD_JOBS} world-bin'
+  upload_caches: ccache
+
+  test_world_script: |
+    su postgres <<-EOF
+      ulimit -c unlimited; \
+      make -s ${CHECK} ${CHECKFLAGS} -j${TEST_JOBS}
+    EOF
+
+  on_failure:
+    <<: *on_failure
+
+
+task:
+  <<: *linux_opensuse_template
+
+  name: Linux - OpenSuse Tumbleweed - Meson
+
+  configure_script:
+    - su postgres -c 'meson setup --buildtype debug -Dcassert=true -Dssl=openssl -Duuid=e2fs build'
+
+  build_script: su postgres -c 'ninja -C build'
+  upload_caches: ccache
+
+  tests_world_script:
+    - su postgres -c 'meson test --no-rebuild -C build'
+
+  on_failure:
+    <<: *on_failure
+
+  always:
+    meson_log_artifacts:
+      path: "build/meson-logs/*.txt"
+      type: text/plain
+
+
 macos_template: &macos_template
   env:
     CPUS: 12 # always get that much for cirrusci macOS instances
@@ -568,6 +674,7 @@ task:
     - ninja -C build
 
   check_world_script:
+    - vcvarsall x64
     - meson test --no-rebuild -C build
 
   on_failure:
