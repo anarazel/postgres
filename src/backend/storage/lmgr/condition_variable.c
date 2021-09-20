@@ -155,15 +155,19 @@ ConditionVariableTimedSleep(ConditionVariable *cv, long timeout,
 	while (true)
 	{
 		bool		done = false;
+		int			events;
 
 		/*
 		 * Wait for latch to be set.  (If we're awakened for some other
 		 * reason, the code below will cope anyway.)
 		 */
-		(void) WaitLatch(MyLatch, wait_events, cur_timeout, wait_event_info);
+		events = WaitLatch(MyLatch, wait_events, cur_timeout, wait_event_info);
 
 		/* Reset latch before examining the state of the wait list. */
 		ResetLatch(MyLatch);
+
+		if (events & WL_LATCH_SET)
+			done = true;
 
 		/*
 		 * If this process has been taken out of the wait list, then we know
@@ -177,8 +181,8 @@ ConditionVariableTimedSleep(ConditionVariable *cv, long timeout,
 		 * ConditionVariableCancelSleep.
 		 *
 		 * If we're still in the wait list, then the latch must have been set
-		 * by something other than ConditionVariableSignal; though we don't
-		 * guarantee not to return spuriously, we'll avoid this obvious case.
+		 * by ConditionVariableSignalFromSignalHandler() or a spurious
+		 * SetLatch().
 		 */
 		SpinLockAcquire(&cv->mutex);
 		if (!proclist_contains(&cv->wakeup, MyProc->pgprocno, cvWaitLink))
@@ -279,6 +283,23 @@ ConditionVariableSignal(ConditionVariable *cv)
 	/* If we found someone sleeping, set their latch to wake them up. */
 	if (proc != NULL)
 		SetLatch(&proc->procLatch);
+}
+
+/*
+ * A variant of ConditionVariableSignal() that can be used in a signal handler.
+ *
+ * The receiver is not removed from the wait list, so repeated calls would not
+ * signal different backends.
+ */
+void
+ConditionVariableSignalFromSignalHandler(ConditionVariable *cv)
+{
+	int			head;
+
+	pg_read_barrier();
+	head = cv->wakeup.head;
+	if (head != INVALID_PGPROCNO)
+		SetLatch(&ProcGlobal->allProcs[head].procLatch);
 }
 
 /*
