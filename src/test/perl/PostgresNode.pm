@@ -132,7 +132,18 @@ INIT
 	$use_tcp            = !$TestLib::use_unix_sockets;
 	$test_localhost     = "127.0.0.1";
 	$last_host_assigned = 1;
-	$test_pghost        = $use_tcp ? $test_localhost : TestLib::tempdir_short;
+	if ($use_tcp)
+	{
+		$test_pghost = $test_localhost;
+	}
+	else
+	{
+		# On windows, replace windows-style \ path separators with / when
+		# putting socket directories either in postgresql.conf or libpq
+		# connection strings, otherwise they are interpreted as escapes.
+		$test_pghost = PostgreSQL::Test::Utils::tempdir_short;
+		$test_pghost =~ s!\\!/!g if $PostgreSQL::Test::Utils::windows_os;
+	}
 	$ENV{PGHOST}        = $test_pghost;
 	$ENV{PGDATABASE}    = 'postgres';
 
