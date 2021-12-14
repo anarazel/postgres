@@ -395,15 +395,20 @@ task:
     folder: "/tmp/ccache_dir"
 
   sysinfo_script:
+    - id
+    - uname -a
+    - ulimit -a -H
+    - ulimit -a -S
     - gcc -v
     - clang -v
-
-  setup_script:
-    - echo "COPT=-Werror" > src/Makefile.custom
+    - export
 
   ###
   # Test that code can be built with gcc/clang without warnings
   ###
+
+  setup_script:
+    - echo "COPT=-Werror" > src/Makefile.custom
 
   # Trace probes have a history of getting accidentally broken. Use the
   # different compilers to build with different combinations of dtrace on/off
