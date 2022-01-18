@@ -2223,6 +2223,7 @@ regression_main(int argc, char *argv[],
 		FILE	   *pg_conf;
 		const char *env_wait;
 		int			wait_seconds;
+		const char* initdb_template_dir;
 
 		/*
 		 * Prepare the temp instance
@@ -2249,21 +2250,46 @@ regression_main(int argc, char *argv[],
 		if (!directory_exists(buf))
 			make_directory(buf);
 
-		/* initdb */
-		header(_("initializing database system"));
-		snprintf(buf, sizeof(buf),
-				 "\"%s%sinitdb\" -D \"%s/data\" --no-clean --no-sync%s%s > \"%s/log/initdb.log\" 2>&1",
-				 bindir ? bindir : "",
-				 bindir ? "/" : "",
-				 temp_instance,
-				 debug ? " --debug" : "",
-				 nolocale ? " --no-locale" : "",
-				 outputdir);
-		fflush(NULL);
-		if (system(buf))
+		/* create data directory, either from a template, or by running initdb */
+		initdb_template_dir = getenv("INITDB_TEMPLATE");
+		if (initdb_template_dir == NULL)
 		{
-			fprintf(stderr, _("\n%s: initdb failed\nExamine %s/log/initdb.log for the reason.\nCommand was: %s\n"), progname, outputdir, buf);
-			exit(2);
+			/* initdb */
+			header(_("initializing database system"));
+			snprintf(buf, sizeof(buf),
+					 "\"%s%sinitdb\" -D \"%s/data\" --no-clean --no-sync%s%s > \"%s/log/initdb.log\" 2>&1",
+					 bindir ? bindir : "",
+					 bindir ? "/" : "",
+					 temp_instance,
+					 debug ? " --debug" : "",
+					 nolocale ? " --no-locale" : "",
+					 outputdir);
+			fflush(NULL);
+			if (system(buf))
+			{
+				fprintf(stderr, _("\n%s: initdb failed\nExamine %s/log/initdb.log for the reason.\nCommand was: %s\n"), progname, outputdir, buf);
+				exit(2);
+			}
+		}
+		else
+		{
+#ifndef WIN32
+			const char *copycmd = "cp -a \"%s\" \"%s/data\"";
+			int expected_exitcode = 0;
+#else
+			const char *copycmd = "robocopy /E /NJS /NJH /NFL /NDL /NP \"%s\" \"%s/data\"";
+			int expected_exitcode = 1;  /* 1 denotes files were copied */
+#endif
+			header(_("initializing database system from template"));
+			snprintf(buf, sizeof(buf),
+					 copycmd,
+					 initdb_template_dir,
+					 temp_instance);
+			if (system(buf) != expected_exitcode)
+			{
+				fprintf(stderr, _("\n%s: copying of initdb template failed\n"), progname);
+				exit(2);
+			}
 		}
 
 		/*
