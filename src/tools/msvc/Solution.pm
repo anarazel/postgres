@@ -664,7 +664,7 @@ sub GenerateFiles
 	{
 		print "Generating errcodes.h...\n";
 		system(
-			'perl src/backend/utils/generate-errcodes.pl src/backend/utils/errcodes.txt > src/backend/utils/errcodes.h'
+			'perl src/backend/utils/generate-errcodes.pl src/backend/utils/errcodes.txt src/backend/utils/errcodes.h'
 		);
 		copyFile('src/backend/utils/errcodes.h',
 			'src/include/utils/errcodes.h');
