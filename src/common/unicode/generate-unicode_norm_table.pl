@@ -15,15 +15,16 @@ use FindBin;
 use lib "$FindBin::RealBin/../../tools/";
 use PerfectHash;
 
-my $output_table_file = "unicode_norm_table.h";
-my $output_func_file  = "unicode_norm_hashfunc.h";
+my $directory = $ARGV[0];
+my $output_table_file = "$directory/unicode_norm_table.h";
+my $output_func_file  = "$directory/unicode_norm_hashfunc.h";
 
 my $FH;
 
 # Read list of codes that should be excluded from re-composition.
 my @composition_exclusion_codes = ();
-open($FH, '<', "CompositionExclusions.txt")
-  or die "Could not open CompositionExclusions.txt: $!.";
+open($FH, '<', "$directory/CompositionExclusions.txt")
+  or die "Could not open $directory/CompositionExclusions.txt: $!.";
 while (my $line = <$FH>)
 {
 	if ($line =~ /^([[:xdigit:]]+)/)
@@ -38,7 +39,7 @@ close $FH;
 # and character decomposition mapping
 my @characters     = ();
 my %character_hash = ();
-open($FH, '<', "UnicodeData.txt")
+open($FH, '<', "$directory/UnicodeData.txt")
   or die "Could not open UnicodeData.txt: $!.";
 while (my $line = <$FH>)
 {
