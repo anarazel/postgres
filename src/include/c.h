@@ -1328,8 +1328,18 @@ extern unsigned long long strtoull(const char *str, char **endptr, int base);
 /*
  * Use "extern PGDLLIMPORT ..." to declare variables that are defined
  * in the core backend and need to be accessible by loadable modules.
- * No special marking is required on most ports.
  */
+
+/*
+ * If the platform knows __attribute__((visibility("*"))), i.e. gcc like
+ * compilers, we use that.
+ */
+#if !defined(PGDLLIMPORT) && defined(HAVE_VISIBILITY_ATTRIBUTE)
+#define PGDLLIMPORT __attribute__((visibility("default")))
+#define PGDLLEXPORT __attribute__((visibility("default")))
+#endif
+
+/* No special marking is required on most ports. */
 #ifndef PGDLLIMPORT
 #define PGDLLIMPORT
 #endif
