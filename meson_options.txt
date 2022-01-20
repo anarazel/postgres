@@ -1,0 +1,173 @@
+# Data layout influencing options
+
+option('blocksize', type : 'combo', choices : ['1', '2', '4', '8', '16', '32'], value : '8',
+  description: 'set relation block size in kB')
+
+option('wal_blocksize', type : 'integer', value : 8,
+  description : '''WAL block size, in kilobytes.
+This is the unit of storage and I/O within the WAL log. The default, 8 kilobytes, is suitable for most situations; but other values may be useful in special cases. The value must be a power of 2 between 1 and 64 (kilobytes). Note that changing this value requires an initdb.''')
+
+option('segsize', type : 'integer', value : 1,
+  description : '''Segment size, in gigabytes.
+Large tables are divided into multiple operating-system files, each of size equal to the segment size. This avoids problems with file size limits that exist on many platforms. The default segment size, 1 gigabyte, is safe on all supported platforms. If your operating system has "largefile" support (which most do, nowadays), you can use a larger segment size. This can be helpful to reduce the number of file descriptors consumed when working with very large tables. But be careful not to select a value larger than is supported by your platform and the file systems you intend to use. Other tools you might wish to use, such as tar, could also set limits on the usable file size. It is recommended, though not absolutely required, that this value be a power of 2. Note that changing this value requires an initdb.''')
+
+
+# Miscellaneous options
+
+option('krb_srvnam', type : 'string', value : 'postgres',
+  description : '''The default name of the Kerberos service principal used by GSSAPI.
+postgres is the default. There's usually no reason to change this unless you are building for a Windows environment, in which case it must be set to upper case POSTGRES''')
+
+option('system_tzdata', type: 'string', value: '',
+  description: 'use system time zone data in specified directory')
+
+
+# Defaults
+
+option('pgport', type : 'string', value : '5432',
+  description : '''Default port number for server and clients.
+The default is 5432. The port can always be changed later on, but if you specify it here then both server and clients will have the same default compiled in, which can be very convenient. Usually the only good reason to select a non-default value is if you intend to run multiple PostgreSQL servers on the same machine.''')
+
+
+# Developer options
+
+option('cassert', type : 'boolean', value: false,
+  description: 'enable assertion checks (for debugging)')
+
+option('tap_tests', type : 'feature', value : 'auto',
+  description : 'Whether to enable tap tests')
+
+option('PG_TEST_EXTRA', type : 'string', value: 'kerberos ldap ssl',
+  description: 'Enable selected extra tests')
+
+option('atomics', type : 'boolean', value: true,
+  description: 'whether to use atomic operations')
+
+option('spinlocks', type : 'boolean', value: true,
+  description: 'whether to use spinlocks')
+
+
+# Compilation options
+
+option('extra_include_dirs', type : 'array', value: [],
+  description: 'non-default directories to be searched for headers')
+
+option('extra_lib_dirs', type : 'array', value: [],
+  description: 'non-default directories to be searched for libs')
+
+option('extra_version', type : 'string', value: '',
+  description: 'append STRING to the PostgreSQL version number')
+
+
+# External dependencies
+
+option('bonjour', type : 'feature', value: 'auto',
+  description: 'build with Bonjour support')
+
+option('bsd_auth', type : 'feature', value: 'auto',
+  description: 'build with BSD Authentication support')
+
+option('dtrace', type : 'feature', value: 'disabled',
+  description: 'DTrace support')
+
+option('gssapi', type : 'feature', value: 'auto',
+  description: 'GSSAPI support')
+
+option('icu', type : 'feature', value: 'auto',
+  description: 'ICU support')
+
+option('ldap', type : 'feature', value: 'auto',
+  description: 'LDAP support')
+
+option('libedit_preferred', type : 'boolean', value: false,
+  description: 'Prefer BSD Libedit over GNU Readline')
+
+option('libxml', type : 'feature', value: 'auto',
+  description: 'XML support')
+
+option('libxslt', type : 'feature', value: 'auto',
+  description: 'XSLT support in contrib/xml2')
+
+option('llvm', type : 'feature', value: 'disabled',
+  description: 'whether to use llvm')
+
+option('lz4', type : 'feature', value: 'auto',
+  description: 'LZ4 support')
+
+option('nls', type: 'feature', value: 'auto',
+  description: 'native language support')
+
+option('pam', type : 'feature', value: 'auto',
+  description: 'build with PAM support')
+
+option('plperl', type : 'feature', value: 'auto',
+  description: 'build Perl modules (PL/Perl)')
+
+option('plpython', type : 'feature', value: 'auto',
+  description: 'build Python modules (PL/Python)')
+
+option('pltcl', type : 'feature', value: 'auto',
+  description: 'build with TCL support')
+
+option('tcl_version', type : 'string', value : 'tcl',
+  description: 'specify TCL version')
+
+option('readline', type : 'feature', value : 'auto',
+  description: 'use GNU Readline or BSD Libedit for editing')
+
+option('selinux', type : 'feature', value : 'disabled',
+  description: 'build with SELinux support')
+
+option('ssl', type : 'combo', choices : ['none', 'openssl'], value : 'none',
+  description: 'use LIB for SSL/TLS support (openssl)')
+
+option('systemd', type : 'feature', value: 'auto',
+  description: 'build with systemd support')
+
+option('uuid', type : 'combo', choices : ['none', 'bsd', 'e2fs', 'ossp'], value : 'none',
+  description: 'build contrib/uuid-ossp using LIB')
+
+option('zlib', type : 'feature', value: 'auto',
+  description: 'whether to use zlib')
+
+option('zstd', type : 'feature', value: 'auto',
+  description: 'whether to use zstd')
+
+
+# Programs
+
+option('BISON', type : 'string', value: 'bison',
+  description: 'path to bison binary')
+
+option('DTRACE', type : 'string', value: 'dtrace',
+  description: 'path to dtrace binary')
+
+option('FLEX', type : 'string', value: 'flex',
+  description: 'path to flex binary')
+
+option('GZIP', type : 'string', value: 'gzip',
+  description: 'path to gzip binary')
+
+option('LZ4', type : 'string', value: 'lz4',
+  description: 'path to lz4 binary')
+
+option('PERL', type : 'string', value: 'perl',
+  description: 'path to perl binary')
+
+option('PROVE', type : 'string', value: 'prove',
+  description: 'path to prove binary')
+
+option('PYTHON', type : 'array', value: ['python3', 'python'],
+  description: 'path to python binary')
+
+option('SED', type : 'string', value: 'gsed',
+  description: 'path to sed binary')
+
+option('TAR', type : 'string', value: 'tar',
+  description: 'path to tar binary')
+
+option('ZSTD', type : 'string', value: 'zstd',
+  description: 'path to zstd binary')
+
+option('ZIC', type : 'string', value: 'zic',
+  description: 'path to zic binary, when cross-compiling')
