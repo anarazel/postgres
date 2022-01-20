@@ -1,0 +1,5 @@
+subdir('include')
+subdir('pgtypeslib')
+subdir('ecpglib')
+subdir('compatlib')
+subdir('preproc')
