@@ -211,14 +211,19 @@ EOF
 			}
 			else    #if ($grammarFile =~ /\.l$/)
 			{
+				if ($outputFile eq 'src/backend/utils/misc/guc-file.c')
+				{
+					$outputFile = 'src/backend/utils/misc/guc-file.c.h';
+				}
+
 				print $f <<EOF;
     <CustomBuild Include="$grammarFile">
       <Message Condition="'\$(Configuration)|\$(Platform)'=='Debug|$self->{platform}'">Running flex on $grammarFile</Message>
-      <Command Condition="'\$(Configuration)|\$(Platform)'=='Debug|$self->{platform}'">perl "src\\tools\\msvc\\pgflex.pl" "$grammarFile"</Command>
+      <Command Condition="'\$(Configuration)|\$(Platform)'=='Debug|$self->{platform}'">perl "src\\tools\\msvc\\pgflex.pl" "$grammarFile" "$outputFile"</Command>
       <AdditionalInputs Condition="'\$(Configuration)|\$(Platform)'=='Debug|$self->{platform}'">%(AdditionalInputs)</AdditionalInputs>
       <Outputs Condition="'\$(Configuration)|\$(Platform)'=='Debug|$self->{platform}'">$outputFile;%(Outputs)</Outputs>
       <Message Condition="'\$(Configuration)|\$(Platform)'=='Release|$self->{platform}'">Running flex on $grammarFile</Message>
-      <Command Condition="'\$(Configuration)|\$(Platform)'=='Release|$self->{platform}'">perl "src\\tools\\msvc\\pgflex.pl" "$grammarFile"</Command>
+      <Command Condition="'\$(Configuration)|\$(Platform)'=='Release|$self->{platform}'">perl "src\\tools\\msvc\\pgflex.pl" "$grammarFile" "$outputFile"</Command>
       <AdditionalInputs Condition="'\$(Configuration)|\$(Platform)'=='Release|$self->{platform}'">%(AdditionalInputs)</AdditionalInputs>
       <Outputs Condition="'\$(Configuration)|\$(Platform)'=='Release|$self->{platform}'">$outputFile;%(Outputs)</Outputs>
     </CustomBuild>

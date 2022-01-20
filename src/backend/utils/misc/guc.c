@@ -12685,4 +12685,4 @@ check_default_with_oids(bool *newval, void **extra, GucSource source)
 	return true;
 }
 
-#include "guc-file.c"
+#include "guc-file.c.h"

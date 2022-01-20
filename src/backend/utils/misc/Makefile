@@ -37,8 +37,11 @@ endif
 
 include $(top_srcdir)/src/backend/common.mk
 
+guc-file.c.h: guc-file.l
+	flex -o $@ $<
+
 # guc-file is compiled as part of guc
-guc.o: guc-file.c
+guc.o: guc-file.c.h
 
 # Note: guc-file.c is not deleted by 'make clean',
 # since we want to ship it in distribution tarballs.

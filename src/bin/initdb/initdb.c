@@ -1373,8 +1373,9 @@ bootstrap_template1(void)
 
 	if (strcmp(headerline, *bki_lines) != 0)
 	{
-		pg_log_error("input file \"%s\" does not belong to PostgreSQL %s",
-					 bki_file, PG_VERSION);
+		pg_log_error("input file \"%s\" does not belong to PostgreSQL %s (expect %s, is %s)",
+					 bki_file, PG_VERSION,
+					 headerline, *bki_lines);
 		fprintf(stderr,
 				_("Check your installation or specify the correct path "
 				  "using the option -L.\n"));

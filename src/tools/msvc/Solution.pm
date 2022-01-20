@@ -694,7 +694,7 @@ sub GenerateFiles
 	{
 		print "Generating sql_help.h...\n";
 		chdir('src/bin/psql');
-		system("perl create_help.pl ../../../doc/src/sgml/ref sql_help");
+		system("perl create_help.pl ../../../doc/src/sgml/ref . sql_help");
 		chdir('../../..');
 	}
 

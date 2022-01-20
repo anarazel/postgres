@@ -29,6 +29,8 @@ unless ($verparts[0] == 2
 }
 
 my $input = shift;
+my $output = shift;
+
 if ($input !~ /\.l$/)
 {
 	print "Input must be a .l file\n";
@@ -39,8 +41,6 @@ elsif (!-e $input)
 	print "Input file $input not found\n";
 	exit 1;
 }
-
-(my $output = $input) =~ s/\.l$/.c/;
 
 # get flex flags from make file
 my $makefile = dirname($input) . "/Makefile";
