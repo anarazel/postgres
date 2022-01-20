@@ -1,0 +1,25 @@
+#!/bin/sh
+#
+# FIXME: I should probably be a perl or python script
+#
+
+# FIXME: argument parsing
+
+srcdir=$1
+basedir=$2
+builddir=$3
+testgroup=$4
+testname=$(echo "$5"|sed -e 's/.pl$//')
+shift 5
+
+testdir="$basedir/testrun/$testgroup/$testname"
+echo "# executing test in $testdir group $testgroup test $testname, builddir $builddir"
+rm -rf "$testdir/"
+mkdir -p "$testdir"
+
+cd "$srcdir"
+
+export TESTOUTDIR="$testdir"
+export TESTDIR="$builddir"
+
+exec "$@"

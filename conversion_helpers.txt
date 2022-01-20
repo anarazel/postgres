@@ -1,0 +1,9 @@
+convert list of files to quoted-one-per-line:
+
+	?\b\(\(?:\w\|\d\|_\|-\)+\)\.o ?\(?:\\
+\)? →   '\1.c',
+
+
+# check if all tap tests are known to meson
+m test --list > /tmp/tests.txt
+for f in $(git ls-files|grep 't/.*.pl$'|sort);do t=$(echo $f|sed -E -e 's/^.*\/(.*\/(t|test)\/.*)$/\1/');grep -q -L $t /tmp/tests.txt || echo $f;done

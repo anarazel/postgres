@@ -1,0 +1,16 @@
+backend_sources += files(
+  'autovacuum.c',
+  'auxprocess.c',
+  'bgworker.c',
+  'bgwriter.c',
+  'checkpointer.c',
+  'fork_process.c',
+  'interrupt.c',
+  'pgarch.c',
+  'pgstat.c',
+  'postmaster.c',
+  'shell_archive.c',
+  'startup.c',
+  'syslogger.c',
+  'walwriter.c',
+)

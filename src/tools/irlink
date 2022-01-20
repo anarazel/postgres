@@ -1,0 +1,28 @@
+#!/bin/bash
+
+set -e
+
+srcdir="$1"
+builddir="$2"
+llvm_lto="$3"
+outputdir=$(realpath "$5")
+index="$outputdir/postgres.index.bc"
+priv="$6"
+shift 6
+numinput=$#
+
+if [ ! -d "$outputdir" ];then
+    mkdir -p "$outputdir/postgres"
+fi
+
+cd $priv
+
+# fixme, remove old contents"
+cp -r . "$outputdir/postgres"
+
+cd "$outputdir"
+
+filenames=$(for f in "$@";do echo "postgres/${f#$priv/}";done)
+"$llvm_lto" -thinlto -thinlto-action=thinlink -o "$index" $filenames
+
+exit 0
