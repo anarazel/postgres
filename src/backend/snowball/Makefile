@@ -119,29 +119,8 @@ all: all-shared-lib $(SQLSCRIPT)
 
 include $(top_srcdir)/src/Makefile.shlib
 
-$(SQLSCRIPT): Makefile snowball_func.sql.in snowball.sql.in
-	echo '-- Language-specific snowball dictionaries' > $@
-	cat $(srcdir)/snowball_func.sql.in >> $@
-	@set -e; \
-	set $(LANGUAGES) ; \
-	while [ "$$#" -gt 0 ] ; \
-	do \
-		lang=$$1; shift; \
-		nonascdictname=$$lang; \
-		ascdictname=$$1; shift; \
-		if [ -s $(srcdir)/stopwords/$${lang}.stop ] ; then \
-			stop=", StopWords=$${lang}" ; \
-		else \
-			stop=""; \
-		fi; \
-		cat $(srcdir)/snowball.sql.in | \
-			sed -e "s#_LANGNAME_#$$lang#g" | \
-			sed -e "s#_DICTNAME_#$${lang}_stem#g" | \
-			sed -e "s#_CFGNAME_#$$lang#g" | \
-			sed -e "s#_ASCDICTNAME_#$${ascdictname}_stem#g" | \
-			sed -e "s#_NONASCDICTNAME_#$${nonascdictname}_stem#g" | \
-			sed -e "s#_STOPWORDS_#$$stop#g" ; \
-	done >> $@
+$(SQLSCRIPT): snowball_create.pl Makefile snowball_func.sql.in snowball.sql.in
+	$(PERL) $< --input ${srcdir} --output .
 
 install: all installdirs install-lib
 	$(INSTALL_DATA) $(SQLSCRIPT) '$(DESTDIR)$(datadir)'
@@ -171,4 +150,4 @@ uninstall: uninstall-lib
 	done
 
 clean distclean maintainer-clean: clean-lib
-	rm -f $(OBJS) $(SQLSCRIPT)
+	rm -f $(OBJS) $(SQLSCRIPT) snowball_create.dep
