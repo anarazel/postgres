@@ -5,10 +5,10 @@ my $format = $ARGV[0] or die "$0: missing required argument: format\n";
 my $input = $ARGV[1] or die "$0: missing required argument: input\n";
 my $output = $ARGV[2] or die "$0: missing required argument: output\n";
 
-#FIXME: handle format argument, so we can reuse the one script for several platforms
-if (not ($format eq 'gnu' or $format eq 'darwin'))
+#FIXME: better argument handling
+if (not ($format eq 'aix' or $format eq 'darwin' or $format eq 'gnu'))
 {
-	die "$0: $format is not yet handled (only gnu is)\n";
+	die "$0: $format is not yet handled (only aix, darwin, gnu are)\n";
 }
 
 open(my $input_handle, '<', $input)
@@ -33,13 +33,17 @@ while (<$input_handle>)
 	}
 	elsif (/^([^\s]+)\s+([^\s]+)/)
 	{
-		if ($format eq 'gnu')
+		if ($format eq 'aix')
 		{
-			print $output_handle "    $1;\n";
+			print $output_handle "    $1\n";
 		}
 		elsif ($format eq 'darwin')
 		{
 			print $output_handle "    _$1\n";
+		}
+		elsif ($format eq 'gnu')
+		{
+			print $output_handle "    $1;\n";
 		}
 	}
 	else

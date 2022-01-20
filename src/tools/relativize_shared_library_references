@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+# -*-python-*-
+
+# This script updates a macos postgres installation to reference all internal
+# shared libraries using rpaths, leaving absolute install_names in the
+# libraries themselves intact.
+
+import os
+import shlex
+import sys
+import json
+import subprocess
+import shutil
+
+
+def installed_path(destdir, path):
+    if destdir is not None:
+        return f'{destdir}{path}'
+    else:
+        return path
+
+
+def collect_information():
+    shared_libraries = []
+    executables = []
+    shared_modules = []
+
+    targets = json.load(open(os.path.join(build_root, 'meson-info', 'intro-targets.json')))
+    installed = json.load(open(os.path.join(build_root, 'meson-info', 'intro-installed.json')))
+
+    for target in targets:
+        if not target['installed']:
+            continue
+
+        filenames = target['filename']
+
+        if target['type'] == 'shared library':
+            assert(len(filenames) == 1)
+            filename = filenames[0]
+
+            shared_libraries.append(installed[filename])
+
+        if target['type'] == 'executable':
+            assert(len(filenames) == 1)
+            filename = filenames[0]
+            executables.append(installed[filename])
+
+        if target['type'] == 'shared module':
+            assert(len(filenames) == 1)
+            filename = filenames[0]
+            shared_modules.append(installed[filename])
+
+    return shared_libraries, executables, shared_modules
+
+
+def patch_references(destdir, shared_libraries, executables, shared_modules):
+    install_name_tool = [shutil.which('install_name_tool')]
+
+    for lib in shared_libraries:
+        libname = os.path.basename(lib)
+        libpath = installed_path(destdir, lib)
+        newref = f'@rpath/{libname}'
+
+        for patch in shared_modules + executables:
+            patchpath = installed_path(destdir, patch)
+
+            #print(f'in {patchpath} replace reference to {libpath} with {newref}')
+            if not os.path.exists(patchpath):
+                print(f"path {patchpath} doesn't exist", file=sys.stderr)
+                sys.exit(1)
+
+            subprocess.check_call(install_name_tool + ['-change', lib, newref, patchpath])
+
+
+if __name__ == '__main__':
+    build_root = os.environ['MESON_BUILD_ROOT']
+    destdir = os.environ.get('DESTDIR', None)
+
+    print(f'making references to shared libraries relative, destdir is {destdir}', file=sys.stderr)
+
+    shared_libraries, executables, shared_modules = collect_information()
+    patch_references(destdir, shared_libraries, executables, shared_modules)
+
+    sys.exit(0)
