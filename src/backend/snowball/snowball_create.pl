@@ -42,7 +42,6 @@ sub GenerateTsearchFiles
 	my $target = shift;
 	my $output_file = "$output_path/snowball_create.sql";
 
-	print "Generating tsearch script...";
 	my $F;
 	my $D;
 	my $tmpl = read_file("$input_path/snowball.sql.in");
@@ -88,11 +87,9 @@ sub GenerateTsearchFiles
 		$txt =~ s#_NONASCDICTNAME_#${lang}_stem#gs;
 		$txt =~ s#_STOPWORDS_#$stop#gs;
 		print $F $txt;
-		print ".";
 	}
 	close($F);
 	close($D);
-	print "\n";
 	return;
 }
 
