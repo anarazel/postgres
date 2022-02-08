@@ -1496,14 +1496,17 @@ WaitXLogInsertionsToFinish(XLogRecPtr upto)
 			 * advertise the insertion point with LWLockUpdateVar before
 			 * sleeping.
 			 */
+			pgstat_report_wait_start(WAIT_EVENT_WAL_WAIT_INSERT);
 			if (LWLockWaitForVar(&WALInsertLocks[i].l.lock,
 								 &WALInsertLocks[i].l.insertingAt,
 								 insertingat, &insertingat))
 			{
 				/* the lock was free, so no insertion in progress */
 				insertingat = InvalidXLogRecPtr;
+				pgstat_report_wait_end();
 				break;
 			}
+			pgstat_report_wait_end();
 
 			/*
 			 * This insertion is still in progress. Have to wait, unless the
