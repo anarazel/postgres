@@ -384,6 +384,12 @@ CreateInitDecodingContext(const char *plugin,
 	slot->data.plugin = plugin_name;
 	SpinLockRelease(&slot->mutex);
 
+	if (CurrentResourceOwner == NULL)
+	{
+		Assert(am_walsender);
+		CurrentResourceOwner = AuxProcessResourceOwner;
+	}
+
 	if (XLogRecPtrIsInvalid(restart_lsn))
 		ReplicationSlotReserveWal();
 	else

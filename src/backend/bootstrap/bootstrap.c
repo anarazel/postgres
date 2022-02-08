@@ -345,7 +345,14 @@ BootstrapModeMain(int argc, char *argv[], bool check_only)
 	BaseInit();
 
 	bootstrap_signals();
+
+	/* need a resowner for IO during BootStrapXLOG() */
+	CreateAuxProcessResourceOwner();
+
 	BootStrapXLOG();
+
+	ReleaseAuxProcessResources(true);
+	CurrentResourceOwner = NULL;
 
 	/*
 	 * To ensure that src/common/link-canary.c is linked into the backend, we
