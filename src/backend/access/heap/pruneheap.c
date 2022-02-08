@@ -301,6 +301,30 @@ heap_page_prune(Relation relation, Buffer buffer,
 	maxoff = PageGetMaxOffsetNumber(page);
 	tup.t_tableOid = RelationGetRelid(prstate.rel);
 
+#if 1
+	for (char *p = (char *) PageGetItemId(page, FirstOffsetNumber);
+		 p < (char *) PageGetItemId(page, maxoff);
+		 p += 64)
+	{
+		pg_prefetch_mem((ItemId)p);
+	}
+
+
+	for (offnum = FirstOffsetNumber;
+		 offnum <= maxoff;
+		 offnum = OffsetNumberNext(offnum))
+	{
+		ItemId		itemid;
+
+		itemid = PageGetItemId(page, offnum);
+		if (!ItemIdIsUsed(itemid) || ItemIdIsDead(itemid) || !ItemIdHasStorage(itemid))
+			continue;
+
+		pg_prefetch_mem((HeapTupleHeader) PageGetItem(page, itemid));
+		pg_prefetch_mem(PageGetItem(page, itemid) + sizeof(HeapTupleHeaderData) - 1);
+	}
+#endif
+
 	/*
 	 * Determine HTSV for all tuples.
 	 *
