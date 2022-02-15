@@ -296,6 +296,8 @@ sub tap_check
 	# add the module build dir as the second element in the PATH
 	$ENV{PATH} =~ s!;!;$topdir/$Config/$module;!;
 
+	$ENV{TESTOUTDIR} = "$dir/tmp_check";
+
 	rmtree('tmp_check');
 	system(@args);
 	my $status = $? >> 8;
