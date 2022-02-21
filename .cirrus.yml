@@ -171,8 +171,24 @@ LINUX_CONFIGURE_FEATURES: &LINUX_CONFIGURE_FEATURES >-
   --with-selinux
   --with-ssl=openssl
   --with-systemd
-  --with-tcl --with-tclconfig=/usr/lib/tcl8.6/
-  --with-uuid=ossp
+  --with-tcl --with-tclconfig=${TCL_DIR:/usr/lib/tcl8.6/}
+  --with-uuid=${UUID:ossp}
+
+
+# configure preparation scripts, shared between tasks running the linux tests
+linux_preparation_scripts_template: &linux_preparation_scripts_template
+  sysinfo_script: |
+    id
+    uname -a
+    cat /proc/cmdline
+    ulimit -a -H && ulimit -a -S
+    export
+  create_user_script: |
+    useradd -m -U postgres
+    chown -R postgres:postgres .
+    mkdir -p ${CCACHE_DIR}
+    chown -R postgres:postgres ${CCACHE_DIR}
+    su postgres -c "ulimit -l -H && ulimit -l -S"
 
 
 linux_debian_template: &linux_debian_template
@@ -198,19 +214,9 @@ linux_debian_template: &linux_debian_template
   ccache_cache:
     folder: ${CCACHE_DIR}
 
-  sysinfo_script: |
-    id
-    uname -a
-    cat /proc/cmdline
-    ulimit -a -H && ulimit -a -S
-    export
-  create_user_script: |
-    useradd -m postgres
-    chown -R postgres:postgres .
-    mkdir -p ${CCACHE_DIR}
-    chown -R postgres:postgres ${CCACHE_DIR}
+  set_limits_script: |
     echo '* - memlock 134217728' > /etc/security/limits.d/postgres.conf
-    su postgres -c "ulimit -l -H && ulimit -l -S"
+  <<: *linux_preparation_scripts_template
   setup_cores_script: |
     mkdir -m 770 /tmp/cores
     chown root:postgres /tmp/cores
@@ -293,6 +299,10 @@ linux_opensuse_template: &linux_opensuse_template
     CCACHE_DIR: /tmp/ccache_dir
     DEBUGINFOD_URLS: "https://debuginfod.opensuse.org/"
 
+    TCL_DIR: /usr/lib64/
+    UUID: e2fs
+    LINUX_CONFIGURE_FEATURES: *LINUX_CONFIGURE_FEATURES
+
   only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*linux.*'
 
   container:
@@ -303,23 +313,7 @@ linux_opensuse_template: &linux_opensuse_template
   ccache_cache:
     folder: ${CCACHE_DIR}
 
-  sysinfo_script: |
-    id
-    uname -a
-    cat /proc/cmdline
-    ulimit -a -H
-    ulimit -a -S
-    export
-  sysconfig_script: |
-    useradd -m -U postgres
-    chown -R postgres:postgres .
-    mkdir -p ${CCACHE_DIR}
-    chown -R postgres:postgres ${CCACHE_DIR}
-    su postgres -c 'ulimit -l -H'
-    su postgres -c 'ulimit -l -S'
-  setup_cores_script: |
-    mkdir -m 770 /tmp/cores
-    chown root:postgres /tmp/cores
+  <<: *linux_preparation_scripts_template
 
 
 task:
@@ -335,20 +329,7 @@ task:
       --enable-cassert --enable-debug --enable-tap-tests \
       --enable-nls \
       \
-      --with-gssapi \
-      --with-icu \
-      --with-ldap \
-      --with-libxml \
-      --with-libxslt \
-      --with-llvm \
-      --with-lz4 \
-      --with-pam \
-      --with-perl \
-      --with-python \
-      --with-ssl=openssl \
-      --with-systemd \
-      --with-tcl --with-tclconfig=/usr/lib64/ \
-      --with-uuid=e2fs \
+      ${LINUX_CONFIGURE_FEATURES}
       \
       CC="ccache gcc"  \
       CXX="ccache g++" \
@@ -400,6 +381,10 @@ linux_fedora_rawhide_template: &linux_fedora_rawhide_template
     CCACHE_DIR: /tmp/ccache_dir
     DEBUGINFOD_URLS: "https://debuginfod.fedoraproject.org/"
 
+    TCL_DIR: /usr/lib64/
+    UUID: e2fs
+    LINUX_CONFIGURE_FEATURES: *LINUX_CONFIGURE_FEATURES
+
   only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*linux.*'
 
   container:
@@ -410,29 +395,14 @@ linux_fedora_rawhide_template: &linux_fedora_rawhide_template
   ccache_cache:
     folder: ${CCACHE_DIR}
 
-  sysinfo_script: |
-    id
-    uname -a
-    cat /proc/cmdline
-    ulimit -a -H
-    ulimit -a -S
-    export
-  sysconfig_script: |
-    useradd -m -U postgres
-    chown -R postgres:postgres .
-    mkdir -p ${CCACHE_DIR}
-    chown -R postgres:postgres ${CCACHE_DIR}
-    su postgres -c 'ulimit -l -H'
-    su postgres -c 'ulimit -l -S'
-  setup_cores_script: |
-    mkdir -m 770 /tmp/cores
-    chown root:postgres /tmp/cores
+  <<: *linux_preparation_scripts_template
 
 
 task:
   <<: *linux_fedora_rawhide_template
 
   name: Linux - Fedora Rawhide - Autoconf
+  trigger_type: manual
 
   configure_script: |
     su postgres <<-EOF
@@ -440,20 +410,7 @@ task:
       --enable-cassert --enable-debug --enable-tap-tests \
       --enable-nls \
       \
-      --with-gssapi \
-      --with-icu \
-      --with-ldap \
-      --with-libxml \
-      --with-libxslt \
-      --with-llvm \
-      --with-lz4 \
-      --with-pam \
-      --with-perl \
-      --with-python \
-      --with-ssl=openssl \
-      --with-systemd \
-      --with-tcl --with-tclconfig=/usr/lib64/ \
-      --with-uuid=e2fs \
+      ${LINUX_CONFIGURE_FEATURES}
       \
       CC="ccache gcc"  \
       CXX="ccache g++" \

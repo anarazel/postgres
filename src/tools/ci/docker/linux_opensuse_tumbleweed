@@ -22,12 +22,14 @@ RUN \
   gcc \
   gcc-c++ \
   gettext-runtime \
+  lz4 \
   ninja \
   \
   libicu-devel \
   libldapcpp-devel \
   liblz4-devel \
   libopenssl-devel \
+  libselinux-devel \
   libuuid-devel \
   libxml2-devel \
   libxslt-devel \

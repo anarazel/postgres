@@ -6,7 +6,6 @@ RUN \
   meson \
   perl \
   perl-IPC-Run \
-  systemd-devel \
   \
   bison \
   ccache \
@@ -26,6 +25,7 @@ RUN \
   pam-devel \
   python3-devel \
   readline-devel \
+  systemd-devel \
   tcl-devel \
   \
   openldap-devel \
@@ -43,5 +43,7 @@ RUN \
   langpacks-en \
   glibc-langpack-en
 RUN \
+  # Meson tries to run typemap from /usr/share/perl5/vendor_perl/ExtUtils/typemap but typemap is
+  # at /usr/share/perl5/ExtUtils/typemap path
   find /usr/share/perl5/ExtUtils -name typemap -exec ln -sf '{}' /usr/share/perl5/vendor_perl/ExtUtils/typemap ';'
 ENV LANG=en_US.UTF-8
