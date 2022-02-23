@@ -518,7 +518,9 @@ DropTableSpace(DropTableSpaceStmt *stmt)
 		 * wait until they're finished.
 		 */
 		LWLockRelease(TablespaceCreateLock);
+		elog(LOG, "start waiting for barrier: DropTableSpace");
 		WaitForProcSignalBarrier(EmitProcSignalBarrier(PROCSIGNAL_BARRIER_SMGRRELEASE));
+		elog(LOG, "done waiting for barrier: DropTableSpace");
 		LWLockAcquire(TablespaceCreateLock, LW_EXCLUSIVE);
 
 		/* And now try again. */
@@ -1533,7 +1535,9 @@ tblspc_redo(XLogReaderState *record)
 		xl_tblspc_drop_rec *xlrec = (xl_tblspc_drop_rec *) XLogRecGetData(record);
 
 		/* Close all smgr fds in all backends. */
+		elog(LOG, "start waiting for barrier: tblspc_redo DROP");
 		WaitForProcSignalBarrier(EmitProcSignalBarrier(PROCSIGNAL_BARRIER_SMGRRELEASE));
+		elog(LOG, "done waiting for barrier: tblspc_redo DROP");
 
 		/*
 		 * If we issued a WAL record for a drop tablespace it implies that
@@ -1555,7 +1559,9 @@ tblspc_redo(XLogReaderState *record)
 			ResolveRecoveryConflictWithTablespace(xlrec->ts_id);
 
 			/* Close all smgr fds in all backends. */
+			elog(LOG, "start waiting for barrier: tblspc_redo DROP 2");
 			WaitForProcSignalBarrier(EmitProcSignalBarrier(PROCSIGNAL_BARRIER_SMGRRELEASE));
+			elog(LOG, "done waiting for barrier: tblspc_redo DROP 2");
 
 			/*
 			 * If we did recovery processing then hopefully the backends who
