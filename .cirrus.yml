@@ -453,6 +453,87 @@ task:
       type: text/plain
 
 
+linux_centos8_template: &linux_centos8_template
+  env:
+    CPUS: 4
+    BUILD_JOBS: 4
+    TEST_JOBS: 8 # experimentally derived to be a decent choice
+
+    CCACHE_DIR: /tmp/ccache_dir
+    DEBUGINFOD_URLS: "http://debuginfo.centos.org/"
+
+    TCL_DIR: /usr/lib64/
+    UUID: e2fs
+    LINUX_CONFIGURE_FEATURES: *LINUX_CONFIGURE_FEATURES
+
+  only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*linux.*'
+
+  container:
+    dockerfile: src/tools/ci/docker/linux_centos8
+    cpu: $CPUS
+    memory: 4G
+
+  ccache_cache:
+    folder: ${CCACHE_DIR}
+
+  <<: *linux_preparation_scripts_template
+
+
+task:
+  <<: *linux_centos8_template
+
+  name: Linux - Centos 8 - Autoconf
+  trigger_type: manual
+
+  configure_script: |
+    su postgres <<-EOF
+      ./configure \
+      --enable-cassert --enable-debug --enable-tap-tests \
+      --enable-nls \
+      \
+      ${LINUX_CONFIGURE_FEATURES}
+      \
+      CC="ccache gcc"  \
+      CXX="ccache g++" \
+      CLANG="ccache clang" \
+      CFLAGS="-O0 -ggdb"
+    EOF
+  build_script: su postgres -c 'make -s -j${BUILD_JOBS} world-bin'
+  upload_caches: ccache
+
+  test_world_script: |
+    su postgres <<-EOF
+      ulimit -c unlimited; \
+      make -s ${CHECK} ${CHECKFLAGS} -j${TEST_JOBS}
+    EOF
+
+  on_failure:
+    <<: *on_failure
+
+
+task:
+  <<: *linux_centos8_template
+
+  name: Linux - Centos 8 - Meson
+
+  configure_script:
+    - su postgres -c 'meson setup --buildtype debug -Dcassert=true -Dssl=openssl -Duuid=e2fs build'
+
+  build_script: su postgres -c 'ninja -C build'
+  upload_caches: ccache
+
+  tests_world_script:
+    - su postgres -c 'meson test --no-rebuild -C build'
+
+  on_failure:
+    <<: *on_failure
+
+  always:
+    meson_log_artifacts:
+      path: "build/meson-logs/*.txt"
+      type: text/plain
+
+
 macos_template: &macos_template
   env:
     CPUS: 12 # always get that much for cirrusci macOS instances
