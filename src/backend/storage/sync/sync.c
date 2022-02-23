@@ -732,6 +732,7 @@ RegisterSyncRequest(const FileTag *ftag, SyncRequestType type,
 		if (ret || (!ret && !retryOnError))
 			break;
 
+		elog(LOG, "RegisterSyncRequest not registering");
 		WaitLatch(NULL, WL_EXIT_ON_PM_DEATH | WL_TIMEOUT, 10,
 				  WAIT_EVENT_REGISTER_SYNC_REQUEST);
 	}
