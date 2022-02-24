@@ -1,0 +1,57 @@
+FROM centos:centos7
+# Enable powertools, EPEL and devtoolset repository
+RUN \
+  yum -y install dnf-plugins-core \
+  epel-release \
+  centos-release-scl-rh
+RUN \
+  yum -y update && \
+  yum -y install \
+  git \
+  perl \
+  perl-ExtUtils-Embed \
+  perl-IPC-Run \
+  perl-Test-Harness \
+  perl-Test-Simple \
+  \
+  bison \
+  ccache \
+  clang \
+  devtoolset-7-make \
+  flex \
+  gcc \
+  gettext \
+  lz4 \
+  \
+  libicu-devel \
+  libuuid-devel \
+  libxml2-devel \
+  libxslt-devel \
+  lz4-devel \
+  pam-devel \
+  python3-devel \
+  readline-devel \
+  systemd-devel \
+  tcl-devel \
+  \
+  openldap-devel \
+  openldap-clients \
+  openldap-servers \
+  \
+  openssl \
+  openssl-devel \
+  \
+  krb5-devel \
+  krb5-server \
+  krb5-server-ldap \
+  krb5-workstation && \
+  pip3 install meson && \
+  pip3 install ninja
+# Meson tries to run typemap from /usr/share/perl5/vendor_perl/ExtUtils/typemap but typemap is
+# at /usr/share/perl5/ExtUtils/typemap path
+RUN \
+  find /usr/share/perl5/ExtUtils -name typemap -exec ln -sf '{}' /usr/share/perl5/vendor_perl/ExtUtils/typemap ';'
+# Make version is 3.82 but required is > 4, changing make to devtoolset-7-make
+RUN \
+  ln -sf /opt/rh/devtoolset-7/root/usr/bin/make /usr/bin/make
+ENV LANG=en_US.UTF-8
