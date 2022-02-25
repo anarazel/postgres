@@ -9,7 +9,7 @@ plperl_sources = files(
 subppdir = run_command(perl, '-e', 'use List::Util qw(first); print first { -r "$_/ExtUtils/xsubpp" } @INC',
   check: true).stdout()
 xsubpp = '@0@/ExtUtils/xsubpp'.format(subppdir)
-typemap = '@0@/ExtUtils/typemap'.format(subppdir)
+typemap = '@0@/ExtUtils/typemap'.format(privlibexp)
 
 plperl_sources += custom_target('perlchunks.h',
   input: files('plc_perlboot.pl', 'plc_trusted.pl'),
