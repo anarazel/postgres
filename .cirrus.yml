@@ -372,14 +372,14 @@ task:
       type: text/plain
 
 
-linux_fedora_rawhide_template: &linux_fedora_rawhide_template
+linux_rhel_template: &linux_rhel_template
   env:
     CPUS: 4
     BUILD_JOBS: 4
     TEST_JOBS: 8 # experimentally derived to be a decent choice
 
     CCACHE_DIR: /tmp/ccache_dir
-    DEBUGINFOD_URLS: "https://debuginfod.fedoraproject.org/"
+    DEBUGINFOD_URLS: ${DEBUGINFO}
 
     TCL_DIR: /usr/lib64/
     UUID: e2fs
@@ -388,7 +388,7 @@ linux_fedora_rawhide_template: &linux_fedora_rawhide_template
   only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*linux.*'
 
   container:
-    dockerfile: src/tools/ci/docker/linux_fedora_rawhide
+    dockerfile: ${DOCKERFILE_PATH}
     cpu: $CPUS
     memory: 4G
 
@@ -399,7 +399,11 @@ linux_fedora_rawhide_template: &linux_fedora_rawhide_template
 
 
 task:
-  <<: *linux_fedora_rawhide_template
+  env:
+    DOCKERFILE_PATH: src/tools/ci/docker/linux_fedora_rawhide
+    DEBUGINFO: "https://debuginfod.fedoraproject.org/"
+
+  <<: *linux_rhel_template
 
   name: Linux - Fedora Rawhide - Autoconf
   trigger_type: manual
@@ -431,7 +435,11 @@ task:
 
 
 task:
-  <<: *linux_fedora_rawhide_template
+  env:
+    DOCKERFILE_PATH: src/tools/ci/docker/linux_fedora_rawhide
+    DEBUGINFO: "https://debuginfod.fedoraproject.org/"
+
+  <<: *linux_rhel_template
 
   name: Linux - Fedora Rawhide - Meson
 
@@ -453,34 +461,12 @@ task:
       type: text/plain
 
 
-linux_centos8_template: &linux_centos8_template
-  env:
-    CPUS: 4
-    BUILD_JOBS: 4
-    TEST_JOBS: 8 # experimentally derived to be a decent choice
-
-    CCACHE_DIR: /tmp/ccache_dir
-    DEBUGINFOD_URLS: "http://debuginfo.centos.org/"
-
-    TCL_DIR: /usr/lib64/
-    UUID: e2fs
-    LINUX_CONFIGURE_FEATURES: *LINUX_CONFIGURE_FEATURES
-
-  only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*linux.*'
-
-  container:
-    dockerfile: src/tools/ci/docker/linux_centos8
-    cpu: $CPUS
-    memory: 4G
-
-  ccache_cache:
-    folder: ${CCACHE_DIR}
-
-  <<: *linux_preparation_scripts_template
-
-
 task:
-  <<: *linux_centos8_template
+  env:
+    DOCKERFILE_PATH: src/tools/ci/docker/linux_centos8
+    DEBUGINFO: "http://debuginfo.centos.org/"
+
+  <<: *linux_rhel_template
 
   name: Linux - Centos 8 - Autoconf
   trigger_type: manual
@@ -512,7 +498,11 @@ task:
 
 
 task:
-  <<: *linux_centos8_template
+  env:
+    DOCKERFILE_PATH: src/tools/ci/docker/linux_centos8
+    DEBUGINFO: "http://debuginfo.centos.org/"
+
+  <<: *linux_rhel_template
 
   name: Linux - Centos 8 - Meson
 
@@ -534,30 +524,12 @@ task:
       type: text/plain
 
 
-linux_centos7_template: &linux_centos7_template
-  env:
-    CPUS: 4
-    BUILD_JOBS: 4
-    TEST_JOBS: 8 # experimentally derived to be a decent choice
-
-    CCACHE_DIR: /tmp/ccache_dir
-    DEBUGINFOD_URLS: "http://debuginfo.centos.org/"
-
-  only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*linux.*'
-
-  container:
-    dockerfile: src/tools/ci/docker/linux_centos7
-    cpu: $CPUS
-    memory: 4G
-
-  ccache_cache:
-    folder: ${CCACHE_DIR}
-
-  <<: *linux_preparation_scripts_template
-
-
 task:
-  <<: *linux_centos7_template
+  env:
+    DOCKERFILE_PATH: src/tools/ci/docker/linux_centos7
+    DEBUGINFO: "http://debuginfo.centos.org/"
+
+  <<: *linux_rhel_template
 
   name: Linux - Centos 7 - Autoconf
   trigger_type: manual
@@ -603,7 +575,11 @@ task:
 
 
 task:
-  <<: *linux_centos7_template
+  env:
+    DOCKERFILE_PATH: src/tools/ci/docker/linux_centos7
+    DEBUGINFO: "http://debuginfo.centos.org/"
+
+  <<: *linux_rhel_template
 
   name: Linux - Centos 7 - Meson
 
