@@ -464,6 +464,37 @@ endif
 
 
 ###############################################################
+# Library: Tcl (for pltcl)
+# tclConfig.sh
+#
+# NB: tclConfig.sh is used in autoconf build for getting
+# TCL_SHARED_BUILD, TCL_INCLUDE_SPEC, TCL_LIBS and TCL_LIB_SPEC
+# variables. For now we have not seen a need to copy
+# that behaviour to the meson build.
+###############################################################
+
+tcl_dep = dependency('', required : false)
+tclopt = get_option('pltcl')
+tcl_version = get_option('tcl_version')
+if not tclopt.disabled()
+
+  # via pkg-config
+  tcl_dep = dependency(tcl_version, required: tclopt)
+
+  if not tcl_dep.found()
+    tcl_dep = cc.find_library(tcl_version,
+      required: tclopt.enabled(),
+      dirs: g_c_lib)
+  endif
+
+  if not cc.has_header('tcl.h', dependencies: tcl_dep, required: tclopt.enabled())
+    tcl_dep = dependency('', required: false)
+  endif
+endif
+
+
+
+###############################################################
 # Library: Perl (for plperl)
 ###############################################################
 
@@ -2310,6 +2341,7 @@ if meson.version().version_compare('>=0.57')
       'selinux': selinux,
       'ssl': ssl,
       'systemd': systemd,
+      'tcl': tcl_dep,
       'uuid': uuid,
       'zlib': zlib,
       'zstd': zstd,

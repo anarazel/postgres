@@ -74,6 +74,12 @@ option('plperl', type : 'feature', value: 'auto',
 option('plpython', type : 'feature', value: 'auto',
   description: 'build Python modules (PL/Python)')
 
+option('pltcl', type : 'feature', value: 'auto',
+  description: 'build with TCL support')
+
+option('tcl_version', type : 'string', value : 'tcl',
+  description: 'specify TCL version')
+
 option('readline', type : 'feature', value : 'auto',
   description: 'use GNU Readline or BSD Libedit for editing')
 

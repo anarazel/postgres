@@ -1,0 +1,51 @@
+if not tcl_dep.found()
+  subdir_done()
+endif
+
+pltcl_sources = files(
+  'pltcl.c',
+)
+
+gen_pltclerrcodes = files('generate-pltclerrcodes.pl')
+pltcl_sources += custom_target('pltclerrcodes.h',
+  input: files('../../backend/utils/errcodes.txt'),
+  output: 'pltclerrcodes.h',
+  capture: true,
+  command: [perl, gen_pltclerrcodes, '@INPUT@']
+)
+
+shared_module('pltcl',
+  pltcl_sources,
+  c_pch: '../../include/pch/postgres_pch.h',
+  include_directories: [include_directories('.'), postgres_inc],
+  kwargs: pg_mod_args + {
+    'dependencies': [tcl_dep, pg_mod_args['dependencies']],
+  },
+)
+
+install_data(
+  'pltcl.control',
+  'pltcl--1.0.sql',
+  'pltclu.control',
+  'pltclu--1.0.sql',
+  install_dir: get_option('datadir') / 'extension'
+)
+
+pltcl_regress = [
+  'pltcl_setup',
+  'pltcl_queries',
+  'pltcl_trigger',
+  'pltcl_call',
+  'pltcl_start_proc',
+  'pltcl_subxact',
+  'pltcl_unicode',
+  'pltcl_transaction',
+]
+
+regress_tests += {
+  'name': 'pltcl',
+  'sd': meson.current_source_dir(),
+  'bd': meson.current_build_dir(),
+  'sql': pltcl_regress,
+  'regress_args': ['--load-extension=pltcl']
+}
