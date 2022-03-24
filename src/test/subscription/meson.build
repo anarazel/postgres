@@ -32,7 +32,8 @@ tap_tests += {
     't/026_stats.pl',
     't/027_nosuperuser.pl',
     't/028_row_filter.pl',
-    't/029_disable_on_error.pl',
+    't/029_on_error.pl',
+    't/030_sequences.pl',
     't/100_bugs.pl',
   ],
 }

@@ -29,6 +29,7 @@ backend_sources += files(
   'geo_ops.c',
   'geo_selfuncs.c',
   'geo_spgist.c',
+  'hbafuncs.c',
   'inet_cidr_ntop.c',
   'inet_net_pton.c',
   'int.c',

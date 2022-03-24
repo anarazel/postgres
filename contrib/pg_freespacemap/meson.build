@@ -13,3 +13,12 @@ install_data(
   'pg_freespacemap.control',
   kwargs: contrib_data_args,
 )
+
+regress_tests += {
+  'name': 'pg_freespacemap',
+  'sd': meson.current_source_dir(),
+  'bd': meson.current_build_dir(),
+  'sql': [
+    'pg_freespacemap',
+  ],
+}
