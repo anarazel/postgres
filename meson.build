@@ -2387,10 +2387,10 @@ library_path_var = ''
 
 if host_system == 'win32'
   # nothing to do
-elif host_system == 'openbsd'
-  # openbsd's $ORIGIN doesn't use an absolute path to the binary, but argv[0]
-  # (i.e. absolute when invoked with an absolute name, but e.g. not absolute
-  # when invoked via PATH search).
+elif host_machine.system() == 'openbsd' or host_machine.system() == 'netbsd'
+  # openbsd's and netbsd's $ORIGIN doesn't use an absolute path to the binary,
+  # but argv[0] (i.e. absolute when invoked with an absolute name, but e.g.
+  # not absolute when invoked via PATH search).
   library_path_var = 'LD_LIBRARY_PATH'
 else
   if host_system == 'darwin'
