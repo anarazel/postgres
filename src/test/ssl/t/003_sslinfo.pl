@@ -18,6 +18,10 @@ if ($ENV{with_ssl} ne 'openssl')
 {
 	plan skip_all => 'OpenSSL not supported by this build';
 }
+elsif ($ENV{PG_TEST_EXTRA} !~ /ssl/)
+{
+	plan skip_all => 'Potentially unsafe test SSL not enabled in PG_TEST_EXTRA';
+}
 
 #### Some configuration
 
