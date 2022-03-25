@@ -29,6 +29,9 @@ option('cassert', type : 'boolean', value: false,
 option('enable-tap-tests', type : 'boolean', value : true,
   description : 'Whether to enable tap tests')
 
+option('PG_TEST_EXTRA', type : 'string', value: 'kerberos ldap ssl',
+  description: 'Enable selected extra tests')
+
 option('atomics', type : 'boolean', value: true,
   description: 'whether to use atomic operations')
 

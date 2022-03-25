@@ -2101,6 +2101,11 @@ temp_install_bindir = test_install_location / get_option('bindir')
 test_env.set('PG_REGRESS', pg_regress.full_path())
 test_env.set('REGRESS_SHLIB', regress_module.full_path())
 
+# Test suites that are not safe by default but can be run if selected
+# by the user via the whitespace-separated list in variable PG_TEST_EXTRA.
+# Export PG_TEST_EXTRA so it can be checked in individual tap tests.
+test_env.set('PG_TEST_EXTRA', get_option('PG_TEST_EXTRA'))
+
 # On platforms without $ORIGIN support we need to add the temporary
 # installation to the library search path.
 if library_path_var != ''
