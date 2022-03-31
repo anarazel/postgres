@@ -2229,6 +2229,14 @@ endforeach
 # Define all 'tap' style tests
 # FIXME: dependencies for each test
 if get_option('enable-tap-tests')
+
+  # Checking for perl modules for tap tests
+  perl_ipc_run_check = run_command(prove, 'config/check_modules.pl', check: false)
+  if perl_ipc_run_check.returncode() != 0
+    message(perl_ipc_run_check.stderr().strip())
+    error('Additional Perl modules are required to run TAP tests.')
+  endif
+
   foreach t : tap_tests
     test_command = [
       perl.path(),
