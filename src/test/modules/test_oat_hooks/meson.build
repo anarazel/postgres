@@ -4,12 +4,14 @@ test_oat_hooks = shared_module('test_oat_hooks',
   kwargs: pg_mod_args,
 )
 
-regress_tests += {
+tests += {
   'name': 'test_oat_hooks',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'test_oat_hooks',
-  ],
-  'regress_args': ['--no-locale', '--encoding=UTF8'],
+  'regress': {
+    'sql': [
+      'test_oat_hooks',
+    ],
+    'regress_args': ['--no-locale', '--encoding=UTF8'],
+  },
 }

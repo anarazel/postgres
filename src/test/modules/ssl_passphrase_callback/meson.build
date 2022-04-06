@@ -34,12 +34,14 @@ if openssl.found()
   )
 endif
 
-tap_tests += {
+tests += {
   'name': 'ssl_passphrase_callback',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'tests': [
-    't/001_testfunc.pl',
-  ],
-  'env': {'with_ssl': 'openssl'},
+  'tap': {
+    'tests': [
+      't/001_testfunc.pl',
+    ],
+    'env': {'with_ssl': 'openssl'},
+  },
 }

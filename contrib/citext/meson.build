@@ -19,12 +19,14 @@ install_data(
   kwargs: contrib_data_args,
 )
 
-regress_tests += {
+tests += {
   'name': 'citext',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'citext',
-    'citext_utf8',
-  ],
+  'regress': {
+    'sql': [
+      'citext',
+      'citext_utf8',
+    ],
+  },
 }

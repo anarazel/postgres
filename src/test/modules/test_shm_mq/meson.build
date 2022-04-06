@@ -14,11 +14,13 @@ install_data(
   kwargs: contrib_data_args,
 )
 
-regress_tests += {
+tests += {
   'name': 'test_shm_mq',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'test_shm_mq',
-  ]
+  'regress': {
+    'sql': [
+      'test_shm_mq',
+    ],
+  },
 }

@@ -20,11 +20,13 @@ install_data(
 )
 
 
-regress_tests += {
+tests += {
   'name': 'pgstattuple',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'pgstattuple'
-  ],
+  'regress': {
+    'sql': [
+      'pgstattuple',
+    ],
+  },
 }

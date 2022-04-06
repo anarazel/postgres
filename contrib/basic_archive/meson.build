@@ -8,14 +8,16 @@ basic_archive = shared_module('basic_archive',
 )
 
 
-regress_tests += {
+tests += {
   'name': 'basic_archive',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'basic_archive',
-  ],
-  'regress_args': [
-    '--temp-config', files('basic_archive.conf')
-  ]
+  'regress': {
+    'sql': [
+      'basic_archive',
+    ],
+    'regress_args': [
+      '--temp-config', files('basic_archive.conf'),
+    ],
+  },
 }

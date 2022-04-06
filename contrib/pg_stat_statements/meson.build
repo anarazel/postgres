@@ -20,12 +20,14 @@ install_data(
   kwargs: contrib_data_args,
 )
 
-regress_tests += {
+tests += {
   'name': 'pg_stat_statements',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'pg_stat_statements'
-  ],
-  'regress_args': ['--temp-config', files('pg_stat_statements.conf')],
+  'regress': {
+    'sql': [
+      'pg_stat_statements',
+    ],
+    'regress_args': ['--temp-config', files('pg_stat_statements.conf')],
+  },
 }

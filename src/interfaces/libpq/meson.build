@@ -108,11 +108,13 @@ install_headers('libpq-int.h', 'pqexpbuffer.h')
 install_data('pg_service.conf.sample', install_dir: get_option('datadir'))
 
 
-tap_tests += {
+tests += {
   'name': 'libpq',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'tests': [
-    't/001_uri.pl',
-  ]
+  'tap': {
+    'tests': [
+      't/001_uri.pl',
+    ],
+  },
 }

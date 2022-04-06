@@ -27,12 +27,14 @@ executable('pgbench',
 )
 
 
-tap_tests += {
+tests += {
   'name' : 'pgbench',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'tests' :[
-    't/001_pgbench_with_server.pl',
-    't/002_pgbench_no_server.pl'
-  ]
+  'tap': {
+    'tests' :[
+      't/001_pgbench_with_server.pl',
+      't/002_pgbench_no_server.pl',
+    ],
+  },
 }

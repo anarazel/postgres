@@ -10,11 +10,13 @@ install_data(
   kwargs: contrib_data_args,
 )
 
-regress_tests += {
+tests += {
   'name': 'dummy_seclabel',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'dummy_seclabel',
-  ]
+  'regress': {
+    'sql': [
+      'dummy_seclabel',
+    ],
+  },
 }

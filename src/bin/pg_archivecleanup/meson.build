@@ -4,11 +4,13 @@ pg_archivecleanup = executable('pg_archivecleanup',
   kwargs: default_bin_args,
 )
 
-tap_tests += {
+tests += {
   'name': 'pg_archivecleanup',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'tests': [
-    't/010_pg_archivecleanup.pl'
-  ]
+  'tap': {
+    'tests': [
+      't/010_pg_archivecleanup.pl',
+    ],
+  },
 }

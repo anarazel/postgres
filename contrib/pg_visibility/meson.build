@@ -15,11 +15,13 @@ install_data(
 )
 
 
-regress_tests += {
+tests += {
   'name': 'pg_visibility',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'pg_visibility'
-  ],
+  'regress': {
+    'sql': [
+      'pg_visibility',
+    ],
+  },
 }

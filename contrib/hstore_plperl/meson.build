@@ -26,13 +26,15 @@ install_data(
   kwargs: contrib_data_args,
 )
 
-regress_tests += {
+tests += {
   'name': 'hstore_plperl',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'hstore_plperl',
-    'hstore_plperlu',
-    'create_transform',
-  ],
+  'regress': {
+    'sql': [
+      'hstore_plperl',
+      'hstore_plperlu',
+      'create_transform',
+    ],
+  },
 }

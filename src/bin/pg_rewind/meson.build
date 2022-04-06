@@ -17,18 +17,20 @@ pg_rewind = executable('pg_rewind',
 )
 
 
-tap_tests += {
+tests += {
   'name': 'pg_rewind',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'tests': [
-    't/001_basic.pl',
-    't/002_databases.pl',
-    't/003_extrafiles.pl',
-    't/004_pg_xlog_symlink.pl',
-    't/005_same_timeline.pl',
-    't/006_options.pl',
-    't/007_standby_source.pl',
-    't/008_min_recovery_point.pl',
-  ]
+  'tap': {
+    'tests': [
+      't/001_basic.pl',
+      't/002_databases.pl',
+      't/003_extrafiles.pl',
+      't/004_pg_xlog_symlink.pl',
+      't/005_same_timeline.pl',
+      't/006_options.pl',
+      't/007_standby_source.pl',
+      't/008_min_recovery_point.pl',
+    ],
+  },
 }

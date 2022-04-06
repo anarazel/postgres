@@ -38,17 +38,19 @@ executable('pg_recvlogical',
   kwargs: default_bin_args,
 )
 
-tap_tests += {
+tests += {
   'name' : 'pg_basebackup',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'env': {'GZIP_PROGRAM': gzip.path(),
-          'TAR': tar.path(),
-          'LZ4': program_lz4.found() ? program_lz4.path() : '',
-          'ZSTD': program_zstd.found() ? program_zstd.path() : ''},
-  'tests': [
-    't/010_pg_basebackup.pl',
-    't/020_pg_receivewal.pl',
-    't/030_pg_recvlogical.pl',
-  ]
+  'tap': {
+    'env': {'GZIP_PROGRAM': gzip.path(),
+            'TAR': tar.path(),
+            'LZ4': program_lz4.found() ? program_lz4.path() : '',
+            'ZSTD': program_zstd.found() ? program_zstd.path() : ''},
+    'tests': [
+      't/010_pg_basebackup.pl',
+      't/020_pg_receivewal.pl',
+      't/030_pg_recvlogical.pl',
+    ],
+  },
 }

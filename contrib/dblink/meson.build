@@ -17,12 +17,14 @@ install_data(
   kwargs: contrib_data_args,
 )
 
-regress_tests += {
+tests += {
   'name': 'dblink',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'dblink',
-  ],
-  'regress_args': ['--dlpath', meson.build_root() / 'src/test/regress'],
+  'regress': {
+    'sql': [
+      'dblink',
+    ],
+    'regress_args': ['--dlpath', meson.build_root() / 'src/test/regress'],
+  },
 }

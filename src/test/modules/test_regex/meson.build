@@ -10,12 +10,14 @@ install_data(
   kwargs: contrib_data_args,
 )
 
-regress_tests += {
+tests += {
   'name': 'test_regex',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'test_regex',
-    'test_regex_utf8',
-  ]
+  'regress': {
+    'sql': [
+      'test_regex',
+      'test_regex_utf8',
+    ],
+  },
 }

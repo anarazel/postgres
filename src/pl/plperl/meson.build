@@ -60,22 +60,24 @@ install_data(
   install_dir: get_option('datadir') / 'extension'
 )
 
-regress_tests += {
+tests += {
   'name': 'plperl',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'plperl_setup',
-    'plperl',
-    'plperl_lc',
-    'plperl_trigger',
-    'plperl_shared',
-    'plperl_elog',
-    'plperl_util',
-    'plperl_init',
-    'plperlu',
-    'plperl_array',
-    'plperl_call',
-    'plperl_transaction',
-   ],
+  'regress': {
+    'sql': [
+      'plperl_setup',
+      'plperl',
+      'plperl_lc',
+      'plperl_trigger',
+      'plperl_shared',
+      'plperl_elog',
+      'plperl_util',
+      'plperl_init',
+      'plperlu',
+      'plperl_array',
+      'plperl_call',
+      'plperl_transaction',
+    ],
+  },
 }

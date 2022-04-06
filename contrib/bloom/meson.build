@@ -19,20 +19,18 @@ install_data(
   kwargs: contrib_data_args,
 )
 
-regress_tests += {
+tests += {
   'name': 'bloom',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'bloom'
-  ],
-}
-
-tap_tests += {
-  'name': 'bloom',
-  'sd': meson.current_source_dir(),
-  'bd': meson.current_build_dir(),
-  'tests': [
-    't/001_wal.pl',
-  ],
+  'regress': {
+    'sql': [
+      'bloom',
+    ],
+  },
+  'tap': {
+    'tests': [
+      't/001_wal.pl',
+    ],
+  },
 }

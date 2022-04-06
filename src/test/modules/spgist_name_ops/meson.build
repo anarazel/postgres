@@ -10,11 +10,13 @@ install_data(
   kwargs: contrib_data_args,
 )
 
-regress_tests += {
+tests += {
   'name': 'spgist_name_ops',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'spgist_name_ops',
-  ]
+  'regress': {
+    'sql': [
+      'spgist_name_ops',
+    ],
+  },
 }

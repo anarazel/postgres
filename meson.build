@@ -1869,13 +1869,8 @@ test_deps = []
 backend_targets = []
 
 
-# List of tap tests we later generate test() invocations for. The main
-# reason for doing it that way instead of having test() invocations
-# everywhere is that they end up being too large. A second benefit is
-# that it'd make it easier to generate data for another runner.
-tap_tests = []
-isolation_tests = []
-regress_tests = []
+# Define the tests to distribute them to the correct test styles later
+tests = []
 
 
 # Default options for targets
@@ -2112,132 +2107,140 @@ endif
 # Test Generation
 ###############################################################
 
-# Define all 'pg_regress' style tests
-foreach t : regress_tests
-  test_command = [
-    pg_regress.full_path(),
-    '--temp-instance', test_result_dir / t['name'] / 'pg_regress' / 'tmp_check',
-    '--inputdir', t['sd'],
-    '--outputdir', test_result_dir / t['name'] / 'pg_regress',
-    '--bindir', '',
-    '--dlpath', t['bd'],
-    '--max-concurrent-tests=20',
-    '--port=@0@'.format(testport),
-  ]
-
-  if t.has_key('regress_args')
-     test_command += t['regress_args']
-  endif
-
-  if t.has_key('schedule')
-     test_command += ['--schedule', t['schedule'],]
-  else
-     test_command += t['sql']
-  endif
-
-  env = test_env
-  env.prepend('PATH', temp_install_bindir, t['bd'])
-
-  test_kwargs = {
-    'suite': ['pg_regress', t['name']],
-    'priority': 10,
-    'timeout': 300,
-    'depends': test_deps + t.get('deps', []),
-    'env': env,
-    'args': [
-      testwrap.path(),
-      t['sd'],
-      meson.build_root(),
-      t['bd'],
-      t['name'],
-      'pg_regress',
-      test_command,
-    ]
-  }
-
-  # Allow test definition to override arguments
-  if t.has_key('test_kwargs')
-     test_kwargs += t['test_kwargs']
-  endif
-
-  test(t['name'] / 'pg_regress',
-    sh,
-    kwargs: test_kwargs,
-  )
-
-  testport = testport + 1
-endforeach
-
-
-# Define all 'isolationtester' style tests
-foreach t : isolation_tests
-  test_command = [
-    pg_isolation_regress.full_path(),
-    '--temp-instance', test_result_dir / t['name'] / 'isolation' / 'tmp_check',
-    '--inputdir', t['sd'],
-    '--outputdir', test_result_dir / t['name'] / 'isolation',
-    '--bindir', '',
-    '--dlpath', t['bd'],
-    '--max-concurrent-tests=20',
-    '--port=@0@'.format(testport),
-  ]
-
-  if t.has_key('regress_args')
-     test_command += t['regress_args']
-  endif
-
-  if t.has_key('schedule')
-     test_command += ['--schedule', t['schedule'],]
-  else
-     test_command += t['specs']
-  endif
-
-  env = test_env
-  env.prepend('PATH', temp_install_bindir, t['bd'])
-
-  test_kwargs = {
-    'suite': ['isolation', t['name']],
-    'priority': 20,
-    'timeout': 300,
-    'depends': test_deps + t.get('deps', []),
-    'env': env,
-    'args': [
-      testwrap.path(),
-      t['sd'],
-      meson.build_root(),
-      t['bd'],
-      t['name'],
-      'isolation',
-      test_command,
-    ]
-  }
-
-  # Allow test definition to override arguments
-  if t.has_key('test_kwargs')
-     test_kwargs += t['test_kwargs']
-  endif
-
-  test(t['name'] / 'isolation',
-    sh,
-    kwargs: test_kwargs,
-  )
-
-  testport = testport + 1
-endforeach
-
-
-# Define all 'tap' style tests
-# FIXME: dependencies for each test
+# Check whether tap tests are enabled or not
+are_tap_tests_enabled = false
 if get_option('enable-tap-tests')
-
   # Checking for perl modules for tap tests
   perl_ipc_run_check = run_command(prove, 'config/check_modules.pl', check: false)
   if perl_ipc_run_check.returncode() != 0
     message(perl_ipc_run_check.stderr().strip())
     error('Additional Perl modules are required to run TAP tests.')
   endif
+  are_tap_tests_enabled = true
+endif
 
-  foreach t : tap_tests
+foreach test: tests
+  test_default = {
+    'name': test['name'],
+    'sd': test['sd'],
+    'bd': test['bd'],
+  }
+  # Define all 'pg_regress' style tests
+  if 'regress' in test
+    t = test_default + test['regress']
+    test_command = [
+      pg_regress.full_path(),
+      '--temp-instance', test_result_dir / t['name'] / 'pg_regress' / 'tmp_check',
+      '--inputdir', t['sd'],
+      '--outputdir', test_result_dir / t['name'] / 'pg_regress',
+      '--bindir', '',
+      '--dlpath', t['bd'],
+      '--max-concurrent-tests=20',
+      '--port=@0@'.format(testport),
+    ]
+
+    if t.has_key('regress_args')
+      test_command += t['regress_args']
+    endif
+
+    if t.has_key('schedule')
+      test_command += ['--schedule', t['schedule'],]
+    else
+      test_command += t['sql']
+    endif
+
+    env = test_env
+    env.prepend('PATH', temp_install_bindir, t['bd'])
+
+    test_kwargs = {
+      'suite': ['pg_regress', t['name']],
+      'priority': 10,
+      'timeout': 300,
+      'depends': test_deps + t.get('deps', []),
+      'env': env,
+      'args': [
+        testwrap.path(),
+        t['sd'],
+        meson.build_root(),
+        t['bd'],
+        t['name'],
+        'pg_regress',
+        test_command,
+      ]
+    }
+
+    if t.has_key('test_kwargs')
+      test_kwargs += t['test_kwargs']
+    endif
+
+    test(t['name'] / 'pg_regress',
+      sh,
+      kwargs: test_kwargs,
+    )
+
+    testport = testport + 1
+  endif
+
+  # Define all 'isolationtester' style tests
+  if 'isolation' in test
+    t = test_default + test['isolation']
+    test_command = [
+      pg_isolation_regress.full_path(),
+      '--temp-instance', test_result_dir / t['name'] / 'isolation' / 'tmp_check',
+      '--inputdir', t['sd'],
+      '--outputdir', test_result_dir / t['name'] / 'isolation',
+      '--bindir', '',
+      '--dlpath', t['bd'],
+      '--max-concurrent-tests=20',
+      '--port=@0@'.format(testport),
+    ]
+
+    if t.has_key('regress_args')
+      test_command += t['regress_args']
+    endif
+
+    if t.has_key('schedule')
+      test_command += ['--schedule', t['schedule'],]
+    else
+      test_command += t['specs']
+    endif
+
+    env = test_env
+    env.prepend('PATH', temp_install_bindir, t['bd'])
+
+    test_kwargs = {
+      'suite': ['isolation', t['name']],
+      'priority': 20,
+      'timeout': 300,
+      'depends': test_deps + t.get('deps', []),
+      'env': env,
+      'args': [
+        testwrap.path(),
+        t['sd'],
+        meson.build_root(),
+        t['bd'],
+        t['name'],
+        'isolation',
+        test_command,
+      ]
+    }
+
+    if t.has_key('test_kwargs')
+      test_kwargs += t['test_kwargs']
+    endif
+
+    test(t['name'] / 'isolation',
+      sh,
+      kwargs: test_kwargs,
+    )
+
+    testport = testport + 1
+  endif
+
+  # Define all 'tap' style tests
+  # FIXME: dependencies for each test
+  if are_tap_tests_enabled and 'tap' in test
+    t = test_default + test['tap']
     test_command = [
       perl.path(),
       '-I', meson.source_root() / 'src/test/perl',
@@ -2278,8 +2281,8 @@ if get_option('enable-tap-tests')
         ]
       )
     endforeach
-  endforeach
-endif
+  endif
+endforeach
 
 
 ###############################################################

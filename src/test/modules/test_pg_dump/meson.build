@@ -5,20 +5,18 @@ install_data(
   kwargs: contrib_data_args,
 )
 
-regress_tests += {
+tests += {
   'name': 'test_pg_dump',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'test_pg_dump',
-  ]
-}
-
-tap_tests += {
-  'name': 'test_pg_dump',
-  'sd': meson.current_source_dir(),
-  'bd': meson.current_build_dir(),
-  'tests': [
-    't/001_base.pl',
-  ]
+  'regress': {
+    'sql': [
+      'test_pg_dump',
+    ],
+  },
+  'tap': {
+    'tests': [
+      't/001_base.pl',
+    ],
+  },
 }

@@ -21,11 +21,13 @@ install_data(
 )
 
 
-regress_tests += {
+tests += {
   'name': 'uuid-ossp',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'uuid_ossp'
-  ],
+  'regress': {
+    'sql': [
+      'uuid_ossp',
+    ],
+  },
 }

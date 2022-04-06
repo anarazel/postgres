@@ -25,10 +25,12 @@ hstore_plpython_regress = [
   'hstore_plpython'
 ]
 
-regress_tests += {
+tests += {
   'name': 'hstore_plpython',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': hstore_plpython_regress,
-  'regress_args': ['--load-extension=hstore'],
+  'regress': {
+    'sql': hstore_plpython_regress,
+    'regress_args': ['--load-extension=hstore'],
+  },
 }

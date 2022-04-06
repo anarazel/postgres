@@ -16,11 +16,13 @@ install_data(
   }
 )
 
-regress_tests += {
+tests += {
   'name': 'dict_xsyn',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'dict_xsyn'
-  ],
+  'regress': {
+    'sql': [
+      'dict_xsyn',
+    ],
+  },
 }

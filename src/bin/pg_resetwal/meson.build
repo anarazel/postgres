@@ -4,12 +4,14 @@ executable('pg_resetwal',
   kwargs: default_bin_args,
 )
 
-tap_tests += {
+tests += {
   'name': 'pg_resetwal',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'tests': [
-    't/001_basic.pl',
-    't/002_corrupted.pl'
-  ]
+  'tap': {
+    'tests': [
+      't/001_basic.pl',
+      't/002_corrupted.pl',
+    ],
+  },
 }

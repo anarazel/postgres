@@ -44,13 +44,15 @@ shared_module('refint',
 )
 
 
-regress_tests += {
+tests += {
   'name': 'main',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'schedule': files('parallel_schedule'),
-  'test_kwargs': {
-    'priority': 50,
-    'timeout': 1000,
+  'regress': {
+    'schedule': files('parallel_schedule'),
+    'test_kwargs': {
+      'priority': 50,
+      'timeout': 1000,
+    },
   },
 }

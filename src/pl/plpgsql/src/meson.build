@@ -46,22 +46,24 @@ install_headers('plpgsql.h',
   install_dir: get_option('includedir') / 'server')
 
 
-regress_tests += {
+tests += {
   'name': 'plpgsql',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-     'plpgsql_array',
-     'plpgsql_call',
-     'plpgsql_control',
-     'plpgsql_copy',
-     'plpgsql_domain',
-     'plpgsql_record',
-     'plpgsql_cache',
-     'plpgsql_simple',
-     'plpgsql_transaction',
-     'plpgsql_trap',
-     'plpgsql_trigger',
-     'plpgsql_varprops',
-  ],
+  'regress': {
+    'sql': [
+      'plpgsql_array',
+      'plpgsql_call',
+      'plpgsql_control',
+      'plpgsql_copy',
+      'plpgsql_domain',
+      'plpgsql_record',
+      'plpgsql_cache',
+      'plpgsql_simple',
+      'plpgsql_transaction',
+      'plpgsql_trap',
+      'plpgsql_trigger',
+      'plpgsql_varprops',
+    ],
+  },
 }

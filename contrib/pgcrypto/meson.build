@@ -88,11 +88,13 @@ install_data(
 )
 
 
-regress_tests += {
+tests += {
   'name': 'pgcrypto',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    pgcrypto_regress
-  ],
+  'regress': {
+    'sql': [
+      pgcrypto_regress,
+    ],
+  },
 }

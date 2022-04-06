@@ -37,13 +37,15 @@ isolationtester = executable('isolationtester',
   },
 )
 
-isolation_tests += {
+tests += {
   'name': 'main',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'schedule': files('isolation_schedule'),
-  'test_kwargs': {
-    'priority': 40,
-    'timeout': 1000,
+  'isolation': {
+    'schedule': files('isolation_schedule'),
+    'test_kwargs': {
+      'priority': 40,
+      'timeout': 1000,
+    },
   },
 }

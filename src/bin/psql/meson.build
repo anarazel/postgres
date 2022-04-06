@@ -52,14 +52,16 @@ executable('psql',
   kwargs: default_bin_args,
 )
 
-tap_tests += {
+tests += {
   'name': 'psql',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'env': {'with_readline': readline.found() ? 'yes' : 'no'},
-  'tests': [
-    't/001_basic.pl',
-    't/010_tab_completion.pl',
-    't/020_cancel.pl',
-  ],
+  'tap': {
+    'env': {'with_readline': readline.found() ? 'yes' : 'no'},
+    'tests': [
+      't/001_basic.pl',
+      't/010_tab_completion.pl',
+      't/020_cancel.pl',
+    ],
+  },
 }

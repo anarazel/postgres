@@ -20,12 +20,14 @@ install_data(
   kwargs: contrib_data_args,
 )
 
-regress_tests += {
+tests += {
   'name': 'postgres_fdw',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'postgres_fdw'
-  ],
-  'regress_args': ['--dlpath', meson.build_root() / 'src/test/regress'],
+  'regress': {
+    'sql': [
+      'postgres_fdw',
+    ],
+    'regress_args': ['--dlpath', meson.build_root() / 'src/test/regress'],
+  },
 }

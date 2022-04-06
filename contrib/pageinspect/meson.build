@@ -28,18 +28,20 @@ install_data(
   kwargs: contrib_data_args,
 )
 
-regress_tests += {
+tests += {
   'name': 'pageinspect',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'page',
-    'btree',
-    'brin',
-    'gin',
-    'gist',
-    'hash',
-    'checksum',
-    'oldextversions',
-  ],
+  'regress': {
+    'sql': [
+      'page',
+      'btree',
+      'brin',
+      'gin',
+      'gist',
+      'hash',
+      'checksum',
+      'oldextversions',
+    ],
+  },
 }

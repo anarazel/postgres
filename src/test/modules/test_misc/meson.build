@@ -1,10 +1,12 @@
-tap_tests += {
+tests += {
   'name': 'test_misc',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'tests': [
-    't/001_constraint_validation.pl',
-    't/002_tablespace.pl',
-    't/003_check_guc.pl',
-  ],
+  'tap': {
+    'tests': [
+      't/001_constraint_validation.pl',
+      't/002_tablespace.pl',
+      't/003_check_guc.pl',
+    ],
+  },
 }

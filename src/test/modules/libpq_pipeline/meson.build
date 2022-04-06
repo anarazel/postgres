@@ -8,11 +8,13 @@ libpq_pipeline = executable('libpq_pipeline',
   },
 )
 
-tap_tests += {
+tests += {
   'name': 'libpq_pipeline',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'tests': [
-    't/001_libpq_pipeline.pl',
-  ]
+  'tap': {
+    'tests': [
+      't/001_libpq_pipeline.pl',
+    ],
+  },
 }

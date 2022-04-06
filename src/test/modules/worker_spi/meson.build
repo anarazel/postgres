@@ -12,12 +12,14 @@ install_data(
   kwargs: contrib_data_args,
 )
 
-regress_tests += {
+tests += {
   'name': 'worker_spi',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'worker_spi',
-  ],
-  'regress_args': ['--temp-config', files('dynamic.conf'), '--dbname=contrib_regression'],
+  'regress': {
+    'sql': [
+      'worker_spi',
+    ],
+    'regress_args': ['--temp-config', files('dynamic.conf'), '--dbname=contrib_regression'],
+  },
 }

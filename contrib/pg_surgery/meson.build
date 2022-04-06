@@ -13,11 +13,13 @@ install_data(
 )
 
 
-regress_tests += {
+tests += {
   'name': 'pg_surgery',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'heap_surgery'
-  ],
+  'regress': {
+    'sql': [
+      'heap_surgery',
+    ],
+  },
 }

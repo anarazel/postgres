@@ -26,12 +26,15 @@ install_data(
   kwargs: contrib_data_args,
 )
 
-regress_tests += {
+
+tests += {
   'name': 'jsonb_plperl',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'jsonb_plperl',
-    'jsonb_plperlu',
-  ],
+  'regress': {
+    'sql': [
+      'jsonb_plperl',
+      'jsonb_plperlu',
+    ],
+  },
 }

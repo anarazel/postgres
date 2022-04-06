@@ -70,9 +70,11 @@ plpython_regress = [
   'plpython_drop',
 ]
 
-regress_tests += {
+tests += {
   'name': 'plpython',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': plpython_regress,
+  'regress': {
+    'sql': plpython_regress,
+  },
 }

@@ -21,13 +21,15 @@ install_data(
   kwargs: contrib_data_args,
 )
 
-regress_tests += {
+tests += {
   'name': 'pg_trgm',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'pg_trgm',
-    'pg_word_trgm',
-    'pg_strict_word_trgm',
-  ],
+  'regress': {
+    'sql': [
+      'pg_trgm',
+      'pg_word_trgm',
+      'pg_strict_word_trgm',
+    ],
+  },
 }

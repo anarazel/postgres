@@ -14,24 +14,23 @@ install_data(
   kwargs: contrib_data_args,
 )
 
-regress_tests += {
+tests += {
   'name': 'amcheck',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'check',
-    'check_btree',
-    'check_heap'
-  ],
+  'regress': {
+    'sql': [
+      'check',
+      'check_btree',
+      'check_heap',
+    ],
+  },
+  'tap': {
+    'tests': [
+      't/001_verify_heapam.pl',
+      't/002_cic.pl',
+      't/003_cic_2pc.pl',
+    ],
+  },
 }
 
-tap_tests += {
-  'name': 'amcheck',
-  'sd': meson.current_source_dir(),
-  'bd': meson.current_build_dir(),
-  'tests': [
-    't/001_verify_heapam.pl',
-    't/002_cic.pl',
-    't/003_cic_2pc.pl',
-  ],
-}

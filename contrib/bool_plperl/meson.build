@@ -26,12 +26,14 @@ install_data(
   kwargs: contrib_data_args,
 )
 
-regress_tests += {
+tests += {
   'name': 'bool_plperl',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'bool_plperl',
-    'bool_plperlu',
-  ],
+  'regress': {
+    'sql': [
+      'bool_plperl',
+      'bool_plperlu',
+    ],
+  },
 }

@@ -19,12 +19,14 @@ install_data(
 )
 
 # XXX: Implement downlo
-regress_tests += {
+tests += {
   'name': 'unaccent',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'unaccent',
-  ],
-  'regress_args': ['--encoding=UTF8'],
+  'regress': {
+    'sql': [
+      'unaccent',
+    ],
+    'regress_args': ['--encoding=UTF8'],
+  },
 }

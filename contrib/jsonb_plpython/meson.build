@@ -25,9 +25,11 @@ jsonb_plpython_regress = [
   'jsonb_plpython'
 ]
 
-regress_tests += {
+tests += {
   'name': 'jsonb_plpython',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': jsonb_plpython_regress,
+  'regress': {
+    'sql': jsonb_plpython_regress,
+  },
 }

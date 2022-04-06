@@ -9,20 +9,22 @@ pg_verifybackup = executable('pg_verifybackup',
   kwargs: default_bin_args,
 )
 
-tap_tests += {
+tests += {
   'name': 'pg_verifybackup',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'tests': [
-    't/001_basic.pl',
-    't/002_algorithm.pl',
-    't/003_corruption.pl',
-    't/004_options.pl',
-    't/005_bad_manifest.pl',
-    't/006_encoding.pl',
-    't/007_wal.pl',
-    't/008_untar.pl',
-    't/009_extract.pl',
-    't/010_client_untar.pl',
-  ]
+  'tap': {
+    'tests': [
+      't/001_basic.pl',
+      't/002_algorithm.pl',
+      't/003_corruption.pl',
+      't/004_options.pl',
+      't/005_bad_manifest.pl',
+      't/006_encoding.pl',
+      't/007_wal.pl',
+      't/008_untar.pl',
+      't/009_extract.pl',
+      't/010_client_untar.pl',
+    ],
+  },
 }

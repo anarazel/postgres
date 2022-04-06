@@ -25,10 +25,12 @@ ltree_plpython_regress = [
   'ltree_plpython'
 ]
 
-regress_tests += {
+tests += {
   'name': 'ltree_plpython',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': ltree_plpython_regress,
-  'regress_args': ['--load-extension=ltree'],
+  'regress': {
+    'sql': ltree_plpython_regress,
+    'regress_args': ['--load-extension=ltree'],
+  },
 }

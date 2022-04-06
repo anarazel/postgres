@@ -56,14 +56,16 @@ executable('pg_restore',
 )
 
 
-tap_tests += {
+tests += {
   'name': 'pg_dump',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'tests': [
-    't/001_basic.pl',
-    't/002_pg_dump.pl',
-    't/003_pg_dump_with_server.pl',
-    't/010_dump_connstr.pl',
-  ]
+  'tap': {
+    'tests': [
+      't/001_basic.pl',
+      't/002_pg_dump.pl',
+      't/003_pg_dump_with_server.pl',
+      't/010_dump_connstr.pl',
+    ],
+  },
 }

@@ -4,11 +4,13 @@ executable('pg_controldata',
   kwargs: default_bin_args,
 )
 
-tap_tests += {
+tests += {
   'name': 'pg_controldata',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'tests': [
-    't/001_pg_controldata.pl'
-  ]
+  'tap': {
+    'tests': [
+      't/001_pg_controldata.pl',
+    ],
+  },
 }

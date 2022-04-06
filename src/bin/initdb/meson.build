@@ -14,12 +14,14 @@ executable('initdb',
   kwargs: default_bin_args,
 )
 
-tap_tests += {
+tests += {
   'name': 'initdb',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'env' : {'with_icu': icu.found() ? 'yes' : 'no'},
-  'tests': [
-    't/001_initdb.pl'
-  ]
+  'tap': {
+    'env' : {'with_icu': icu.found() ? 'yes' : 'no'},
+    'tests': [
+      't/001_initdb.pl',
+    ],
+  },
 }

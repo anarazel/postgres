@@ -4,11 +4,13 @@ test_rls_hooks = shared_module('test_rls_hooks',
   kwargs: pg_mod_args,
 )
 
-regress_tests += {
+tests += {
   'name': 'test_rls_hooks',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'test_rls_hooks',
-  ]
+  'regress': {
+    'sql': [
+      'test_rls_hooks',
+    ],
+  },
 }

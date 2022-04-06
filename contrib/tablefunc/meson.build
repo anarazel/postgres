@@ -13,11 +13,13 @@ install_data(
 )
 
 
-regress_tests += {
+tests += {
   'name': 'tablefunc',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'tablefunc'
-  ],
+  'regress': {
+    'sql': [
+      'tablefunc',
+    ],
+  },
 }

@@ -17,11 +17,13 @@ passwordcheck = shared_module('passwordcheck',
   }
 )
 
-regress_tests += {
+tests += {
   'name': 'passwordcheck',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': [
-    'passwordcheck'
-  ],
+  'regress': {
+    'sql': [
+      'passwordcheck',
+    ],
+  },
 }

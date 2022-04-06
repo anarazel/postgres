@@ -4,12 +4,14 @@ delay_execution = shared_module('delay_execution',
   kwargs: pg_mod_args,
 )
 
-isolation_tests += {
+tests += {
   'name': 'delay_execution',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'specs': [
-    'partition-addition',
-    'partition-removal-1',
-  ]
+  'isolation': {
+    'specs': [
+      'partition-addition',
+      'partition-removal-1',
+    ],
+  },
 }

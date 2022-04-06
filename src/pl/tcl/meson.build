@@ -42,10 +42,12 @@ pltcl_regress = [
   'pltcl_transaction',
 ]
 
-regress_tests += {
+tests += {
   'name': 'pltcl',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'sql': pltcl_regress,
-  'regress_args': ['--load-extension=pltcl']
+  'regress': {
+    'sql': pltcl_regress,
+    'regress_args': ['--load-extension=pltcl'],
+  },
 }
