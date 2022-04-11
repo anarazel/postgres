@@ -1,28 +1,28 @@
-#!/bin/bash
+#!/usr/bin/env python3
 
-set -e
+import os
+import shutil
+import subprocess
+import sys
 
-srcdir="$1"
-builddir="$2"
-llvm_lto="$3"
-outputdir=$(realpath "$5")
-index="$outputdir/postgres.index.bc"
-priv="$6"
-shift 6
-numinput=$#
+src_dir = sys.argv[1]
+build_dir = sys.argv[2]
+llvm_lto = sys.argv[3]
+output_dir = os.path.realpath(sys.argv[5])
+index = output_dir + '/postgres.index.bc'
+private_dir = sys.argv[6]
+file_names = sys.argv[7:]
+dest_dir = output_dir + '/postgres'
 
-if [ ! -d "$outputdir" ];then
-    mkdir -p "$outputdir/postgres"
-fi
+# Remove old contents if exist
+if os.path.exists(dest_dir):
+  shutil.rmtree(dest_dir)
 
-cd $priv
+shutil.copytree(os.path.realpath(private_dir), dest_dir)
 
-# fixme, remove old contents"
-cp -r . "$outputdir/postgres"
+# Change working directory for irlink to link correctly
+os.chdir(output_dir)
 
-cd "$outputdir"
-
-filenames=$(for f in "$@";do echo "postgres/${f#$priv/}";done)
-"$llvm_lto" -thinlto -thinlto-action=thinlink -o "$index" $filenames
-
-exit 0
+file_names = ['postgres' + input.replace(private_dir, '') for input in file_names]
+command = '{} -thinlto -thinlto-action=thinlink -o {} {}'.format(llvm_lto, index, ' '.join(file_names))
+subprocess.run(command, shell=True)

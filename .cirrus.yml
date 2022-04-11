@@ -358,10 +358,10 @@ task:
 task:
   <<: *linux_opensuse_template
 
-  name: Linux - OpenSuse Tumbleweed - Meson
+  name: Linux - OpenSuse Tumbleweed (LLVM) - Meson
 
   configure_script:
-    - su postgres -c 'meson setup --buildtype debug -Dcassert=true -Dssl=openssl -Duuid=e2fs build'
+    - su postgres -c 'meson setup --buildtype debug -Dcassert=true -Dssl=openssl -Duuid=e2fs -Dllvm=enabled build'
 
   build_script: su postgres -c 'ninja -C build'
   upload_caches: ccache
