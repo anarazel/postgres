@@ -717,55 +717,80 @@ endif
 
 ###############################################################
 # Library: Readline
-#
-# FIXME: editline support
 ###############################################################
 
 if not get_option('readline').disabled()
-  readline = dependency('readline', required: false)
-  if not readline.found()
-    readline = cc.find_library('readline',
-      required: get_option('readline').enabled(),
-      dirs: g_c_lib)
-  endif
+  libedit_preferred = get_option('libedit_preferred')
+  # Set the order of readline dependencies
+  check_readline_deps = libedit_preferred ? \
+    ['libedit', 'readline'] : ['readline', 'libedit']
+
+  foreach readline_dep : check_readline_deps
+    readline = dependency(readline_dep, required: false)
+    if not readline.found()
+      readline = cc.find_library(readline_dep,
+        required: get_option('readline').enabled(),
+        dirs: g_c_lib)
+    endif
+    if readline.found()
+      break
+    endif
+  endforeach
 
   if readline.found()
     cdata.set('HAVE_LIBREADLINE', 1)
 
-    if cc.has_header('readline/history.h',
-        args: g_c_args, include_directories: g_c_inc,
-        dependencies: [readline], required: false)
-      history_h = 'readline/history.h'
-      cdata.set('HAVE_READLINE_HISTORY_H', 1)
-      cdata.set('HAVE_READLINE_H', false)
-    elif cc.has_header('history.h',
-        args: g_c_args, include_directories: g_c_inc,
-        dependencies: [readline], required: false)
-      history_h = 'history.h'
-      cdata.set('HAVE_READLINE_HISTORY_H', false)
-      cdata.set('HAVE_HISTORY_H', 1)
-    else
-      error('''readline header not found
-If you have readline already installed, see see meson-log/meson-log.txt for details on the
-failure.  It is possible the compiler isn't looking in the proper directory.
-Use -Dreadline=false to disable readline support.''')
-    endif
+    libedit_flags = {
+      'history_h': 'editline/history.h',
+      'history_h_flag': 'HAVE_EDITLINE_HISTORY_H',
+      'readline_h': 'editline/readline.h',
+      'readline_h_flag': 'HAVE_EDITLINE_READLINE_H'
+    }
+    readline_flags = {
+      'history_h': 'readline/history.h',
+      'history_h_flag': 'HAVE_READLINE_HISTORY_H',
+      'readline_h': 'readline/readline.h',
+      'readline_h_flag': 'HAVE_READLINE_READLINE_H'
+    }
+    raw_flags = {
+      'history_h': 'history.h',
+      'history_h_flag': 'HAVE_HISTORY_H',
+      'readline_h': 'readline.h',
+      'readline_h_flag': 'HAVE_READLINE_H'
+    }
 
-    if cc.has_header('readline/readline.h',
-        args: g_c_args, include_directories: g_c_inc,
-        dependencies: [readline], required: false)
-      readline_h = 'readline/readline.h'
-      cdata.set('HAVE_READLINE_READLINE_H', 1)
-    elif cc.has_header('readline.h',
-        args: g_c_args, include_directories: g_c_inc,
-        dependencies: [readline], required: false)
-      readline_h = 'readline.h'
-      cdata.set('HAVE_READLINE_H', 1)
-    else
+    # Set the order of flags
+    check_flags = libedit_preferred ? \
+      [libedit_flags, raw_flags, readline_flags] : \
+      [readline_flags, raw_flags, libedit_flags]
+
+    history_h_found = false
+    readline_h_found = false
+    foreach flag : check_flags
+      # Check history.h
+      if not history_h_found and cc.has_header(flag['history_h'],
+          args: g_c_args, include_directories: g_c_inc,
+          dependencies: [readline], required: false)
+        history_h = flag['history_h']
+        cdata.set(flag['history_h_flag'], 1)
+        history_h_found = true
+      endif
+
+      # Check readline.h
+      if not readline_h_found and cc.has_header(flag['readline_h'],
+          args: g_c_args, include_directories: g_c_inc,
+          dependencies: [readline], required: false)
+        readline_h = flag['readline_h']
+        cdata.set(flag['readline_h_flag'], 1)
+        readline_h_found = true
+      endif
+    endforeach
+
+    if not history_h_found or not readline_h_found
       error('''readline header not found
-If you have readline already installed, see see meson-log/meson-log.txt for details on the
-failure.  It is possible the compiler isn't looking in the proper directory.
-Use -Dreadline=false to disable readline support.''')
+If you have @0@ already installed, see see meson-log/meson-log.txt for details on the
+failure. It is possible the compiler isn't looking in the proper directory.
+Use -Dreadline=false to disable readline support.'''.format(readline_dep))
     endif
 
     check_funcs = [
