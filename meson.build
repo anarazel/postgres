@@ -740,53 +740,46 @@ if not get_option('readline').disabled()
   if readline.found()
     cdata.set('HAVE_LIBREADLINE', 1)
 
-    libedit_flags = {
-      'history_h': 'editline/history.h',
-      'history_h_flag': 'HAVE_EDITLINE_HISTORY_H',
-      'readline_h': 'editline/readline.h',
-      'readline_h_flag': 'HAVE_EDITLINE_READLINE_H'
+    editline_prefix = {
+      'header_prefix': 'editline/',
+      'flag_prefix': 'EDITLINE_',
     }
-    readline_flags = {
-      'history_h': 'readline/history.h',
-      'history_h_flag': 'HAVE_READLINE_HISTORY_H',
-      'readline_h': 'readline/readline.h',
-      'readline_h_flag': 'HAVE_READLINE_READLINE_H'
+    readline_prefix = {
+      'header_prefix': 'readline/',
+      'flag_prefix': 'READLINE_',
     }
-    raw_flags = {
-      'history_h': 'history.h',
-      'history_h_flag': 'HAVE_HISTORY_H',
-      'readline_h': 'readline.h',
-      'readline_h_flag': 'HAVE_READLINE_H'
+    default_prefix = {
+      'header_prefix': '',
+      'flag_prefix': '',
     }
 
-    # Set the order of flags
-    check_flags = libedit_preferred ? \
-      [libedit_flags, raw_flags, readline_flags] : \
-      [readline_flags, raw_flags, libedit_flags]
+    # Set the order of prefixes
+    prefixes = libedit_preferred ? \
+      [editline_prefix, default_prefix, readline_prefix] : \
+      [readline_prefix, default_prefix, editline_prefix]
 
-    history_h_found = false
-    readline_h_found = false
-    foreach flag : check_flags
-      # Check history.h
-      if not history_h_found and cc.has_header(flag['history_h'],
-          args: g_c_args, include_directories: g_c_inc,
-          dependencies: [readline], required: false)
-        history_h = flag['history_h']
-        cdata.set(flag['history_h_flag'], 1)
-        history_h_found = true
-      endif
-
-      # Check readline.h
-      if not readline_h_found and cc.has_header(flag['readline_h'],
-          args: g_c_args, include_directories: g_c_inc,
-          dependencies: [readline], required: false)
-        readline_h = flag['readline_h']
-        cdata.set(flag['readline_h_flag'], 1)
-        readline_h_found = true
-      endif
+    at_least_one_header_found = false
+    foreach header: ['history', 'readline']
+      is_found = false
+      foreach prefix : prefixes
+        header_file = '@0@@1@.h'.format(prefix['header_prefix'], header)
+        # Check history.h and readline.h
+        if not is_found and cc.has_header(header_file,
+            args: g_c_args, include_directories: g_c_inc,
+            dependencies: [readline], required: false)
+          if header == 'history'
+            history_h = header_file
+          else
+            readline_h = header_file
+          endif
+          cdata.set('HAVE_@0@@1@_H'.format(prefix['flag_prefix'], header).to_upper(), 1)
+          is_found = true
+          at_least_one_header_found = true
+        endif
+      endforeach
     endforeach
 
-    if not history_h_found or not readline_h_found
+    if not at_least_one_header_found
       error('''readline header not found
 If you have @0@ already installed, see see meson-log/meson-log.txt for details on the
 failure. It is possible the compiler isn't looking in the proper directory.
