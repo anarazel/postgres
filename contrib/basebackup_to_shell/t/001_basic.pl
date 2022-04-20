@@ -15,6 +15,7 @@ if (!defined $gzip || $gzip eq '')
 {
 	plan skip_all => 'gzip not available';
 }
+$gzip =~ s{\\}{/}g if ($PostgreSQL::Test::Utils::windows_os);
 
 my $node = PostgreSQL::Test::Cluster->new('primary');
 
@@ -53,8 +54,8 @@ $escaped_backup_path =~ s{\\}{\\\\}g
   if ($PostgreSQL::Test::Utils::windows_os);
 my $shell_command =
   $PostgreSQL::Test::Utils::windows_os
-  ? qq{$gzip --fast > "$escaped_backup_path\\\\%f.gz"}
-  : qq{$gzip --fast > "$escaped_backup_path/%f.gz"};
+  ? qq{"$gzip" --fast > "$escaped_backup_path\\\\%f.gz"}
+  : qq{"$gzip" --fast > "$escaped_backup_path/%f.gz"};
 $node->append_conf('postgresql.conf',
 	"basebackup_to_shell.command='$shell_command'");
 $node->reload();
@@ -74,8 +75,8 @@ $node->command_fails_like(
 # Reconfigure to restrict access and require a detail.
 $shell_command =
   $PostgreSQL::Test::Utils::windows_os
-  ? qq{$gzip --fast > "$escaped_backup_path\\\\%d.%f.gz"}
-  : qq{$gzip --fast > "$escaped_backup_path/%d.%f.gz"};
+  ? qq{"$gzip" --fast > "$escaped_backup_path\\\\%d.%f.gz"}
+  : qq{"$gzip" --fast > "$escaped_backup_path/%d.%f.gz"};
 $node->append_conf('postgresql.conf',
 	"basebackup_to_shell.command='$shell_command'");
 $node->append_conf('postgresql.conf',
@@ -115,6 +116,8 @@ sub verify_backup
 	{
 		my $tar = $ENV{TAR};
 		skip "no tar program available", 1 if (!defined $tar || $tar eq '');
+
+		$tar =~ s{\\}{/}g if ($PostgreSQL::Test::Utils::windows_os);
 
 		# Decompress.
 		system_or_bail($gzip, '-d',
