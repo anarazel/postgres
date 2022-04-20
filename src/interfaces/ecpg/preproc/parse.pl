@@ -19,6 +19,8 @@ no warnings 'uninitialized';
 my $path = shift @ARGV;
 $path = "." unless $path;
 
+open(our $infile, '<', $ARGV[0]) or die;
+
 my $copymode              = 0;
 my $brace_indent          = 0;
 my $yaccmode              = 0;
@@ -134,9 +136,11 @@ dump_buffer('rules');
 include_file('trailer', 'ecpg.trailer');
 dump_buffer('trailer');
 
+close($infile);
+
 sub main
 {
-  line: while (<>)
+  line: while (<$infile>)
 	{
 		if (/ERRCODE_FEATURE_NOT_SUPPORTED/)
 		{

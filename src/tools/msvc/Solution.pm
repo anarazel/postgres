@@ -694,7 +694,7 @@ sub GenerateFiles
 	{
 		print "Generating sql_help.h...\n";
 		chdir('src/bin/psql');
-		system("perl create_help.pl ../../../doc/src/sgml/ref sql_help");
+		system("perl create_help.pl ../../../doc/src/sgml/ref . sql_help");
 		chdir('../../..');
 	}
 
@@ -748,9 +748,8 @@ sub GenerateFiles
 			'src/backend/parser/gram.y'))
 	{
 		print "Generating preproc.y...\n";
-		chdir('src/interfaces/ecpg/preproc');
-		system('perl parse.pl < ../../../backend/parser/gram.y > preproc.y');
-		chdir('../../../..');
+		my $ecpg = 'src/interfaces/ecpg';
+		system("perl $ecpg/preproc/parse.pl $ecpg/preproc src/backend/parser/gram.y > $ecpg/preproc/preproc.y");
 	}
 
 	unless (-f "src/port/pg_config_paths.h")

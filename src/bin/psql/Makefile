@@ -56,7 +56,7 @@ sql_help.c: sql_help.h
 	touch $@
 
 sql_help.h: create_help.pl $(wildcard $(REFDOCDIR)/*.sgml)
-	$(PERL) $< $(REFDOCDIR) $*
+	$(PERL) $< $(REFDOCDIR) . $*
 
 psqlscanslash.c: FLEXFLAGS = -Cfe -p -p
 psqlscanslash.c: FLEX_NO_BACKUP=yes
@@ -81,7 +81,7 @@ clean distclean:
 # files removed here are supposed to be in the distribution tarball,
 # so do not clean them in the clean/distclean rules
 maintainer-clean: distclean
-	rm -f sql_help.h sql_help.c psqlscanslash.c
+	rm -f sql_help.h sql_help.c sql_help.dep psqlscanslash.c
 
 check:
 	$(prove_check)
