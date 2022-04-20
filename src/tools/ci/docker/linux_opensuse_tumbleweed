@@ -1,0 +1,56 @@
+FROM opensuse/tumbleweed
+RUN \
+  zypper -n clean -a && \
+  zypper -n ref && \
+  zypper -n dup && \
+  zypper -n update && \
+  zypper -n install \
+  diffutils \
+  git \
+  icu \
+  make \
+  meson \
+  perl-IPC-Run \
+  shadow \
+  systemd-devel \
+  util-linux \
+  \
+  bison \
+  ccache \
+  clang \
+  flex \
+  gcc \
+  gcc-c++ \
+  gettext-runtime \
+  ninja \
+  \
+  krb5-devel \
+  libicu-devel \
+  libldapcpp-devel \
+  liblz4-devel \
+  libopenssl-devel \
+  libselinux-devel \
+  libuuid-devel \
+  libxml2-devel \
+  libxslt-devel \
+  libzstd-devel \
+  llvm-devel \
+  pam-devel \
+  python38-devel \
+  readline-devel \
+  tcl-devel \
+  \
+  openldap2 \
+  openldap2-client \
+  \
+  krb5-client \
+  krb5-plugin-kdb-ldap \
+  krb5-server \
+  lz4 \
+  zstd \
+  \
+  && \
+  zypper -n clean -a
+
+# Fixing ICU errors caused by locale being set to 'POSIX'
+ENV LANG=en_US.UTF-8 LANGUAGE=en_US:en LC_ALL=en_US.UTF-8
