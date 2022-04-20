@@ -35,10 +35,29 @@ on_failure: &on_failure
       - "**/*.diffs"
       - "**/regress_log_*"
     type: text/plain
+  meson_test_artifacts:
+    path: "build/meson-logs/testlog.junit.xml"
+    type: text/xml
+    format: junit
 
-task:
-  name: FreeBSD - 13
 
+# configure feature flags, shared between the task running the BSD tests
+# these feature flags don't include --with-gssapi and --with-uuid=bsd
+# since these are not working on openBSD and netBSD
+BSD_CONFIGURE_FEATURES: &BSD_CONFIGURE_FEATURES >-
+  --with-icu
+  --with-ldap
+  --with-libxml
+  --with-libxslt
+  --with-lz4
+  --with-pam
+  --with-perl
+  --with-python
+  --with-ssl=openssl
+  --with-tcl --with-tclconfig=${TCL_CONFIG_PATH}
+
+
+freebsd_template: &freebsd_template
   env:
     # FreeBSD on GCP is slow when running with larger number of CPUS /
     # jobs. Using one more job than cpus seems to work best.
@@ -47,6 +66,10 @@ task:
     TEST_JOBS: 3
 
     CCACHE_DIR: /tmp/ccache_dir
+
+    TCL_CONFIG_PATH: /usr/local/lib/tcl8.6/
+
+    BSD_CONFIGURE_FEATURES: *BSD_CONFIGURE_FEATURES
 
   only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*freebsd.*'
 
@@ -80,6 +103,13 @@ task:
   setup_additional_packages_script: |
     #pkg install -y ...
 
+
+task:
+  <<: *freebsd_template
+
+  name: FreeBSD - 13 - Autoconf
+  trigger_type: manual
+
   # NB: Intentionally build without --with-llvm. The freebsd image size is
   # already large enough to make VM startup slow, and even without llvm
   # freebsd already takes longer than other platforms except for windows.
@@ -90,16 +120,7 @@ task:
         --enable-nls \
         \
         --with-gssapi \
-        --with-icu \
-        --with-ldap \
-        --with-libxml \
-        --with-libxslt \
-        --with-lz4 \
-        --with-pam \
-        --with-perl \
-        --with-python \
-        --with-ssl=openssl \
-        --with-tcl --with-tclconfig=/usr/local/lib/tcl8.6/ \
+        ${BSD_CONFIGURE_FEATURES} \
         --with-uuid=bsd \
         --with-zstd \
         \
@@ -125,6 +146,273 @@ task:
     cores_script: src/tools/ci/cores_backtrace.sh freebsd /tmp/cores
 
 
+task:
+  <<: *freebsd_template
+
+  name: FreeBSD - 13 - Meson
+
+  configure_script:
+    - su postgres -c 'meson setup --buildtype debug -Dcassert=true -Dssl=openssl -Duuid=bsd -Dtcl_version=tcl86 -Ddtrace=auto build'
+
+  build_script: su postgres -c 'ninja -C build'
+  upload_caches: ccache
+
+  test_world_script:
+    - su postgres -c 'meson test --no-rebuild -C build'
+
+  always:
+    meson_log_artifacts:
+      path: "build/meson-logs/*.txt"
+      type: text/plain
+
+  on_failure:
+    <<: *on_failure
+    cores_script: src/tools/ci/cores_backtrace.sh freebsd /tmp/cores
+
+
+netbsd_template: &netbsd_template
+  env:
+    CPUS: 2
+    BUILD_JOBS: 3
+    TEST_JOBS: 3
+
+    CIRRUS_WORKING_DIR: /home/postgres/postgres
+    CCACHE_DIR: /tmp/ccache_dir
+
+    PATH: /usr/sbin:$PATH
+    TCL_CONFIG_PATH: /usr/pkg/lib
+
+    # Postgres interprets LANG as a 'en_US.UTF-8' but it is 'C', then
+    # Postgres tries to set 'LC_COLLATE' to 'en_US.UTF-8' but it is not
+    # changeable. Initdb fails because of that. So, LANG is forced to be 'C'.
+    LANG: "C"
+    LC_ALL: "C"
+
+    BSD_CONFIGURE_FEATURES: *BSD_CONFIGURE_FEATURES
+
+  only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*netbsd.*'
+
+  compute_engine_instance:
+    image_project: $IMAGE_PROJECT
+    image: family/pg-ci-netbsd-9-postgres
+    platform: netbsd
+    cpu: $CPUS
+    memory: 4G
+    disk: 25
+
+  sysinfo_script: |
+    locale
+    id
+    uname -a
+    ulimit -a -H && ulimit -a -S
+    export
+
+  ccache_cache:
+    folder: $CCACHE_DIR
+
+  create_user_script: |
+    useradd postgres
+    chown -R postgres:users /home/postgres
+    mkdir -p ${CCACHE_DIR}
+    chown -R postgres:users ${CCACHE_DIR}
+
+
+task:
+  <<: *netbsd_template
+
+  name: NetBSD - 9 - Autoconf
+  trigger_type: manual
+
+  # --with-uuid=bsd is not set since 'bsd' uuid option
+  # is not working on netBSD. See
+  # https://www.postgresql.org/message-id/17358-89806e7420797025@postgresql.org
+  # And other uuid options are not available on netBSD
+  configure_script: |
+    su postgres <<-EOF
+      ./configure \
+        --enable-cassert --enable-debug --enable-tap-tests \
+        --enable-nls \
+        \
+        ${BSD_CONFIGURE_FEATURES} \
+        \
+        --with-includes=/usr/pkg/include --with-libs=/usr/pgk/lib \
+        CC="ccache cc" \
+        CXX="ccache c++" \
+        CFLAGS="-Og -ggdb" \
+        LDFLAGS="-Wl,-R/usr/pkg/lib" \
+        \
+        PYTHON=python3.9
+    EOF
+  build_script: su postgres -c "gmake -s -j${BUILD_JOBS} world-bin"
+  upload_caches: ccache
+
+  test_world_script: |
+    su postgres <<-EOF
+      ulimit -c unlimited
+      gmake -s ${CHECK} ${CHECKFLAGS} -j${TEST_JOBS}
+    EOF
+
+  on_failure:
+    <<: *on_failure
+
+
+task:
+  <<: *netbsd_template
+
+  name: NetBSD - 9 - Meson
+
+  # -Duuid=bsd is not set since 'bsd' uuid option
+  # is not working on netBSD. See
+  # https://www.postgresql.org/message-id/17358-89806e7420797025@postgresql.org
+  # And other uuid options are not available on netBSD
+  configure_script: |
+    su postgres  <<-EOF
+      meson setup \
+        --buildtype debug \
+        -Dcassert=true -Dssl=openssl \
+        -Dextra_lib_dirs=/usr/pkg/lib -Dextra_include_dirs=/usr/pkg/include \
+        build
+    EOF
+
+  build_script: su postgres -c 'ninja -C build'
+  upload_caches: ccache
+
+  test_world_script: |
+    su postgres <<-EOF
+      ulimit -c unlimited
+      meson test --no-rebuild -C build
+    EOF
+
+  always:
+    meson_log_artifacts:
+      path: "build/meson-logs/*.txt"
+      type: text/plain
+
+  on_failure:
+    <<: *on_failure
+
+
+openbsd_template: &openbsd_template
+  env:
+    CPUS: 2
+    BUILD_JOBS: 3
+    TEST_JOBS: 3
+
+    CIRRUS_WORKING_DIR: /home/postgres/postgres
+    CCACHE_DIR: /tmp/ccache_dir
+
+    PATH: /usr/sbin:$PATH
+    TCL_CONFIG_PATH: /usr/local/lib/tcl/tcl8.6/
+
+    # Postgres interprets LANG as a 'en_US.UTF-8' but it is 'C', then
+    # Postgres tries to set 'LC_COLLATE' to 'en_US.UTF-8' but it is not
+    # changeable. Initdb fails because of that. So, LANG is forced to be 'C'.
+    LANG: "C"
+    LC_ALL: "C"
+
+    BSD_CONFIGURE_FEATURES: *BSD_CONFIGURE_FEATURES
+
+  only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*openbsd.*'
+
+  compute_engine_instance:
+    image_project: $IMAGE_PROJECT
+    image: family/pg-ci-openbsd-7-postgres
+    platform: openbsd
+    cpu: $CPUS
+    memory: 4G
+    disk: 25
+
+  sysinfo_script: |
+    locale
+    id
+    uname -a
+    ulimit -a -H && ulimit -a -S
+    export
+
+  ccache_cache:
+    folder: $CCACHE_DIR
+
+  create_user_script: |
+    useradd postgres
+    chown -R postgres:postgres /home/postgres
+    mkdir -p ${CCACHE_DIR}
+    chown -R postgres:postgres ${CCACHE_DIR}
+
+
+task:
+  <<: *openbsd_template
+
+  name: OpenBSD - 7 - Autoconf
+  trigger_type: manual
+
+  # --with-uuid option is set to 'e2fs' since 'bsd' uuid option
+  # is not working on openBSD. See
+  # https://www.postgresql.org/message-id/17358-89806e7420797025@postgresql.org
+  # (same error applies for openBSD)
+  configure_script: |
+    su postgres <<-EOF
+      ./configure \
+        --enable-cassert --enable-debug --enable-tap-tests \
+        --enable-nls \
+        \
+        ${BSD_CONFIGURE_FEATURES} \
+        --with-uuid=e2fs \
+        \
+        --with-includes=/usr/local/include --with-libs=/usr/local/lib \
+        CC="ccache cc" \
+        CXX="ccache c++" \
+        LDFLAGS="-Wl,-R/usr/local/lib" \
+        CFLAGS="-Og -ggdb"
+    EOF
+  build_script: su postgres -c "gmake -s -j${BUILD_JOBS} world-bin"
+  upload_caches: ccache
+
+  test_world_script: |
+    su postgres <<-EOF
+      ulimit -c unlimited
+      gmake -s ${CHECK} ${CHECKFLAGS} -j${TEST_JOBS}
+    EOF
+
+  on_failure:
+    <<: *on_failure
+
+
+task:
+  <<: *openbsd_template
+
+  name: OpenBSD - 7 - Meson
+
+  # -Duuid option is set to 'e2fs' since 'bsd' uuid option
+  # is not working on openBSD. See
+  # https://www.postgresql.org/message-id/17358-89806e7420797025@postgresql.org
+  # (same error applies for openBSD)
+  configure_script: |
+    su postgres <<-EOF
+      meson setup \
+        --buildtype debug \
+        -Dcassert=true -Dssl=openssl -Duuid=e2fs \
+        -Dextra_include_dirs=/usr/local/include -Dextra_lib_dirs=/usr/local/lib \
+        build
+    EOF
+
+  build_script: su postgres -c 'ninja -C build'
+  upload_caches: ccache
+
+  test_world_script: |
+    su postgres <<-EOF
+      ulimit -c unlimited
+      meson test --no-rebuild -C build
+    EOF
+
+  always:
+    meson_log_artifacts:
+      path: "build/meson-logs/*.txt"
+      type: text/plain
+
+  on_failure:
+    <<: *on_failure
+
+
 # configure feature flags, shared between the task running the linux tests and
 # the CompilerWarnings task
 LINUX_CONFIGURE_FEATURES: &LINUX_CONFIGURE_FEATURES >-
@@ -141,14 +429,28 @@ LINUX_CONFIGURE_FEATURES: &LINUX_CONFIGURE_FEATURES >-
   --with-selinux
   --with-ssl=openssl
   --with-systemd
-  --with-tcl --with-tclconfig=/usr/lib/tcl8.6/
-  --with-uuid=ossp
+  --with-tcl --with-tclconfig=${TCL_DIR:/usr/lib/tcl8.6/}
+  --with-uuid=${UUID:ossp}
   --with-zstd
 
 
-task:
-  name: Linux - Debian Bullseye
+# configure preparation scripts, shared between tasks running the linux tests
+linux_preparation_scripts_template: &linux_preparation_scripts_template
+  sysinfo_script: |
+    id
+    uname -a
+    cat /proc/cmdline
+    ulimit -a -H && ulimit -a -S
+    export
+  create_user_script: |
+    useradd -m -U postgres
+    chown -R postgres:postgres .
+    mkdir -p ${CCACHE_DIR}
+    chown -R postgres:postgres ${CCACHE_DIR}
+    su postgres -c "ulimit -l -H && ulimit -l -S"
 
+
+linux_debian_template: &linux_debian_template
   env:
     CPUS: 4
     BUILD_JOBS: 4
@@ -171,19 +473,9 @@ task:
   ccache_cache:
     folder: ${CCACHE_DIR}
 
-  sysinfo_script: |
-    id
-    uname -a
-    cat /proc/cmdline
-    ulimit -a -H && ulimit -a -S
-    export
-  create_user_script: |
-    useradd -m postgres
-    chown -R postgres:postgres .
-    mkdir -p ${CCACHE_DIR}
-    chown -R postgres:postgres ${CCACHE_DIR}
+  set_limits_script: |
     echo '* - memlock 134217728' > /etc/security/limits.d/postgres.conf
-    su postgres -c "ulimit -l -H && ulimit -l -S"
+  <<: *linux_preparation_scripts_template
   setup_core_files_script: |
     mkdir -m 770 /tmp/cores
     chown root:postgres /tmp/cores
@@ -191,6 +483,12 @@ task:
   setup_additional_packages_script: |
     #apt-get update
     #DEBIAN_FRONTEND=noninteractive apt-get -y install ...
+
+
+task:
+  <<: *linux_debian_template
+
+  name: Linux - Debian Bullseye - Autoconf
 
   configure_script: |
     su postgres <<-EOF
@@ -220,9 +518,351 @@ task:
     cores_script: src/tools/ci/cores_backtrace.sh linux /tmp/cores
 
 
-task:
-  name: macOS - Monterey
+task: &linux_debian_bullseye_meson
+  <<: *linux_debian_template
 
+  name: Linux - Debian Bullseye - Meson
+
+  configure_script:
+    - su postgres -c 'meson setup --buildtype debug -Dcassert=true -Dssl=openssl -Duuid=e2fs -Ddtrace=enabled build'
+
+  build_script: su postgres -c 'ninja -C build'
+  upload_caches: ccache
+
+  tests_world_script:
+    - su postgres -c 'meson test --no-rebuild -C build'
+
+  on_failure:
+    <<: *on_failure
+    cores_script: src/tools/ci/cores_backtrace.sh linux /tmp/cores
+
+  always:
+    meson_log_artifacts:
+      path: "build/meson-logs/*.txt"
+      type: text/plain
+
+
+task:
+  <<: *linux_debian_bullseye_meson
+
+  name: Linux - Debian Sid - Meson
+
+  compute_engine_instance:
+    image: family/pg-ci-sid
+
+
+linux_opensuse_template: &linux_opensuse_template
+  env:
+    CPUS: 4
+    BUILD_JOBS: 4
+    TEST_JOBS: 8 # experimentally derived to be a decent choice
+
+    CCACHE_DIR: /tmp/ccache_dir
+    DEBUGINFOD_URLS: "https://debuginfod.opensuse.org/"
+
+    TCL_DIR: /usr/lib64/
+    UUID: e2fs
+    LINUX_CONFIGURE_FEATURES: *LINUX_CONFIGURE_FEATURES
+
+  only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*linux.*'
+
+  container:
+    dockerfile: src/tools/ci/docker/linux_opensuse_tumbleweed
+    cpu: $CPUS
+    memory: 4G
+
+  ccache_cache:
+    folder: ${CCACHE_DIR}
+
+  <<: *linux_preparation_scripts_template
+
+
+task:
+  <<: *linux_opensuse_template
+
+  name: Linux - OpenSuse Tumbleweed - Autoconf
+  trigger_type: manual
+
+  configure_script: |
+    su postgres <<-EOF
+      export PATH="/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin" && \
+      ./configure \
+      --enable-cassert --enable-debug --enable-tap-tests \
+      --enable-nls \
+      \
+      ${LINUX_CONFIGURE_FEATURES}
+      \
+      CC="ccache gcc"  \
+      CXX="ccache g++" \
+      CLANG="ccache clang" \
+      CFLAGS="-O0 -ggdb"
+    EOF
+  build_script: su postgres -c 'make -s -j${BUILD_JOBS} world-bin'
+  upload_caches: ccache
+
+  test_world_script: |
+    su postgres <<-EOF
+      ulimit -c unlimited
+      make -s ${CHECK} ${CHECKFLAGS} -j${TEST_JOBS}
+    EOF
+
+  on_failure:
+    <<: *on_failure
+
+
+task:
+  <<: *linux_opensuse_template
+
+  name: Linux - OpenSuse Tumbleweed (LLVM) - Meson
+
+  configure_script:
+    - su postgres -c 'meson setup --buildtype debug -Dcassert=true -Dssl=openssl -Duuid=e2fs -Dllvm=enabled build'
+
+  build_script: su postgres -c 'ninja -C build'
+  upload_caches: ccache
+
+  tests_world_script:
+    - su postgres -c 'meson test --no-rebuild -C build --num-processes ${TEST_JOBS}'
+
+  on_failure:
+    <<: *on_failure
+
+  always:
+    meson_log_artifacts:
+      path: "build/meson-logs/*.txt"
+      type: text/plain
+
+
+linux_rhel_template: &linux_rhel_template
+  env:
+    CPUS: 4
+    BUILD_JOBS: 4
+    TEST_JOBS: 8 # experimentally derived to be a decent choice
+
+    CCACHE_DIR: /tmp/ccache_dir
+    DEBUGINFOD_URLS: ${DEBUGINFO}
+
+    TCL_DIR: /usr/lib64/
+    UUID: e2fs
+    LINUX_CONFIGURE_FEATURES: *LINUX_CONFIGURE_FEATURES
+
+  only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*linux.*'
+
+  container:
+    dockerfile: ${DOCKERFILE_PATH}
+    cpu: $CPUS
+    memory: 4G
+
+  ccache_cache:
+    folder: ${CCACHE_DIR}
+
+  <<: *linux_preparation_scripts_template
+
+
+task:
+  env:
+    DOCKERFILE_PATH: src/tools/ci/docker/linux_fedora_rawhide
+    DEBUGINFO: "https://debuginfod.fedoraproject.org/"
+
+  <<: *linux_rhel_template
+
+  name: Linux - Fedora Rawhide - Autoconf
+  trigger_type: manual
+
+  configure_script: |
+    su postgres <<-EOF
+      ./configure \
+      --enable-cassert --enable-debug --enable-tap-tests \
+      --enable-nls \
+      \
+      ${LINUX_CONFIGURE_FEATURES}
+      \
+      CC="ccache gcc"  \
+      CXX="ccache g++" \
+      CLANG="ccache clang" \
+      CFLAGS="-O0 -ggdb"
+    EOF
+  build_script: su postgres -c 'make -s -j${BUILD_JOBS} world-bin'
+  upload_caches: ccache
+
+  test_world_script: |
+    su postgres <<-EOF
+      ulimit -c unlimited
+      make -s ${CHECK} ${CHECKFLAGS} -j${TEST_JOBS}
+    EOF
+
+  on_failure:
+    <<: *on_failure
+
+
+task:
+  env:
+    DOCKERFILE_PATH: src/tools/ci/docker/linux_fedora_rawhide
+    DEBUGINFO: "https://debuginfod.fedoraproject.org/"
+
+  <<: *linux_rhel_template
+
+  name: Linux - Fedora Rawhide - Meson
+
+  configure_script:
+    - su postgres -c 'meson setup --buildtype debug -Dcassert=true -Dssl=openssl -Duuid=e2fs build'
+
+  build_script: su postgres -c 'ninja -C build'
+  upload_caches: ccache
+
+  tests_world_script:
+    - su postgres -c 'meson test --no-rebuild -C build --num-processes ${TEST_JOBS}'
+
+  on_failure:
+    <<: *on_failure
+
+  always:
+    meson_log_artifacts:
+      path: "build/meson-logs/*.txt"
+      type: text/plain
+
+
+task:
+  env:
+    DOCKERFILE_PATH: src/tools/ci/docker/linux_centos8
+    DEBUGINFO: "http://debuginfo.centos.org/"
+
+  <<: *linux_rhel_template
+
+  name: Linux - Centos 8 - Autoconf
+  trigger_type: manual
+
+  configure_script: |
+    su postgres <<-EOF
+      ./configure \
+      --enable-cassert --enable-debug --enable-tap-tests \
+      --enable-nls \
+      \
+      ${LINUX_CONFIGURE_FEATURES}
+      \
+      CC="ccache gcc"  \
+      CXX="ccache g++" \
+      CLANG="ccache clang" \
+      CFLAGS="-O0 -ggdb"
+    EOF
+  build_script: su postgres -c 'make -s -j${BUILD_JOBS} world-bin'
+  upload_caches: ccache
+
+  test_world_script: |
+    su postgres <<-EOF
+      ulimit -c unlimited
+      make -s ${CHECK} ${CHECKFLAGS} -j${TEST_JOBS}
+    EOF
+
+  on_failure:
+    <<: *on_failure
+
+
+task:
+  env:
+    DOCKERFILE_PATH: src/tools/ci/docker/linux_centos8
+    DEBUGINFO: "http://debuginfo.centos.org/"
+
+  <<: *linux_rhel_template
+
+  name: Linux - Centos 8 - Meson
+
+  configure_script:
+    - su postgres -c 'meson setup --buildtype debug -Dcassert=true -Dssl=openssl -Duuid=e2fs build'
+
+  build_script: su postgres -c 'ninja -C build'
+  upload_caches: ccache
+
+  tests_world_script:
+    - su postgres -c 'meson test --no-rebuild -C build --num-processes ${TEST_JOBS}'
+
+  on_failure:
+    <<: *on_failure
+
+  always:
+    meson_log_artifacts:
+      path: "build/meson-logs/*.txt"
+      type: text/plain
+
+
+task:
+  env:
+    DOCKERFILE_PATH: src/tools/ci/docker/linux_centos7
+    DEBUGINFO: "http://debuginfo.centos.org/"
+
+  <<: *linux_rhel_template
+
+  name: Linux - Centos 7 - Autoconf
+  trigger_type: manual
+
+  configure_script: |
+    su postgres <<-EOF
+      PYTHON=python3 \
+      ./configure \
+      --enable-cassert --enable-debug --enable-tap-tests \
+      --enable-nls \
+      \
+      --with-gssapi \
+      --with-icu \
+      --with-ldap \
+      --with-libxml \
+      --with-libxslt \
+      --with-lz4 \
+      --with-pam \
+      --with-perl \
+      --with-python \
+      --with-selinux \
+      --with-ssl=openssl \
+      --with-systemd \
+      --with-tcl --with-tclconfig=/usr/lib64/ \
+      --with-uuid=e2fs \
+      \
+      CC="ccache gcc"  \
+      CXX="ccache g++" \
+      CLANG="ccache clang" \
+      CFLAGS="-O0 -ggdb"
+    EOF
+  build_script: su postgres -c 'make -s -j${BUILD_JOBS} world-bin'
+  upload_caches: ccache
+
+  test_world_script: |
+    su postgres <<-EOF
+      ulimit -c unlimited
+      make -s ${CHECK} ${CHECKFLAGS} -j${TEST_JOBS}
+    EOF
+
+  on_failure:
+    <<: *on_failure
+
+
+task:
+  env:
+    DOCKERFILE_PATH: src/tools/ci/docker/linux_centos7
+    DEBUGINFO: "http://debuginfo.centos.org/"
+
+  <<: *linux_rhel_template
+
+  name: Linux - Centos 7 - Meson
+
+  configure_script:
+    - su postgres -c 'meson setup --buildtype debug -Dcassert=true -Dssl=openssl -Duuid=e2fs build'
+
+  build_script: su postgres -c 'ninja -C build'
+  upload_caches: ccache
+
+  tests_world_script:
+    - su postgres -c 'meson test --no-rebuild -C build --num-processes ${TEST_JOBS}'
+
+  on_failure:
+    <<: *on_failure
+
+  always:
+    meson_log_artifacts:
+      path: "build/meson-logs/*.txt"
+      type: text/plain
+
+
+macos_template: &macos_template
   env:
     CPUS: 12 # always get that much for cirrusci macOS instances
     BUILD_JOBS: $CPUS
@@ -269,6 +909,7 @@ task:
       llvm \
       lz4 \
       make \
+      meson \
       openldap \
       openssl \
       python \
@@ -280,6 +921,14 @@ task:
 
   ccache_cache:
     folder: $CCACHE_DIR
+
+
+task:
+  <<: *macos_template
+
+  name: macOS - Monterey - Autoconf
+  trigger_type: manual
+
   configure_script: |
     brewpath="/usr/local"
     INCLUDES="${brewpath}/include:${INCLUDES}"
@@ -339,8 +988,42 @@ task:
 
 
 task:
-  name: Windows - Server 2019, VS 2019
+  <<: *macos_template
 
+  name: macOS - Monterey - Meson
+
+  configure_script: |
+    brewpath="/usr/local"
+    PKG_CONFIG_PATH="${brewpath}/lib/pkgconfig:${PKG_CONFIG_PATH}"
+
+    for pkg in icu4c krb5 openldap openssl ; do
+      pkgpath="${brewpath}/opt/${pkg}"
+      PKG_CONFIG_PATH="${pkgpath}/lib/pkgconfig:${PKG_CONFIG_PATH}"
+    done
+
+    export PKG_CONFIG_PATH
+
+    meson setup --buildtype debug -Dcassert=true -Dssl=openssl -Duuid=e2fs  -Ddtrace=auto build
+
+  build_script: ninja -C build
+  upload_caches: ccache
+
+  tests_world_script:
+    - ulimit -c unlimited
+    - ulimit -n 1024
+    - meson test --no-rebuild -C build
+
+  on_failure:
+    <<: *on_failure
+    cores_script: src/tools/ci/cores_backtrace.sh macos "${HOME}/cores"
+
+  always:
+    meson_log_artifacts:
+      path: "build/meson-logs/*.txt"
+      type: text/plain
+
+
+windows_template: &windows_template
   env:
     # Half the allowed per-user CPU cores
     CPUS: 4
@@ -402,6 +1085,11 @@ task:
   setup_additional_packages_script: |
     REM choco install -y --no-progress ...
 
+
+task:
+  <<: *windows_template
+  name: Windows - Server 2019, VS 2019 - Homegrown
+
   configure_script:
     # copy errors out when using forward slashes
     - copy src\tools\ci\windows_build_config.pl src\tools\msvc\config.pl
@@ -454,7 +1142,72 @@ task:
     <<: *on_failure
     crashlog_artifacts:
       path: "crashlog-*.txt"
+
+
+task:
+  <<: *windows_template
+  name: Windows - Server 2019, VS 2019 - Meson & ninja
+
+  meson_install_script:
+    - pip install meson ninja
+
+  configure_script:
+    - vcvarsall x64
+    - mkdir subprojects
+    - meson wrap install lz4
+    - meson wrap install zlib
+    - meson setup --buildtype debug --backend ninja  -Dcassert=true -Db_pch=true -Dssl=openssl -Dlz4=enabled -Dzlib=enabled -Dextra_lib_dirs=c:\openssl\1.1\lib -Dextra_include_dirs=c:\openssl\1.1\include -DTAR=c:/windows/system32/tar.exe build
+
+  build_script:
+    - vcvarsall x64
+    - ninja -C build
+
+  check_world_script:
+    - vcvarsall x64
+    - meson test --no-rebuild -C build
+
+  on_failure:
+    <<: *on_failure
+    crashlog_artifacts:
+      path: "crashlog-*.txt"
+
+  always:
+    meson_log_artifacts:
+      path: "build/meson-logs/*.txt"
       type: text/plain
+
+
+task:
+  <<: *windows_template
+  name: Windows - Server 2019, VS 2019 - Meson & msbuild
+
+  meson_install_script:
+    - pip install meson
+
+  configure_script:
+    - vcvarsall x64
+    - mkdir subprojects
+    - meson wrap install lz4
+    - meson wrap install zlib
+    - meson setup --buildtype debug --backend vs -Dcassert=true -Db_pch=true -Dssl=openssl -Dlz4=enabled -Dzlib=enabled -Dextra_lib_dirs=c:\openssl\1.1\lib -Dextra_include_dirs=c:\openssl\1.1\include -DTAR=c:/windows/system32/tar.exe build
+
+  build_script:
+    - vcvarsall x64
+    - msbuild /p:UseMultiToolTask=true %MSBFLAGS% build\postgresql.sln
+
+  check_world_script:
+    - vcvarsall x64
+    - meson test --no-rebuild -C build
+
+  always:
+    meson_log_artifacts:
+      path: "build/meson-logs/*.txt"
+      type: text/plain
+
+  on_failure:
+    <<: *on_failure
+    crashlog_artifacts:
+      path: "crashlog-*.txt"
 
 
 task:
@@ -462,7 +1215,8 @@ task:
 
   # To limit unnecessary work only run this once the normal linux test succeeds
   depends_on:
-    - Linux - Debian Bullseye
+    - Linux - Debian Bullseye - Meson
+  trigger_type: manual
 
   env:
     CPUS: 4
