@@ -263,26 +263,26 @@ dir_prefix = get_option('prefix')
 dir_bin = get_option('bindir')
 
 dir_data = get_option('datadir')
-if not (dir_data.contains('pgsql') or dir_data.contains('pgsql'))
+if not (dir_data.contains('pgsql') or dir_data.contains('postgres'))
   dir_data = dir_data / pkg
 endif
 
 dir_sysconf = get_option('sysconfdir')
-if not (dir_sysconf.contains('pgsql') or dir_sysconf.contains('pgsql'))
+if not (dir_sysconf.contains('pgsql') or dir_sysconf.contains('postgres'))
   dir_sysconf = dir_sysconf / pkg
 endif
 
 dir_lib = get_option('libdir')
 
 dir_lib_pkg = dir_lib
-if not (dir_lib_pkg.contains('pgsql') or dir_lib_pkg.contains('pgsql'))
+if not (dir_lib_pkg.contains('pgsql') or dir_lib_pkg.contains('postgres'))
   dir_lib_pkg = dir_lib_pkg / pkg
 endif
 
 dir_include = get_option('includedir')
 
 dir_include_pkg = dir_include
-if not (dir_include_pkg.contains('pgsql') or dir_include_pkg.contains('pgsql'))
+if not (dir_include_pkg.contains('pgsql') or dir_include_pkg.contains('postgres'))
   dir_include_pkg = dir_include_pkg / pkg
 endif
 
