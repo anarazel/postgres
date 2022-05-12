@@ -244,7 +244,7 @@ cdata.set('XLOG_BLCKSZ', get_option('wal-blocksize') * 1024)
 cdata.set('RELSEG_SIZE', get_option('segsize') * 131072)
 cdata.set('DEF_PGPORT', get_option('pgport'))
 cdata.set_quoted('DEF_PGPORT_STR', get_option('pgport'))
-cdata.set_quoted('PG_KRB_SRVNAM', 'postgres')
+cdata.set_quoted('PG_KRB_SRVNAM', get_option('krb-srvnam'))
 
 
 

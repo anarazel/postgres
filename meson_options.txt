@@ -14,6 +14,13 @@ Large tables are divided into multiple operating-system files, each of size equa
   )
 
 
+# Miscallaneous options
+
+option('krb-srvnam', type : 'string', value : 'postgres',
+  description : '''The default name of the Kerberos service principal used by GSSAPI.
+postgres is the default. There's usually no reason to change this unless you are building for a Windows environment, in which case it must be set to upper case POSTGRES ''')
+
+
 # Defaults
 
 option('pgport', type : 'string', value : '5432',
