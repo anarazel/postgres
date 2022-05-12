@@ -79,7 +79,7 @@ cdata.set_quoted('PACKAGE_NAME', 'PostgreSQL')
 cdata.set_quoted('PACKAGE_BUGREPORT', 'pgsql-bugs@lists.postgresql.org')
 cdata.set_quoted('PACKAGE_URL', pg_url)
 
-cdata.set_quoted('PG_VERSION', pg_version)
+cdata.set_quoted('PG_VERSION', pg_version + get_option('extra_version'))
 cdata.set_quoted('PG_VERSION_STR', 'PostgreSQL @0@ on @1@, compiled by @2@-@3@'.format(
   pg_version, target_machine.cpu_family(), cc.get_id(), cc.version()))
 cdata.set_quoted('PG_MAJORVERSION', pg_version_major.to_string())

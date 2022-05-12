@@ -47,6 +47,9 @@ option('extra_include_dirs', type : 'array', value: [],
 option('extra_lib_dirs', type : 'array', value: [],
   description: 'non-default directories to be searched for libs')
 
+option('extra_version', type : 'string', value: '',
+  description: 'append STRING to the PostgreSQL version number')
+
 
 # External dependencies
 
