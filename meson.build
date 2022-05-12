@@ -305,6 +305,19 @@ dir_data_extension = dir_data / 'extension'
 
 
 ###############################################################
+# Library: bonjour
+###############################################################
+
+bonjouropt = get_option('bonjour')
+bonjour = dependency('', required : false)
+if cc.check_header('dns_sd.h', args: g_c_args, required: bonjouropt)
+  cdata.set('USE_BONJOUR', 1)
+  bonjour = declare_dependency()
+endif
+
+
+
+###############################################################
 # Library: GSSAPI
 ###############################################################
 
@@ -2493,6 +2506,7 @@ if meson.version().version_compare('>=0.57')
 
   summary(
     {
+      'bonjour': bonjour,
       'gss': gssapi,
       'icu': icu,
       'ldap': ldap,

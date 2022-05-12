@@ -60,6 +60,9 @@ option('extra_version', type : 'string', value: '',
 
 # External dependencies
 
+option('bonjour', type : 'feature', value: 'auto',
+  description: 'build with Bonjour support')
+
 option('gssapi', type : 'feature', value: 'auto',
   description: 'GSSAPI support')
 
