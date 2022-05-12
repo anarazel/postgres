@@ -87,6 +87,9 @@ option('lz4', type : 'feature', value: 'auto',
 option('nls', type: 'feature', value: 'auto',
   description: 'national language support')
 
+option('pam', type : 'feature', value: 'auto',
+  description: 'build with PAM support')
+
 option('plperl', type : 'feature', value: 'auto',
   description: 'build Perl modules (PL/Perl)')
 

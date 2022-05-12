@@ -557,6 +557,42 @@ endif
 
 
 ###############################################################
+# Library: pam
+###############################################################
+
+pamopt = get_option('pam')
+if not pamopt.disabled()
+  pam = dependency('pam', required: false)
+
+  if not pam.found()
+    pam = cc.find_library('pam', required: pamopt, dirs: g_c_lib)
+  endif
+
+  if pam.found()
+    pam_header_found = false
+
+    # header file <security/pam_appl.h> or <pam/pam_appl.h> is required for PAM.
+    if cc.check_header('security/pam_appl.h', args: g_c_args, dependencies: pam, required: false)
+      cdata.set('HAVE_SECURITY_PAM_APPL_H', 1)
+      pam_header_found = true
+    elif cc.check_header('pam/pam_appl.h', args: g_c_args, dependencies: pam, required: pamopt)
+      cdata.set('HAVE_PAM_PAM_APPL_H', 1)
+      pam_header_found = true
+    endif
+
+    if pam_header_found
+      cdata.set('USE_PAM', 1)
+    else
+      pam = dependency('', required : false)
+    endif
+  endif
+else
+  pam = dependency('', required : false)
+endif
+
+
+
+###############################################################
 # Library: Perl (for plperl)
 ###############################################################
 
@@ -2159,7 +2195,7 @@ backend_code = declare_dependency(
   include_directories: [postgres_inc],
   link_with: [],
   sources: generated_headers + generated_backend_headers,
-  dependencies: [os_deps, libintl, ssl, lz4, zlib, icu, icu_i18n, ldap, gssapi, libxml, zstd, systemd],
+  dependencies: [os_deps, libintl, ssl, lz4, zlib, icu, icu_i18n, ldap, gssapi, libxml, pam, zstd, systemd],
 )
 
 # Note there's intentionally no dependency on pgport/common here - we want the
@@ -2170,7 +2206,7 @@ backend_mod_code = declare_dependency(
   include_directories: [postgres_inc],
   link_with: [],
   sources: generated_headers + generated_backend_headers,
-  dependencies: [os_deps, ssl, lz4, zlib, icu, icu_i18n, ldap, gssapi, libxml, zstd, systemd],
+  dependencies: [os_deps, ssl, lz4, zlib, icu, icu_i18n, ldap, gssapi, libxml, pam, zstd, systemd],
 )
 
 # Then through the main sources. That way contrib can have dependencies on
@@ -2501,6 +2537,7 @@ if meson.version().version_compare('>=0.57')
       'llvm': llvm,
       'lz4': lz4,
       'nls' : libintl,
+      'pam' : pam,
       'perl': perl_dep,
       'python3': python3_dep,
       'readline': readline,
