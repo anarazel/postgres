@@ -315,11 +315,14 @@ if not gssapiopt.disabled()
   if gssapi.found() and \
     cc.check_header('gssapi/gssapi.h', args: g_c_args, dependencies: gssapi, required: gssapiopt)
 
-    if not cc.has_function('gss_init_sec_context',
+    if cc.has_function('gss_init_sec_context',
       include_directories: g_c_inc, args: g_c_args, dependencies: gssapi)
+      cdata.set('ENABLE_GSS', 1)
+    elif gssapiopt.enabled()
       error('''could not find function 'gss_init_sec_context' required for GSSAPI''')
+    else
+      gssapi = dependency('', required : false)
     endif
-    cdata.set('ENABLE_GSS', 1)
   endif
 
 else
