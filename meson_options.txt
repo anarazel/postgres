@@ -66,6 +66,9 @@ option('extra_version', type : 'string', value: '',
 option('bonjour', type : 'feature', value: 'auto',
   description: 'build with Bonjour support')
 
+option('bsd-auth', type : 'feature', value: 'auto',
+  description: 'build with BSD Authentication support')
+
 option('dtrace', type : 'feature', value: 'disabled',
   description: 'DTrace support')
 

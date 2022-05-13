@@ -309,6 +309,19 @@ dir_data_extension = dir_data / 'extension'
 
 
 ###############################################################
+# Library: bsd-auth
+###############################################################
+
+bsd_authopt = get_option('bsd-auth')
+bsd_auth = dependency('', required: false)
+if cc.check_header('bsd_auth.h', args: g_c_args, required: bsd_authopt)
+  cdata.set('USE_BSD_AUTH', 1)
+  bsd_auth = declare_dependency()
+endif
+
+
+
+###############################################################
 # Library: bonjour
 ###############################################################
 
@@ -2552,6 +2565,7 @@ if meson.version().version_compare('>=0.57')
   summary(
     {
       'bonjour': bonjour,
+      'bsd_auth': bsd_auth,
       'gss': gssapi,
       'icu': icu,
       'ldap': ldap,
