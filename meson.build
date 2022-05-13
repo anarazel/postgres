@@ -541,15 +541,15 @@ tcl_version = get_option('tcl_version')
 if not tclopt.disabled()
 
   # via pkg-config
-  tcl_dep = dependency(tcl_version, required: tclopt)
+  tcl_dep = dependency(tcl_version, required: false)
 
   if not tcl_dep.found()
     tcl_dep = cc.find_library(tcl_version,
-      required: tclopt.enabled(),
+      required: tclopt,
       dirs: g_c_lib)
   endif
 
-  if not cc.has_header('tcl.h', dependencies: tcl_dep, required: tclopt.enabled())
+  if not cc.has_header('tcl.h', dependencies: tcl_dep, required: tclopt)
     tcl_dep = dependency('', required: false)
   endif
 endif
