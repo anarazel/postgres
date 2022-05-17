@@ -2544,6 +2544,10 @@ foreach test: tests
       'env': env,
     }
 
+    if t.has_key('test_kwargs')
+      test_kwargs += t['test_kwargs']
+    endif
+
     foreach onetap : t['tests']
       test(t['name'] / onetap,
         sh,
