@@ -359,6 +359,13 @@ CheckpointerMain(void)
 		AbsorbSyncRequests();
 		HandleCheckpointerInterrupts();
 
+		/* Check for archive_timeout and switch xlog files if necessary. */
+		CheckArchiveTimeout();
+
+		/* Report pending statistics to the cumulative stats system */
+		pgstat_report_checkpointer();
+		pgstat_report_wal(true);
+
 		/*
 		 * Detect a pending checkpoint request by checking whether the flags
 		 * word in shared memory is nonzero.  We shouldn't need to acquire the
@@ -387,9 +394,29 @@ CheckpointerMain(void)
 		}
 
 		/*
-		 * Do a checkpoint if requested.
+		 * Do a checkpoint if requested, or wait until it's time to do so.
 		 */
-		if (do_checkpoint)
+		if (!do_checkpoint)
+		{
+			/*
+			 * Sleep until we are signaled or it's time for another checkpoint or
+			 * xlog file switch.
+			 */
+			cur_timeout = CheckPointTimeout - elapsed_secs;
+			if (XLogArchiveTimeout > 0 && !RecoveryInProgress())
+			{
+				elapsed_secs = now - last_xlog_switch_time;
+				if (elapsed_secs >= XLogArchiveTimeout)
+					continue;		/* no sleep for us ... */
+				cur_timeout = Min(cur_timeout, XLogArchiveTimeout - elapsed_secs);
+			}
+
+			(void) WaitLatch(MyLatch,
+							 WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH,
+							 cur_timeout * 1000L /* convert to ms */ ,
+							 WAIT_EVENT_CHECKPOINTER_MAIN);
+		}
+		else
 		{
 			bool		ckpt_performed = false;
 			bool		do_restartpoint;
@@ -497,42 +524,6 @@ CheckpointerMain(void)
 			/* We may have received an interrupt during the checkpoint. */
 			HandleCheckpointerInterrupts();
 		}
-
-		/* Check for archive_timeout and switch xlog files if necessary. */
-		CheckArchiveTimeout();
-
-		/* Report pending statistics to the cumulative stats system */
-		pgstat_report_checkpointer();
-		pgstat_report_wal(true);
-
-		/*
-		 * If any checkpoint flags have been set, redo the loop to handle the
-		 * checkpoint without sleeping.
-		 */
-		if (((volatile CheckpointerShmemStruct *) CheckpointerShmem)->ckpt_flags)
-			continue;
-
-		/*
-		 * Sleep until we are signaled or it's time for another checkpoint or
-		 * xlog file switch.
-		 */
-		now = (pg_time_t) time(NULL);
-		elapsed_secs = now - last_checkpoint_time;
-		if (elapsed_secs >= CheckPointTimeout)
-			continue;			/* no sleep for us ... */
-		cur_timeout = CheckPointTimeout - elapsed_secs;
-		if (XLogArchiveTimeout > 0 && !RecoveryInProgress())
-		{
-			elapsed_secs = now - last_xlog_switch_time;
-			if (elapsed_secs >= XLogArchiveTimeout)
-				continue;		/* no sleep for us ... */
-			cur_timeout = Min(cur_timeout, XLogArchiveTimeout - elapsed_secs);
-		}
-
-		(void) WaitLatch(MyLatch,
-						 WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH,
-						 cur_timeout * 1000L /* convert to ms */ ,
-						 WAIT_EVENT_CHECKPOINTER_MAIN);
 	}
 }
 
