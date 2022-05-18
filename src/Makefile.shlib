@@ -253,6 +253,18 @@ ifeq ($(PORTNAME), win32)
 endif
 
 
+# If the shared library doesn't have an export file, mark all symbols not
+# explicitly exported using PGDLLEXPORT as hidden. We can't pass these flags
+# when building a library with explicit exports, as the symbols would be
+# hidden before the linker script / exported symbol list takes effect.
+#
+# XXX: This probably isn't the best location, but not clear instead?
+ifeq ($(SHLIB_EXPORTS),)
+  LDFLAGS += $(CFLAGS_SL_MOD)
+  override CFLAGS += $(CFLAGS_SL_MOD)
+  override CXXFLAGS += $(CFLAGS_SL_MOD)
+endif
+
 
 ##
 ## BUILD
