@@ -16,7 +16,7 @@ fe_utils_sources = files(
 fe_utils_sources += custom_target('psqlscan',
   input: ['psqlscan.l'],
   output: ['psqlscan.c'],
-  command: [flex_cmd, flex_backup, '-Cfe', '-p', '-p', '@INPUT@'],
+  command: [flex_cmd, flex_backup, flex_fix_warning, '-Cfe', '-p', '-p', '@INPUT@'],
 )
 
 fe_utils = static_library('pgfeutils',

@@ -18,7 +18,7 @@ psql_sources = files(
 psql_sources += custom_target('psqlscanslash',
   input: ['psqlscanslash.l'],
   output: ['psqlscanslash.c'],
-  command: [flex_cmd, flex_backup, '-Cfe', '-p', '-p', '@INPUT@'])
+  command: [flex_cmd, flex_backup, flex_fix_warning, '-Cfe', '-p', '-p', '@INPUT@'])
 
 psql_sources += custom_target('psql_help',
   input: ['create_help.pl'],

@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+
+import argparse
+import os
+import subprocess
+import sys
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument('--flex', dest='flex_command', help='flex executable to run', type=str)
+parser.add_argument('--perl', dest='perl_command', help='perl executable to run', type=str)
+parser.add_argument('--builddir', dest='builddir', help='build directory of meson build', type=str)
+parser.add_argument('--privatedir', dest='privatedir', help='temporary directory to avoid conflicts', type=str)
+parser.add_argument('--fix_warning_script', dest='fix_warning_script', help='script for fixing warnings', default='')
+parser.add_argument('-b', dest='no_backup', action='store_true', help='whether no_backup is enabled or not')
+parser.add_argument('-o', dest='output_file', help='output file')
+
+args, rest = parser.parse_known_args()
+rest, input_file = rest[:-1], rest[-1]
+
+# since 'lex.backup' is always named that,
+# change working directory to temporary directory
+# to avoid conflicts
+os.chdir(os.path.dirname(args.privatedir))
+
+# make paths absolute if it is not absolute,
+# msbuild uses absolute paths as default
+args.output_file = args.output_file if os.path.isabs(args.output_file) else os.path.join(args.builddir, args.output_file)
+input_file = input_file if os.path.isabs(input_file) else os.path.join(args.builddir, input_file)
+
+# set flex flags
+if args.no_backup:
+  flex_flags = ['-o', args.output_file, '-b'] + rest + [input_file]
+else:
+  flex_flags = ['-o', args.output_file] + rest + [input_file]
+
+# create .c file from .l file
+command = [args.flex_command] + flex_flags 
+subprocess.run(command, check=True)
+
+ # check lex.backup
+if args.no_backup:
+  with open('lex.backup') as lex:
+    if sum(1 for _ in lex) != 1:
+      sys.exit('Scanner requires backup; see lex.backup.')
+  os.remove('lex.backup')
+      
+      
+
+# fix warnings
+if args.fix_warning_script:
+  # make paths absolute if it is not absolute
+  args.fix_warning_script = args.fix_warning_script if os.path.isabs(args.fix_warning_script) else os.path.join(args.builddir, args.fix_warning_script)
+
+  command = [args.perl_command, args.fix_warning_script, args.output_file]
+  subprocess.run(command, check=True)

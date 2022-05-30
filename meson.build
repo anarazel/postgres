@@ -188,12 +188,13 @@ endif
 bison_cmd = [bison, bison_flags, '-o', '@OUTPUT0@']
 
 flex_flags = []
-flex_cmd = [flex, '-o', '@OUTPUT0@']
+flex_wrapper = files('src/tools/pgflex')
+flex_cmd = [python, flex_wrapper, '--builddir', meson.build_root(),
+ '--privatedir', '@PRIVATE_DIR@', '--flex', flex, '-o', '@OUTPUT0@']
 
-# FIXME: --backup-file is only available in unreleased flex (used in
-# Debian). Without it -b just puts lex.backup into CWD - with ninja that's the
-# root build directory. So we need to do all of this in a temporary directory...
 flex_backup = ['-b']
+flex_fix_warning_script = files('src/tools/fix-old-flex-code.pl')
+flex_fix_warning = ['--perl', perl, '--fix_warning_script', flex_fix_warning_script]
 
 wget = find_program('wget', required: false, native: true)
 wget_flags = ['-O', '@OUTPUT0@', '--no-use-server-timestamps']
