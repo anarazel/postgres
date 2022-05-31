@@ -1,4 +1,4 @@
-# also used by isolationtester
+# also used by isolationtester and ecpg tests
 pg_regress_c = files('pg_regress.c')
 pg_regress_inc = include_directories('.')
 

@@ -63,7 +63,7 @@ ecpg_sources += custom_target('ecpg_kwlist_d.h',
   ]
 )
 
-executable('ecpg',
+ecpg_exe = executable('ecpg',
   ecpg_sources,
   include_directories : ['.', ecpg_inc, postgres_inc],
   dependencies: [frontend_shlib_code, libpq],

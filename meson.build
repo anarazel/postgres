@@ -2501,6 +2501,7 @@ subdir('contrib')
 
 subdir('src/test')
 subdir('src/interfaces/libpq/test')
+subdir('src/interfaces/ecpg/test')
 
 subdir('doc/src/sgml')
 
@@ -2601,9 +2602,10 @@ foreach test: tests
   if 'regress' in test
     t = test_default + test['regress']
     test_command = [
-      pg_regress.full_path(),
+      t.get('test_runner', pg_regress).full_path(),
       '--temp-instance', test_result_dir / t['name'] / 'pg_regress' / 'tmp_check',
-      '--inputdir', t['sd'],
+      '--inputdir', t.get('inputdir', t['sd']),
+      '--expecteddir', t.get('expecteddir', t['sd']),
       '--outputdir', test_result_dir / t['name'] / 'pg_regress',
       '--bindir', '',
       '--dlpath', t['bd'],
@@ -2617,7 +2619,8 @@ foreach test: tests
 
     if t.has_key('schedule')
       test_command += ['--schedule', t['schedule'],]
-    else
+    endif
+    if t.has_key('sql')
       test_command += t['sql']
     endif
 
