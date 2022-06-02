@@ -2263,6 +2263,25 @@ add_project_arguments(cxxflags, language: ['cpp'])
 add_project_arguments(cbflags, language: ['c', 'cpp'])
 add_project_link_arguments(ldflags, language: ['c', 'cpp'])
 
+# set cpp flags
+cpp_flags = {
+  'CC': ' '.join(cc.cmd_array()),
+
+  'CPPFLAGS': ' '.join(g_c_args),
+  'CFLAGS': ' '.join(cbflags + cflags),
+  'CFLAGS_SL': '-fPIC',
+
+  'LDFLAGS': ' '.join(ldflags),
+  'LDFLAGS_EX': '',
+  'LDFLAGS_SL': '',
+
+  'LIBS': '',
+}
+# set VAL_{cpp_flag} for it to be read by pg_config
+foreach flag, value: cpp_flags
+  cdata.set_quoted('VAL_@0@'.format(flag), value)
+endforeach
+
 
 ###############################################################
 # Threading
