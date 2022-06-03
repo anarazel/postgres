@@ -45,6 +45,7 @@ $node_1->init(allows_streaming => 1);
 $node_1->append_conf(
 	'postgresql.conf', qq(
 wal_keep_size='100 MB'
+log_min_messages=debug5
 ));
 
 $node_1->start;
