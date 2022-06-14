@@ -1,25 +1,32 @@
-#!/bin/sh
-#
-# FIXME: I should probably be a perl or python script
-#
+#!/usr/bin/env python3
 
-# FIXME: argument parsing
+import argparse
+import shutil
+import subprocess
+import os
 
-srcdir=$1
-basedir=$2
-builddir=$3
-testgroup=$4
-testname=$(echo "$5"|sed -e 's/.pl$//')
-shift 5
+parser = argparse.ArgumentParser()
 
-testdir="$basedir/testrun/$testgroup/$testname"
-echo "# executing test in $testdir group $testgroup test $testname, builddir $builddir"
-rm -rf "$testdir/"
-mkdir -p "$testdir"
+parser.add_argument('--srcdir', help='source directory of test', type=str)
+parser.add_argument('--basedir', help='base directory of test', type=str)
+parser.add_argument('--builddir', help='build directory of meson build', type=str)
+parser.add_argument('--testgroup', help='test group', type=str)
+parser.add_argument('--testname', help='test name', type=str)
 
-cd "$srcdir"
+args, test_command = parser.parse_known_args()
 
-export TESTOUTDIR="$testdir"
-export TESTDIR="$builddir"
+args.testname = args.testname.rstrip('.pl')
 
-exec "$@"
+testdir = '{}/testrun/{}/{}'.format(args.basedir, args.testgroup, args.testname)
+
+print('# executing test in {} group {} test {}, builddir {}'
+  .format(testdir, args.testgroup, args.testname, args.builddir))
+
+if os.path.exists(testdir) and os.path.isdir(testdir):
+  shutil.rmtree(testdir)
+os.makedirs(testdir)
+
+os.chdir(args.srcdir)
+
+env_dict = {**os.environ, 'TESTOUTDIR': testdir, 'TESTDIR': args.builddir}
+subprocess.run(test_command, env=env_dict, check=True)

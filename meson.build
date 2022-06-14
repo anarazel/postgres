@@ -172,7 +172,6 @@ tar = find_program(get_option('TAR'), native: true)
 gzip = find_program(get_option('GZIP'), native: true)
 program_lz4 = find_program(get_option('LZ4'), native: true, required: false)
 touch = find_program('touch', native: true)
-sh = find_program('sh', native: true) # FIXME, should get rid of this
 program_zstd = find_program(get_option('ZSTD'), native: true, required: false)
 dtrace = find_program(get_option('DTRACE'), required: get_option('dtrace'))
 
@@ -2711,11 +2710,11 @@ foreach test: tests
       'env': env,
       'args': [
         testwrap.path(),
-        t['sd'],
-        meson.build_root(),
-        t['bd'],
-        t['name'],
-        'pg_regress',
+        '--srcdir', t['sd'],
+        '--basedir', meson.build_root(),
+        '--builddir', t['bd'],
+        '--testgroup', t['name'],
+        '--testname', 'pg_regress',
         test_command,
       ]
     }
@@ -2725,7 +2724,7 @@ foreach test: tests
     endif
 
     test(t['name'] / 'pg_regress',
-      sh,
+      python,
       kwargs: test_kwargs,
     )
 
@@ -2767,11 +2766,11 @@ foreach test: tests
       'env': env,
       'args': [
         testwrap.path(),
-        t['sd'],
-        meson.build_root(),
-        t['bd'],
-        t['name'],
-        'isolation',
+        '--srcdir', t['sd'],
+        '--basedir', meson.build_root(),
+        '--builddir', t['bd'],
+        '--testgroup', t['name'],
+        '--testname', 'isolation',
         test_command,
       ]
     }
@@ -2781,7 +2780,7 @@ foreach test: tests
     endif
 
     test(t['name'] / 'isolation',
-      sh,
+      python,
       kwargs: test_kwargs,
     )
 
@@ -2822,15 +2821,15 @@ foreach test: tests
 
     foreach onetap : t['tests']
       test(t['name'] / onetap,
-        sh,
+        python,
         kwargs: test_kwargs,
         args: [
           testwrap.path(),
-          t['sd'],
-          meson.build_root(),
-          t['bd'],
-          t['name'],
-          onetap,
+          '--srcdir', t['sd'],
+          '--basedir', meson.build_root(),
+          '--builddir', t['bd'],
+          '--testgroup', t['name'],
+          '--testname', onetap,
           test_command,
           t['sd'] / onetap,
         ]
