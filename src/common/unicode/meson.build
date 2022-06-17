@@ -27,7 +27,7 @@ update_unicode_targets += \
   custom_target('unicode_norm_table.h',
     input: [unicode_data['UnicodeData.txt'], unicode_data['CompositionExclusions.txt']],
     output: ['unicode_norm_table.h', 'unicode_norm_hashfunc.h'],
-    command: [perl, files('generate-unicode_norm_table.pl'), '@OUTDIR@', '@INPUT@'],
+    command: [perl, files('generate-unicode_norm_table.pl'), '-o', '@OUTDIR@', '@INPUT@'],
     build_by_default: false,
   )
 

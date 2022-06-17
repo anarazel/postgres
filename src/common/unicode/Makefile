@@ -33,7 +33,7 @@ UnicodeData.txt EastAsianWidth.txt DerivedNormalizationProps.txt CompositionExcl
 unicode_norm_hashfunc.h: unicode_norm_table.h
 
 unicode_norm_table.h: generate-unicode_norm_table.pl UnicodeData.txt CompositionExclusions.txt
-	$(PERL) $< $(CURDIR)
+	$(PERL) $<
 
 unicode_combining_table.h: generate-unicode_combining_table.pl UnicodeData.txt
 	$(PERL) $^ >$@

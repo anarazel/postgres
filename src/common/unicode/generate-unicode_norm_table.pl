@@ -10,21 +10,27 @@
 
 use strict;
 use warnings;
+use Getopt::Long;
 
 use FindBin;
 use lib "$FindBin::RealBin/../../tools/";
 use PerfectHash;
 
-my $directory = $ARGV[0];
-my $output_table_file = "$directory/unicode_norm_table.h";
-my $output_func_file  = "$directory/unicode_norm_hashfunc.h";
+my $output_path = '.';
+
+GetOptions(
+	'output:s'       => \$output_path);
+
+my $output_table_file = "$output_path/unicode_norm_table.h";
+my $output_func_file  = "$output_path/unicode_norm_hashfunc.h";
+
 
 my $FH;
 
 # Read list of codes that should be excluded from re-composition.
 my @composition_exclusion_codes = ();
-open($FH, '<', "$directory/CompositionExclusions.txt")
-  or die "Could not open $directory/CompositionExclusions.txt: $!.";
+open($FH, '<', "$output_path/CompositionExclusions.txt")
+  or die "Could not open $output_path/CompositionExclusions.txt: $!.";
 while (my $line = <$FH>)
 {
 	if ($line =~ /^([[:xdigit:]]+)/)
@@ -39,8 +45,8 @@ close $FH;
 # and character decomposition mapping
 my @characters     = ();
 my %character_hash = ();
-open($FH, '<', "$directory/UnicodeData.txt")
-  or die "Could not open $directory/UnicodeData.txt: $!.";
+open($FH, '<', "$output_path/UnicodeData.txt")
+  or die "Could not open $output_path/UnicodeData.txt: $!.";
 while (my $line = <$FH>)
 {
 
