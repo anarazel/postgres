@@ -164,7 +164,7 @@ ecpg_start_test(const char *testname,
 	char	   *appnameenv;
 
 	snprintf(inprg, sizeof(inprg), "%s/%s", inputdir, testname);
-	snprintf(insource, sizeof(insource), "%s.c", testname);
+	snprintf(insource, sizeof(insource), "%s/%s.c", inputdir, testname);
 
 	/* make a version of the test name that has dashes in place of slashes */
 	initStringInfo(&testname_dash);
@@ -177,13 +177,39 @@ ecpg_start_test(const char *testname,
 
 	snprintf(expectfile_stdout, sizeof(expectfile_stdout),
 			 "%s/expected/%s.stdout",
-			 outputdir, testname_dash.data);
+			 expecteddir, testname_dash.data);
+	if (!file_exists(expectfile_stdout))
+		snprintf(expectfile_stdout, sizeof(expectfile_stdout),
+				 "%s/expected/%s.stdout",
+				 outputdir, testname_dash.data);
+	if (!file_exists(expectfile_stdout))
+		snprintf(expectfile_stdout, sizeof(expectfile_stdout),
+				 "%s/expected/%s.stdout",
+				 inputdir, testname_dash.data);
+
 	snprintf(expectfile_stderr, sizeof(expectfile_stderr),
 			 "%s/expected/%s.stderr",
-			 outputdir, testname_dash.data);
+			 expecteddir, testname_dash.data);
+	if (!file_exists(expectfile_stderr))
+		snprintf(expectfile_stderr, sizeof(expectfile_stderr),
+				 "%s/expected/%s.stderr",
+				 outputdir, testname_dash.data);
+	if (!file_exists(expectfile_stderr))
+		snprintf(expectfile_stderr, sizeof(expectfile_stderr),
+				 "%s/expected/%s.stderr",
+				 inputdir, testname_dash.data);
+
 	snprintf(expectfile_source, sizeof(expectfile_source),
 			 "%s/expected/%s.c",
-			 outputdir, testname_dash.data);
+			 expecteddir, testname_dash.data);
+	if (!file_exists(expectfile_source))
+		snprintf(expectfile_source, sizeof(expectfile_source),
+				 "%s/expected/%s.c",
+				 outputdir, testname_dash.data);
+	if (!file_exists(expectfile_source))
+		snprintf(expectfile_source, sizeof(expectfile_source),
+				 "%s/expected/%s.c",
+				 inputdir, testname_dash.data);
 
 	snprintf(outfile_stdout, sizeof(outfile_stdout),
 			 "%s/results/%s.stdout",
