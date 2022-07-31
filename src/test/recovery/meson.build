@@ -37,6 +37,7 @@ tests += {
       't/030_stats_cleanup_replica.pl',
       't/031_recovery_conflict.pl',
       't/032_relfilenode_reuse.pl',
+      't/033_replay_tsp_drops.pl',
     ],
   },
 }

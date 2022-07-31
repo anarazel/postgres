@@ -24,6 +24,7 @@ pgport_sources = [
 if host_system == 'win32'
   pgport_sources += files(
     'dirmod.c',
+    'fdatasync.c',
     'kill.c',
     'open.c',
     'system.c',
@@ -47,7 +48,6 @@ endif
 replace_funcs_neg = [
     ['dlopen'],
     ['explicit_bzero'],
-    ['fls'],
     ['getaddrinfo'],
     ['getopt'],
     ['getopt_long'],
