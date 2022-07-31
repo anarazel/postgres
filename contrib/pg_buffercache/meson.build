@@ -14,3 +14,14 @@ install_data(
   'pg_buffercache.control',
   kwargs: contrib_data_args,
 )
+
+tests += {
+  'name': 'pg_buffercache',
+  'sd': meson.current_source_dir(),
+  'bd': meson.current_build_dir(),
+  'regress': {
+    'sql': [
+      'pg_buffercache',
+    ],
+  },
+}

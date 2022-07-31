@@ -34,6 +34,7 @@ tests += {
       't/027_nosuperuser.pl',
       't/028_row_filter.pl',
       't/029_on_error.pl',
+      't/030_origin.pl',
       't/031_column_list.pl',
       't/100_bugs.pl',
     ],
