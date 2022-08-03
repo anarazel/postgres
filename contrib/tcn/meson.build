@@ -11,3 +11,14 @@ install_data(
   'tcn.control',
   kwargs: contrib_data_args,
 )
+
+tests += {
+  'name': 'tcn',
+  'sd': meson.current_source_dir(),
+  'bd': meson.current_build_dir(),
+  'isolation': {
+    'specs': [
+      'tcn',
+    ],
+  },
+}

@@ -14,3 +14,14 @@ install_data(
   'pg_prewarm.control',
   kwargs: contrib_data_args,
 )
+
+tests += {
+  'name': 'pg_prewarm',
+  'sd': meson.current_source_dir(),
+  'bd': meson.current_build_dir(),
+  'tap': {
+    'tests': [
+      't/001_basic.pl',
+    ],
+  },
+}
