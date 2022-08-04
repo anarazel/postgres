@@ -86,6 +86,8 @@ cdata.set_quoted('PACKAGE_NAME', 'PostgreSQL')
 cdata.set_quoted('PACKAGE_BUGREPORT', 'pgsql-bugs@lists.postgresql.org')
 cdata.set_quoted('PACKAGE_URL', pg_url)
 cdata.set_quoted('PACKAGE_VERSION', pg_version)
+cdata.set_quoted('PACKAGE_STRING', 'PostgreSQL @0@'.format(pg_version))
+cdata.set_quoted('PACKAGE_TARNAME', 'postgresql')
 
 pg_version += get_option('extra_version')
 cdata.set_quoted('PG_VERSION', pg_version)
