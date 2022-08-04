@@ -232,16 +232,23 @@ if meson_binpath_len < 1
 endif
 
 i = 0
+meson_impl = ''
 meson_binpath = ''
 meson_args = []
 foreach e : meson_binpath_s
   if i == 0
+    meson_impl = e
+  elif i == 1
     meson_binpath = e
   else
     meson_args += e
   endif
   i += 1
 endforeach
+
+if meson_impl not in ['muon', 'meson']
+    error('unknown meson implementation "@0@"'.format(meson_impl))
+endif
 
 meson_bin = find_program(meson_binpath, native: true)
 
@@ -2609,8 +2616,13 @@ test_install_destdir = meson.build_root() / 'tmp_install/'
 test_install_location = test_install_destdir / test_prefix
 
 
+meson_install_args = meson_args + ['install'] + {
+    'meson': ['--quiet', '--only-changed', '--no-rebuild'],
+    'muon': []
+}[meson_impl]
+
 test('tmp_install',
-    meson_bin, args: meson_args + ['install', '--quiet', '--only-changed', '--no-rebuild'],
+    meson_bin, args: meson_install_args ,
     env: {'DESTDIR':test_install_destdir},
     priority: 100,
     is_parallel: false,
