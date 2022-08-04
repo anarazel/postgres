@@ -367,26 +367,34 @@ endif
 
 gssapiopt = get_option('gssapi')
 krb_srvtab = ''
+have_gssapi = false
 if not gssapiopt.disabled()
   gssapi = dependency('krb5-gssapi', required: gssapiopt)
+  have_gssapi = gssapi.found()
 
-  if gssapi.found() and \
-    cc.check_header('gssapi/gssapi.h', args: g_c_args, dependencies: gssapi, required: gssapiopt)
-
-    if cc.has_function('gss_init_sec_context',
-      include_directories: g_c_inc, args: g_c_args, dependencies: gssapi)
-      cdata.set('ENABLE_GSS', 1)
-
-      krb_srvtab = 'FILE:/@0@/krb5.keytab)'.format(get_option('sysconfdir'))
-      cdata.set_quoted('PG_KRB_SRVTAB', krb_srvtab)
-    elif gssapiopt.enabled()
-      error('''could not find function 'gss_init_sec_context' required for GSSAPI''')
-    else
-      gssapi = dependency('', required : false)
-    endif
+  if not have_gssapi
+  elif cc.check_header('gssapi/gssapi.h', args: g_c_args, dependencies: gssapi, required: false)
+    cdata.set('HAVE_GSSAPI_GSSAPI_H', 1)
+  elif cc.check_header('gssapi.h', args: g_c_args, dependencies: gssapi, required: gssapiopt)
+    cdata.set('HAVE_GSSAPI_H', 1)
+  else
+    have_gssapi = false
   endif
 
-else
+  if not have_gssapi
+  elif cc.has_function('gss_init_sec_context',
+                       include_directories: g_c_inc, args: g_c_args, dependencies: gssapi)
+    cdata.set('ENABLE_GSS', 1)
+
+    krb_srvtab = 'FILE:/@0@/krb5.keytab)'.format(get_option('sysconfdir'))
+    cdata.set_quoted('PG_KRB_SRVTAB', krb_srvtab)
+  elif gssapiopt.enabled()
+    error('''could not find function 'gss_init_sec_context' required for GSSAPI''')
+  else
+    have_gssapi = false
+  endif
+endif
+if not have_gssapi
   gssapi = dependency('', required : false)
 endif
 
@@ -1027,10 +1035,12 @@ if get_option('ssl') == 'openssl'
   foreach c : check_funcs
     func = c.get(0)
     val = cc.has_function(func, args: g_c_args, dependencies: ssl_int)
-    if not val and c.get(1, {}).get('required', false)
+    required = c.get(1, {}).get('required', false)
+    if required and not val
       error('openssl function @0@ is required'.format(func))
+    elif not required
+      cdata.set('HAVE_'+func.to_upper(), val ? 1 : false)
     endif
-    cdata.set('HAVE_'+func.to_upper(), val ? 1 : false)
   endforeach
 
   cdata.set('USE_OPENSSL', 1,
