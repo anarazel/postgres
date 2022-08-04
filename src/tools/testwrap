@@ -15,7 +15,8 @@ parser.add_argument('--testname', help='test name', type=str)
 
 args, test_command = parser.parse_known_args()
 
-args.testname = args.testname.rstrip('.pl')
+if args.testname.endswith('.pl'):
+    args.testname = args.testname[:-3]
 
 testdir = '{}/testrun/{}/{}'.format(args.basedir, args.testgroup, args.testname)
 
