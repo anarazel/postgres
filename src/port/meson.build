@@ -25,6 +25,7 @@ if host_system == 'win32'
   pgport_sources += files(
     'dirmod.c',
     'fdatasync.c',
+    'getrusage.c',
     'kill.c',
     'open.c',
     'system.c',
@@ -52,7 +53,6 @@ replace_funcs_neg = [
     ['getopt'],
     ['getopt_long'],
     ['getpeereid'],
-    ['getrusage'],
     ['gettimeofday'],
     ['inet_aton'],
     ['link'],

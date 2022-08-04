@@ -1793,7 +1793,6 @@ header_checks = [
   ['sys/shm.h'],
   ['sys/signalfd.h'],
   ['sys/sockio.h'],
-  ['sys/tas.h'],
   ['sys/uio.h'],
   ['sys/un.h'],
   ['termios.h'],
@@ -1802,7 +1801,6 @@ header_checks = [
   # being standalone on OpenBSD (in 2013). But that doesn't look to be the case
   # anymore in 2022.
   ['sys/ucred.h'],
-  ['wctype.h'],
   ['netinet/tcp.h'],
   # Historically we've included sys/socket.h first due to net/if.h not being
   # standalone on some BSDs (in 2009). But that doesn't look to be the case
@@ -1829,7 +1827,6 @@ decl_checks = [
   ['RTLD_NOW', 'dlfcn.h'],
   ['fdatasync', 'unistd.h'],
   ['posix_fadvise', 'fcntl.h'],
-  ['sigwait', 'signal.h'],
   ['strlcat', 'string.h'],
   ['strlcpy', 'string.h'],
   ['strnlen', 'string.h'],
@@ -2039,20 +2036,6 @@ elif cc.has_type('locale_t', prefix: '#include <xlocale.h>')
   cdata.set('LOCALE_T_IN_XLOCALE', 1)
 endif
 
-# Make sure there's a declaration for sigwait(), then make sure that it
-# conforms to the POSIX standard (there seem to still be some platforms out
-# there with pre-POSIX sigwait()).
-if cc.compiles('''
-#include <signal.h>
-int sigwait(const sigset_t *set, int *sig);
-''',
-  name: 'POSIX compatible sigwait() declaration',
-  args: g_c_args, include_directories: g_c_inc)
-  cdata.set('HAVE_POSIX_DECL_SIGWAIT', 1)
-else
-  cdata.set('HAVE_POSIX_DECL_SIGWAIT', false)
-endif
-
 # Check if the C compiler understands typeof or a variant.  Define
 # HAVE_TYPEOF if so, and define 'typeof' to the actual key word.
 foreach kw : ['typeof', '__typeof__', 'decltype']
@@ -2159,9 +2142,7 @@ func_checks = [
   ['getopt_long',{'dependencies': [getopt_dep, gnugetopt_dep]}],
   ['getpeereid'],
   ['getpeerucred'],
-  ['getpwuid_r', {'dependencies': [thread_dep]}],
   ['getrlimit'],
-  ['getrusage'],
   ['gettimeofday'], # XXX: only exists in Solution.pm
   ['inet_aton'],
   ['inet_pton'],
@@ -2185,7 +2166,6 @@ func_checks = [
   ['setproctitle_fast'],
   ['setsid'],
   ['shm_open', {'dependencies': [rt_dep]}],
-  ['shm_unlink', {'dependencies': [rt_dep]}],
   ['strchrnul'],
   ['strerror_r', {'dependencies': [thread_dep]}],
   ['strlcat'],
