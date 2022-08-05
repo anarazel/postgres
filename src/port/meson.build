@@ -24,14 +24,18 @@ pgport_sources = [
 if host_system == 'win32'
   pgport_sources += files(
     'dirmod.c',
-    'fdatasync.c',
     'getrusage.c',
     'kill.c',
     'open.c',
     'system.c',
+    'win32dlopen.c',
     'win32env.c',
     'win32error.c',
+    'win32fdatasync.c',
+    'win32link.c',
     'win32ntdll.c',
+    'win32pread.c',
+    'win32pwrite.c',
     'win32security.c',
     'win32setlocale.c',
     'win32stat.c',
@@ -47,7 +51,6 @@ endif
 # Replacement functionality to be built if corresponding configure symbol
 # is false
 replace_funcs_neg = [
-    ['dlopen'],
     ['explicit_bzero'],
     ['getaddrinfo'],
     ['getopt'],
@@ -55,12 +58,7 @@ replace_funcs_neg = [
     ['getpeereid'],
     ['gettimeofday'],
     ['inet_aton'],
-    ['link'],
     ['mkdtemp'],
-    ['pread'],
-    ['preadv', 'HAVE_DECL_PREADV'],
-    ['pwrite'],
-    ['pwritev', 'HAVE_DECL_PWRITEV'],
     ['strlcat'],
     ['strlcpy'],
     ['strnlen'],

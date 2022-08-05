@@ -10,6 +10,7 @@ tests += {
   'tap': {
     'tests': [
       't/01_workitems.pl',
+      't/02_wal_consistency.pl',
     ],
   },
 }

@@ -1797,7 +1797,6 @@ header_checks = [
   ['ifaddrs.h'],
   ['langinfo.h'],
   ['mbarrier.h'],
-  ['poll.h'],
   ['strings.h'],
   ['sys/epoll.h'],
   ['sys/event.h'],
@@ -1842,8 +1841,6 @@ endforeach
 
 decl_checks = [
   ['F_FULLFSYNC', 'fcntl.h'],
-  ['RTLD_GLOBAL', 'dlfcn.h'],
-  ['RTLD_NOW', 'dlfcn.h'],
   ['fdatasync', 'unistd.h'],
   ['posix_fadvise', 'fcntl.h'],
   ['strlcat', 'string.h'],
@@ -2145,14 +2142,16 @@ gnugetopt_dep = cc.find_library('gnugetopt', required : false)
 
 execinfo_dep = cc.find_library('execinfo', required : false)
 
+cygipc_dep = cc.find_library('cygipc', required : false)
+
 func_checks = [
   ['_configthreadlocale'],
   ['backtrace_symbols', {'dependencies': [execinfo_dep]}],
-  ['clock_gettime', {'dependencies': [rt_dep, posix4_dep]}],
+  ['clock_gettime', {'dependencies': [rt_dep, posix4_dep], 'define': false}],
   ['copyfile'],
-  ['dlopen', {'dependencies': [dl_dep]}],
+  ['dlsym', {'dependencies': [dl_dep], 'define': false}],
   ['explicit_bzero'],
-  ['fdatasync', {'dependencies': [rt_dep, posix4_dep]}],
+  ['fdatasync', {'dependencies': [rt_dep, posix4_dep], 'define': false}], # Solaris
   ['fls'],
   ['getaddrinfo'],
   ['gethostbyname_r', {'dependencies': [thread_dep]}],
@@ -2161,30 +2160,23 @@ func_checks = [
   ['getopt_long',{'dependencies': [getopt_dep, gnugetopt_dep]}],
   ['getpeereid'],
   ['getpeerucred'],
-  ['getrlimit'],
   ['gettimeofday'], # XXX: only exists in Solution.pm
   ['inet_aton'],
   ['inet_pton'],
   ['kqueue'],
-  ['link'],
   ['mbstowcs_l'],
   ['memset_s'],
   ['mkdtemp'],
-  ['poll'],
   ['posix_fadvise'],
   ['posix_fallocate'],
   ['ppoll'],
-  ['pread'],
   ['pstat'],
   ['pthread_is_threaded_np', {'dependencies': [thread_dep]}],
-  ['pwrite'],
-  ['readlink'],
-  ['readv'],
-  ['setenv'], # FIXME: windows handling
   ['setproctitle', {'dependencies': [util_dep]}],
   ['setproctitle_fast'],
-  ['setsid'],
-  ['shm_open', {'dependencies': [rt_dep]}],
+  ['shm_open', {'dependencies': [rt_dep], 'define': false}],
+  ['shm_unlink', {'dependencies': [rt_dep], 'define': false}],
+  ['shmget', {'dependencies': [cygipc_dep], 'define': false}],
   ['strchrnul'],
   ['strerror_r', {'dependencies': [thread_dep]}],
   ['strlcat'],
@@ -2194,13 +2186,10 @@ func_checks = [
   ['strtof'], # strsignal is checked separately
   ['strtoll'], ['__strtoll'], ['strtoq'],
   ['strtoull'], ['__strtoull'], ['strtouq'],
-  ['symlink'],
   ['sync_file_range'],
   ['syncfs'],
-  ['unsetenv'],
   ['uselocale'],
   ['wcstombs_l'],
-  ['writev'],
 ]
 
 foreach c : func_checks
@@ -2210,8 +2199,7 @@ foreach c : func_checks
 
   varname = 'HAVE_'+func.underscorify().to_upper()
 
-  found = cc.has_function(func, args: g_c_args,
-                          kwargs: kwargs + {'dependencies': []})
+  found = cc.has_function(func, args: g_c_args)
 
   if not found
     foreach dep : deps
@@ -2219,7 +2207,7 @@ foreach c : func_checks
         continue
       endif
       found = cc.has_function(func, args: g_c_args,
-                              kwargs: kwargs + {'dependencies': [dep]})
+                              dependencies: [dep])
       if found
         os_deps += dep
         break
@@ -2227,9 +2215,11 @@ foreach c : func_checks
     endforeach
   endif
 
-  # Emulate autoconf behaviour of not-found->undef, found->1
-  cdata.set(varname, found  ? 1 : false,
-            description: 'Define to 1 if you have the `@0@\' function.'.format(func))
+  if kwargs.get('define', true)
+    # Emulate autoconf behaviour of not-found->undef, found->1
+    cdata.set(varname, found  ? 1 : false,
+              description: 'Define to 1 if you have the `@0@\' function.'.format(func))
+  endif
 endforeach
 
 
@@ -2279,7 +2269,6 @@ endif
 
 if host_system == 'win32'
   cdata.set('HAVE_IPV6', 1)
-  cdata.set('HAVE_SYMLINK', 1)
   cdata.set('WIN32_STACK_RLIMIT', 4194304)
   cdata.set('HAVE__CONFIGTHREADLOCALE', 1)
 endif
