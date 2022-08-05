@@ -2158,7 +2158,6 @@ func_checks = [
   ['getopt_long',{'dependencies': [getopt_dep, gnugetopt_dep]}],
   ['getpeereid'],
   ['getpeerucred'],
-  ['gettimeofday'], # XXX: only exists in Solution.pm
   ['inet_aton'],
   ['inet_pton'],
   ['kqueue'],

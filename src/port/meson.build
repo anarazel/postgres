@@ -44,6 +44,7 @@ endif
 
 if cc.get_id() == 'msvc'
   pgport_sources += files(
+    'win32gettimeofday.c',
     'dirent.c',
   )
 endif
@@ -56,7 +57,6 @@ replace_funcs_neg = [
     ['getopt'],
     ['getopt_long'],
     ['getpeereid'],
-    ['gettimeofday'],
     ['inet_aton'],
     ['mkdtemp'],
     ['preadv', 'HAVE_DECL_PREADV'],
