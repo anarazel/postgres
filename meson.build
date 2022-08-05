@@ -1846,7 +1846,6 @@ decl_checks = [
   ['strlcat', 'string.h'],
   ['strlcpy', 'string.h'],
   ['strnlen', 'string.h'],
-  ['strtoll', 'stdlib.h'], ['strtoull', 'stdlib.h'], # strto[u]ll may exist but not be declared
 ]
 
 # Need to check for function declarations for these functions, because
@@ -2152,7 +2151,6 @@ func_checks = [
   ['dlsym', {'dependencies': [dl_dep], 'define': false}],
   ['explicit_bzero'],
   ['fdatasync', {'dependencies': [rt_dep, posix4_dep], 'define': false}], # Solaris
-  ['fls'],
   ['getaddrinfo'],
   ['gethostbyname_r', {'dependencies': [thread_dep]}],
   ['getifaddrs'],
@@ -2184,8 +2182,6 @@ func_checks = [
   ['strnlen'],
   ['strsignal'],
   ['strtof'], # strsignal is checked separately
-  ['strtoll'], ['__strtoll'], ['strtoq'],
-  ['strtoull'], ['__strtoull'], ['strtouq'],
   ['sync_file_range'],
   ['syncfs'],
   ['uselocale'],
