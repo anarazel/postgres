@@ -1868,7 +1868,7 @@ endforeach
 
 
 if cc.has_type('struct cmsgcred',
-    args: g_c_args + ['@0@'.format(cdata.get('HAVE_SYS_UCRED_H')) == 'false' ? '-DHAVE_SYS_UCRED_H' : ''],
+    args: g_c_args + ['@0@'.format(cdata.get('HAVE_SYS_UCRED_H')) == 'false' ? '' : '-DHAVE_SYS_UCRED_H'],
     include_directories: g_c_inc,
     prefix: '''
 #include <sys/socket.h>
