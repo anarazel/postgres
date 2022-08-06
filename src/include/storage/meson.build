@@ -1,7 +1,3 @@
-# FIXME: this creates an unnecessary lwlocknames.c - but it's not
-# obvious how to avoid that: meson insist on output files being in the
-# current dir.
-
 lwlocknames = custom_target('lwlocknames',
   input : files('../../backend/storage/lmgr/lwlocknames.txt'),
   output : ['lwlocknames.h', 'lwlocknames.c'],

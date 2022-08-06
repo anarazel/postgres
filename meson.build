@@ -213,7 +213,7 @@ wget_flags = ['-O', '@OUTPUT0@', '--no-use-server-timestamps']
 # Path to meson (for tests etc)
 ###############################################################
 
-# FIXME: this should really be part of meson, see
+# NB: this should really be part of meson, see
 # https://github.com/mesonbuild/meson/issues/8511
 meson_binpath_r = run_command(python, 'src/tools/find_meson', check: true)
 
@@ -1559,8 +1559,6 @@ endif
 # Atomics
 ###############################################################
 
-# FIXME
-
 if not get_option('spinlocks')
   warning('Not using spinlocks will cause poor performance')
 else
@@ -2012,13 +2010,19 @@ else
   cdata.set('HAVE_INT_TIMEZONE', false)
 endif
 
-# FIXME: sys/ipc.h, sys/sem.h includes were conditional
 if cc.has_type('union semun',
-    args: g_c_args, include_directories: g_c_inc,
+    args: g_c_args +
+      ['@0@'.format(cdata.get('HAVE_SYS_IPC_H')) == 'false' ? '' : '-DHAVE_SYS_IPC_H'] +
+      ['@0@'.format(cdata.get('HAVE_SYS_SEM_H')) == 'false' ? '' : '-DHAVE_SYS_SEM_H'],
+    include_directories: g_c_inc,
     prefix: '''
 #include <sys/types.h>
+#ifdef HAVE_SYS_IPC_H
 #include <sys/ipc.h>
+#endif
+#ifdef HAVE_SYS_SEM_H
 #include <sys/sem.h>
+#endif
 ''')
   cdata.set('HAVE_UNION_SEMUN', 1)
 endif

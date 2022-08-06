@@ -32,7 +32,6 @@ common_sources = files(
   'wchar.c',
 )
 
-# FIXME: implement openssl
 if ssl.found()
   common_sources += files(
     'cryptohash_openssl.c',

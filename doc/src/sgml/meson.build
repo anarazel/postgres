@@ -171,7 +171,7 @@ if xsltproc.found()
     input: ['stylesheet-man.xsl', 'postgres.sgml'],
     output: ['man1', 'man3', 'man7'],
     depends: doc_generated + [postgres_sgml_valid],
-    command: [xsltproc, '--path', '@OUTDIR@', '-o', '@OUTDIR@', xsltproc_flags, '@INPUT@'],
+    command: [xsltproc, '--path', '@OUTDIR@', '-o', '@OUTDIR@/', xsltproc_flags, '@INPUT@'],
     build_by_default: false,
   )
 endif

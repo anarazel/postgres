@@ -10,9 +10,4 @@ backend_sources += files(
   'spin.c',
 )
 
-lwlocknames_backend = custom_target('lwlocknames',
-  input : files('lwlocknames.txt'),
-  output : ['lwlocknames.c', 'lwlocknames.h'],
-  command : [perl, files('generate-lwlocknames.pl'), '-o', '@OUTDIR@', '@INPUT@']
-)
-generated_backend_sources += lwlocknames_backend[0]
+generated_backend_sources += lwlocknames[1]

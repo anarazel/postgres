@@ -42,7 +42,7 @@ if get_option('system-tzdata') == ''
     install_dir: dir_data,
   )
 
-# FIXME: this used to be sorted - but also isn't actually used
+# FIXME: make sorts this - but the file isn't actually used, so ...
 abbrevs_txt = custom_target('abbrevs.txt',
   input: tzdata,
   output: ['abbrevs.txt'],
