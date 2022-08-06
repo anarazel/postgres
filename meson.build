@@ -457,6 +457,8 @@ if not ldapopt.disabled()
     endif
   endif
 
+  # FIXME: port autoconf openldap 2.5+ changes, as well as PGAC_LDAP_SAFE
+
   if ldap.found()
     cdata.set('USE_LDAP', 1)
   endif
@@ -945,6 +947,8 @@ Use -Dreadline=false to disable readline support.'''.format(readline_dep))
         include_directories: g_c_inc)
     endif
   endif
+
+  # XXX: Figure out whether to implement mingw warning equivalent
 else
   readline = dependency('', required : false)
 endif
@@ -957,9 +961,10 @@ endif
 
 selinux = dependency('', required : false)
 selinuxopt = get_option('selinux')
-if not selinuxopt.disabled()
-  selinux = dependency('libselinux', required: selinuxopt, version: '>= 2.1.10')
+if meson.version().version_compare('>=0.59')
+  selinuxopt = selinuxopt.disable_auto_if(host_machine.system() != 'linux')
 endif
+selinux = dependency('libselinux', required: selinuxopt, version: '>= 2.1.10')
 cdata.set('HAVE_LIBSELINUX',
   selinux.found() ? 1 : false)
 
@@ -974,9 +979,7 @@ systemdopt = get_option('systemd')
 if meson.version().version_compare('>=0.59')
   systemdopt = systemdopt.disable_auto_if(host_machine.system() != 'linux')
 endif
-if not systemdopt.disabled()
-  systemd = dependency('libsystemd', required: systemdopt)
-endif
+systemd = dependency('libsystemd', required: systemdopt)
 cdata.set('USE_SYSTEMD',
   systemd.found() ? 1 : false)
 
@@ -988,7 +991,8 @@ cdata.set('USE_SYSTEMD',
 
 if get_option('ssl') == 'openssl'
 
-  # Try to find openssl via pkg-config et al, if that doesn't work, look for
+  # Try to find openssl via pkg-config et al, if that doesn't work
+  # (e.g. because it's provided as part of the OS, like on FreeBSD), look for
   # the library names that we know about.
 
   # via pkg-config et al
@@ -1544,6 +1548,7 @@ foreach w : negative_warning_flags
   endif
 endforeach
 
+# FIXME: copy "Defend against clang being used on x86-32 without SSE2 enabled"
 
 # From Project.pm
 if cc.get_id() == 'msvc'
@@ -1799,7 +1804,6 @@ header_checks = [
   ['sys/personality.h'],
   ['sys/prctl.h'],
   ['sys/procctl.h'],
-  ['sys/pstat.h'],
   ['sys/resource.h'],
   ['sys/select.h'],
   ['sys/sem.h'],
@@ -1814,6 +1818,9 @@ header_checks = [
   # being standalone on OpenBSD (in 2013). But that doesn't look to be the case
   # anymore in 2022.
   ['sys/ucred.h'],
+  # At least on IRIX, test for netinet/tcp.h will fail unless netinet/in.h is
+  # included first (in 2000). But that doesn't look to be the case anymore in
+  # 2022.
   ['netinet/tcp.h'],
   # Historically we've included sys/socket.h first due to net/if.h not being
   # standalone on some BSDs (in 2009). But that doesn't look to be the case
@@ -2158,6 +2165,7 @@ func_checks = [
   ['ppoll'],
   ['pstat'],
   ['pthread_is_threaded_np', {'dependencies': [thread_dep]}],
+  ['pthread_barrier_wait', {'dependencies': [thread_dep]}],
   ['setproctitle', {'dependencies': [util_dep]}],
   ['setproctitle_fast'],
   ['shm_open', {'dependencies': [rt_dep], 'define': false}],
@@ -2275,17 +2283,9 @@ add_project_link_arguments(ldflags, language: ['c', 'cpp'])
 # Threading
 ###############################################################
 
-# Probably not worth implementing other cases anymore
+# XXX: About to rely on thread safety in the autoconf build, so not worth
+# implementing a fallback.
 cdata.set('ENABLE_THREAD_SAFETY', 1)
-
-if thread_dep.found()
-  if cc.has_function('pthread_is_threaded_np', args: g_c_args, dependencies: [thread_dep])
-    cdata.set('HAVE_PTHREAD_IS_THREADED_NP', 1)
-  endif
-  if cc.has_function('pthread_barrier_wait', args: g_c_args, dependencies: [thread_dep])
-    cdata.set('HAVE_PTHREAD_BARRIER_WAIT', 1)
-  endif
-endif
 
 
 
