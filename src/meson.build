@@ -137,8 +137,6 @@ foreach b, p : pgxs_bins
   pgxs_cdata.set(b, p.found() ? p.path() : '')
 endforeach
 
-pgxs_cdata.set('have_win32_dbghelp', 'no') # FIXME
-
 pgxs_empty = [
   'PERMIT_DECLARATION_AFTER_STATEMENT',
   'PG_SYSROOT', #?

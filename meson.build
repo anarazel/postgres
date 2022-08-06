@@ -1328,9 +1328,6 @@ if cc.compiles('''
 endif
 
 
-# XXX: for now just assume that compiler knows __func__ - it's C99 after all.
-cdata.set('HAVE_FUNCNAME__FUNC', 1)
-
 # Check if the C compiler understands _Static_assert(),
 # and define HAVE__STATIC_ASSERT if so.
 #
@@ -2090,18 +2087,6 @@ cdata.set('pg_restrict', '__restrict')
 
 
 cdata.set('MEMSET_LOOP_LIMIT', 1024)
-
-# XXX: We probably can just rely on this existing in supported windows versions?
-if host_system == 'win32' and \
-  cc.has_type('MINIDUMP_TYPE', prefix: '''
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <string.h>
-#include <dbghelp.h>
-''',
-  args: g_c_args, include_directories: g_c_inc)
-  cdata.set('HAVE_MINIDUMP_TYPE', true)
-endif
 
 
 if cc.links('''
