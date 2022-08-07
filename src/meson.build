@@ -50,7 +50,7 @@ pgxs_kv = {
   'DLSUFFIX': dlsuffix,
   'EXEEXT': exesuffix,
 
-  'SUN_STUDIO_CC': 'no',
+  'SUN_STUDIO_CC': 'no', # not supported so far
 
   'default_port': get_option('pgport'),
   'with_system_tzdata': get_option('system-tzdata'),

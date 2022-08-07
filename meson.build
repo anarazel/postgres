@@ -1927,38 +1927,20 @@ if cc.has_type('struct sockaddr_storage',
   cdata.set('HAVE_STRUCT_SOCKADDR_STORAGE', 1)
 endif
 
-if cc.has_member('struct sockaddr_storage', 'ss_family',
-    args: g_c_args, include_directories: g_c_inc,
-    prefix: '''
-#include <sys/types.h>
-#include <sys/socket.h>''')
-  cdata.set('HAVE_STRUCT_SOCKADDR_STORAGE_SS_FAMILY', 1)
-endif
-
-if cc.has_member('struct sockaddr_storage', '__ss_family',
-    args: g_c_args, include_directories: g_c_inc,
-    prefix: '''
-#include <sys/types.h>
-#include <sys/socket.h>''')
-  cdata.set('HAVE_STRUCT_SOCKADDR_STORAGE___SS_FAMILY', 1)
-endif
-
-if cc.has_member('struct sockaddr_storage', 'ss_len',
-    args: g_c_args, include_directories: g_c_inc,
-    prefix: '''
-#include <sys/types.h>
-#include <sys/socket.h>''')
-  cdata.set('HAVE_STRUCT_SOCKADDR_STORAGE_SS_LEN', 1)
-endif
-
-if cc.has_member('struct sockaddr_storage', '__ss_len',
-    args: g_c_args, include_directories: g_c_inc,
-    prefix: '''
-#include <sys/types.h>
-#include <sys/socket.h>''')
-  cdata.set('HAVE_STRUCT_SOCKADDR_STORAGE___SS_LEN', 1)
-endif
-
+# Check the members of `struct sockaddr_storage'.  We need to know about
+# ss_family and ss_len.  (Some platforms follow RFC 2553 and call them
+# __ss_family and __ss_len.)  We also check struct sockaddr's sa_len;
+# if we have to define our own `struct sockaddr_storage', this tells us
+# whether we need to provide an ss_len field.
+foreach member : ['ss_family', '__ss_family', 'ss_len', '__ss_len']
+  if cc.has_member('struct sockaddr_storage', member,
+                   args: g_c_args, include_directories: g_c_inc,
+                   prefix: '''
+    #include <sys/types.h>
+    #include <sys/socket.h>''')
+    cdata.set('HAVE_STRUCT_SOCKADDR_STORAGE_'+member.to_upper(), 1)
+  endif
+endforeach
 if cc.has_member('struct sockaddr', 'sa_len',
     args: g_c_args, include_directories: g_c_inc,
     prefix: '''
@@ -1967,6 +1949,7 @@ if cc.has_member('struct sockaddr', 'sa_len',
   cdata.set('HAVE_STRUCT_SOCKADDR_SA_LEN', 1)
 endif
 
+# FIXME: HAVE_SYS_UN_H
 if cc.has_type('struct sockaddr_un',
     args: g_c_args, include_directories: g_c_inc,
     prefix: '''
