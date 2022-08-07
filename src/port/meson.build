@@ -66,6 +66,10 @@ replace_funcs_neg = [
     ['strnlen'],
 ]
 
+if host_system != 'win32'
+   replace_funcs_neg += [['pthread_barrier_wait']]
+endif
+
 # Replacement functionality to be built if corresponding configure symbol
 # is true
 replace_funcs_pos = [
@@ -130,9 +134,6 @@ if (host_system == 'win32' or host_system == 'cygwin') and \
     host_system, cc.get_id(), cc.version()))
 endif
 
-if not cdata.has('HAVE_PTHREAD_BARRIER_WAIT') and host_system != 'win32'
-   pgport_sources += files('pthread_barrier_wait.c')
-endif
 
 
 # Build pgport once for backend, once for use in frontend binaries, and once
