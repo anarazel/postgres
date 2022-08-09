@@ -9,6 +9,8 @@
 
 \set regresslib :libdir '/regress' :dlsuffix
 
+SELECT 'break_me';
+
 --
 -- synchronous_commit=off delays when hint bits may be set. Some plans change
 -- depending on the number of all-visible pages, which in turn can be

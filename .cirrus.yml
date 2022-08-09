@@ -37,6 +37,17 @@ on_failure_ac: &on_failure_ac
     type: text/plain
 
 on_failure_meson: &on_failure_meson
+  # meson doesn't "escape" characters that can't be encoded in xml, leading to failures
+  clean_encoding_script: |
+    LANG=C.UTF-8 sed -e 's/[\x00-\x09\x0b-\x1f]/�/g' \
+      < build/meson-logs/testlog.junit.xml \
+      > build/meson-logs/testlog.junit.sanitized.xml
+    xmllint --noout build/meson-logs/testlog.junit.sanitized.xml || true
+    LANG=C.UTF-8 sed -e 's/[\x00-\x09\x0b-\x1f]/?/g' \
+      < build/meson-logs/testlog.junit.xml \
+      > build/meson-logs/testlog.junit.sanitized.xml
+    xmllint --noout build/meson-logs/testlog.junit.sanitized.xml || true
+
   testrun_artifacts:
     paths:
       - "build/testrun/**/*.log"
@@ -45,14 +56,15 @@ on_failure_meson: &on_failure_meson
     type: text/plain
 
   meson_log_artifacts:
-    path: "build/meson-logs/*.txt"
+    paths:
+      - "build/meson-logs/*.txt"
+      - "build/meson-logs/*.xml"
     type: text/plain
 
-#   Due to embedded null bytes etc this currently doesn't work nicely
-#  meson_test_artifacts:
-#    path: "build/meson-logs/testlog.junit.xml"
-#    type: text/xml
-#    format: junit
+  meson_test_artifacts:
+    path: "build/meson-logs/testlog.junit.sanitized.xml"
+    type: text/xml
+    format: junit
 
 
 # configure feature flags, shared between the task running the BSD tests
@@ -488,6 +500,7 @@ task:
   <<: *linux_debian_template
 
   name: Linux - Debian Bullseye - Autoconf
+  trigger_type: manual # FIXME
 
   configure_script: |
     su postgres <<-EOF
@@ -540,6 +553,7 @@ task:
   <<: *linux_debian_bullseye_meson
 
   name: Linux - Debian Sid - Meson
+  trigger_type: manual
 
   compute_engine_instance:
     image: family/pg-ci-sid
@@ -608,6 +622,7 @@ task:
   <<: *linux_opensuse_template
 
   name: Linux - OpenSuse Tumbleweed (LLVM) - Meson
+  trigger_type: manual # FIXME
 
   configure_script:
     - su postgres -c 'meson setup --buildtype debug -Dcassert=true -Dssl=openssl -Duuid=e2fs -Dllvm=enabled build'
@@ -692,6 +707,7 @@ task:
   <<: *linux_rhel_template
 
   name: Linux - Fedora Rawhide - Meson
+  trigger_type: manual
 
   configure_script:
     - su postgres -c 'meson setup --buildtype debug -Dcassert=true -Dssl=openssl -Duuid=e2fs build'
@@ -750,6 +766,7 @@ task:
   <<: *linux_rhel_template
 
   name: Linux - Centos 8 - Meson
+  trigger_type: manual
 
   configure_script:
     - su postgres -c 'meson setup --buildtype debug -Dcassert=true -Dssl=openssl -Duuid=e2fs build'
@@ -822,6 +839,7 @@ task:
   <<: *linux_rhel_template
 
   name: Linux - Centos 7 - Meson
+  trigger_type: manual
 
   configure_script:
     - su postgres -c 'meson setup --buildtype debug -Dcassert=true -Dssl=openssl -Duuid=e2fs build'
@@ -965,6 +983,7 @@ task:
   <<: *macos_template
 
   name: macOS - Monterey - Meson
+  trigger_type: manual
 
   configure_script: |
     brewpath="/usr/local"
