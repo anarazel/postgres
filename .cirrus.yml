@@ -28,17 +28,31 @@ env:
 
 
 # What files to preserve in case tests fail
-on_failure: &on_failure
+on_failure_ac: &on_failure_ac
   log_artifacts:
     paths:
       - "**/*.log"
       - "**/*.diffs"
       - "**/regress_log_*"
     type: text/plain
-  meson_test_artifacts:
-    path: "build/meson-logs/testlog.junit.xml"
-    type: text/xml
-    format: junit
+
+on_failure_meson: &on_failure_meson
+  testrun_artifacts:
+    paths:
+      - "build/testrun/**/*.log"
+      - "build/testrun/**/*.diffs"
+      - "build/testrun/**/regress_log_*"
+    type: text/plain
+
+  meson_log_artifacts:
+    path: "build/meson-logs/*.txt"
+    type: text/plain
+
+#   Due to embedded null bytes etc this currently doesn't work nicely
+#  meson_test_artifacts:
+#    path: "build/meson-logs/testlog.junit.xml"
+#    type: text/xml
+#    format: junit
 
 
 # configure feature flags, shared between the task running the BSD tests
@@ -142,7 +156,7 @@ task:
     - su postgres -c "time script test.log gmake -s -j${TEST_JOBS} ${CHECK} ${CHECKFLAGS}"
 
   on_failure:
-    <<: *on_failure
+    <<: *on_failure_ac
     cores_script: src/tools/ci/cores_backtrace.sh freebsd /tmp/cores
 
 
@@ -160,13 +174,8 @@ task:
   test_world_script:
     - su postgres -c 'meson test --no-rebuild -C build'
 
-  always:
-    meson_log_artifacts:
-      path: "build/meson-logs/*.txt"
-      type: text/plain
-
   on_failure:
-    <<: *on_failure
+    <<: *on_failure_meson
     cores_script: src/tools/ci/cores_backtrace.sh freebsd /tmp/cores
 
 
@@ -253,7 +262,7 @@ task:
     EOF
 
   on_failure:
-    <<: *on_failure
+    <<: *on_failure_ac
 
 
 task:
@@ -283,13 +292,8 @@ task:
       meson test --no-rebuild -C build
     EOF
 
-  always:
-    meson_log_artifacts:
-      path: "build/meson-logs/*.txt"
-      type: text/plain
-
   on_failure:
-    <<: *on_failure
+    <<: *on_failure_meson
 
 
 openbsd_template: &openbsd_template
@@ -374,7 +378,7 @@ task:
     EOF
 
   on_failure:
-    <<: *on_failure
+    <<: *on_failure_ac
 
 
 task:
@@ -404,13 +408,8 @@ task:
       meson test --no-rebuild -C build
     EOF
 
-  always:
-    meson_log_artifacts:
-      path: "build/meson-logs/*.txt"
-      type: text/plain
-
   on_failure:
-    <<: *on_failure
+    <<: *on_failure_meson
 
 
 # configure feature flags, shared between the task running the linux tests and
@@ -514,7 +513,7 @@ task:
     EOF
 
   on_failure:
-    <<: *on_failure
+    <<: *on_failure_ac
     cores_script: src/tools/ci/cores_backtrace.sh linux /tmp/cores
 
 
@@ -533,13 +532,8 @@ task: &linux_debian_bullseye_meson
     - su postgres -c 'meson test --no-rebuild -C build'
 
   on_failure:
-    <<: *on_failure
+    <<: *on_failure_meson
     cores_script: src/tools/ci/cores_backtrace.sh linux /tmp/cores
-
-  always:
-    meson_log_artifacts:
-      path: "build/meson-logs/*.txt"
-      type: text/plain
 
 
 task:
@@ -607,7 +601,7 @@ task:
     EOF
 
   on_failure:
-    <<: *on_failure
+    <<: *on_failure_ac
 
 
 task:
@@ -625,12 +619,7 @@ task:
     - su postgres -c 'meson test --no-rebuild -C build --num-processes ${TEST_JOBS}'
 
   on_failure:
-    <<: *on_failure
-
-  always:
-    meson_log_artifacts:
-      path: "build/meson-logs/*.txt"
-      type: text/plain
+    <<: *on_failure_meson
 
 
 linux_rhel_template: &linux_rhel_template
@@ -692,7 +681,7 @@ task:
     EOF
 
   on_failure:
-    <<: *on_failure
+    <<: *on_failure_ac
 
 
 task:
@@ -714,12 +703,7 @@ task:
     - su postgres -c 'meson test --no-rebuild -C build --num-processes ${TEST_JOBS}'
 
   on_failure:
-    <<: *on_failure
-
-  always:
-    meson_log_artifacts:
-      path: "build/meson-logs/*.txt"
-      type: text/plain
+    <<: *on_failure_meson
 
 
 task:
@@ -755,7 +739,7 @@ task:
     EOF
 
   on_failure:
-    <<: *on_failure
+    <<: *on_failure_ac
 
 
 task:
@@ -777,12 +761,7 @@ task:
     - su postgres -c 'meson test --no-rebuild -C build --num-processes ${TEST_JOBS}'
 
   on_failure:
-    <<: *on_failure
-
-  always:
-    meson_log_artifacts:
-      path: "build/meson-logs/*.txt"
-      type: text/plain
+    <<: *on_failure_meson
 
 
 task:
@@ -832,7 +811,7 @@ task:
     EOF
 
   on_failure:
-    <<: *on_failure
+    <<: *on_failure_ac
 
 
 task:
@@ -854,12 +833,7 @@ task:
     - su postgres -c 'meson test --no-rebuild -C build --num-processes ${TEST_JOBS}'
 
   on_failure:
-    <<: *on_failure
-
-  always:
-    meson_log_artifacts:
-      path: "build/meson-logs/*.txt"
-      type: text/plain
+    <<: *on_failure_meson
 
 
 macos_template: &macos_template
@@ -983,7 +957,7 @@ task:
     script test.log gmake -s -j${TEST_JOBS} ${CHECK} ${CHECKFLAGS}
 
   on_failure:
-    <<: *on_failure
+    <<: *on_failure_ac
     cores_script: src/tools/ci/cores_backtrace.sh macos "${HOME}/cores"
 
 
@@ -1014,13 +988,8 @@ task:
     - meson test --no-rebuild -C build
 
   on_failure:
-    <<: *on_failure
+    <<: *on_failure_meson
     cores_script: src/tools/ci/cores_backtrace.sh macos "${HOME}/cores"
-
-  always:
-    meson_log_artifacts:
-      path: "build/meson-logs/*.txt"
-      type: text/plain
 
 
 windows_template: &windows_template
@@ -1139,7 +1108,7 @@ task:
     %T_C% perl vcregress.pl ecpgcheck
 
   on_failure:
-    <<: *on_failure
+    <<: *on_failure_ac
     crashlog_artifacts:
       path: "crashlog-*.txt"
 
@@ -1167,14 +1136,9 @@ task:
     - meson test --no-rebuild -C build
 
   on_failure:
-    <<: *on_failure
+    <<: *on_failure_meson
     crashlog_artifacts:
       path: "crashlog-*.txt"
-
-  always:
-    meson_log_artifacts:
-      path: "build/meson-logs/*.txt"
-      type: text/plain
 
 
 task:
@@ -1199,13 +1163,8 @@ task:
     - vcvarsall x64
     - meson test --no-rebuild -C build
 
-  always:
-    meson_log_artifacts:
-      path: "build/meson-logs/*.txt"
-      type: text/plain
-
   on_failure:
-    <<: *on_failure
+    <<: *on_failure_meson
     crashlog_artifacts:
       path: "crashlog-*.txt"
 
