@@ -1,0 +1,147 @@
+<!-- doc/src/sgml/installation-meson.sgml -->
+<!--
+
+The standalone version has some portions that are different from the version
+that is integrated into the full documentation set, in particular as regards
+links, so that INSTALL.html can be created without links to the main
+documentation.  See standalone-profile.xsl for details.
+
+-->
+
+<chapter id="installation-meson">
+ <title>Installation from Source Code with Meson</title>
+
+ <indexterm zone="installation">
+  <primary>installation</primary>
+ </indexterm>
+
+ <para>
+  This chapter describes the building and installation of
+  <productname>PostgreSQL</productname> from the source code
+  distribution using meson.  If you are installing a pre-packaged distribution,
+  such as an RPM or Debian package, ignore this chapter
+  and see <xref linkend="install-binaries" />. If you want to use
+  <acronym>GNU</acronym> <application>make</application> to build
+  <productname>PostgreSQL</productname> from source, you can refer to
+  <xref linkend="installation" /> instead.
+ </para>
+
+ <sect1 id="install-short-meson">
+  <title>Short Version</title>
+
+  <para>
+<synopsis>
+
+# create working directory
+mkdir postgres
+cd postgres
+
+# fetch source code
+# git clone https://github.com/postgres/postgres.git src
+
+# current instructions for testing (to be removed when merging)
+git clone -b meson https://github.com/anarazel/postgres.git src
+
+# setup and enter build directory (done only first time)
+meson setup build src --prefix=$PWD/install
+cd build
+
+# Compile source
+ninja
+
+# Install to the prefix directory specified above
+meson install
+
+# Run all tests (optional, takes time)
+meson test
+
+# Initialize a new database
+../install/bin/initdb -D ../data
+
+# Start database
+../install/bin/pg_ctl -D ../data/ -l logfile start
+
+# Connect to the database
+../install/bin/psql -d postgres
+
+</synopsis>
+   The long version is the rest of this
+   <phrase>chapter</phrase>.
+  </para>
+ </sect1>
+
+
+ <sect1 id="install-requirements-meson">
+  <title>Requirements</title>
+
+  <para>
+   In general, a modern Unix-compatible platform should be able to run
+   <productname>PostgreSQL</productname>.
+  </para>
+
+ </sect1>
+
+ <sect1 id="install-getsource-meson">
+  <title>Getting the Source</title>
+
+  <para>
+  You can get the source from github using the instructions below.
+  </para>
+ </sect1>
+
+ <sect1 id="configure-meson">
+  <title>Configuring the build</title>
+
+   <para>
+    The first step of the installation procedure is to configure the
+    source tree for your system and choose the options you would like.
+   </para>
+ </sect1>
+
+ <sect1 id="build-meson">
+  <title>Building the source</title>
+   <para>
+    Instructions about building Postgres
+   </para>
+ </sect1>
+
+ <sect1 id="install-meson">
+  <title>Installing the files</title>
+   <para>
+    Instructions about installing files
+   </para>
+ </sect1>
+
+ <sect1 id="running-tests">
+  <title>Running tests</title>
+   <para>
+	Instructions about running tests
+   </para>
+ </sect1>
+
+ <sect1 id="install-post-meson">
+  <title>Post-Installation Setup</title>
+	<para>
+	 Follow the following steps after installation
+    </para>
+ </sect1>
+
+ <sect1 id="installation-platform-notes-meson">
+  <title>Platform-Specific Notes</title>
+
+  <para>
+   This section documents additional platform-specific issues
+   regarding the installation and setup of PostgreSQL.  Be sure to
+   read the installation instructions, and in
+   particular <xref linkend="install-requirements-meson"/> as well.  Also,
+   check <xref linkend="regress"/> regarding the
+   interpretation of regression test results.
+  </para>
+
+  <para>
+   Platforms that are not covered here have no known platform-specific
+   installation issues.
+  </para>
+ </sect1>
+
+</chapter>
