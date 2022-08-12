@@ -1844,7 +1844,7 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 		EEO_CASE(EEOP_JSONEXPR)
 		{
 			/* too complex for an inline implementation */
-			ExecEvalJson(state, op, econtext);
+			ExecEvalJsonExpr(state, op, econtext);
 			EEO_NEXT();
 		}
 
@@ -5011,9 +5011,9 @@ typedef struct
 } ExecEvalJsonExprContext;
 
 static Datum
-ExecEvalJsonExpr(ExprEvalStep *op, ExprContext *econtext,
-				 Datum item, bool *resnull, void *pcxt,
-				 bool *error)
+ExecEvalJsonExprInternal(ExprEvalStep *op, ExprContext *econtext,
+						 Datum item, bool *resnull, void *pcxt,
+						 bool *error)
 {
 	ExecEvalJsonExprContext *cxt = pcxt;
 	JsonPath   *path = cxt->path;
@@ -5176,11 +5176,11 @@ ExecEvalJsonNeedsSubTransaction(JsonExpr *jsexpr,
 }
 
 /* ----------------------------------------------------------------
- *		ExecEvalJson
+ *		ExecEvalJsonExpr
  * ----------------------------------------------------------------
  */
 void
-ExecEvalJson(ExprState *state, ExprEvalStep *op, ExprContext *econtext)
+ExecEvalJsonExpr(ExprState *state, ExprEvalStep *op, ExprContext *econtext)
 {
 	ExecEvalJsonExprContext cxt;
 	JsonExprState *jsestate = op->d.jsonexpr.jsestate;
@@ -5225,8 +5225,8 @@ ExecEvalJson(ExprState *state, ExprEvalStep *op, ExprContext *econtext)
 	cxt.coercionInSubtrans = !needSubtrans && !throwErrors;
 	Assert(!needSubtrans || cxt.error);
 
-	res = ExecEvalJsonExprSubtrans(ExecEvalJsonExpr, op, econtext, item,
-								   op->resnull, &cxt, cxt.error,
+	res = ExecEvalJsonExprSubtrans(ExecEvalJsonExprInternal, op, econtext,
+								   item, op->resnull, &cxt, cxt.error,
 								   needSubtrans);
 
 	if (error)

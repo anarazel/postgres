@@ -860,8 +860,8 @@ extern void ExecEvalSysVar(ExprState *state, ExprEvalStep *op,
 						   ExprContext *econtext, TupleTableSlot *slot);
 extern void ExecEvalJsonConstructor(ExprState *state, ExprEvalStep *op,
 									ExprContext *econtext);
-extern void ExecEvalJson(ExprState *state, ExprEvalStep *op,
-						 ExprContext *econtext);
+extern void ExecEvalJsonExpr(ExprState *state, ExprEvalStep *op,
+							 ExprContext *econtext);
 extern Datum ExecPrepareJsonItemCoercion(struct JsonbValue *item,
 										 JsonReturning *returning,
 										 struct JsonCoercionsState *coercions,

@@ -2408,7 +2408,7 @@ llvm_compile_expr(ExprState *state)
 				break;
 
 			case EEOP_JSONEXPR:
-				build_EvalXFunc(b, mod, "ExecEvalJson",
+				build_EvalXFunc(b, mod, "ExecEvalJsonExpr",
 								v_state, op, v_econtext);
 				LLVMBuildBr(b, opblocks[opno + 1]);
 				break;
