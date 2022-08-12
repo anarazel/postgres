@@ -18,7 +18,7 @@ documentation.  See standalone-profile.xsl for details.
  <para>
   This chapter describes the building and installation of
   <productname>PostgreSQL</productname> from the source code
-  distribution using meson.  If you are installing a pre-packaged distribution,
+  using meson.  If you are installing a pre-packaged distribution,
   such as an RPM or Debian package, ignore this chapter
   and see <xref linkend="install-binaries" />. If you want to use
   <acronym>GNU</acronym> <application>make</application> to build
@@ -372,7 +372,7 @@ meson test
    </para>
   </sect2>
 
-  <sect2>
+  <sect2 id="meson-disk-space">
    <title>Disk space</title>
    <para>
     Check that you have sufficient disk space to build, install and run
@@ -387,12 +387,81 @@ meson test
   </sect2>
  </sect1>
 
- <sect1 id="install-getsource-meson">
+ <sect1 id="get-source-meson">
   <title>Getting the Source</title>
 
+   <para>
+   You can download the source code in two ways - via git or the source code
+   distribution tarballs.
+   </para>
+
+  <sect2 id="get-source-git">
+   <title>Getting the Source via <productname>Git</productname></title>
   <para>
-  You can get the source from github using the instructions below.
+   With <productname>Git</productname>, you can make a copy of the entire code repository
+   on your local machine, so you will have access to all history and branches
+   offline. This is the fastest and most flexible way to develop or test
+   patches.
   </para>
+
+  <procedure>
+   <step>
+    <para>
+     To begin using the Git repository, make a clone of the official mirror:
+
+<programlisting>
+git clone https://git.postgresql.org/git/postgresql.git
+</programlisting>
+
+     This will copy the full repository to your local machine, so it may take
+     a while to complete, especially if you have a slow Internet connection.
+     The files will be placed in a new subdirectory <filename>postgresql</filename> of
+     your current directory.
+    </para>
+
+   </step>
+
+   <step>
+    <para>
+     Whenever you want to get the latest updates in the system, <command>cd</command>
+     into the repository, and run:
+
+<programlisting>
+git pull
+</programlisting>
+    </para>
+   </step>
+  </procedure>
+
+  <para>
+   <productname>Git</productname> can do a lot more things than just fetch the source.
+   Our wiki, <ulink
+   url="https://wiki.postgresql.org/wiki/Working_with_Git"></ulink>,
+   has some discussion on working with Git. For more information, consult the
+   <productname>Git</productname> man pages, or see the website at
+   <ulink url="https://git-scm.com"></ulink>.
+  </para>
+  </sect2>
+  <sect2 id="get-source-tarball">
+   <title>Getting the Source via Tarballs</title>
+
+  <para>
+   The <productname>PostgreSQL</productname> source code for released versions
+   can also be obtained from the download section of our website:
+   <ulink url="https://www.postgresql.org/ftp/source/"></ulink>.
+   Download the
+   <filename>postgresql-<replaceable>version</replaceable>.tar.gz</filename>
+   or <filename>postgresql-<replaceable>version</replaceable>.tar.bz2</filename>
+   file you're interested in, then unpack it:
+<screen>
+<userinput>tar xf postgresql-<replaceable>version</replaceable>.tar.bz2</userinput>
+</screen>
+   This will create a directory
+   <filename>postgresql-<replaceable>version</replaceable></filename> under
+   the current directory with the <productname>PostgreSQL</productname> sources.
+   Change into that directory for the rest of the installation procedure.
+  </para>
+  </sect2>
  </sect1>
 
  <sect1 id="configure-meson">
