@@ -6,7 +6,7 @@
 
 env:
   # Source of images / containers
-  GCP_PROJECT: pg-ci-images
+  GCP_PROJECT: pg-ci-images-dev
   IMAGE_PROJECT: $GCP_PROJECT
   CONTAINER_REPO: us-docker.pkg.dev/${GCP_PROJECT}/ci
 
