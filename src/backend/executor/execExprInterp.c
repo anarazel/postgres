@@ -4847,7 +4847,7 @@ EvalJsonPathVar(void *cxt, char *varName, int varNameLen,
  * Prepare SQL/JSON item coercion to the output type. Returned a datum of the
  * corresponding SQL type and a pointer to the coercion state.
  */
-Datum
+static Datum
 ExecPrepareJsonItemCoercion(JsonbValue *item,
 							JsonReturning *returning,
 							struct JsonCoercionsState *coercions,

@@ -862,10 +862,6 @@ extern void ExecEvalJsonConstructor(ExprState *state, ExprEvalStep *op,
 									ExprContext *econtext);
 extern void ExecEvalJsonExpr(ExprState *state, ExprEvalStep *op,
 							 ExprContext *econtext);
-extern Datum ExecPrepareJsonItemCoercion(struct JsonbValue *item,
-										 JsonReturning *returning,
-										 struct JsonCoercionsState *coercions,
-										 struct JsonCoercionState **pjcstate);
 extern bool ExecEvalJsonNeedsSubTransaction(JsonExpr *jsexpr,
 											struct JsonCoercionsState *);
 extern Datum ExecEvalExprPassingCaseValue(ExprState *estate,
