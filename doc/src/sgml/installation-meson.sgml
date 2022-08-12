@@ -75,10 +75,316 @@ meson test
   <title>Requirements</title>
 
   <para>
-   In general, a modern Unix-compatible platform should be able to run
-   <productname>PostgreSQL</productname>.
+   In general, a modern Unix-compatible platform or Windows should be able
+   to build <productname>PostgreSQL</productname> with meson and run it.
+   The platforms which have received specific testing at the time of release are:
+
+  <itemizedlist spacing="compact">
+   <listitem><simpara>Linux</simpara></listitem>
+   <listitem><simpara>Windows</simpara></listitem>
+   <listitem><simpara>OpenBSD</simpara></listitem>
+   <listitem><simpara>NetBSD</simpara></listitem>
+   <listitem><simpara>FreeBSD</simpara></listitem>
+   <listitem><simpara>MacOS</simpara></listitem>
+  </itemizedlist>
   </para>
 
+  <sect2 id="required-packages">
+   <title>Required packages</title>
+
+   <para>
+    The following software packages are required for building
+    <productname>PostgreSQL</productname>:
+
+   <itemizedlist>
+    <listitem>
+     <para>
+      You can download the source code in two ways - via git or using the source code
+      distribution. For the former, you will need an installed version of
+      <productname>Git</productname>, which you can get from
+      <ulink url="https://git-scm.com"></ulink>. Many systems already
+      have a recent version of <productname>Git</productname>
+      installed by default, or available in their package distribution system.
+      If you download the source code distribution tarballs, you will need
+      <application>tar</application> in addition to
+      <application>gzip</application> or <application>bzip2</application>.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      <indexterm>
+       <primary>meson</primary>
+      </indexterm>
+      You need to install <application>
+      <ulink url="https://mesonbuild.com/">meson</ulink></application> version
+      0.54 or later to be able to build <productname>PostgreSQL</productname>
+      with it. If your operating system provides a package manager, you can install
+      <application>meson</application> with that. If not, you
+      can download a <ulink url="https://github.com/mesonbuild/meson">meson release</ulink>
+      from github and run <literal>./meson.py</literal> from the git repository
+      itself. Lastly, Meson is also available in the python package index and can
+      be installed with <literal>pip</literal>.
+     </para>
+    </listitem>
+ <listitem>
+     <para>
+      You need an <acronym>ISO</acronym>/<acronym>ANSI</acronym> C compiler (at least
+      C99-compliant). Recent
+      versions of <productname>GCC</productname> are recommended, but
+      <productname>PostgreSQL</productname> is known to build using a wide variety
+      of compilers from different vendors.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      <indexterm>
+       <primary>flex</primary>
+      </indexterm>
+      <indexterm>
+       <primary>lex</primary>
+      </indexterm>
+      <indexterm>
+       <primary>bison</primary>
+      </indexterm>
+      <indexterm>
+       <primary>yacc</primary>
+      </indexterm>
+
+      <application>Flex</application> and <application>Bison</application>
+      are needed to build <productname>PostgreSQL</productname> using
+      <application>meson</application>. Be sure to get
+      <application>Flex</application> 2.5.31 or later and
+      <application>Bison</application> 1.875 or later from your package manager.
+      Other <application>lex</application> and <application>yacc</application>
+      programs cannot be used.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      <indexterm>
+       <primary>perl</primary>
+      </indexterm>
+      <application>Perl</application> 5.8.3 or later is needed to build PostgreSQL
+      using <application>meson</application> and to run some test suites.
+     </para>
+    </listitem>
+   </itemizedlist>
+   </para>
+  </sect2>
+
+  <sect2 id="recommended-packages">
+   <title>Recommended packages</title>
+
+   <para>
+   The following packages are not required to build
+   <application>PostgreSQL</application> but are strongly recommended:
+
+   <itemizedlist>
+    <listitem>
+     <para>
+      <indexterm>
+       <primary>readline</primary>
+      </indexterm>
+      <indexterm>
+       <primary>libedit</primary>
+      </indexterm>
+
+      The <acronym>GNU</acronym> <productname>Readline</productname> library
+      allows <application>psql</application> (the PostgreSQL command line
+      SQL interpreter) to remember each command you type, and allows you to
+      use arrow keys to recall and edit previous commands.  This is very
+      helpful and is strongly recommended. As an alternative, you can often
+      use the BSD-licensed <filename>libedit</filename> library, originally
+      developed on <productname>NetBSD</productname>. The
+      <filename>libedit</filename> library is GNU
+      <productname>Readline</productname>-compatible and is used if
+      <filename>libreadline</filename> is not found, or if
+      <option>libedit-preferred</option> is enabled as an
+      option to <filename>meson configure</filename>. If you are using a
+      package-based Linux distribution, be aware that you need both the
+      <literal>readline</literal> and <literal>readline-devel</literal> packages, if
+      those are separate in your distribution.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      <indexterm>
+       <primary>zlib</primary>
+      </indexterm>
+
+      The <productname>zlib</productname> compression library is
+      used to provide support for compressed archives in
+      <application>pg_dump</application> and
+      <application>pg_restore</application> and is recommended.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      Various tests, particularly the client program tests under
+      <filename>src/bin</filename>, use the Perl TAP tools. Running
+      these tests is recommended for development. These TAP tests
+      require the Perl module <literal>IPC::Run</literal> which is
+      available from CPAN or an operating system package.
+     </para>
+    </listitem>
+   </itemizedlist>
+  </para>
+  </sect2>
+
+  <sect2 id="optional-packages">
+   <title>Optional packages</title>
+
+   <para>
+   The following packages are optional.  They are not required in the
+   default configuration, but they are needed when certain build
+   options are enabled, as explained below:
+
+   <itemizedlist>
+    <listitem>
+     <para>
+      To build the server programming language
+      <application>PL/Perl</application> you need a full
+      <productname>Perl</productname> installation, including the
+      <filename>libperl</filename> library and the header files.
+      The minimum required version is <productname>Perl</productname> 5.8.3.
+      Since <application>PL/Perl</application> will be a shared
+      library, the <indexterm><primary>libperl</primary></indexterm>
+      <filename>libperl</filename> library must be a shared library
+      also on most platforms.  This appears to be the default in
+      recent <productname>Perl</productname> versions, but it was not
+      in earlier versions, and in any case it is the choice of whomever
+      installed Perl at your site.  <filename>configure</filename> will fail
+      if building <application>PL/Perl</application> is selected but it cannot
+      find a shared <filename>libperl</filename>.  In that case, you will have
+      to rebuild and install <productname>Perl</productname> manually to be
+      able to build <application>PL/Perl</application>.  During the
+      configuration process for <productname>Perl</productname>, request a
+      shared library.
+     </para>
+
+     <para>
+      If you intend to make more than incidental use of
+      <application>PL/Perl</application>, you should ensure that the
+      <productname>Perl</productname> installation was built with the
+      <literal>usemultiplicity</literal> option enabled (<literal>perl -V</literal>
+      will show whether this is the case).
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      To build the <application>PL/Python</application> server programming
+      language, you need a <productname>Python</productname>
+      installation with the header files and
+      the <application>sysconfig</application> module.  The minimum
+      required version is <productname>Python</productname> 3.2.
+     </para>
+
+     <para>
+      Since <application>PL/Python</application> will be a shared
+      library, the <indexterm><primary>libpython</primary></indexterm>
+      <filename>libpython</filename> library must be a shared library
+      also on most platforms.  This is not the case in a default
+      <productname>Python</productname> installation built from source, but a
+      shared library is available in many operating system
+      distributions.  <filename>configure</filename> will fail if
+      building <application>PL/Python</application> is selected but it cannot
+      find a shared <filename>libpython</filename>.  That might mean that you
+      either have to install additional packages or rebuild (part of) your
+      <productname>Python</productname> installation to provide this shared
+      library.  When building from source, run <productname>Python</productname>'s
+      configure with the <literal>--enable-shared</literal> flag.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      To build the <application>PL/Tcl</application>
+      procedural language, you of course need a <productname>Tcl</productname>
+      installation.  The minimum required version is
+      <productname>Tcl</productname> 8.4.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      To enable Native Language Support (<acronym>NLS</acronym>), that
+      is, the ability to display a program's messages in a language
+      other than English, you need an implementation of the
+      <application>Gettext</application> <acronym>API</acronym>.  Some operating
+      systems have this built-in (e.g., <systemitem
+      class="osname">Linux</systemitem>, <systemitem class="osname">NetBSD</systemitem>,
+      <systemitem class="osname">Solaris</systemitem>), for other systems you
+      can download an add-on package from <ulink
+      url="https://www.gnu.org/software/gettext/"></ulink>.
+      If you are using the <application>Gettext</application> implementation in
+      the <acronym>GNU</acronym> C library then you will additionally
+      need the <productname>GNU Gettext</productname> package for some
+      utility programs.  For any of the other implementations you will
+      not need it.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      You need <productname>OpenSSL</productname>, if you want to support
+      encrypted client connections.  <productname>OpenSSL</productname> is
+      also required for random number generation on platforms that do not
+      have <filename>/dev/urandom</filename> (except Windows).  The minimum
+      required version is 1.0.1.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      You need <application>Kerberos</application>, <productname>OpenLDAP</productname>,
+      and/or <application>PAM</application>, if you want to support authentication
+      using those services.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      You need <productname>LZ4</productname>, if you want to support
+      compression of data with that method; see
+      <xref linkend="guc-default-toast-compression"/> and
+      <xref linkend="guc-wal-compression"/>.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      You need <productname>Zstandard</productname>, if you want to support
+      compression of data with that method; see
+      <xref linkend="guc-wal-compression"/>.
+      The minimum required version is 1.4.0.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      To build the <productname>PostgreSQL</productname> documentation,
+      there is a separate set of requirements; see
+      <xref linkend="docguide-toolsets"/>.
+     </para>
+    </listitem>
+   </itemizedlist>
+   </para>
+  </sect2>
+
+  <sect2>
+   <title>Disk space</title>
+   <para>
+    Check that you have sufficient disk space to build, install and run
+    <productname>PostgreSQL</productname>. You will need about 710 MB
+    for the source tree, 85MB for the build directory and about 40 MB
+    for the installation directory. An empty database cluster takes about
+    40 MB; databases take about five times the amount of space that a flat
+    text file with the same data would take. If you are going to run the
+    tests you will temporarily need up to an extra 650 MB. Use the
+    <command>df</command> command to check free disk space.
+   </para>
+  </sect2>
  </sect1>
 
  <sect1 id="install-getsource-meson">
