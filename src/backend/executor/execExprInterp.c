@@ -4849,7 +4849,6 @@ EvalJsonPathVar(void *cxt, char *varName, int varNameLen,
  */
 static Datum
 ExecPrepareJsonItemCoercion(JsonbValue *item,
-							JsonReturning *returning,
 							struct JsonCoercionsState *coercions,
 							struct JsonCoercionState **pcoercion)
 {
@@ -5063,7 +5062,6 @@ ExecEvalJsonExprInternal(ExprEvalStep *op, ExprContext *econtext,
 
 				/* Use coercion from SQL/JSON item type to the output type */
 				res = ExecPrepareJsonItemCoercion(jbv,
-												  jsestate->jsexpr->returning,
 												  &jsestate->coercions,
 												  &jcstate);
 
