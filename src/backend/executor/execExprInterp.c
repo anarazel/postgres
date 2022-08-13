@@ -4738,21 +4738,112 @@ ExecEvalJsonBehavior(ExprContext *econtext, JsonBehavior *behavior,
 	}
 }
 
+
+typedef struct EvalJsonSubtransState
+{
+	MemoryContext oldcontext;
+	ResourceOwner oldowner;
+} EvalJsonSubtransState;
+
+static void
+ExecEvalJsonStartSubtrans(EvalJsonSubtransState *state)
+{
+	/*
+	 * We should catch exceptions of category ERRCODE_DATA_EXCEPTION and
+	 * execute the corresponding ON ERROR behavior then.
+	 */
+	state->oldcontext = CurrentMemoryContext;
+	state->oldowner = CurrentResourceOwner;
+
+	BeginInternalSubTransaction(NULL);
+
+	/* Want to execute expressions inside function's memory context */
+	/*
+	 * AFIXME: I don't think that's OK, there might be lots of leaked memory
+	 * etc.
+	 */
+	MemoryContextSwitchTo(state->oldcontext);
+}
+
+static void
+ExecEvalJsonEndSubtrans(EvalJsonSubtransState *state)
+{
+	/* Commit the inner transaction, return to outer xact context */
+	ReleaseCurrentSubTransaction();
+	MemoryContextSwitchTo(state->oldcontext);
+	CurrentResourceOwner = state->oldowner;
+}
+
+static void
+ExecEvalJsonCatchError(EvalJsonSubtransState *state)
+{
+	ErrorData  *edata;
+	int			ecategory;
+
+	/* Save error info in oldcontext */
+	MemoryContextSwitchTo(state->oldcontext);
+	edata = CopyErrorData();
+	FlushErrorState();
+
+	/* Abort the inner transaction */
+	RollbackAndReleaseCurrentSubTransaction();
+	MemoryContextSwitchTo(state->oldcontext);
+	CurrentResourceOwner = state->oldowner;
+
+	ecategory = ERRCODE_TO_CATEGORY(edata->sqlerrcode);
+
+	if (ecategory != ERRCODE_DATA_EXCEPTION &&	/* jsonpath and other data
+												 * errors */
+		ecategory != ERRCODE_INTEGRITY_CONSTRAINT_VIOLATION)	/* domain errors */
+	{
+		ReThrowError(edata);
+	}
+}
+
+/*
+ * If use_subtrans, execute the statement passed in the third argument inside
+ * a subtransaction, otherwise do it outside. In the subtrans case an error
+ * classified as being catchable by ExecEvalJsonCatchError() will set `error` to
+ * true.
+ */
+#define JSE_OPT_SUBTRANS(use_subtrans, error, res, ...) \
+	do { \
+		if (!(use_subtrans)) \
+		{ \
+			res = __VA_ARGS__; \
+		} \
+		else \
+		{ \
+			EvalJsonSubtransState substate = {0}; \
+			bool *error_ = (error); \
+			\
+			AssertMacro(error_); \
+			\
+			ExecEvalJsonStartSubtrans(&substate); \
+			\
+			PG_TRY(); \
+			{ \
+				res = __VA_ARGS__; \
+				ExecEvalJsonEndSubtrans(&substate); \
+			} \
+			PG_CATCH(); \
+			{ \
+				ExecEvalJsonCatchError(&substate); \
+				\
+				res = (Datum) 0; \
+				*error_ = true; \
+			} \
+			PG_END_TRY(); \
+		 } \
+	} while (0)
+
 /*
  * Evaluate a coercion of a JSON item to the target type.
  */
 static Datum
-ExecEvalJsonExprCoercion(ExprEvalStep *op, ExprContext *econtext,
-						 Datum res, bool *isNull, void *p, bool *error)
+ExecEvalJsonExprCoercion(JsonExprState *jsestate, ExprContext *econtext,
+						 Datum res, bool *isNull)
 {
-	ExprState  *estate = p;
-	JsonExprState *jsestate;
-
-	if (estate)					/* coerce using specified expression */
-		return ExecEvalExpr(estate, econtext, isNull);
-
-	jsestate = op->d.jsonexpr.jsestate;
-
 	if (jsestate->jsexpr->op != JSON_EXISTS_OP)
 	{
 		JsonCoercion *coercion = jsestate->jsexpr->result_coercion;
@@ -4933,90 +5024,12 @@ ExecPrepareJsonItemCoercion(JsonbValue *item,
 	return res;
 }
 
-typedef Datum (*JsonFunc) (ExprEvalStep *op, ExprContext *econtext,
-						   Datum item, bool *resnull, void *p, bool *error);
-
 static Datum
-ExecEvalJsonExprSubtrans(JsonFunc func, ExprEvalStep *op,
-						 ExprContext *econtext,
-						 Datum res, bool *resnull,
-						 void *p, bool *error, bool subtrans)
-{
-	MemoryContext oldcontext;
-	ResourceOwner oldowner;
-
-	if (!subtrans)
-		/* No need to use subtransactions. */
-		return func(op, econtext, res, resnull, p, error);
-
-	/*
-	 * We should catch exceptions of category ERRCODE_DATA_EXCEPTION and
-	 * execute the corresponding ON ERROR behavior then.
-	 */
-	oldcontext = CurrentMemoryContext;
-	oldowner = CurrentResourceOwner;
-
-	Assert(error);
-
-	BeginInternalSubTransaction(NULL);
-	/* Want to execute expressions inside function's memory context */
-	MemoryContextSwitchTo(oldcontext);
-
-	PG_TRY();
-	{
-		res = func(op, econtext, res, resnull, p, error);
-
-		/* Commit the inner transaction, return to outer xact context */
-		ReleaseCurrentSubTransaction();
-		MemoryContextSwitchTo(oldcontext);
-		CurrentResourceOwner = oldowner;
-	}
-	PG_CATCH();
-	{
-		ErrorData  *edata;
-		int			ecategory;
-
-		/* Save error info in oldcontext */
-		MemoryContextSwitchTo(oldcontext);
-		edata = CopyErrorData();
-		FlushErrorState();
-
-		/* Abort the inner transaction */
-		RollbackAndReleaseCurrentSubTransaction();
-		MemoryContextSwitchTo(oldcontext);
-		CurrentResourceOwner = oldowner;
-
-		ecategory = ERRCODE_TO_CATEGORY(edata->sqlerrcode);
-
-		if (ecategory != ERRCODE_DATA_EXCEPTION &&	/* jsonpath and other data
-													 * errors */
-			ecategory != ERRCODE_INTEGRITY_CONSTRAINT_VIOLATION)	/* domain errors */
-			ReThrowError(edata);
-
-		res = (Datum) 0;
-		*error = true;
-	}
-	PG_END_TRY();
-
-	return res;
-}
-
-
-typedef struct
-{
-	JsonPath   *path;
-	bool	   *error;
-	bool		coercionInSubtrans;
-} ExecEvalJsonExprContext;
-
-static Datum
-ExecEvalJsonExprInternal(ExprEvalStep *op, ExprContext *econtext,
-						 Datum item, bool *resnull, void *pcxt,
+ExecEvalJsonExprInternal(JsonExprState *jsestate, ExprContext *econtext,
+						 JsonPath *path, bool coercionInSubtrans,
+						 Datum item, bool *resnull,
 						 bool *error)
 {
-	ExecEvalJsonExprContext *cxt = pcxt;
-	JsonPath   *path = cxt->path;
-	JsonExprState *jsestate = op->d.jsonexpr.jsestate;
 	JsonExpr   *jexpr = jsestate->jsexpr;
 	ExprState  *estate = NULL;
 	bool		empty = false;
@@ -5152,9 +5165,14 @@ ExecEvalJsonExprInternal(ExprEvalStep *op, ExprContext *econtext,
 									   resnull);
 	}
 
-	return ExecEvalJsonExprSubtrans(ExecEvalJsonExprCoercion, op, econtext,
-									res, resnull, estate, error,
-									cxt->coercionInSubtrans);
+	if (estate)
+		JSE_OPT_SUBTRANS(coercionInSubtrans, error,
+						 res, ExecEvalExpr(estate, econtext, resnull));
+	else
+		JSE_OPT_SUBTRANS(coercionInSubtrans, error,
+						 res, ExecEvalJsonExprCoercion(jsestate, econtext, res, resnull));
+
+	return res;
 }
 
 bool
@@ -5180,7 +5198,6 @@ ExecEvalJsonNeedsSubTransaction(JsonExpr *jsexpr,
 void
 ExecEvalJsonExpr(ExprState *state, ExprEvalStep *op, ExprContext *econtext)
 {
-	ExecEvalJsonExprContext cxt;
 	JsonExprState *jsestate = op->d.jsonexpr.jsestate;
 	JsonExpr   *jexpr = jsestate->jsexpr;
 	Datum		item;
@@ -5189,6 +5206,7 @@ ExecEvalJsonExpr(ExprState *state, ExprEvalStep *op, ExprContext *econtext)
 	ListCell   *lc;
 	bool		error = false;
 	bool		needSubtrans;
+	bool		needCoercionSubtrans;
 	bool		throwErrors = jexpr->on_error->btype == JSON_BEHAVIOR_ERROR;
 
 	*op->resnull = true;		/* until we get a result */
@@ -5197,8 +5215,7 @@ ExecEvalJsonExpr(ExprState *state, ExprEvalStep *op, ExprContext *econtext)
 	if (jsestate->formatted_expr->isnull || jsestate->pathspec->isnull)
 	{
 		/* execute domain checks for NULLs */
-		(void) ExecEvalJsonExprCoercion(op, econtext, res, op->resnull,
-										NULL, NULL);
+		(void) ExecEvalJsonExprCoercion(jsestate, econtext, res, op->resnull);
 
 		Assert(*op->resnull);
 		return;
@@ -5218,15 +5235,18 @@ ExecEvalJsonExpr(ExprState *state, ExprEvalStep *op, ExprContext *econtext)
 
 	needSubtrans = ExecEvalJsonNeedsSubTransaction(jexpr, &jsestate->coercions);
 
-	cxt.path = path;
-	cxt.error = throwErrors ? NULL : &error;
-	cxt.coercionInSubtrans = !needSubtrans && !throwErrors;
-	Assert(!needSubtrans || cxt.error);
+	/*
+	 * If evaluating the expression itself doesn't need a subtrans to be
+	 * evaluated, we may still need to
+	 */
+	needCoercionSubtrans = !needSubtrans && !throwErrors;
+	Assert(!needSubtrans || !throwErrors);
 
-	res = ExecEvalJsonExprSubtrans(ExecEvalJsonExprInternal, op, econtext,
-								   item, op->resnull, &cxt, cxt.error,
-								   needSubtrans);
-
+	JSE_OPT_SUBTRANS(needSubtrans, &error,
+					 res, ExecEvalJsonExprInternal(jsestate, econtext,
+												   path, needCoercionSubtrans,
+												   item, op->resnull,
+												   throwErrors ? NULL : &error));
 	if (error)
 	{
 		/* Execute ON ERROR behavior */
@@ -5236,9 +5256,8 @@ ExecEvalJsonExpr(ExprState *state, ExprEvalStep *op, ExprContext *econtext)
 
 		/* result is already coerced in DEFAULT behavior case */
 		if (jexpr->on_error->btype != JSON_BEHAVIOR_DEFAULT)
-			res = ExecEvalJsonExprCoercion(op, econtext, res,
-										   op->resnull,
-										   NULL, NULL);
+			res = ExecEvalJsonExprCoercion(jsestate, econtext, res,
+										   op->resnull);
 	}
 
 	*op->resvalue = res;
