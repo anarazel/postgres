@@ -80,22 +80,28 @@ norm_test = executable('norm_test',
   }
 )
 
+update_unicode_dep = []
+
 if not meson.is_cross_build()
-  norm_test_valid = custom_target('norm_test.valid',
-    output: 'norm_test.valid',
-    depends: update_unicode_targets,
+  update_unicode_dep += custom_target('norm_test.run',
+    output: 'norm_test.run',
+    input: update_unicode_targets,
     command: [norm_test],
     build_by_default: false,
-    capture: true,
-  )
-
-  run_target('update-unicode',
-    depends: norm_test_valid,
-    command: ['cp', update_unicode_targets, '@SOURCE_ROOT@/src/include/common/']
-  )
-else
-  run_target('update-unicode',
-    depends: update_unicode_targets,
-    command: ['cp', update_unicode_targets, '@SOURCE_ROOT@/src/include/common/']
+    build_always_stale: true,
   )
 endif
+
+
+# Use a custom target, as run targets serialize the output, making this harder
+# to debug, and don't deal well with targets with multiple outputs.
+update_unicode = custom_target('update-unicode',
+  depends: update_unicode_dep,
+  output: ['dont-exist'],
+  input: update_unicode_targets,
+  command: ['cp', '@INPUT@', '@SOURCE_ROOT@/src/include/common/'],
+  build_by_default: false,
+  build_always_stale: true,
+)
+
+alias_target('update-unicode', update_unicode)
