@@ -2656,7 +2656,8 @@ if fs.is_absolute(get_option('prefix'))
         test_prefix = prefix.split(':\\')[1]
     endif
   else
-    test_prefix = prefix.substring(1)
+    assert(prefix.startswith('/'))
+    test_prefix = './@0@'.format(prefix)
   endif
 endif
 
