@@ -2720,10 +2720,10 @@ foreach test: tests
     t = test_default + test['regress']
     test_command = [
       t.get('test_runner', pg_regress).full_path(),
-      '--temp-instance', test_result_dir / t['name'] / 'pg_regress' / 'tmp_check',
+      '--temp-instance', test_result_dir / t['name'] / 'regress' / 'tmp_check',
       '--inputdir', t.get('inputdir', t['sd']),
       '--expecteddir', t.get('expecteddir', t['sd']),
-      '--outputdir', test_result_dir / t['name'] / 'pg_regress',
+      '--outputdir', test_result_dir / t['name'] / 'regress',
       '--bindir', '',
       '--dlpath', t['bd'],
       '--max-concurrent-tests=20',
@@ -2745,7 +2745,7 @@ foreach test: tests
     env.prepend('PATH', temp_install_bindir, t['bd'])
 
     test_kwargs = {
-      'suite': ['pg_regress', t['name']],
+      'suite': [t['name']],
       'priority': 10,
       'timeout': 1000,
       'depends': test_deps + t.get('deps', []),
@@ -2754,9 +2754,8 @@ foreach test: tests
         testwrap.path(),
         '--srcdir', t['sd'],
         '--basedir', meson.build_root(),
-        '--builddir', t['bd'],
         '--testgroup', t['name'],
-        '--testname', 'pg_regress',
+        '--testname', 'regress',
         test_command,
       ]
     }
@@ -2765,7 +2764,7 @@ foreach test: tests
       test_kwargs += t['test_kwargs']
     endif
 
-    test(t['name'] / 'pg_regress',
+    test(t['name'] / 'regress',
       python,
       kwargs: test_kwargs,
     )
@@ -2801,7 +2800,7 @@ foreach test: tests
     env.prepend('PATH', temp_install_bindir, t['bd'])
 
     test_kwargs = {
-      'suite': ['isolation', t['name']],
+      'suite': [t['name']],
       'priority': 20,
       'timeout': 1000,
       'depends': test_deps + t.get('deps', []),
@@ -2810,7 +2809,6 @@ foreach test: tests
         testwrap.path(),
         '--srcdir', t['sd'],
         '--basedir', meson.build_root(),
-        '--builddir', t['bd'],
         '--testgroup', t['name'],
         '--testname', 'isolation',
         test_command,
@@ -2851,7 +2849,7 @@ foreach test: tests
 
     test_kwargs = {
       'protocol': 'tap',
-      'suite': ['tap', t['name']],
+      'suite': [t['name']],
       'timeout': 1000,
       'depends': test_deps + t.get('deps', []),
       'env': env,
@@ -2862,16 +2860,24 @@ foreach test: tests
     endif
 
     foreach onetap : t['tests']
-      test(t['name'] / onetap,
+      # Make tap test names prettier, remove t/ and .pl
+      onetap_p = onetap
+      if onetap_p.startswith('t/')
+        onetap_p = onetap.split('t/')[1]
+      endif
+      if onetap_p.endswith('.pl')
+        onetap_p = fs.stem(onetap_p)
+      endif
+
+      test(t['name'] / onetap_p,
         python,
         kwargs: test_kwargs,
         args: [
           testwrap.path(),
           '--srcdir', t['sd'],
           '--basedir', meson.build_root(),
-          '--builddir', t['bd'],
           '--testgroup', t['name'],
-          '--testname', onetap,
+          '--testname', onetap_p,
           test_command,
           t['sd'] / onetap,
         ]

@@ -10,19 +10,15 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument('--srcdir', help='source directory of test', type=str)
 parser.add_argument('--basedir', help='base directory of test', type=str)
-parser.add_argument('--builddir', help='build directory of meson build', type=str)
 parser.add_argument('--testgroup', help='test group', type=str)
 parser.add_argument('--testname', help='test name', type=str)
 
 args, test_command = parser.parse_known_args()
 
-if args.testname.endswith('.pl'):
-    args.testname = args.testname[:-3]
-
 testdir = '{}/testrun/{}/{}'.format(args.basedir, args.testgroup, args.testname)
 
-print('# executing test in {} group {} test {}, builddir {}'
-  .format(testdir, args.testgroup, args.testname, args.builddir))
+print('# executing test in {} group {} test {}'
+  .format(testdir, args.testgroup, args.testname))
 sys.stdout.flush()
 
 if os.path.exists(testdir) and os.path.isdir(testdir):
@@ -34,7 +30,10 @@ os.chdir(args.srcdir)
 # mark test as having started
 open(os.path.join(testdir, 'test.start'), 'x')
 
-env_dict = {**os.environ, 'TESTDIR': testdir}
+env_dict = {**os.environ,
+            'TESTDATADIR': os.path.join(testdir, 'data'),
+            'TESTLOGDIR': os.path.join(testdir, 'log'),}
+
 sp = subprocess.run(test_command, env=env_dict)
 
 if (sp.returncode == 0):
