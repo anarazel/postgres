@@ -5205,8 +5205,6 @@ ExecEvalJsonExpr(ExprState *state, ExprEvalStep *op, ExprContext *econtext)
 	JsonPath   *path;
 	ListCell   *lc;
 	bool		error = false;
-	bool		needSubtrans;
-	bool		needCoercionSubtrans;
 	bool		throwErrors = jexpr->on_error->btype == JSON_BEHAVIOR_ERROR;
 
 	*op->resnull = true;		/* until we get a result */
@@ -5233,22 +5231,14 @@ ExecEvalJsonExpr(ExprState *state, ExprEvalStep *op, ExprContext *econtext)
 		var->evaluated = false;
 	}
 
-	needSubtrans = ExecEvalJsonNeedsSubTransaction(jexpr, &jsestate->coercions);
-
-	/*
-	 * If evaluating the expression itself doesn't need a subtrans to be
-	 * evaluated, we may still need to
-	 */
-	needCoercionSubtrans = !needSubtrans && !throwErrors;
-	Assert(!needSubtrans || !throwErrors);
-
-	JSE_OPT_SUBTRANS(needSubtrans, &error,
-					 res, ExecEvalJsonExprInternal(jsestate, econtext,
-												   path, needCoercionSubtrans,
-												   item, op->resnull,
-												   throwErrors ? NULL : &error));
+	res = ExecEvalJsonExprInternal(jsestate, econtext,
+								   path, !throwErrors,
+								   item, op->resnull,
+								   throwErrors ? NULL : &error);
 	if (error)
 	{
+		Assert(jexpr->on_error->btype != JSON_BEHAVIOR_ERROR);
+
 		/* Execute ON ERROR behavior */
 		res = ExecEvalJsonBehavior(econtext, jexpr->on_error,
 								   jsestate->default_on_error,
