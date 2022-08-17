@@ -25,5 +25,6 @@ fe_utils = static_library('libpgfeutils',
   fe_utils_sources + generated_headers,
   c_pch: pch_c_h,
   include_directories : [postgres_inc, libpq_inc],
+  dependencies: frontend_common_code,
   kwargs: default_lib_args,
 )
