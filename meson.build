@@ -265,7 +265,7 @@ meson_bin = find_program(meson_binpath, native: true)
 
 cdata.set('USE_ASSERT_CHECKING', get_option('cassert') ? 1 : false)
 
-cdata.set('BLCKSZ', 8192, description:
+cdata.set('BLCKSZ', get_option('blocksize').to_int() * 1024, description:
 '''Size of a disk block --- this also limits the size of a tuple. You can set
    it bigger if you need bigger tuples (although TOAST should reduce the need
    to have large tuples, since fields can be spread across multiple tuples).
