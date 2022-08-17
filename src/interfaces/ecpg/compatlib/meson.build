@@ -3,6 +3,7 @@ export_file = custom_target('libpq.exports', kwargs: gen_export_kwargs)
 ecpg_compat = both_libraries('libecpg_compat',
   'informix.c',
   include_directories : ['.', ecpg_inc, postgres_inc, libpq_inc],
+  c_args: ['-DSO_MAJOR_VERSION=3'],
   dependencies: [frontend_shlib_code, thread_dep],
   link_with: [ecpglib, ecpg_pgtypes],
   soversion: host_system != 'win32' ? '3' : '',

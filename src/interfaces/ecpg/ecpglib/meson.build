@@ -16,6 +16,7 @@ export_file = custom_target('libpq.exports', kwargs: gen_export_kwargs)
 ecpglib = both_libraries('libecpg',
   ecpglib_sources,
   include_directories : ['.', ecpg_inc, postgres_inc],
+  c_args: ['-DSO_MAJOR_VERSION=6'],
   dependencies: [frontend_shlib_code, libpq, thread_dep],
   link_with: [ecpg_pgtypes],
   soversion: host_system != 'win32' ? '6' : '',

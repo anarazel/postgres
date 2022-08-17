@@ -12,6 +12,7 @@ export_file = custom_target('libpq.exports', kwargs: gen_export_kwargs)
 ecpg_pgtypes = both_libraries('libpgtypes',
   ecpg_pgtypes_sources,
   include_directories : ['.', ecpg_inc, postgres_inc],
+  c_args: ['-DSO_MAJOR_VERSION=3'],
   dependencies: [frontend_shlib_code],
   version: '3.'+pg_version_major.to_string(),
   soversion: host_system != 'win32' ? '3' : '',
