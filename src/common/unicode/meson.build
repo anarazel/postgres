@@ -73,7 +73,7 @@ norm_test = executable('norm_test',
   ['norm_test.c', norm_test_table],
   dependencies: [frontend_port_code],
   include_directories: inc,
-  link_with: [pgport_static, common_static],
+  link_with: [common_static, pgport_static],
   build_by_default: false,
   kwargs: default_bin_args + {
     'install': false,
