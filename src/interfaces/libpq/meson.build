@@ -48,7 +48,6 @@ endif
 libpq_both = both_libraries('libpq',
   libpq_sources,
   include_directories : [libpq_inc, postgres_inc],
-  c_args: ['-DFRONTEND'],
   dependencies: libpq_deps,
   version: '5.'+pg_version_major.to_string(),
   soversion: host_system != 'win32' ? '5' : '' ,

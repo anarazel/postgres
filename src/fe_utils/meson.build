@@ -24,7 +24,6 @@ fe_utils_sources += psqlscan
 fe_utils = static_library('pgfeutils',
   fe_utils_sources + generated_headers,
   c_pch: pch_c_h,
-  include_directories :  [postgres_inc, libpq_inc],
-  c_args: ['-DFRONTEND'],
+  include_directories : [postgres_inc, libpq_inc],
   kwargs: default_lib_args,
 )
