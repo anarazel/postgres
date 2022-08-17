@@ -2252,7 +2252,7 @@ if host_system == 'win32'
   os_deps += cc.find_library('ws2_32', required: true)
 endif
 
-if host_system == 'win32'
+if host_system == 'aix'
   # M:SRE sets a flag indicating that an object is a shared library. Seems to
   # work in some circumstances without, but required in others.
   ldflags_sl += '-Wl,-bM:SRE'
