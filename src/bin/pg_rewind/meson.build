@@ -7,8 +7,9 @@ pg_rewind_sources = files(
   'parsexlog.c',
   'pg_rewind.c',
   'timeline.c',
-  '../../backend/access/transam/xlogreader.c',
 )
+
+pg_rewind_sources += xlogreader_sources
 
 pg_rewind = executable('pg_rewind',
   pg_rewind_sources,
