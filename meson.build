@@ -145,6 +145,7 @@ warning_cflags = []
 warning_cxxflags = []
 
 ldflags = g_l_args
+ldflags_sl = []
 
 postgres_inc_d = ['src/include']
 
@@ -2251,6 +2252,12 @@ if host_system == 'win32'
   os_deps += cc.find_library('ws2_32', required: true)
 endif
 
+if host_system == 'win32'
+  # M:SRE sets a flag indicating that an object is a shared library. Seems to
+  # work in some circumstances without, but required in others.
+  ldflags_sl += '-Wl,-bM:SRE'
+endif
+
 add_project_arguments(functional_cflags, language: ['c'])
 add_project_arguments(warning_cflags, language: ['c'])
 add_project_arguments(functional_cxxflags, language: ['cpp'])
@@ -2483,6 +2490,7 @@ subdir('src/common')
 frontend_shlib_code = declare_dependency(
   compile_args: ['-DFRONTEND'],
   include_directories: [postgres_inc],
+  link_args: ldflags_sl,
   link_with: [pgport_shlib, common_shlib],
   sources: generated_headers,
   dependencies: [os_deps, libintl],
@@ -2676,6 +2684,7 @@ test('tmp_install',
     meson_bin, args: meson_install_args ,
     env: {'DESTDIR':test_install_destdir},
     priority: 100,
+    timeout: 300,
     is_parallel: false,
     suite: ['setup'])
 

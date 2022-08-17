@@ -43,6 +43,8 @@ if host_system == 'win32'
   else
     backend_link_args += '-Wl,--stack,@0@'.format(cdata.get('WIN32_STACK_RLIMIT'))
   endif
+elif host_system == 'aix'
+  backend_link_args += '-Wl,-brtllib'
 endif
 
 
@@ -93,6 +95,22 @@ if cc.get_id() == 'msvc'
   # interact, we need to have symbols from the full library available. Could
   # be restricted to b_pch=true.
   backend_link_with += postgres_lib
+
+elif host_system == 'aix'
+  # The '.' argument leads mkldexport.sh to emit "#! .", which refers to the
+  # main executable, allowing extension libraries to resolve their undefined
+  # symbols to symbols in the postgres binary.
+  postgres_imp = custom_target('postgres.imp',
+    command: [files('port/aix/mkldexport.sh'), '@INPUT@', '.'],
+    input: postgres_lib,
+    output: 'postgres.imp',
+    capture: true,
+    install: true,
+    install_dir: dir_lib,
+    build_by_default: false,
+  )
+  backend_link_args += '-Wl,-bE:@0@'.format(postgres_imp.full_path())
+  backend_link_depends += postgres_imp
 endif
 
 backend_input = []
@@ -158,12 +176,19 @@ endif
 # Windows / MacOS link shared modules against postgres. To avoid unnecessary
 # build-time dependencies on other operating systems, only add it when
 # necessary.
-if host_system == 'win32' or host_system == 'darwin'
+if host_system == 'darwin' or host_system == 'win32'
   pg_mod_args += {
     'link_with': pg_mod_args['link_with'] + [postgres],
   }
 endif
-if host_system == 'darwin'
+
+# FIXME: deduplicate with .pc file logic below. Also likely wil look nicer if
+# we build link_args etc as arrays.
+if host_system == 'aix'
+  pg_mod_args += {
+    'link_args': pg_mod_args['link_args'] + ['-Wl,-bI:@0@'.format(postgres_imp.full_path())],
+  }
+elif host_system == 'darwin'
   pg_mod_args += {
     'link_args': pg_mod_args['link_args'] + ['-bundle_loader', '@0@'.format(postgres.full_path())],
   }
@@ -235,7 +260,15 @@ pg_ext_vars += 'dir_data=${prefix}/@0@'.format(dir_data_extension)
 
 
 # Ensure that external libraries
-if host_system == 'win32'
+if host_system == 'aix'
+  pg_ext_libs += ['-Wl,-bI:${mod_link_with}']
+  pg_ext_vars_inst += 'mod_link_with=@0@'.format('${prefix}' / dir_lib / 'postgres.imp')
+  pg_ext_vars_uninst += 'mod_link_with=@0@'.format(postgres_imp.full_path())
+elif host_system == 'darwin'
+  pg_ext_libs += ['-bundle_loader', '${mod_link_with}']
+  pg_ext_vars_inst += 'mod_link_with=@0@'.format('${prefix}' / dir_bin / 'postgres')
+  pg_ext_vars_uninst += 'mod_link_with=@0@'.format(postgres.full_path())
+elif host_system == 'win32'
   if cc.get_id() == 'msvc'
 	name = 'postgres.exe.lib'
   else
@@ -244,10 +277,6 @@ if host_system == 'win32'
   pg_ext_libs += ['${mod_link_with}']
   pg_ext_vars_inst += 'mod_link_with=@0@'.format('${prefix}' / dir_bin / name)
   pg_ext_vars_uninst += 'mod_link_with=@0@'.format(meson.current_build_dir() / name)
-elif host_system == 'darwin'
-  pg_ext_libs += ['-bundle_loader', '${mod_link_with}']
-  pg_ext_vars_inst += 'mod_link_with=@0@'.format('${prefix}' / dir_bin / 'postgres')
-  pg_ext_vars_uninst += 'mod_link_with=@0@'.format(postgres.full_path())
 endif
 
 # main .pc to build extensions
