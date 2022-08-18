@@ -21,7 +21,7 @@ tzdata = files(
 )
 
 
-if get_option('system-tzdata') == ''
+if get_option('system_tzdata') == ''
   # FIXME: For cross builds, it would need a native built libpgport/pgcommon to
   # build our zic. But for that we'd need to run a good chunk of the configure
   # tests both natively and cross. Unclear if it's worth it.

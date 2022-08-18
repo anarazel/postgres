@@ -53,9 +53,9 @@ pgxs_kv = {
   'SUN_STUDIO_CC': 'no', # not supported so far
 
   'default_port': get_option('pgport'),
-  'with_system_tzdata': get_option('system-tzdata'),
+  'with_system_tzdata': get_option('system_tzdata'),
 
-  'with_krb_srvnam': get_option('krb-srvnam'),
+  'with_krb_srvnam': get_option('krb_srvnam'),
   'krb_srvtab': krb_srvtab,
 
   # FIXME: implement programs.m4 logic in PGAC_CHECK_STRIP

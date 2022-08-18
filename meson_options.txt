@@ -3,7 +3,7 @@
 option('blocksize', type : 'combo', choices : ['1', '2', '4', '8', '16', '32'], value : '8',
   description: 'set relation block size in kB')
 
-option('wal-blocksize', type : 'integer', value : 8,
+option('wal_blocksize', type : 'integer', value : 8,
   description : '''WAL block size, in kilobytes.
 This is the unit of storage and I/O within the WAL log. The default, 8 kilobytes, is suitable for most situations; but other values may be useful in special cases. The value must be a power of 2 between 1 and 64 (kilobytes). Note that changing this value requires an initdb.''')
 
@@ -14,11 +14,11 @@ Large tables are divided into multiple operating-system files, each of size equa
 
 # Miscellaneous options
 
-option('krb-srvnam', type : 'string', value : 'postgres',
+option('krb_srvnam', type : 'string', value : 'postgres',
   description : '''The default name of the Kerberos service principal used by GSSAPI.
 postgres is the default. There's usually no reason to change this unless you are building for a Windows environment, in which case it must be set to upper case POSTGRES''')
 
-option('system-tzdata', type: 'string', value: '',
+option('system_tzdata', type: 'string', value: '',
   description: 'use system time zone data in specified directory')
 
 
@@ -34,7 +34,7 @@ The default is 5432. The port can always be changed later on, but if you specify
 option('cassert', type : 'boolean', value: false,
   description: 'enable assertion checks (for debugging)')
 
-option('tap-tests', type : 'feature', value : 'auto',
+option('tap_tests', type : 'feature', value : 'auto',
   description : 'Whether to enable tap tests')
 
 option('PG_TEST_EXTRA', type : 'string', value: 'kerberos ldap ssl',
@@ -64,7 +64,7 @@ option('extra_version', type : 'string', value: '',
 option('bonjour', type : 'feature', value: 'auto',
   description: 'build with Bonjour support')
 
-option('bsd-auth', type : 'feature', value: 'auto',
+option('bsd_auth', type : 'feature', value: 'auto',
   description: 'build with BSD Authentication support')
 
 option('dtrace', type : 'feature', value: 'disabled',

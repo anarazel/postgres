@@ -274,13 +274,13 @@ cdata.set('BLCKSZ', get_option('blocksize').to_int() * 1024, description:
    lp_off and lp_len fields in ItemIdData (see include/storage/itemid.h).
    Changing BLCKSZ requires an initdb.''')
 
-cdata.set('XLOG_BLCKSZ', get_option('wal-blocksize') * 1024)
+cdata.set('XLOG_BLCKSZ', get_option('wal_blocksize') * 1024)
 cdata.set('RELSEG_SIZE', get_option('segsize') * 131072)
 cdata.set('DEF_PGPORT', get_option('pgport'))
 cdata.set_quoted('DEF_PGPORT_STR', get_option('pgport'))
-cdata.set_quoted('PG_KRB_SRVNAM', get_option('krb-srvnam'))
-if get_option('system-tzdata') != ''
-  cdata.set_quoted('SYSTEMTZDIR', get_option('system-tzdata'))
+cdata.set_quoted('PG_KRB_SRVNAM', get_option('krb_srvnam'))
+if get_option('system_tzdata') != ''
+  cdata.set_quoted('SYSTEMTZDIR', get_option('system_tzdata'))
 endif
 
 
@@ -349,7 +349,7 @@ dir_data_extension = dir_data / 'extension'
 # Library: bsd-auth
 ###############################################################
 
-bsd_authopt = get_option('bsd-auth')
+bsd_authopt = get_option('bsd_auth')
 bsd_auth = dependency('', required: false)
 if cc.check_header('bsd_auth.h', args: g_c_args, required: bsd_authopt)
   cdata.set('USE_BSD_AUTH', 1)
@@ -1152,7 +1152,7 @@ endif
 
 # Check whether tap tests are enabled or not
 tap_tests_enabled = false
-tapopt = get_option('tap-tests')
+tapopt = get_option('tap_tests')
 if not tapopt.disabled()
   # Checking for perl modules for tap tests
   perl_ipc_run_check = run_command(perl, 'config/check_modules.pl', check: false)
