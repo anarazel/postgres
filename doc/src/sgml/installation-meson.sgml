@@ -499,7 +499,7 @@ meson setup build --prefix=/home/user/pg-install
 meson setup build --buildtype=debug
 
 #Setup build directory with ssl (Use -D for project specific options)
-meson setup build --Dssl=openssl
+meson setup build -Dssl=openssl
 </screen>
 
     Setting up the build directory is a one-time step. To reconfigure before a
@@ -1105,6 +1105,48 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
      <variablelist>
 
       <varlistentry>
+       <term><option>--auto_features=<replaceable>enabled/disabled/auto</replaceable></option></term>
+       <listitem>
+        <para>
+         Setting this option allows you to override value of all 'auto' features.
+         This can be useful when you want to disable or enable all the "optional"
+         features at once without having to set each of them manually. The default
+         value for this parameter is auto.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--backend=<replaceable>BACKEND</replaceable></option></term>
+       <listitem>
+        <para>
+         The default backend meson uses is ninja and that should suffice for most use cases.
+         However, if you'd like to use a different build system to build Postgres, you can
+         set it using this option. The accepted values for BACKEND are:
+         <command>ninja,vs,vs2010,vs2012,vs2013,vs2015,vs2017,vs2019,vs2022 and xcode</command>.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-Dc_args=<replaceable>OPTIONS</replaceable></option></term>
+       <listitem>
+        <para>
+        This option can be used to pass extra options to the C compiler.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-Dc_link_args=<replaceable>OPTIONS</replaceable></option></term>
+       <listitem>
+        <para>
+        This option can be used to pass extra options to the C linker.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
        <term><option>-Dextra_include_dirs=<replaceable>DIRECTORIES</replaceable></option></term>
        <listitem>
         <para>
@@ -1328,6 +1370,59 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
     </para>
 
      <variablelist>
+      <varlistentry>
+       <term><option>--buildtype=<replaceable>BUILDTYPE</replaceable></option></term>
+       <listitem>
+        <para>
+         This option can be used to specify the buildtype to use; defaults
+         to release. If you'd like finer control on the debug symbols
+         and optimization levels than what this option provides, you can
+         refer to the --debug and --optimization flags.
+
+         The following build types are generally used:
+         <variablelist>
+          <varlistentry>
+           <term><literal>plain</literal></term>
+           <listitem>
+            <para>
+            No extra build flags are used, even for compiler warnings,
+            useful for distro packagers and other cases where you need to
+            specify all arguments by yourself.
+            </para>
+           </listitem>
+          </varlistentry>
+
+          <varlistentry>
+           <term><literal>debug</literal></term>
+           <listitem>
+            <para>
+            Debug info is generated but the result is not optimized.
+            </para>
+           </listitem>
+          </varlistentry>
+
+          <varlistentry>
+           <term><literal>debugoptimized</literal></term>
+           <listitem>
+            <para>
+            Debug info is generated and the code is optimized (on most compilers
+            this means <literal>-g -O2</literal>)
+            </para>
+           </listitem>
+          </varlistentry>
+
+          <varlistentry>
+           <term><literal>release</literal></term>
+           <listitem>
+            <para>
+            This enables full optimization and no debug info is generated. This is
+            the default.
+            </para>
+           </listitem>
+          </varlistentry>
+        </para>
+       </listitem>
+      </varlistentry>
 
       <varlistentry>
        <term><option>--debug</option></term>
@@ -1343,6 +1438,25 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
          recommended for production installations only if you use GCC.
          But you should always have it on if you are doing development work
          or running a beta version.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--optimization</option>=<replaceable>LEVEL</replaceable></term>
+       <listitem>
+        <para>
+         Specify the optimization level. LEVEL can be set to any of {0,g,1,2,3,s}.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--werror</option></term>
+       <listitem>
+        <para>
+         Setting this option asks the compiler to treat warnings as errors. This can
+         be useful for code development purposes.
         </para>
        </listitem>
       </varlistentry>
@@ -1384,7 +1498,6 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
          Enable test suites which require special software to run. This option
          accepts arguments via a whitespace-separated list. The following values
          are currently supported:
-   The following values are currently supported:
          <variablelist>
           <varlistentry>
            <term><literal>kerberos</literal></term>
@@ -1430,6 +1543,31 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
          Tests for features that are not supported by the current build
          configuration are not run even if they are mentioned in
          <varname>PG_TEST_EXTRA</varname>.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--errorlogs</option></term>
+       <listitem>
+        <para>
+        This option can be used to print the logs from the failing tests
+        making debugging easier.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-Db_coverage</option></term>
+       <listitem>
+        <para>
+         If using GCC, all programs and libraries are compiled with
+         code coverage testing instrumentation.  When run, they
+         generate files in the build directory with code coverage
+         metrics.
+         <phrase condition="standalone-ignore">See <xref linkend="regress-coverage"/>
+         for more information.</phrase> This option is for use only with GCC
+         and when doing development work.
         </para>
        </listitem>
       </varlistentry>
