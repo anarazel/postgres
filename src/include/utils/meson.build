@@ -18,7 +18,7 @@ if dtrace.found()
     command: [dtrace, '-C', '-h', '-s', '@INPUT@', '-o', '@OUTPUT@'],
   )
   probes = custom_target('probes.h',
-    input: probes_tmp[0],
+    input: probes_tmp,
     output: 'probes.h',
     capture: true,
     command: [sed, '-f', files('../../backend/utils/postprocess_dtrace.sed'), '@INPUT@'],
