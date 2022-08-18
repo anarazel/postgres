@@ -182,7 +182,7 @@ pgxs_empty = [
 
   # possible that some of these are referenced explicitly in pgxs makefiles?
   # For now not worth it.
-  'TCL_INCLUDE_SPEC', 'TCL_LIBS', 'TCL_LIB_SPEC', 'TCL_SHARED_BUILD', 'TCL_SHLIB_LD_LIBS',
+  'TCL_INCLUDE_SPEC', 'TCL_LIBS', 'TCL_LIB_SPEC', 'TCL_SHARED_BUILD',
 
   'LLVM_CFLAGS', 'LLVM_CPPFLAGS', 'LLVM_CXXFLAGS', 'LLVM_LIBS',
 
