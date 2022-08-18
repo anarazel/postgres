@@ -2,7 +2,7 @@ pgc_files = [
   'char_array',
 ]
 
-foreach pgc_file: pgc_files
+foreach pgc_file : pgc_files
   exe_input = custom_target(pgc_file,
     input: '@0@.pgc'.format(pgc_file),
     output: '@BASENAME@.c',

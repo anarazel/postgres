@@ -1,7 +1,7 @@
 pg_stat_statements = shared_module('pg_stat_statements',
   files('pg_stat_statements.c'),
   kwargs: contrib_mod_args + {
-      'dependencies': contrib_mod_args['dependencies'],
+    'dependencies': contrib_mod_args['dependencies'],
   },
 )
 

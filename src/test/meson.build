@@ -7,15 +7,15 @@ subdir('subscription')
 subdir('modules')
 
 if ssl.found()
-   subdir('ssl')
+  subdir('ssl')
 endif
 
 if ldap.found()
-   subdir('ldap')
+  subdir('ldap')
 endif
 
 if gssapi.found()
-   subdir('kerberos')
+  subdir('kerberos')
 endif
 
 if icu.found()

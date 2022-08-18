@@ -3,6 +3,7 @@
 
 libpq_sources = files(
   'fe-auth-scram.c',
+  'fe-auth.c',
   'fe-connect.c',
   'fe-exec.c',
   'fe-lobj.c',
@@ -14,11 +15,10 @@ libpq_sources = files(
   'legacy-pqsignal.c',
   'libpq-events.c',
   'pqexpbuffer.c',
-  'fe-auth.c',
 )
 
 if host_system == 'win32'
-  libpq_sources += files('win32.c', 'pthread-win32.c')
+  libpq_sources += files('pthread-win32.c', 'win32.c')
 endif
 
 if ssl.found()
@@ -28,8 +28,8 @@ endif
 
 if gssapi.found()
   libpq_sources += files(
+    'fe-gssapi-common.c',
     'fe-secure-gssapi.c',
-    'fe-gssapi-common.c'
   )
 endif
 
@@ -47,12 +47,12 @@ endif
 
 libpq_both = both_libraries('libpq',
   libpq_sources,
-  include_directories : [libpq_inc, postgres_inc],
+  include_directories: [libpq_inc, postgres_inc],
   c_args: ['-DSO_MAJOR_VERSION=5'],
   dependencies: libpq_deps,
-  version: '5.'+pg_version_major.to_string(),
-  soversion: host_system != 'win32' ? '5' : '' ,
-  darwin_versions: ['5', '5.'+pg_version_major.to_string()],
+  version: '5.' + pg_version_major.to_string(),
+  soversion: host_system != 'win32' ? '5' : '',
+  darwin_versions: ['5', '5.' + pg_version_major.to_string()],
   link_depends: export_file,
   link_args: export_fmt.format(export_file.full_path()),
   kwargs: default_lib_args,
@@ -97,7 +97,7 @@ tests += {
       't/001_uri.pl',
       't/002_api.pl',
     ],
-    'env' : {'with_ssl': get_option('ssl')},
+    'env': {'with_ssl': get_option('ssl')},
   },
 }
 

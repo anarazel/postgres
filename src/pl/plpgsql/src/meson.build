@@ -18,9 +18,10 @@ pl_errcodes = custom_target('plerrcodes',
   input: ['../../../../src/backend/utils/errcodes.txt'],
   output: ['plerrcodes.h'],
   command: [perl, gen_plerrcodes, '@INPUT0@'],
-  capture: true)
+  capture: true,
+)
 generated_sources += pl_errcodes
-plpgsql_sources +=  pl_errcodes
+plpgsql_sources += pl_errcodes
 
 gen_keywordlist = files('../../../../src/tools/gen_keywordlist.pl')
 pl_reserved = custom_target('pl_reserved_kwlist',

@@ -3,7 +3,7 @@ if host_system != 'win32'
 endif
 
 pgevent_sources = files(
-    'pgevent.c',
+  'pgevent.c',
 )
 
 # built as part of pgmsgevent.rc, via #include

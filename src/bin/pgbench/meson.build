@@ -7,9 +7,9 @@ pgbench_sources = files(
 # unnecessarily strict, but overall harmless.
 
 exprscan = custom_target('exprscan',
-  input : files('exprscan.l'),
-  output : ['exprscan.c'],
-  command : [flex_cmd, '@INPUT@']
+  input: files('exprscan.l'),
+  output: ['exprscan.c'],
+  command: [flex_cmd, '@INPUT@'],
 )
 generated_sources += exprscan
 
@@ -30,11 +30,11 @@ executable('pgbench',
 
 
 tests += {
-  'name' : 'pgbench',
+  'name': 'pgbench',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
   'tap': {
-    'tests' :[
+    'tests': [
       't/001_pgbench_with_server.pl',
       't/002_pgbench_no_server.pl',
     ],

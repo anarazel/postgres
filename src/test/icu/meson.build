@@ -6,6 +6,6 @@ tests += {
     'tests': [
       't/010_database.pl',
     ],
-    'env' : {'with_icu': icu.found() ? 'yes' : 'no'},
+    'env': {'with_icu': icu.found() ? 'yes' : 'no'},
   },
 }

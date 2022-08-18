@@ -133,8 +133,8 @@ if dtrace.found() and host_system != 'darwin'
   backend_input += custom_target(
     'probes.o',
     input: ['utils/probes.d', postgres_lib.extract_objects(backend_sources, timezone_sources)],
-    output : 'probes.o',
-    command : [dtrace, '-C', '-G', '-o', '@OUTPUT@', '-s', '@INPUT@'],
+    output: 'probes.o',
+    command: [dtrace, '-C', '-G', '-o', '@OUTPUT@', '-s', '@INPUT@'],
     install: false,
   )
 endif
@@ -231,10 +231,14 @@ foreach incdir : postgres_inc_d
 
   # Add directories in source / build dir containing headers to cflags for the
   # -uninstalled.pc
-  pg_ext_vars_uninst += ['build_inc@0@=-I${prefix}/@1@'.format(i, incdir),
-                         'src_inc@0@=-I${srcdir}/@1@'.format(i, incdir)]
-  pg_ext_cflags += ['${build_inc@0@}'.format(i),
-                    '${src_inc@0@}'.format(i)]
+  pg_ext_vars_uninst += [
+    'build_inc@0@=-I${prefix}/@1@'.format(i, incdir),
+    'src_inc@0@=-I${srcdir}/@1@'.format(i, incdir),
+  ]
+  pg_ext_cflags += [
+    '${build_inc@0@}'.format(i),
+    '${src_inc@0@}'.format(i)
+  ]
 
   i += 1
 endforeach
@@ -270,9 +274,9 @@ elif host_system == 'darwin'
   pg_ext_vars_uninst += 'mod_link_with=@0@'.format(postgres.full_path())
 elif host_system == 'win32'
   if cc.get_id() == 'msvc'
-	name = 'postgres.exe.lib'
+    name = 'postgres.exe.lib'
   else
-	name = 'libpostgres.exe.a'
+    name = 'libpostgres.exe.a'
   endif
   pg_ext_libs += ['${mod_link_with}']
   pg_ext_vars_inst += 'mod_link_with=@0@'.format('${prefix}' / dir_bin / name)

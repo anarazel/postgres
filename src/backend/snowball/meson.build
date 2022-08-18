@@ -1,7 +1,7 @@
 dict_snowball_sources = files(
-  'dict_snowball.c',
   'libstemmer/api.c',
   'libstemmer/utilities.c',
+  'dict_snowball.c',
 )
 
 dict_snowball_sources += files(
@@ -70,7 +70,12 @@ snowball_create = custom_target('snowball_create',
   input: ['snowball_create.pl'],
   output: ['snowball_create.sql'],
   depfile: 'snowball_create.dep',
-  command: [perl, '@INPUT0@', '--depfile', '--input', '@CURRENT_SOURCE_DIR@', '--outdir', '@OUTDIR@'],
+  command: [
+    perl, files('snowball_create.pl'),
+    '--depfile',
+    '--input', '@CURRENT_SOURCE_DIR@',
+    '--outdir', '@OUTDIR@',
+  ],
   install: true,
   install_dir: dir_data,
 )

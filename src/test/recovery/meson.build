@@ -4,7 +4,7 @@ tests += {
   'bd': meson.current_build_dir(),
   'tap': {
     'test_kwargs': {'priority': 40}, # recovery tests are slow, start early
-    'tests' : [
+    'tests': [
       't/001_stream_rep.pl',
       't/002_archiving.pl',
       't/003_recovery_targets.pl',

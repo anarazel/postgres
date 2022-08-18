@@ -71,7 +71,7 @@ tests += {
     ],
     'test_kwargs': {
       'depends': meson.is_cross_build() ? [] : ecpg_test_dependencies,
-      },
+    },
     'regress_args': ecpg_regress_args,
   },
 }

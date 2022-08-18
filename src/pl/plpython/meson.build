@@ -18,11 +18,11 @@ plpython_sources = files(
 )
 
 plpython_sources += custom_target('spiexceptions.h',
-    input: files('../../backend/utils/errcodes.txt'),
-    output: 'spiexceptions.h',
-    command: [perl, files('generate-spiexceptions.pl'), '@INPUT@'],
-    capture: true
-  )
+  input: files('../../backend/utils/errcodes.txt'),
+  output: 'spiexceptions.h',
+  command: [perl, files('generate-spiexceptions.pl'), '@INPUT@'],
+  capture: true,
+)
 
 
 # FIXME: need to duplicate import library ugliness?

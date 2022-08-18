@@ -17,12 +17,12 @@ pgc_files = [
 
 pgc_extra_flags = {
   'array_of_struct': ['-c'],
-  'pointer_to_struct' : ['-c'],
+  'pointer_to_struct': ['-c'],
   'autoprep': ['-r', 'prepare'],
   'strings': ['-i'],
 }
 
-foreach pgc_file: pgc_files
+foreach pgc_file : pgc_files
   exe_input = custom_target(pgc_file,
     input: '@0@.pgc'.format(pgc_file),
     command: ecpg_preproc_test_command_start +

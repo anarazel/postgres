@@ -6,6 +6,6 @@ tests += {
     'tests': [
       't/001_auth.pl',
     ],
-    'env' : {'with_ldap': ldap.found() ? 'yes' : 'no'},
+    'env': {'with_ldap': ldap.found() ? 'yes' : 'no'},
   },
 }

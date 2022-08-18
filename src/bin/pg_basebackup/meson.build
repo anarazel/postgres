@@ -39,7 +39,7 @@ executable('pg_recvlogical',
 )
 
 tests += {
-  'name' : 'pg_basebackup',
+  'name': 'pg_basebackup',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
   'tap': {

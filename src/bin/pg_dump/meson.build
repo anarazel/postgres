@@ -30,8 +30,8 @@ pg_dump_common = static_library('libpgdump_common',
 
 
 pg_dump_sources = files(
-  'pg_dump.c',
   'common.c',
+  'pg_dump.c',
   'pg_dump_sort.c',
 )
 

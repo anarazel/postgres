@@ -7,7 +7,7 @@ tests += {
     'tests': [
       't/001_auth.pl',
     ],
-    'env' : {
+    'env': {
       'with_gssapi': gssapi.found() ? 'yes' : 'no',
       'with_krb_srvnam': 'postgres',
     },

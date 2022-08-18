@@ -5,5 +5,5 @@ backend_sources += files(
   'rewriteRemove.c',
   'rewriteSearchCycle.c',
   'rewriteSupport.c',
-  'rowsecurity.c'
+  'rowsecurity.c',
 )

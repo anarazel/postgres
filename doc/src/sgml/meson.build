@@ -18,22 +18,26 @@ configure_files += version_sgml
 doc_generated += custom_target('features-supported.sgml',
   input: files(
     '../../../src/backend/catalog/sql_feature_packages.txt',
-    '../../../src/backend/catalog/sql_features.txt'),
+    '../../../src/backend/catalog/sql_features.txt',
+  ),
   output: 'features-supported.sgml',
   command: [perl, files('mk_feature_tables.pl'), 'YES', '@INPUT@'],
   build_by_default: false,
   install: false,
-  capture: true)
+  capture: true,
+)
 
 doc_generated += custom_target('features-unsupported.sgml',
   input: files(
     '../../../src/backend/catalog/sql_feature_packages.txt',
-    '../../../src/backend/catalog/sql_features.txt'),
+    '../../../src/backend/catalog/sql_features.txt',
+  ),
   output: 'features-unsupported.sgml',
   command: [perl, files('mk_feature_tables.pl'), 'NO', '@INPUT@'],
   build_by_default: false,
   install: false,
-  capture: true)
+  capture: true,
+)
 
 doc_generated += custom_target('errcodes-table.sgml',
   input: files(
@@ -42,7 +46,8 @@ doc_generated += custom_target('errcodes-table.sgml',
   command: [perl, files('generate-errcodes-table.pl'), '@INPUT@'],
   build_by_default: false,
   install: false,
-  capture: true)
+  capture: true,
+)
 
 # FIXME: this actually has further inputs, adding depfile support to
 # generate-keywords-table.pl is probably the best way to address that
@@ -54,7 +59,8 @@ doc_generated += custom_target('keywords-table.sgml',
   command: [perl, files('generate-keywords-table.pl'), '@CURRENT_SOURCE_DIR@'],
   build_by_default: false,
   install: false,
-  capture: true)
+  capture: true,
+)
 
 # For everything else we need at least xmllint
 if not xmllint.found()

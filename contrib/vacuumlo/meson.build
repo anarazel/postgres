@@ -5,11 +5,11 @@ executable('vacuumlo',
 )
 
 tests += {
-  'name' : 'vacuumlo',
+  'name': 'vacuumlo',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
   'tap': {
-    'tests' :[
+    'tests': [
       't/001_basic.pl',
     ],
   },

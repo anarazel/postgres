@@ -5,7 +5,7 @@ dblink_sources = files(
 dblink = shared_module('dblink',
   dblink_sources,
   kwargs: contrib_mod_args + {
-      'dependencies': pg_mod_args['dependencies'] + [libpq],
+    'dependencies': pg_mod_args['dependencies'] + [libpq],
   },
 )
 

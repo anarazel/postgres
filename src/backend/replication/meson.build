@@ -13,8 +13,8 @@ backend_sources += files(
 # harmless.
 
 repl_scanner = custom_target('repl_scanner',
-  input : files('repl_scanner.l'),
-  output : ['repl_scanner.c'],
+  input: files('repl_scanner.l'),
+  output: ['repl_scanner.c'],
   command: [flex_cmd, '@INPUT@'],
 )
 generated_sources += repl_scanner
@@ -23,20 +23,23 @@ generated_backend_sources += custom_target('repl_gram',
   input: 'repl_gram.y',
   output: 'repl_gram.c',
   depends: repl_scanner,
-  command: [bison_cmd, '@INPUT@'],)
+  command: [bison_cmd, '@INPUT@'],
+)
 
 
 syncrep_scanner = custom_target('syncrep_scanner',
   input: 'syncrep_scanner.l',
   output: 'syncrep_scanner.c',
-  command: [flex_cmd, '@INPUT@'],)
+  command: [flex_cmd, '@INPUT@'],
+)
 generated_sources += syncrep_scanner
 
 generated_backend_sources += custom_target('syncrep_gram',
   input: 'syncrep_gram.y',
   output: 'syncrep_gram.c',
   depends: syncrep_scanner,
-  command: [bison_cmd, '@INPUT@'],)
+  command: [bison_cmd, '@INPUT@'],
+)
 
 
 subdir('logical')

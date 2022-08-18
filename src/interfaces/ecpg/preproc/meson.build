@@ -1,4 +1,5 @@
 ecpg_sources = files(
+  '../ecpglib/typename.c',
   'c_keywords.c',
   'descriptor.c',
   'ecpg.c',
@@ -7,7 +8,6 @@ ecpg_sources = files(
   'output.c',
   'parser.c',
   'type.c',
-  '../ecpglib/typename.c',
   'variable.c',
 )
 
@@ -20,11 +20,11 @@ generated_sources += pgc
 ecpg_sources += pgc
 
 ecpg_files = [
-    'ecpg.addons',
-    'ecpg.header',
-    'ecpg.tokens',
-    'ecpg.trailer',
-    'ecpg.type',
+  'ecpg.addons',
+  'ecpg.header',
+  'ecpg.tokens',
+  'ecpg.trailer',
+  'ecpg.type',
 ]
 
 preproc_y = custom_target('preproc.y',
@@ -74,7 +74,7 @@ c_kwlist = custom_target('c_kwlist_d.h',
     '@SOURCE_ROOT@/src/tools/gen_keywordlist.pl',
     '--output', '@OUTDIR@',
     '--varname', 'ScanCKeywords',
-    '--no-case-fold', '@INPUT0@'
+    '--no-case-fold', '@INPUT0@',
   ],
 )
 generated_sources += c_kwlist
@@ -96,7 +96,7 @@ ecpg_sources += ecpg_kwlist
 
 ecpg_exe = executable('ecpg',
   ecpg_sources,
-  include_directories : ['.', ecpg_inc, postgres_inc],
+  include_directories: ['.', ecpg_inc, postgres_inc],
   dependencies: [frontend_shlib_code, libpq],
   kwargs: default_bin_args,
 )

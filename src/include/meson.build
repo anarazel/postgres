@@ -1,23 +1,27 @@
-pg_config_ext = configure_file(input: 'pg_config_ext.h.meson',
-  output : 'pg_config_ext.h',
-  configuration : cdata,
+pg_config_ext = configure_file(
+  input: 'pg_config_ext.h.meson',
+  output: 'pg_config_ext.h',
+  configuration: cdata,
   install: true,
-  install_dir: dir_include)
+  install_dir: dir_include,
+)
 configure_files += pg_config_ext
 
 pg_config_os = configure_file(
-  output : 'pg_config_os.h',
+  output: 'pg_config_os.h',
   input: files('port/@0@.h'.format(host_system)),
   install: true,
-  install_dir : dir_include,
-  copy : true)
+  install_dir: dir_include,
+  copy: true,
+)
 configure_files += pg_config_os
 
 pg_config = configure_file(
-  output : 'pg_config.h',
-  install : true,
-  install_dir : dir_include,
-  configuration : cdata)
+  output: 'pg_config.h',
+  install: true,
+  install_dir: dir_include,
+  configuration: cdata,
+)
 configure_files += pg_config
 
 
@@ -56,7 +60,7 @@ var_libs = ''
 pg_config_paths = configure_file(
   output: 'pg_config_paths.h',
   configuration: config_paths_data,
-  install: false
+  install: false,
 )
 configure_files += pg_config_paths
 

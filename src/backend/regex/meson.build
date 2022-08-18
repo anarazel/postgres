@@ -4,5 +4,5 @@ backend_sources += files(
   'regexec.c',
   'regexport.c',
   'regfree.c',
-  'regprefix.c'
+  'regprefix.c',
 )

@@ -229,8 +229,8 @@ pgxs_deps = {
   'libxslt': libxslt,
   'llvm': llvm,
   'lz4': lz4,
-  'nls' : libintl,
-  'pam' : pam,
+  'nls': libintl,
+  'pam': pam,
   'perl': perl_dep,
   'python': python3_dep,
   'readline': readline,
@@ -247,11 +247,13 @@ endforeach
 pgxs_cdata.set('with_ssl', get_option('ssl'))
 pgxs_cdata.set('with_uuid', uuidopt)
 
-makefile_global = configure_file(input: 'Makefile.global.in',
-  output : 'Makefile.global',
-  configuration : pgxs_cdata,
+makefile_global = configure_file(
+  input: 'Makefile.global.in',
+  output: 'Makefile.global',
+  configuration: pgxs_cdata,
   install: true,
-  install_dir: dir_pgxs / 'src')
+  install_dir: dir_pgxs / 'src',
+)
 configure_files += makefile_global
 
 # FIXME: check if exists

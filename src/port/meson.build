@@ -44,29 +44,29 @@ endif
 
 if cc.get_id() == 'msvc'
   pgport_sources += files(
-    'win32gettimeofday.c',
     'dirent.c',
+    'win32gettimeofday.c',
   )
 endif
 
 # Replacement functionality to be built if corresponding configure symbol
 # is false
 replace_funcs_neg = [
-    ['explicit_bzero'],
-    ['getopt'],
-    ['getopt_long'],
-    ['getpeereid'],
-    ['inet_aton'],
-    ['mkdtemp'],
-    ['preadv', 'HAVE_DECL_PREADV'],
-    ['pwritev', 'HAVE_DECL_PWRITEV'],
-    ['strlcat'],
-    ['strlcpy'],
-    ['strnlen'],
+  ['explicit_bzero'],
+  ['getopt'],
+  ['getopt_long'],
+  ['getpeereid'],
+  ['inet_aton'],
+  ['mkdtemp'],
+  ['preadv', 'HAVE_DECL_PREADV'],
+  ['pwritev', 'HAVE_DECL_PWRITEV'],
+  ['strlcat'],
+  ['strlcpy'],
+  ['strnlen'],
 ]
 
 if host_system != 'win32'
-   replace_funcs_neg += [['pthread_barrier_wait']]
+  replace_funcs_neg += [['pthread_barrier_wait']]
 endif
 
 # Replacement functionality to be built if corresponding configure symbol
@@ -137,16 +137,16 @@ endif
 # for use in shared libraries
 pgport = {}
 pgport_variants = {
-  '_srv' : internal_lib_args + {
+  '_srv': internal_lib_args + {
     'dependencies': [backend_port_code],
-   },
-  '' : default_lib_args + {
+  },
+  '': default_lib_args + {
     'dependencies': [frontend_port_code],
-   },
-  '_shlib' : default_lib_args + {
+  },
+  '_shlib': default_lib_args + {
     'pic': true,
     'dependencies': [frontend_port_code],
-   },
+  },
 }
 
 foreach name, opts : pgport_variants
@@ -154,7 +154,7 @@ foreach name, opts : pgport_variants
   # Build internal static libraries for sets of files that need to be built
   # with different cflags
   cflag_libs = []
-  foreach cflagname, sources: pgport_sources_cflags
+  foreach cflagname, sources : pgport_sources_cflags
     if sources.length() == 0
       continue
     endif

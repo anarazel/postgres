@@ -9,7 +9,7 @@ postgres_fdw_sources = files(
 postgres_fdw = shared_module('postgres_fdw',
   postgres_fdw_sources,
   kwargs: contrib_mod_args + {
-      'dependencies': pg_mod_args['dependencies'] + [libpq],
+    'dependencies': pg_mod_args['dependencies'] + [libpq],
   },
 )
 

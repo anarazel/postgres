@@ -44,7 +44,7 @@ thread_dep = dependency('threads')
 # quick check seems worth it. Adhering to this advice should clean up the
 # conflict, but won't protect against somebody doing make distclean or just
 # removing pg_config.h
-errmsg_nonclean_base ='''
+errmsg_nonclean_base = '''
 ****
 Non-clean source code directory detected.
 
@@ -80,7 +80,7 @@ endif
 
 pg_version_major = pg_version_arr[0].to_int()
 pg_version_minor = pg_version_arr[1].to_int()
-pg_version_num = (pg_version_major*10000)+pg_version_minor
+pg_version_num = (pg_version_major * 10000) + pg_version_minor
 
 cc = meson.get_compiler('c')
 
@@ -252,7 +252,7 @@ foreach e : meson_binpath_s
 endforeach
 
 if meson_impl not in ['muon', 'meson']
-    error('unknown meson implementation "@0@"'.format(meson_impl))
+  error('unknown meson implementation "@0@"'.format(meson_impl))
 endif
 
 meson_bin = find_program(meson_binpath, native: true)
@@ -409,7 +409,7 @@ if not gssapiopt.disabled()
   endif
 endif
 if not have_gssapi
-  gssapi = dependency('', required : false)
+  gssapi = dependency('', required: false)
 endif
 
 
@@ -471,7 +471,7 @@ if not ldapopt.disabled()
   endif
 
 else
-  ldap = dependency('', required : false)
+  ldap = dependency('', required: false)
   ldap_r = ldap
 endif
 
@@ -483,8 +483,8 @@ endif
 
 llvmopt = get_option('llvm')
 if not llvmopt.disabled()
-  add_languages('cpp', required : true, native: false)
-  llvm = dependency('llvm', version : '>=3.9', method: 'config-tool', required: llvmopt)
+  add_languages('cpp', required: true, native: false)
+  llvm = dependency('llvm', version: '>=3.9', method: 'config-tool', required: llvmopt)
 
   if llvm.found()
 
@@ -510,7 +510,7 @@ if not llvmopt.disabled()
       '-O2',
       '-Wno-ignored-attributes',
       '-Wno-empty-body',
-      g_c_args
+      g_c_args,
     ]
 
     if ccache.found()
@@ -528,7 +528,7 @@ if not llvmopt.disabled()
     irlink = find_program('src/tools/irlink', native: true)
 
     llvm_irlink_kw = {
-      'command':[
+      'command': [
         irlink,
         '--name', 'postgres',
         '--lto', llvm_lto,
@@ -560,8 +560,8 @@ if not get_option('icu').disabled()
   endif
 
 else
-  icu = dependency('', required : false)
-  icu_i18n = dependency('', required : false)
+  icu = dependency('', required: false)
+  icu_i18n = dependency('', required: false)
 endif
 
 
@@ -578,7 +578,7 @@ if not libxmlopt.disabled()
     cdata.set('USE_LIBXML', 1)
   endif
 else
-  libxml = dependency('', required : false)
+  libxml = dependency('', required: false)
 endif
 
 
@@ -595,7 +595,7 @@ if not libxsltopt.disabled()
     cdata.set('USE_LIBXSLT', 1)
   endif
 else
-  libxslt = dependency('', required : false)
+  libxslt = dependency('', required: false)
 endif
 
 
@@ -614,7 +614,7 @@ if not lz4opt.disabled()
   endif
 
 else
-  lz4 = dependency('', required : false)
+  lz4 = dependency('', required: false)
 endif
 
 
@@ -629,7 +629,7 @@ endif
 # that behaviour to the meson build.
 ###############################################################
 
-tcl_dep = dependency('', required : false)
+tcl_dep = dependency('', required: false)
 tclopt = get_option('pltcl')
 tcl_version = get_option('tcl_version')
 if not tclopt.disabled()
@@ -677,11 +677,11 @@ if not pamopt.disabled()
     if pam_header_found
       cdata.set('USE_PAM', 1)
     else
-      pam = dependency('', required : false)
+      pam = dependency('', required: false)
     endif
   endif
 else
-  pam = dependency('', required : false)
+  pam = dependency('', required: false)
 endif
 
 
@@ -891,7 +891,7 @@ if not get_option('readline').disabled()
       [readline_prefix, default_prefix, editline_prefix]
 
     at_least_one_header_found = false
-    foreach header: ['history', 'readline']
+    foreach header : ['history', 'readline']
       is_found = false
       foreach prefix : prefixes
         header_file = '@0@@1@.h'.format(prefix['header_prefix'], header)
@@ -957,7 +957,7 @@ Use -Dreadline=false to disable readline support.'''.format(readline_dep))
 
   # XXX: Figure out whether to implement mingw warning equivalent
 else
-  readline = dependency('', required : false)
+  readline = dependency('', required: false)
 endif
 
 
@@ -966,7 +966,7 @@ endif
 # Library: selinux
 ###############################################################
 
-selinux = dependency('', required : false)
+selinux = dependency('', required: false)
 selinuxopt = get_option('selinux')
 if meson.version().version_compare('>=0.59')
   selinuxopt = selinuxopt.disable_auto_if(host_system != 'linux')
@@ -981,14 +981,13 @@ cdata.set('HAVE_LIBSELINUX',
 # Library: systemd
 ###############################################################
 
-systemd = dependency('', required : false)
+systemd = dependency('', required: false)
 systemdopt = get_option('systemd')
 if meson.version().version_compare('>=0.59')
   systemdopt = systemdopt.disable_auto_if(host_system != 'linux')
 endif
 systemd = dependency('libsystemd', required: systemdopt)
-cdata.set('USE_SYSTEMD',
-  systemd.found() ? 1 : false)
+cdata.set('USE_SYSTEMD', systemd.found() ? 1 : false)
 
 
 
@@ -1057,7 +1056,7 @@ if get_option('ssl') == 'openssl'
     if required and not val
       error('openssl function @0@ is required'.format(func))
     elif not required
-      cdata.set('HAVE_'+func.to_upper(), val ? 1 : false)
+      cdata.set('HAVE_' + func.to_upper(), val ? 1 : false)
     endif
   endforeach
 
@@ -1068,7 +1067,7 @@ if get_option('ssl') == 'openssl'
             description: '''Define to the OpenSSL API version in use. This avoids deprecation warnings
    from newer OpenSSL versions.''')
 else
-  ssl = dependency('', required : false)
+  ssl = dependency('', required: false)
 endif
 
 
@@ -1105,7 +1104,7 @@ if uuidopt != 'none'
   cdata.set('HAVE_UUID_@0@'.format(uuidname), 1,
            description: 'Define to 1 if you have @0@ UUID support.'.format(uuidname))
 else
-  uuid = dependency('', required : false)
+  uuid = dependency('', required: false)
 endif
 
 
@@ -1115,7 +1114,7 @@ endif
 ###############################################################
 
 zlibopt = get_option('zlib')
-zlib = dependency('', required : false)
+zlib = dependency('', required: false)
 if not zlibopt.disabled()
   zlib_t = dependency('zlib', required: zlibopt)
 
@@ -1184,7 +1183,7 @@ if not zstdopt.disabled()
   endif
 
 else
-  zstd = dependency('', required : false)
+  zstd = dependency('', required: false)
 endif
 
 
@@ -1254,7 +1253,7 @@ endif
 
 alignof_types = ['short', 'int', 'long', 'double']
 maxalign = 0
-foreach t: alignof_types
+foreach t : alignof_types
   align = cc.alignment(t, args: g_c_args)
   if maxalign < align
     maxalign = align
@@ -1308,7 +1307,7 @@ if cc.links('''
   # with buggy compilers.  If cross-compiling, hope for the best.
   # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=83925
   if not meson.is_cross_build()
-    r =  cc.run('''
+    r = cc.run('''
     /* This must match the corresponding code in c.h: */
     #if defined(__GNUC__) || defined(__SUNPRO_C) || defined(__IBMC__)
     #define pg_attribute_aligned(a) __attribute__((aligned(a)))
@@ -1505,7 +1504,7 @@ common_functional_flags = [
   '-fno-strict-aliasing',
   # Disable optimizations that assume no overflow; needed for gcc 4.3+
   '-fwrapv',
-  '-fexcess-precision=standard'
+  '-fexcess-precision=standard',
 ]
 
 functional_cflags += cc.get_supported_arguments(common_functional_flags)
@@ -1571,11 +1570,11 @@ negative_warning_flags = [
 ]
 
 foreach w : negative_warning_flags
-  if cc.has_argument('-W'+w)
-    warning_cflags += '-Wno-'+w
+  if cc.has_argument('-W' + w)
+    warning_cflags += '-Wno-' + w
   endif
-  if llvm.found() and cpp.has_argument('-W'+w)
-    warning_cxxflags += '-Wno-'+w
+  if llvm.found() and cpp.has_argument('-W' + w)
+    warning_cxxflags += '-Wno-' + w
   endif
 endforeach
 
@@ -1584,7 +1583,12 @@ endforeach
 # From Project.pm
 if cc.get_id() == 'msvc'
   warning_cflags += [
-    '/wd4018', '/wd4244', '/wd4273', '/wd4101', '/wd4102', '/wd4090',
+    '/wd4018',
+    '/wd4244',
+    '/wd4273',
+    '/wd4101',
+    '/wd4102',
+    '/wd4090',
     '/wd4267',
   ]
 
@@ -1596,8 +1600,12 @@ if cc.get_id() == 'msvc'
   endif
 
   functional_cflags += [
-    '/DWIN32', '/DWINDOWS', '/D__WINDOWS__', '/D__WIN32__',
-    '/DWIN32_STACK_RLIMIT=4194304', '/D_CRT_SECURE_NO_DEPRECATE',
+    '/DWIN32',
+    '/DWINDOWS',
+    '/D__WINDOWS__',
+    '/D__WIN32__',
+    '/DWIN32_STACK_RLIMIT=4194304',
+    '/D_CRT_SECURE_NO_DEPRECATE',
     '/D_CRT_NONSTDC_NO_DEPRECATE',
   ]
 endif
@@ -1847,7 +1855,7 @@ header_checks = [
 ]
 
 foreach header : header_checks
-  varname = 'HAVE_'+header.underscorify().to_upper()
+  varname = 'HAVE_' + header.underscorify().to_upper()
 
   # Emulate autoconf behaviour of not-found->undef, found->1
   found = cc.has_header(header, include_directories: g_c_inc, args: g_c_args)
@@ -1877,7 +1885,7 @@ foreach c : decl_checks
   func = c.get(0)
   header = c.get(1)
   args = c.get(2, {})
-  varname = 'HAVE_DECL_'+func.underscorify().to_upper()
+  varname = 'HAVE_DECL_' + func.underscorify().to_upper()
 
   found = cc.has_header_symbol(header, func,
     args: g_c_args, include_directories: g_c_inc,
@@ -1911,7 +1919,7 @@ endif
 
 
 foreach c : ['opterr', 'optreset']
-  varname = 'HAVE_INT_'+c.underscorify().to_upper()
+  varname = 'HAVE_INT_' + c.underscorify().to_upper()
 
   if cc.links('''
 #include <unistd.h>
@@ -2082,7 +2090,7 @@ else
 endif
 
 
-m_dep = cc.find_library('m', required : false)
+m_dep = cc.find_library('m', required: false)
 
 # Most libraries are included only if they demonstrably provide a function we
 # need, but libm is an exception: always include it, because there are too
@@ -2090,19 +2098,19 @@ m_dep = cc.find_library('m', required : false)
 # standard functions such as pow().
 os_deps = [m_dep]
 
-rt_dep = cc.find_library('rt', required : false)
+rt_dep = cc.find_library('rt', required: false)
 
-dl_dep = cc.find_library('dl', required : false)
+dl_dep = cc.find_library('dl', required: false)
 
-util_dep = cc.find_library('util', required : false)
-posix4_dep = cc.find_library('posix4', required : false)
+util_dep = cc.find_library('util', required: false)
+posix4_dep = cc.find_library('posix4', required: false)
 
-getopt_dep = cc.find_library('getopt', required : false)
-gnugetopt_dep = cc.find_library('gnugetopt', required : false)
+getopt_dep = cc.find_library('getopt', required: false)
+gnugetopt_dep = cc.find_library('gnugetopt', required: false)
 
-execinfo_dep = cc.find_library('execinfo', required : false)
+execinfo_dep = cc.find_library('execinfo', required: false)
 
-cygipc_dep = cc.find_library('cygipc', required : false)
+cygipc_dep = cc.find_library('cygipc', required: false)
 
 # XXX: Might be worth conditioning some checks on the OS, to avoid doing
 # unnecessary checks over and over, particularly on windows.
@@ -2116,7 +2124,7 @@ func_checks = [
   ['fdatasync', {'dependencies': [rt_dep, posix4_dep], 'define': false}], # Solaris
   ['getifaddrs'],
   ['getopt', {'dependencies': [getopt_dep, gnugetopt_dep]}],
-  ['getopt_long',{'dependencies': [getopt_dep, gnugetopt_dep]}],
+  ['getopt_long', {'dependencies': [getopt_dep, gnugetopt_dep]}],
   ['getpeereid'],
   ['getpeerucred'],
   ['inet_aton'],
@@ -2153,7 +2161,7 @@ foreach c : func_checks
   kwargs = c.get(1, {})
   deps = kwargs.get('dependencies', [])
 
-  varname = 'HAVE_'+func.underscorify().to_upper()
+  varname = 'HAVE_' + func.underscorify().to_upper()
 
   found = cc.has_function(func, args: g_c_args)
 
@@ -2245,7 +2253,7 @@ if host_system == 'win32'
 endif
 
 if cc.get_id() == 'msvc'
-  ldflags += ['/fixed:no','/dynamicbase', '/nxcompat']
+  ldflags += ['/fixed:no', '/dynamicbase', '/nxcompat']
 endif
 
 if host_system == 'win32'
@@ -2605,8 +2613,8 @@ foreach t : configure_files
 endforeach
 foreach sub, fnames : generated_sources_ac
   sub = meson.build_root() / sub
-  foreach fname: fnames
-    potentially_conflicting_files += sub/fname
+  foreach fname : fnames
+    potentially_conflicting_files += sub / fname
   endforeach
 endforeach
 
@@ -2658,10 +2666,10 @@ test_prefix = prefix
 if fs.is_absolute(get_option('prefix'))
   if host_system == 'win32'
     if prefix.split(':\\').length() == 1
-        # just a drive
-        test_prefix = ''
+      # just a drive
+      test_prefix = ''
     else
-        test_prefix = prefix.split(':\\')[1]
+      test_prefix = prefix.split(':\\')[1]
     endif
   else
     assert(prefix.startswith('/'))
@@ -2695,7 +2703,7 @@ test_result_dir = meson.build_root() / 'testrun'
 # inevitable conflicts from running tests in parallel, hackishly assign
 # different ports for different tests.
 
-testport=40000
+testport = 40000
 
 test_env = environment()
 
@@ -2719,7 +2727,7 @@ endif
 # Test Generation
 ###############################################################
 
-foreach test: tests
+foreach test : tests
   test_default = {
     'name': test['name'],
     'sd': test['sd'],
@@ -2911,19 +2919,21 @@ alias_target('backend', backend_targets)
 
 if meson.version().version_compare('>=0.57')
 
-  summary({
-    'data block size' : cdata.get('BLCKSZ'),
-    'WAL block size' : cdata.get('XLOG_BLCKSZ'),
-    'segment size' : cdata.get('RELSEG_SIZE')
-    }, section: 'Data layout'
+  summary(
+    {
+      'data block size': cdata.get('BLCKSZ'),
+      'WAL block size': cdata.get('XLOG_BLCKSZ'),
+      'segment size': cdata.get('RELSEG_SIZE'),
+    },
+    section: 'Data layout',
   )
 
   summary(
     {
-      'host system' : '@0@ @1@'.format(host_system, host_cpu),
-      'build system' : '@0@ @1@'.format(build_system, build_cpu),
+      'host system': '@0@ @1@'.format(host_system, host_cpu),
+      'build system': '@0@ @1@'.format(build_system, build_cpu),
     },
-    section: 'System'
+    section: 'System',
   )
 
   summary(
@@ -2931,7 +2941,7 @@ if meson.version().version_compare('>=0.57')
       'linker': '@0@'.format(cc.get_linker_id()),
       'C compiler': '@0@ @1@'.format(cc.get_id(), cc.version()),
     },
-    section: 'Compiler'
+    section: 'Compiler',
   )
 
   summary(
@@ -2939,30 +2949,32 @@ if meson.version().version_compare('>=0.57')
       'C FLAGS, functional': ' '.join(functional_cflags),
       'C FLAGS, warnings': ' '.join(warning_cflags),
     },
-    section: 'Compiler Flags'
+    section: 'Compiler Flags',
   )
 
   if llvm.found()
     summary(
       {
-        'C++ compiler': '@0@ @1@'.format(cpp.get_id(), cpp.version())
+        'C++ compiler': '@0@ @1@'.format(cpp.get_id(), cpp.version()),
       },
-      section: 'Compiler')
+      section: 'Compiler',
+    )
 
-      summary(
+    summary(
       {
         'C++ FLAGS, functional': ' '.join(functional_cxxflags),
         'C++ FLAGS, warnings': ' '.join(warning_cxxflags),
       },
-      section: 'Compiler Flags')
+      section: 'Compiler Flags',
+    )
   endif
 
   summary(
     {
-      'bison' : '@0@ @1@'.format(bison.full_path(), bison_version),
-      'dtrace' : dtrace,
+      'bison': '@0@ @1@'.format(bison.full_path(), bison_version),
+      'dtrace': dtrace,
     },
-    section: 'Programs'
+    section: 'Programs',
   )
 
   summary(
@@ -2976,8 +2988,8 @@ if meson.version().version_compare('>=0.57')
       'libxslt': libxslt,
       'llvm': llvm,
       'lz4': lz4,
-      'nls' : libintl,
-      'pam' : pam,
+      'nls': libintl,
+      'pam': pam,
       'plperl': perl_dep,
       'plpython': python3_dep,
       'pltcl': tcl_dep,
@@ -2989,7 +3001,7 @@ if meson.version().version_compare('>=0.57')
       'zlib': zlib,
       'zstd': zstd,
     },
-    section: 'External libraries'
+    section: 'External libraries',
   )
 
 endif

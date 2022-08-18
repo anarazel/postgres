@@ -5,11 +5,11 @@ executable('pg_test_fsync',
 )
 
 tests += {
-  'name' : 'pg_test_fsync',
+  'name': 'pg_test_fsync',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
   'tap': {
-    'tests' :[
+    'tests': [
       't/001_basic.pl',
     ],
   },

@@ -30,7 +30,8 @@ parser_sources = [files('parser.c')]
 backend_scanner = custom_target('scan',
   input: ['scan.l'],
   output: ['scan.c'],
-  command: [flex_cmd, flex_backup, flex_fix_warning, '-CF', '-p', '-p', '@INPUT@'],)
+  command: [flex_cmd, flex_backup, flex_fix_warning, '-CF', '-p', '-p', '@INPUT@'],
+)
 generated_sources += backend_scanner
 parser_sources += backend_scanner
 

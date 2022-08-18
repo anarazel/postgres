@@ -121,19 +121,19 @@ common_sources_frontend_static += files(
 # layering violation, but ...
 pgcommon = {}
 pgcommon_variants = {
-  '_srv' : internal_lib_args + {
+  '_srv': internal_lib_args + {
     'sources': common_sources + [lwlocknames_h],
     'dependencies': [backend_common_code],
-   },
-  '' : default_lib_args + {
+  },
+  '': default_lib_args + {
     'sources': common_sources_frontend_static,
     'dependencies': [frontend_common_code],
-   },
-  '_shlib' : default_lib_args + {
+  },
+  '_shlib': default_lib_args + {
     'pic': true,
     'sources': common_sources_frontend_shlib,
     'dependencies': [frontend_common_code],
-   },
+  },
 }
 
 foreach name, opts : pgcommon_variants
@@ -141,7 +141,7 @@ foreach name, opts : pgcommon_variants
   # Build internal static libraries for sets of files that need to be built
   # with different cflags
   cflag_libs = []
-  foreach cflagname, sources: common_sources_cflags
+  foreach cflagname, sources : common_sources_cflags
     if sources.length() == 0
       continue
     endif

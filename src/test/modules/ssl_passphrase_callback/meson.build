@@ -7,7 +7,7 @@ ssl_passphrase_callback = shared_module('ssl_passphrase_func',
   ['ssl_passphrase_func.c'],
   kwargs: pg_mod_args + {
     'dependencies': [ssl, pg_mod_args['dependencies']],
-  }
+  },
 )
 
 # Targets to generate or remove the ssl certificate and key. Need to be copied

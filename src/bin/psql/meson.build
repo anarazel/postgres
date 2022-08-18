@@ -25,11 +25,14 @@ psql_sources += psqlscanslash
 sql_help = custom_target('psql_help',
   output: ['sql_help.c', 'sql_help.h'],
   depfile: 'sql_help.dep',
-  command: [perl, files('create_help.pl'),
-            '--docdir', '@SOURCE_ROOT@/doc/src/sgml/ref',
-            '--depfile', '@DEPFILE@',
-            '--outdir', '@OUTDIR@',
-            '--basename', 'sql_help'])
+  command: [
+    perl, files('create_help.pl'),
+    '--docdir', '@SOURCE_ROOT@/doc/src/sgml/ref',
+    '--depfile', '@DEPFILE@',
+    '--outdir', '@OUTDIR@',
+    '--basename', 'sql_help',
+  ],
+)
 generated_sources += sql_help.to_list()
 psql_sources += sql_help
 
@@ -47,7 +50,7 @@ executable('psql',
   psql_sources,
   c_pch: pch_c_h,
   include_directories: include_directories('.'),
-  dependencies : [frontend_code, libpq, readline],
+  dependencies: [frontend_code, libpq, readline],
   kwargs: default_bin_args,
 )
 

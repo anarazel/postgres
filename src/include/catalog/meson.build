@@ -99,7 +99,7 @@ output_files = ['postgres.bki', 'system_constraints.sql', 'schemapg.h', 'system_
 output_install = [dir_data, dir_data, dir_include_server / 'catalog', dir_include_server / 'catalog']
 
 foreach h : catalog_headers
-  fname = h.split('.h')[0]+'_d.h'
+  fname = h.split('.h')[0] + '_d.h'
   input += files(h)
   output_files += fname
   output_install += dir_include_server / 'catalog'
@@ -116,7 +116,7 @@ generated_catalog_headers = custom_target('generated_catalog_headers',
     perl,
     files('../../backend/catalog/genbki.pl'),
     '--include-path=@SOURCE_ROOT@/src/include',
-    '--set-version='+pg_version_major.to_string(),
+    '--set-version=' + pg_version_major.to_string(),
     '--output=@OUTDIR@', '@INPUT@'
   ],
 )
@@ -124,8 +124,8 @@ generated_catalog_headers = custom_target('generated_catalog_headers',
 generated_headers += generated_catalog_headers.to_list()
 
 # autoconf generates the file there, ensure we get a conflict
-generated_sources_ac += { 'src/backend/catalog': output_files + ['bki-stamp']}
-generated_sources_ac += { 'src/include/catalog': ['header-stamp']}
+generated_sources_ac += {'src/backend/catalog': output_files + ['bki-stamp']}
+generated_sources_ac += {'src/include/catalog': ['header-stamp']}
 
 # 'reformat-dat-files' is a convenience target for rewriting the
 # catalog data files in our standard format.  This includes collapsing

@@ -25,8 +25,8 @@ plperl_sources += custom_target('plperl_opmask.h',
 )
 
 foreach n : ['SPI', 'Util']
-  xs = files(n+'.xs')
-  xs_c_name = n+'.c'
+  xs = files(n + '.xs')
+  xs_c_name = n + '.c'
 
   # FIXME: -output option is only available in perl 5.9.3 - but that's
   # probably a fine minimum requirement?
