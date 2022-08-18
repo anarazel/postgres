@@ -249,14 +249,12 @@ if pandoc.found() and xsltproc.found()
   alldocs += postgres_epub
 endif
 
-docs = []
 if docs.length() == 0
   run_target('docs', command: [missing, 'xsltproc'])
 else
   alias_target('docs', docs)
 endif
 
-alldocs = []
 if alldocs.length() == 0
   run_target('alldocs', command: [missing, 'xsltproc'])
 else
