@@ -1151,9 +1151,6 @@ task:
   <<: *windows_template
   name: Windows - Server 2019, VS 2019 - Meson & ninja
 
-  meson_install_script:
-    - pip install meson ninja
-
   configure_script:
     - vcvarsall x64
     - mkdir subprojects
@@ -1178,9 +1175,6 @@ task:
 task:
   <<: *windows_template
   name: Windows - Server 2019, VS 2019 - Meson & msbuild
-
-  meson_install_script:
-    - pip install meson
 
   configure_script:
     - vcvarsall x64
