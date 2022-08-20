@@ -1621,7 +1621,7 @@ CC='/opt/SUNWspro/bin/cc -xtarget=native64' meson configure -Ddtrace DTRACEFLAGS
    <para>
     By default, <productname>Meson</productname> uses the
     <ulink url="https://ninja-build.org/"> Ninja build system</ulink>.
-    To build <productname>Postgres</productname> from source using meson, you can
+    To build <productname>PostgreSQL</productname> from source using meson, you can
     simply use the <literal>ninja</literal> command in the build directory.
 <screen>
 ninja
@@ -1656,40 +1656,80 @@ ninja
  <sect1 id="install-meson">
   <title>Installing the files</title>
    <para>
-    Instructions about installing files
+    Once Postgres is built, you can install it by simply running the
+    <literal>meson install</literal> command.
+
+<screen>
+meson install
+</screen>
    </para>
+
+   <para>
+    This will install files into the directories that were specified
+    in <xref linkend="configure-meson"/>. Make sure that you have appropriate
+    permissions to write into that area. You might need to do this
+    step as root. Alternatively, you can create the target
+    directories in advance and arrange for appropriate permissions to
+    be granted.
+   </para>
+
+   <para>
+    You can use <literal>meson install --strip</literal> instead of
+    <literal>meson install</literal> to strip the executable files and
+    libraries as they are installed.  This will save some space.  If
+    you built with debugging support, stripping will effectively
+    remove the debugging support, so it should only be done if
+    debugging is no longer needed.
+   </para>
+
+   <para>
+    The standard installation provides all the header files needed for client
+    application development as well as for server-side program
+    development, such as custom functions or data types written in C.
+   </para>
+
+   <para>
+    You might have to perform a few steps after installation
+    depending on your setup. Those are outlined in
+    <xref linkend="install-post"/>.
+   </para>
+
  </sect1>
 
  <sect1 id="running-tests">
   <title>Running tests</title>
    <para>
-	Instructions about running tests
+    If you want to test the newly built server, you can run the regression
+    tests. The regression tests are a collection of test suites to verify
+    that <productname>PostgreSQL</productname> runs on your machine in
+    the way the developers expected it to. To run them, simply type:
+<screen>
+<userinput>meson test</userinput>
+</screen>
+    You can repeat this at any later time by issuing the same command.
    </para>
- </sect1>
 
- <sect1 id="install-post-meson">
-  <title>Post-Installation Setup</title>
-	<para>
-	 Follow the following steps after installation
-    </para>
- </sect1>
+   <para>Meson also allows you to list tests and run specific tests or suites.
+<screen>
+# List all tests
+<userinput>meson test --list</userinput>
 
- <sect1 id="installation-platform-notes-meson">
-  <title>Platform-Specific Notes</title>
+# Run a specific test
+<userinput>meson test recovery/001_stream_rep</userinput>
 
-  <para>
-   This section documents additional platform-specific issues
-   regarding the installation and setup of PostgreSQL.  Be sure to
-   read the installation instructions, and in
-   particular <xref linkend="install-requirements-meson"/> as well.  Also,
-   check <xref linkend="regress"/> regarding the
-   interpretation of regression test results.
-  </para>
+# Run only the main pg_regress tests
+<userinput>meson test --suite main</userinput>
+</screen>
+   </para>
 
-  <para>
-   Platforms that are not covered here have no known platform-specific
-   installation issues.
-  </para>
+   <para>
+    To learn more about running the tests and how to interpret the results
+    you can refer to the documentation for interpreting test results.
+     <literal>meson test</literal> also provides a number of additional
+    options you can use which can be found in the
+    <ulink url="https://mesonbuild.com/Unit-tests.html#testing-tool">meson test documentation</ulink>.
+   </para>
+
  </sect1>
 
 </chapter>
