@@ -37,7 +37,7 @@ mkdir postgres
 cd postgres
 
 # fetch source code
-# git clone https://github.com/postgres/postgres.git src
+# git clone https://git.postgresql.org/git/postgresql.git src
 
 # current instructions for testing (to be removed when merging)
 git clone -b meson https://github.com/anarazel/postgres.git src
@@ -50,7 +50,7 @@ cd build
 ninja
 
 # Install to the prefix directory specified above
-meson install
+ninja install
 
 # Run all tests (optional, takes time)
 meson test
@@ -99,13 +99,13 @@ meson test
    <itemizedlist>
     <listitem>
      <para>
-      You can download the source code in two ways - via git or using the source code
-      distribution. For the former, you will need an installed version of
+      You can download the source code in two ways - via git or by downloading
+      the source code tarballs. For the former, you will need an installed version of
       <productname>Git</productname>, which you can get from
       <ulink url="https://git-scm.com"></ulink>. Many systems already
       have a recent version of <productname>Git</productname>
       installed by default, or available in their package distribution system.
-      If you download the source code distribution tarballs, you will need
+      If you download the source code tarballs, you will need
       <application>tar</application> in addition to
       <application>gzip</application> or <application>bzip2</application>.
      </para>
@@ -126,7 +126,7 @@ meson test
       be installed with <literal>pip</literal>.
      </para>
     </listitem>
- <listitem>
+    <listitem>
      <para>
       You need an <acronym>ISO</acronym>/<acronym>ANSI</acronym> C compiler (at least
       C99-compliant). Recent
@@ -199,7 +199,7 @@ meson test
       <filename>libedit</filename> library is GNU
       <productname>Readline</productname>-compatible and is used if
       <filename>libreadline</filename> is not found, or if
-      <option>libedit-preferred</option> is enabled as an
+      <option>libedit_preferred</option> is enabled as an
       option to <filename>meson configure</filename>. If you are using a
       package-based Linux distribution, be aware that you need both the
       <literal>readline</literal> and <literal>readline-devel</literal> packages, if
@@ -240,6 +240,42 @@ meson test
    options are enabled, as explained below:
 
    <itemizedlist>
+    <listitem>
+     <para>
+      You need <productname>OpenSSL</productname>, if you want to support
+      encrypted client connections.  <productname>OpenSSL</productname> is
+      also required for random number generation on platforms that do not
+      have <filename>/dev/urandom</filename> (except Windows).  The minimum
+      required version is 1.0.1.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      You need <productname>LZ4</productname>, if you want to support
+      compression of data with that method; see
+      <xref linkend="guc-default-toast-compression"/> and
+      <xref linkend="guc-wal-compression"/>.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      You need <productname>Zstandard</productname>, if you want to support
+      compression of data or backups with that method; see
+      <xref linkend="guc-wal-compression"/>.
+      The minimum required version is 1.4.0.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      You need <application>Kerberos</application>, <productname>OpenLDAP</productname>,
+      and/or <application>PAM</application>, if you want to support authentication
+      using those services.
+     </para>
+    </listitem>
+
     <listitem>
      <para>
       To build the server programming language
@@ -327,42 +363,6 @@ meson test
 
     <listitem>
      <para>
-      You need <productname>OpenSSL</productname>, if you want to support
-      encrypted client connections.  <productname>OpenSSL</productname> is
-      also required for random number generation on platforms that do not
-      have <filename>/dev/urandom</filename> (except Windows).  The minimum
-      required version is 1.0.1.
-     </para>
-    </listitem>
-
-    <listitem>
-     <para>
-      You need <application>Kerberos</application>, <productname>OpenLDAP</productname>,
-      and/or <application>PAM</application>, if you want to support authentication
-      using those services.
-     </para>
-    </listitem>
-
-    <listitem>
-     <para>
-      You need <productname>LZ4</productname>, if you want to support
-      compression of data with that method; see
-      <xref linkend="guc-default-toast-compression"/> and
-      <xref linkend="guc-wal-compression"/>.
-     </para>
-    </listitem>
-
-    <listitem>
-     <para>
-      You need <productname>Zstandard</productname>, if you want to support
-      compression of data with that method; see
-      <xref linkend="guc-wal-compression"/>.
-      The minimum required version is 1.4.0.
-     </para>
-    </listitem>
-
-    <listitem>
-     <para>
       To build the <productname>PostgreSQL</productname> documentation,
       there is a separate set of requirements; see
       <xref linkend="docguide-toolsets"/>.
@@ -372,19 +372,6 @@ meson test
    </para>
   </sect2>
 
-  <sect2 id="meson-disk-space">
-   <title>Disk space</title>
-   <para>
-    Check that you have sufficient disk space to build, install and run
-    <productname>PostgreSQL</productname>. You will need about 710 MB
-    for the source tree, 85MB for the build directory and about 40 MB
-    for the installation directory. An empty database cluster takes about
-    40 MB; databases take about five times the amount of space that a flat
-    text file with the same data would take. If you are going to run the
-    tests you will temporarily need up to an extra 650 MB. Use the
-    <command>df</command> command to check free disk space.
-   </para>
-  </sect2>
  </sect1>
 
  <sect1 id="get-source-meson">
@@ -392,7 +379,7 @@ meson test
 
    <para>
    You can download the source code in two ways - via git or the source code
-   distribution tarballs.
+   tarballs.
    </para>
 
   <sect2 id="get-source-git">
@@ -481,15 +468,15 @@ git pull
    <para>
     The setup command takes a <literal>builddir</literal> and a <literal>srcdir</literal>
     argument. If no <literal>srcdir</literal> is given Meson will deduce the
-    <literal>srcdir</literal> based on <literal>pwd</literal> and the location
+    <literal>srcdir</literal> based on the current directory and the location
     of <literal>meson.build</literal>. The <literal>builddir</literal> is mandatory.
    </para>
 
    <para>
-    Meson then loads the build configuration file and writes the corresponding
-    build backend in the build directory. Additionally, the invocation can pass
-    options to Meson. The list of commonly used options is in subsequent sections.
-    A few examples of specifying different build options are:
+    Meson then loads the build configuration file and sets up the build directory.
+    Additionally, the invocation can pass options to Meson. The list of commonly
+    used options is in subsequent sections. A few examples of specifying different
+    build options are:
 
 <screen>
 #Setup build directory with a different installation prefix
@@ -508,7 +495,7 @@ meson setup build -Dssl=openssl
 
 <para>
 <screen>
-meson configure --cassert=true
+meson configure -Dcassert=true
 </screen>
 </para>
 
@@ -526,7 +513,7 @@ meson configure --cassert=true
     <title>Installation Locations</title>
 
      <para>
-      These options control where <literal>meson install</literal> will put
+      These options control where <literal>ninja install (or meson install)</literal> will put
       the files.  The <option>--prefix</option> option is sufficient for
       most cases.  If you have special needs, you can customize the
       installation subdirectories with the other options described in this
@@ -673,7 +660,7 @@ meson configure --cassert=true
      <variablelist>
 
       <varlistentry>
-       <term><option>-Dnls=<replaceable>enabled/disabled/auto</replaceable></option></term>
+       <term><option>-Dnls=<replaceable>auto/enabled/disabled</replaceable></option></term>
        <listitem>
         <para>
          Enables or Disables Native Language Support (<acronym>NLS</acronym>),
@@ -690,7 +677,7 @@ meson configure --cassert=true
       </varlistentry>
 
       <varlistentry>
-       <term><option>-Dplperl=<replaceable>enabled/disabled/auto</replaceable></option></term>
+       <term><option>-Dplperl=<replaceable>auto/enabled/disabled</replaceable></option></term>
        <listitem>
         <para>
          Build the <application>PL/Perl</application> server-side language. It
@@ -701,7 +688,7 @@ meson configure --cassert=true
       </varlistentry>
 
       <varlistentry>
-       <term><option>-Dplpython=<replaceable>enabled/disabled/auto</replaceable></option></term>
+       <term><option>-Dplpython=<replaceable>auto/enabled/disabled</replaceable></option></term>
        <listitem>
         <para>
          Build the <application>PL/Python</application> server-side language.
@@ -712,7 +699,7 @@ meson configure --cassert=true
       </varlistentry>
 
       <varlistentry>
-       <term><option>-Dpltcl=<replaceable>enabled/disabled/auto</replaceable></option></term>
+       <term><option>-Dpltcl=<replaceable>auto/enabled/disabled</replaceable></option></term>
        <listitem>
         <para>
          Build the <application>PL/Tcl</application> server-side language.
@@ -734,7 +721,7 @@ meson configure --cassert=true
       </varlistentry>
 
       <varlistentry>
-       <term><option>-Dicu=<replaceable>enabled/disabled/auto</replaceable></option></term>
+       <term><option>-Dicu=<replaceable>auto/enabled/disabled</replaceable></option></term>
        <listitem>
         <para>
          Build with support for
@@ -754,23 +741,13 @@ meson configure --cassert=true
          <productname>pkg-config</productname><indexterm><primary>pkg-config</primary></indexterm>
          will be used to find the required compilation options.  This is
          supported for <productname>ICU4C</productname> version 4.6 and later.
-         For older versions, or if <productname>pkg-config</productname> is
-         not available, the variables <envar>ICU_CFLAGS</envar>
-         and <envar>ICU_LIBS</envar> can be specified
-         to <filename>configure</filename>, like in this example:
-<programlisting>
-meson configure ... -Dicu ICU_CFLAGS='-I/some/where/include' ICU_LIBS='-L/some/where/lib -licui18n -licuuc -licudata'
-</programlisting>
-         (If <productname>ICU4C</productname> is in the default search path
-         for the compiler, then you still need to specify nonempty strings in
-         order to avoid use of <productname>pkg-config</productname>, for
-         example, <literal>ICU_CFLAGS=' '</literal>.)
+         <!-- Add description for older ICU4C versions and when pkg-config isn't available-->
         </para>
        </listitem>
       </varlistentry>
 
       <varlistentry id="configure-with-llvm-meson">
-       <term><option>-Dllvm=<replaceable>enabled/disabled/auto</replaceable></option></term>
+       <term><option>-Dllvm=<replaceable>auto/enabled/disabled</replaceable></option></term>
        <listitem>
         <para>
          Build with support for <productname>LLVM</productname> based
@@ -786,13 +763,8 @@ meson configure ... -Dicu ICU_CFLAGS='-I/some/where/include' ICU_LIBS='-L/some/w
          will be used to find the required compilation options.
          <command>llvm-config</command>, and then
          <command>llvm-config-$major-$minor</command> for all supported
-         versions, will be searched for in your <envar>PATH</envar>.  If
-         that would not yield the desired program,
-         use <envar>LLVM_CONFIG</envar> to specify a path to the
-         correct <command>llvm-config</command>. For example
-<programlisting>
-meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
-</programlisting>
+         versions, will be searched for in your <envar>PATH</envar>.
+         <!--Add substitute fo LLVM_CONFIG when llvm-config is not in PATH-->
         </para>
 
         <para>
@@ -806,7 +778,7 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
       </varlistentry>
 
       <varlistentry>
-       <term><option>-Dlz4=<replaceable>enabled/disabled/auto</replaceable></option></term>
+       <term><option>-Dlz4=<replaceable>auto/enabled/disabled</replaceable></option></term>
        <listitem>
         <para>
          Build with <productname>LZ4</productname> compression support.
@@ -817,7 +789,7 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
       </varlistentry>
 
       <varlistentry>
-       <term><option>-Dzstd=<replaceable>enabled/disabled/auto</replaceable></option></term>
+       <term><option>-Dzstd=<replaceable>auto/enabled/disabled</replaceable></option></term>
        <listitem>
         <para>
          Build with <productname>Zstandard</productname> compression support.
@@ -849,7 +821,7 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
       </varlistentry>
 
       <varlistentry>
-       <term><option>-Dgssapi=<replaceable>enabled/disabled/auto</replaceable></option></term>
+       <term><option>-Dgssapi=<replaceable>auto/enabled/disabled</replaceable></option></term>
        <listitem>
         <para>
          Build with support for GSSAPI authentication. On many systems, the
@@ -868,7 +840,7 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
       </varlistentry>
 
       <varlistentry>
-       <term><option>-Dldap=<replaceable>enabled/disabled/auto</replaceable></option></term>
+       <term><option>-Dldap=<replaceable>auto/enabled/disabled</replaceable></option></term>
        <listitem>
         <para>
          Build with <acronym>LDAP</acronym><indexterm><primary>LDAP</primary></indexterm>
@@ -887,7 +859,7 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
       </varlistentry>
 
       <varlistentry>
-       <term><option>-Dpam=<replaceable>enabled/disabled/auto</replaceable></option></term>
+       <term><option>-Dpam=<replaceable>auto/enabled/disabled</replaceable></option></term>
        <listitem>
         <para>
          Build with <acronym>PAM</acronym><indexterm><primary>PAM</primary></indexterm>
@@ -898,7 +870,7 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
       </varlistentry>
 
       <varlistentry>
-       <term><option>-Dbsd-auth=<replaceable>enabled/disabled/auto</replaceable></option></term>
+       <term><option>-Dbsd_auth=<replaceable>auto/enabled/disabled</replaceable></option></term>
        <listitem>
         <para>
          Build with BSD Authentication support. (The BSD Authentication framework is
@@ -909,7 +881,7 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
       </varlistentry>
 
       <varlistentry>
-       <term><option>-Dsystemd=<replaceable>enabled/disabled/auto</replaceable></option></term>
+       <term><option>-Dsystemd=<replaceable>auto/enabled/disabled</replaceable></option></term>
        <listitem>
         <para>
          Build with support
@@ -926,7 +898,7 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
       </varlistentry>
 
       <varlistentry>
-       <term><option>-Dbonjour=<replaceable>enabled/disabled/auto</replaceable></option></term>
+       <term><option>-Dbonjour=<replaceable>auto/enabled/disabled</replaceable></option></term>
        <listitem>
         <para>
          Build with support for Bonjour automatic service discovery.
@@ -977,7 +949,7 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
       </varlistentry>
 
       <varlistentry>
-       <term><option>-Dlibxml=<replaceable>enabled/disabled/auto</replaceable></option></term>
+       <term><option>-Dlibxml=<replaceable>auto/enabled/disabled</replaceable></option></term>
        <listitem>
         <para>
          Build with libxml2, enabling SQL/XML support.  Libxml2 version 2.6.23 or
@@ -997,21 +969,13 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
         <para>
          To use a libxml2 installation that is in an unusual location, you
          can set <command>pkg-config</command>-related environment
-         variables (see its documentation), or set the environment variable
-         <envar>XML2_CONFIG</envar> to point to
-         the <command>xml2-config</command> program belonging to the libxml2
-         installation, or set the variables <envar>XML2_CFLAGS</envar>
-         and <envar>XML2_LIBS</envar>.  (If <command>pkg-config</command> is
-         installed, then to override its idea of where libxml2 is you must
-         either set <envar>XML2_CONFIG</envar> or set
-         both <envar>XML2_CFLAGS</envar> and <envar>XML2_LIBS</envar> to
-         nonempty strings.)
+         variables (see its documentation).
         </para>
        </listitem>
       </varlistentry>
 
       <varlistentry>
-       <term><option>-Dlibxslt=<replaceable>enabled/disabled/auto</replaceable></option></term>
+       <term><option>-Dlibxslt=<replaceable>auto/enabled/disabled</replaceable></option></term>
        <listitem>
         <para>
          Build with libxslt, enabling the
@@ -1025,7 +989,7 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
       </varlistentry>
 
       <varlistentry>
-       <term><option>-Dreadline=<replaceable>enabled/disabled/auto</replaceable></option></term>
+       <term><option>-Dreadline=<replaceable>auto/enabled/disabled</replaceable></option></term>
        <listitem>
         <para>
          Allows use of the <application>Readline</application> library
@@ -1051,7 +1015,7 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
       </varlistentry>
 
       <varlistentry>
-       <term><option>-Dzlib=<replaceable>enabled/disabled/auto</replaceable></option></term>
+       <term><option>-Dzlib=<replaceable>auto/enabled/disabled</replaceable></option></term>
        <listitem>
         <para>
          <indexterm>
@@ -1105,7 +1069,7 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
      <variablelist>
 
       <varlistentry>
-       <term><option>--auto_features=<replaceable>enabled/disabled/auto</replaceable></option></term>
+       <term><option>--auto_features=<replaceable>auto/enabled/disabled</replaceable></option></term>
        <listitem>
         <para>
          Setting this option allows you to override value of all 'auto' features.
@@ -1121,9 +1085,8 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
        <listitem>
         <para>
          The default backend meson uses is ninja and that should suffice for most use cases.
-         However, if you'd like to use a different build system to build Postgres, you can
-         set it using this option. The accepted values for BACKEND are:
-         <command>ninja,vs,vs2010,vs2012,vs2013,vs2015,vs2017,vs2019,vs2022 and xcode</command>.
+         However, if you'd like to fully integrate with visual studio, you can set the
+         BACKEND to <command>vs</command>.
         </para>
        </listitem>
       </varlistentry>
@@ -1181,7 +1144,7 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
       </varlistentry>
 
       <varlistentry>
-       <term><option>-Dsystem-tzdata=<replaceable>DIRECTORY</replaceable></option>
+       <term><option>-Dsystem_tzdata=<replaceable>DIRECTORY</replaceable></option>
        <indexterm>
         <primary>time zone data</primary>
        </indexterm>
@@ -1248,46 +1211,18 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
       </varlistentry>
      </variablelist>
    </sect2>
-   <sect2 id="configure-misc">
-    <title>Miscellaneous</title>
+
+   <sect2 id="configure-layout">
+    <title>Data layout</title>
 
     <para>
-     It's fairly common, particularly for test builds, to adjust the
-     default port number with <option>-Dpgport</option>.
-     The other options in this section are recommended only for advanced
-     users.
+     These options affect how PostgreSQL lays out data on disk.
+     Note that changing these breaks on-disk database compatibility,
+     meaning you cannot use <command>pg_upgrade</command> to upgrade to
+     a build with a different value of these options.
     </para>
 
-     <variablelist>
-
-      <varlistentry>
-       <term><option>-Dpgport=<replaceable>NUMBER</replaceable></option></term>
-       <listitem>
-        <para>
-         Set <replaceable>NUMBER</replaceable> as the default port number for
-         server and clients. The default is 5432. The port can always
-         be changed later on, but if you specify it here then both
-         server and clients will have the same default compiled in,
-         which can be very convenient.  Usually the only good reason
-         to select a non-default value is if you intend to run multiple
-         <productname>PostgreSQL</productname> servers on the same machine.
-        </para>
-       </listitem>
-      </varlistentry>
-
-      <varlistentry>
-       <term><option>-Dkrb-srvnam=<replaceable>NAME</replaceable></option></term>
-       <listitem>
-        <para>
-         The default name of the Kerberos service principal used
-         by GSSAPI.
-         <literal>postgres</literal> is the default. There's usually no
-         reason to change this unless you are building for a Windows
-         environment, in which case it must be set to upper case
-         <literal>POSTGRES</literal>.
-        </para>
-       </listitem>
-      </varlistentry>
+    <variablelist>
 
       <varlistentry>
        <term><option>-Dsegsize=<replaceable>SEGSIZE</replaceable></option></term>
@@ -1307,9 +1242,6 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
          also set limits on the usable file size.
          It is recommended, though not absolutely required, that this value
          be a power of 2.
-         Note that changing this value breaks on-disk database compatibility,
-         meaning you cannot use <command>pg_upgrade</command> to upgrade to
-         a build with a different segment size.
         </para>
        </listitem>
       </varlistentry>
@@ -1323,15 +1255,12 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
          is suitable for most situations; but other values may be useful
          in special cases.
          The value must be a power of 2 between 1 and 32 (kilobytes).
-         Note that changing this value breaks on-disk database compatibility,
-         meaning you cannot use <command>pg_upgrade</command> to upgrade to
-         a build with a different block size.
         </para>
        </listitem>
       </varlistentry>
 
       <varlistentry>
-       <term><option>-Dwal-blocksize=<replaceable>BLOCKSIZE</replaceable></option></term>
+       <term><option>-Dwal_blocksize=<replaceable>BLOCKSIZE</replaceable></option></term>
        <listitem>
         <para>
          Set the <firstterm>WAL block size</firstterm>, in kilobytes.  This is the unit
@@ -1339,16 +1268,13 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
          is suitable for most situations; but other values may be useful
          in special cases.
          The value must be a power of 2 between 1 and 64 (kilobytes).
-         Note that changing this value breaks on-disk database compatibility,
-         meaning you cannot use <command>pg_upgrade</command> to upgrade to
-         a build with a different WAL block size.
         </para>
        </listitem>
       </varlistentry>
 
-     </variablelist>
-
+    </variablelist>
    </sect2>
+
    <sect2 id="configure-devel">
     <title>Developer Options</title>
 
@@ -1364,9 +1290,8 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
 
     <para>
      When building an installation that will be used to develop code inside
-     the server, it is recommended to use at least the
-     options <option>--debug</option>
-     and <option>-Dcassert</option>.
+     the server, it is recommended to use atleast the <option>--buildtype=debug</option>
+     and <option>-Dcassert</option> options.
     </para>
 
      <variablelist>
@@ -1574,7 +1499,7 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
       </varlistentry>
 
       <varlistentry>
-       <term><option>-Ddtrace=<replaceable>enabled/disabled/auto</replaceable></option></term>
+       <term><option>-Ddtrace=<replaceable>auto/enabled/disabled</replaceable></option></term>
        <listitem>
         <para>
          <indexterm>
@@ -1594,26 +1519,46 @@ meson configure ... --with-llvm LLVM_CONFIG='/path/to/llvm/bin/llvm-config'
          which might not be in your <envar>PATH</envar>.
         </para>
 
+       </listitem>
+      </varlistentry>
+     </variablelist>
+   </sect2>
+
+   <sect2 id="configure-misc">
+    <title>Miscellaneous</title>
+
+     <variablelist>
+      <varlistentry>
+       <term><option>-Dpgport=<replaceable>NUMBER</replaceable></option></term>
+       <listitem>
         <para>
-         Extra command-line options for the <command>dtrace</command> program
-         can be specified in the environment variable
-         <envar>DTRACEFLAGS</envar>.  On Solaris,
-         to include DTrace support in a 64-bit binary, you must specify
-         <literal>DTRACEFLAGS="-64"</literal>.  For example,
-         using the GCC compiler:
-<screen>
-CC='gcc -m64' meson configure -Ddtrace DTRACEFLAGS='-64' ...
-</screen>
-         Using Sun's compiler:
-<screen>
-CC='/opt/SUNWspro/bin/cc -xtarget=native64' meson configure -Ddtrace DTRACEFLAGS='-64' ...
-</screen>
+         Set <replaceable>NUMBER</replaceable> as the default port number for
+         server and clients. The default is 5432. The port can always
+         be changed later on, but if you specify it here then both
+         server and clients will have the same default compiled in,
+         which can be very convenient.  Usually the only good reason
+         to select a non-default value is if you intend to run multiple
+         <productname>PostgreSQL</productname> servers on the same machine.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-Dkrb_srvnam=<replaceable>NAME</replaceable></option></term>
+       <listitem>
+        <para>
+         The default name of the Kerberos service principal used
+         by GSSAPI.
+         <literal>postgres</literal> is the default. There's usually no
+         reason to change this unless you are building for a Windows
+         environment, in which case it must be set to upper case
+         <literal>POSTGRES</literal>.
         </para>
        </listitem>
       </varlistentry>
      </variablelist>
-
    </sect2>
+
  </sect1>
 
  <sect1 id="build-meson">
@@ -1657,10 +1602,10 @@ ninja
   <title>Installing the files</title>
    <para>
     Once Postgres is built, you can install it by simply running the
-    <literal>meson install</literal> command.
+    <literal>ninja install</literal> command.
 
 <screen>
-meson install
+ninja install
 </screen>
    </para>
 
@@ -1668,31 +1613,43 @@ meson install
     This will install files into the directories that were specified
     in <xref linkend="configure-meson"/>. Make sure that you have appropriate
     permissions to write into that area. You might need to do this
-    step as root. Alternatively, you can create the target
-    directories in advance and arrange for appropriate permissions to
-    be granted.
-   </para>
-
-   <para>
-    You can use <literal>meson install --strip</literal> instead of
-    <literal>meson install</literal> to strip the executable files and
-    libraries as they are installed.  This will save some space.  If
-    you built with debugging support, stripping will effectively
-    remove the debugging support, so it should only be done if
-    debugging is no longer needed.
-   </para>
-
-   <para>
+    step as root. Alternatively, you can create the target directories
+    in advance and arrange for appropriate permissions to be granted.
     The standard installation provides all the header files needed for client
     application development as well as for server-side program
     development, such as custom functions or data types written in C.
    </para>
 
    <para>
-    You might have to perform a few steps after installation
-    depending on your setup. Those are outlined in
+    <literal>ninja install</literal> should work for most cases
+    but if you'd like to use more options, you could also use
+    <literal>meson install</literal> instead. You can learn more about
+    <ulink url="https://mesonbuild.com/Commands.html#install">meson install</ulink>
+    and it's options in the meson documentation.
+   </para>
+
+   <para>
+    Depending on your platform and setup, you might have to perform a
+    few steps after installation. Those are outlined in
     <xref linkend="install-post"/>.
    </para>
+
+  <formalpara>
+   <title>Uninstallation:</title>
+   <para>
+    To undo the installation, you can use the <command>ninja
+    uninstall</command> command.
+   </para>
+  </formalpara>
+
+  <formalpara>
+   <title>Cleaning:</title>
+   <para>
+    After the installation you can free disk space by removing the built
+    files from the source tree with the <command>ninja clean</command>
+    command.
+   </para>
+  </formalpara>
 
  </sect1>
 
@@ -1717,7 +1674,7 @@ meson install
 # Run a specific test
 <userinput>meson test recovery/001_stream_rep</userinput>
 
-# Run only the main pg_regress tests
+# Run the main pg_regress and isolation tests
 <userinput>meson test --suite main</userinput>
 </screen>
    </para>
