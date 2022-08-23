@@ -11,6 +11,8 @@ bool_plperl = shared_module('bool_plperl',
   include_directories: [plperl_inc, include_directories('.')],
   kwargs: pg_mod_args + {
     'dependencies': [perl_dep, contrib_mod_args['dependencies']],
+    'install_rpath': ':'.join(mod_install_rpaths + ['@0@/CORE'.format(archlibexp)]),
+    'build_rpath': '@0@/CORE'.format(archlibexp),
   },
 )
 

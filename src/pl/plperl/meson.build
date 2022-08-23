@@ -44,6 +44,8 @@ shared_module('plperl',
   include_directories: [plperl_inc, postgres_inc],
   kwargs: pg_mod_args + {
     'dependencies': [perl_dep, pg_mod_args['dependencies']],
+    'install_rpath': ':'.join(mod_install_rpaths + ['@0@/CORE'.format(archlibexp)]),
+    'build_rpath': '@0@/CORE'.format(archlibexp),
   },
 )
 

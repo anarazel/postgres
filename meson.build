@@ -764,29 +764,11 @@ else
     perl_msg = 'missing perl.h'
   endif
 
-  # Find perl library. This is made more complicated by the fact that the name
-  # Config.pm returns isn't directly usable (sometimes lib needs to be chopped
-  # off)
-  if perl_may_work
-    foreach p : ['perl', 'libperl', libperl, libperl.strip('lib'), fs.stem(libperl), fs.stem(libperl).strip('lib')]
-      perl_dep_int = cc.find_library(p,
-        dirs: ['@0@/CORE'.format(archlibexp)],
-        required: false)
-      if perl_dep_int.found()
-        break
-      endif
-    endforeach
-
-    if not perl_dep_int.found()
-      perl_may_work = false
-      perl_msg = 'missing libperl'
-    endif
-  endif
-
   if perl_may_work
     perl_ccflags_r = run_command(perl_conf_cmd, 'ccflags', check: true).stdout()
     message('CCFLAGS recommended by Perl: @0@'.format(perl_ccflags_r))
 
+    # See comments for PGAC_CHECK_PERL_EMBED_CCFLAGS in perl.m4
     foreach flag : perl_ccflags_r.split(' ')
       if flag.startswith('-D') and \
         (not flag.startswith('-D_') or flag == '_USE_32BIT_TIME_T')
@@ -800,17 +782,17 @@ else
 
     message('CCFLAGS for embedding perl: @0@'.format(' '.join(perl_ccflags)))
 
+    # We are after Embed's ldopts, but without the subset mentioned in
+    # Config's ccdlflags and ldflags.  (Those are the choices of those who
+    # built the Perl installation, which are not necessarily appropriate
+    # for building PostgreSQL.)
     ldopts = run_command(perl, '-MExtUtils::Embed', '-e', 'ldopts', check: true).stdout().strip()
+    undesired = run_command(perl_conf_cmd, 'ccdlflags', check: true).stdout().split()
+    undesired += run_command(perl_conf_cmd, 'ldflags', check: true).stdout().split()
 
     perl_ldopts = []
     foreach ldopt : ldopts.split(' ')
-      if ldopt == ''
-        continue
-      # strawberry perl unhelpfully has that in ldopts
-      elif ldopt == '-s'
-        continue
-      # AIX perl has export file in ldopts
-      elif ldopt.startswith('-bE')
+      if ldopt == '' or ldopt in undesired
         continue
       endif
 
@@ -822,20 +804,44 @@ else
     message('LDFLAGS for embedding perl: "@0@" (ldopts: "@1@")'.format(
       ' '.join(perl_ldopts), ldopts))
 
-    if perl_dep_int.found()
-      perl_dep = declare_dependency(
-        compile_args: perl_ccflags,
-        link_args: perl_ldopts,
-        version: perlversion,
-      )
+    perl_dep_int = declare_dependency(
+      compile_args: perl_ccflags,
+      link_args: perl_ldopts,
+      version: perlversion,
+    )
+
+    # While we're at it, check that we can link to libperl.
+    # On most platforms, if perl.h is there then libperl.so will be too, but at
+    # this writing Debian packages them separately.
+    # This doesn't work on old meson versions, but that's ok, it's just nicer
+    # to test here.
+    perl_link_test = '''
+/* see plperl.h */
+#ifdef _MSC_VER
+#define __inline__ inline
+#endif
+#include <EXTERN.h>
+#include <perl.h>
+int main(void)
+{
+perl_alloc();
+}'''
+    if meson.version().version_compare('>=0.57') and not \
+        cc.links(perl_link_test, name: 'libperl',
+          args: g_c_args + perl_ccflags + perl_ldopts)
+      perl_may_work = false
+      perl_msg = 'missing libperl'
     endif
+
   endif # perl_may_work
 
-  if not perl_may_work
+  if perl_may_work
+    perl_dep = perl_dep_int
+  else
     if perlopt.enabled()
-      error('dependency perl failed: @0@'.format(perl_msg))
+      error('dependency plperl failed: @0@'.format(perl_msg))
     else
-      message('disabling optional dependency perl: @0@'.format(perl_msg))
+      message('disabling optional dependency plperl: @0@'.format(perl_msg))
     endif
   endif
 endif

@@ -11,6 +11,8 @@ hstore_plperl = shared_module('hstore_plperl',
   include_directories: [plperl_inc, hstore_inc],
   kwargs: pg_mod_args + {
     'dependencies': [perl_dep, contrib_mod_args['dependencies']],
+    'install_rpath': ':'.join(mod_install_rpaths + ['@0@/CORE'.format(archlibexp)]),
+    'build_rpath': '@0@/CORE'.format(archlibexp),
   },
 )
 
