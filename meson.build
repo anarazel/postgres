@@ -20,8 +20,20 @@ project('postgresql',
 # Basic prep
 ###############################################################
 
-host_system = host_machine.system() == 'windows' ? 'win32' : host_machine.system()
-build_system = build_machine.system() == 'windows' ? 'win32' : build_machine.system()
+# Normalize meson's system name to our traditional names, this is currently
+# required as we use host_system to map src/include/port/$host_system.h to
+# src/include/pg_config_os.h
+
+host_system = host_machine.system()
+if host_system == 'windows'
+  host_system = 'win32'
+elif host_system == 'sunos'
+  host_system = 'solaris'
+endif
+
+# But we don't need to do the same for the build system - should we though,
+# for symmetry?
+build_system = build_machine.system()
 
 host_cpu = host_machine.cpu_family()
 build_cpu = build_machine.cpu_family()
@@ -133,6 +145,8 @@ endif
 
 if host_system == 'linux' or host_system == 'cygwin'
   g_c_args += '-D_GNU_SOURCE'
+elif host_system == 'solaris'
+  g_c_args += '-D_POSIX_PTHREAD_SEMANTICS'
 endif
 
 
@@ -2095,6 +2109,8 @@ execinfo_dep = cc.find_library('execinfo', required: false)
 
 cygipc_dep = cc.find_library('cygipc', required: false)
 
+socket_dep = cc.find_library('socket', required: false)
+
 # XXX: Might be worth conditioning some checks on the OS, to avoid doing
 # unnecessary checks over and over, particularly on windows.
 func_checks = [
@@ -2127,6 +2143,7 @@ func_checks = [
   ['shm_open', {'dependencies': [rt_dep], 'define': false}],
   ['shm_unlink', {'dependencies': [rt_dep], 'define': false}],
   ['shmget', {'dependencies': [cygipc_dep], 'define': false}],
+  ['socket', {'dependencies': [socket_dep], 'define': false}],
   ['strchrnul'],
   ['strerror_r', {'dependencies': [thread_dep]}],
   ['strlcat'],
@@ -2195,6 +2212,10 @@ elif host_system == 'win32'
   else
     export_fmt = '@0@'
   endif
+elif host_system == 'solaris'
+  dlsuffix = '.so'
+  export_file_format = 'gnu'
+  export_fmt = '-Wl,-M@0@'
 else
   dlsuffix = '.so'
   export_file_format = 'gnu'
