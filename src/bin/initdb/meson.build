@@ -7,7 +7,7 @@ initdb_sources += timezone_localtime_source
 
 #fixme: reimplement libpq_pgport logic
 
-if host_system == 'win32'
+if host_system == 'windows'
   initdb_sources += windows.compile_resources(
     custom_target('win32ver.rc', kwargs: rcgen_kw,
       command: rcgen_bin_cmd + [

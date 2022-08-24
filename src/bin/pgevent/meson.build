@@ -1,4 +1,4 @@
-if host_system != 'win32'
+if host_system != 'windows'
   subdir_done()
 endif
 

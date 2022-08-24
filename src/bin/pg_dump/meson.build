@@ -11,7 +11,7 @@ pg_dump_common_sources = files(
   'pg_backup_utils.c',
 )
 
-if host_system == 'win32'
+if host_system == 'windows'
   pg_dump_common_sources += windows.compile_resources(
     custom_target('win32ver.rc', kwargs: rcgen_kw,
       command: rcgen_bin_cmd + [

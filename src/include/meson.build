@@ -9,7 +9,7 @@ configure_files += pg_config_ext
 
 pg_config_os = configure_file(
   output: 'pg_config_os.h',
-  input: files('port/@0@.h'.format(host_system)),
+  input: files('port/@0@.h'.format(portname)),
   install: true,
   install_dir: dir_include,
   copy: true,

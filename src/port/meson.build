@@ -21,7 +21,7 @@ pgport_sources = [
   'thread.c',
 ]
 
-if host_system == 'win32'
+if host_system == 'windows'
   pgport_sources += files(
     'dirmod.c',
     'kill.c',
@@ -65,7 +65,7 @@ replace_funcs_neg = [
   ['strnlen'],
 ]
 
-if host_system != 'win32'
+if host_system != 'windows'
   replace_funcs_neg += [['pthread_barrier_wait']]
 endif
 
@@ -119,7 +119,7 @@ foreach f : replace_funcs_pos
 endforeach
 
 
-if (host_system == 'win32' or host_system == 'cygwin') and \
+if (host_system == 'windows' or host_system == 'cygwin') and \
   (cc.get_id() != 'msvc' or cc.version().version_compare('<14.0'))
 
   # Cygwin and (apparently, based on test results) Mingw both

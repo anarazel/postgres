@@ -36,7 +36,7 @@ sql_help = custom_target('psql_help',
 generated_sources += sql_help.to_list()
 psql_sources += sql_help
 
-if host_system == 'win32'
+if host_system == 'windows'
   psql_sources += windows.compile_resources(
     custom_target('win32ver.rc', kwargs: rcgen_kw,
       command: rcgen_bin_cmd + [

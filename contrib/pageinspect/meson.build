@@ -9,7 +9,7 @@ pageinspect_sources = files(
   'rawpage.c',
 )
 
-if host_system == 'win32'
+if host_system == 'windows'
   pageinspect_sources += windows.compile_resources(
     custom_target('win32ver.rc', kwargs: rcgen_kw,
       command: rcgen_lib_cmd + [

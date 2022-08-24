@@ -37,7 +37,7 @@ backend_link_args = []
 backend_link_depends = []
 backend_c_args = []
 
-if host_system == 'win32'
+if host_system == 'windows'
   if cc.get_id() == 'msvc'
     backend_link_args += '/STACK:@0@'.format(cdata.get('WIN32_STACK_RLIMIT'))
   else
@@ -171,7 +171,7 @@ endif
 # Windows / MacOS link shared modules against postgres. To avoid unnecessary
 # build-time dependencies on other operating systems, only add it when
 # necessary.
-if host_system == 'darwin' or host_system == 'win32'
+if host_system == 'darwin' or host_system == 'windows'
   pg_mod_args += {
     'link_with': pg_mod_args['link_with'] + [postgres],
   }
@@ -267,7 +267,7 @@ elif host_system == 'darwin'
   pg_ext_libs += ['-bundle_loader', '${mod_link_with}']
   pg_ext_vars_inst += 'mod_link_with=@0@'.format('${prefix}' / dir_bin / 'postgres')
   pg_ext_vars_uninst += 'mod_link_with=@0@'.format(postgres.full_path())
-elif host_system == 'win32'
+elif host_system == 'windows'
   if cc.get_id() == 'msvc'
     name = 'postgres.exe.lib'
   else

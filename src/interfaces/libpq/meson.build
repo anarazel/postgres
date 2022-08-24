@@ -17,7 +17,7 @@ libpq_sources = files(
   'pqexpbuffer.c',
 )
 
-if host_system == 'win32'
+if host_system == 'windows'
   libpq_sources += files('pthread-win32.c', 'win32.c')
 endif
 
@@ -41,7 +41,7 @@ export_file = custom_target('libpq.exports',
 libpq_inc = include_directories('.', '../../port')
 libpq_link_depends = []
 
-if host_system == 'win32'
+if host_system == 'windows'
   libpq_deps += cc.find_library('secur32', required: true)
 endif
 
@@ -51,7 +51,7 @@ libpq_both = both_libraries('libpq',
   c_args: ['-DSO_MAJOR_VERSION=5'],
   dependencies: libpq_deps,
   version: '5.' + pg_version_major.to_string(),
-  soversion: host_system != 'win32' ? '5' : '',
+  soversion: host_system != 'windows' ? '5' : '',
   darwin_versions: ['5', '5.' + pg_version_major.to_string()],
   link_depends: export_file,
   link_args: export_fmt.format(export_file.full_path()),

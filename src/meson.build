@@ -34,7 +34,7 @@ pgxs_kv = {
   'host': '@0@-@1@'.format(host_cpu, host_system),
   'host_os': host_system,
   'build_os': build_system,
-  'PORTNAME': host_system,
+  'PORTNAME': portname,
 
   'abs_top_builddir': meson.build_root(),
   'abs_top_srcdir': meson.source_root(),
@@ -258,7 +258,7 @@ configure_files += makefile_global
 
 # FIXME: check if exists
 makefile_port = configure_file(
-  input: 'makefiles' / 'Makefile.@0@'.format(host_system),
+  input: 'makefiles' / 'Makefile.@0@'.format(portname),
   output: 'Makefile.port',
   copy: true,
   install_dir: dir_pgxs / 'src')

@@ -19,27 +19,27 @@ project('postgresql',
 # Basic prep
 ###############################################################
 
-# Normalize meson's system name to our traditional names, this is currently
-# required as we use host_system to map src/include/port/$host_system.h to
-# src/include/pg_config_os.h
-
 host_system = host_machine.system()
-if host_system == 'windows'
-  host_system = 'win32'
-elif host_system == 'sunos'
-  host_system = 'solaris'
-endif
-
-# But we don't need to do the same for the build system - should we though,
-# for symmetry?
 build_system = build_machine.system()
+
+# meson's system names don't quite map to our "traditional" names. In some
+# places we need the "traditional" name, e.g., for mapping
+# src/include/port/$os.h to src/include/pg_config_os.h. Define portname for
+# that purpose
+if host_system == 'windows'
+  portname = 'win32'
+elif host_system == 'sunos'
+  portname = 'solaris'
+else
+  portname = host_system
+endif
 
 host_cpu = host_machine.cpu_family()
 build_cpu = build_machine.cpu_family()
 
 fs = import('fs')
 pkgconfig = import('pkgconfig')
-if host_system == 'win32'
+if host_system == 'windows'
   windows = import('windows')
 endif
 
@@ -145,7 +145,7 @@ endif
 
 if host_system == 'linux' or host_system == 'cygwin'
   g_c_args += '-D_GNU_SOURCE'
-elif host_system == 'solaris'
+elif host_system == 'sunos'
   g_c_args += '-D_POSIX_PTHREAD_SEMANTICS'
 endif
 
@@ -165,7 +165,7 @@ postgres_inc_d = ['src/include']
 
 # Windows replacement headers - need them to be usable during the feature
 # tests below.
-if host_system == 'win32'
+if host_system == 'windows'
   postgres_inc_d += 'src/include/port/win32'
   if cc.get_id() == 'msvc'
     postgres_inc_d += 'src/include/port/win32_msvc'
@@ -435,7 +435,7 @@ endif
 ldapopt = get_option('ldap')
 if not ldapopt.disabled()
 
-  if host_system == 'win32'
+  if host_system == 'windows'
     ldap = cc.find_library('wldap32')
     ldap_r = ldap
   else
@@ -777,7 +777,7 @@ else
       endif
     endforeach
 
-    if host_system == 'win32'
+    if host_system == 'windows'
       perl_ccflags += ['-DPLPERL_HAVE_UID_GID']
     endif
 
@@ -2201,7 +2201,7 @@ elif host_system == 'darwin'
   dlsuffix = '.dylib'
   export_file_format = 'darwin'
   export_fmt = '-exported_symbols_list=@0@'
-elif host_system == 'win32'
+elif host_system == 'windows'
   exesuffix = '.exe'
   dlsuffix = '.dll'
   export_file_format = 'win'
@@ -2211,7 +2211,7 @@ elif host_system == 'win32'
   else
     export_fmt = '@0@'
   endif
-elif host_system == 'solaris'
+elif host_system == 'sunos'
   dlsuffix = '.so'
   export_file_format = 'gnu'
   export_fmt = '-Wl,-M@0@'
@@ -2240,7 +2240,7 @@ if host_system == 'darwin'
 elif host_system == 'openbsd' or host_system == 'netbsd'
   cdata.set('USE_SYSV_SEMAPHORES', 1)
   cdata.set('USE_SYSV_SHARED_MEMORY', 1)
-elif host_system == 'win32'
+elif host_system == 'windows'
   cdata.set('USE_WIN32_SEMAPHORES', 1)
   cdata.set('USE_WIN32_SHARED_MEMORY', 1)
 else
@@ -2249,7 +2249,7 @@ else
 endif
 
 
-if host_system == 'win32'
+if host_system == 'windows'
   cdata.set('HAVE_IPV6', 1)
   cdata.set('WIN32_STACK_RLIMIT', 4194304)
   cdata.set('HAVE__CONFIGTHREADLOCALE', 1)
@@ -2259,7 +2259,7 @@ if cc.get_id() == 'msvc'
   ldflags += ['/fixed:no', '/dynamicbase', '/nxcompat']
 endif
 
-if host_system == 'win32'
+if host_system == 'windows'
   os_deps += cc.find_library('ws2_32', required: true)
 endif
 
@@ -2344,7 +2344,7 @@ mod_install_rpaths = []
 # If the host can form relative rpaths, use that to make the installation
 # properly relocatable
 test_library_path_var = ''
-if host_system == 'win32'
+if host_system == 'windows'
   # nothing to do
 elif host_system == 'openbsd' or host_system == 'netbsd'
   # openbsd's $ORIGIN doesn't use an absolute path to the binary, but argv[0]
@@ -2549,7 +2549,7 @@ backend_both_deps = [
 
 backend_deps = backend_both_deps
 
-if host_system == 'win32'
+if host_system == 'windows'
   backend_deps += cc.find_library('secur32', required: true)
 endif
 
@@ -2622,7 +2622,7 @@ endforeach
 
 # find and report conflicting files
 foreach build_path : potentially_conflicting_files
-  build_path = host_system == 'win32' ? fs.as_posix(build_path) : build_path
+  build_path = host_system == 'windows' ? fs.as_posix(build_path) : build_path
   # str.replace is in 0.56
   src_path = meson.current_source_dir() / build_path.split(meson.current_build_dir() / '')[1]
   if fs.exists(src_path) or fs.is_symlink(src_path)
@@ -2666,7 +2666,7 @@ prefix = get_option('prefix')
 test_prefix = prefix
 
 if fs.is_absolute(get_option('prefix'))
-  if host_system == 'win32'
+  if host_system == 'windows'
     if prefix.split(':\\').length() == 1
       # just a drive
       test_prefix = ''
