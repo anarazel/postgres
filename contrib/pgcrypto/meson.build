@@ -71,6 +71,7 @@ endif
 
 pgcrypto = shared_module('pgcrypto',
   pgcrypto_sources,
+  c_pch: pch_postgres_h,
   kwargs: contrib_mod_args + {
     'link_with': [pgcrypto_link_with, contrib_mod_args.get('link_with', [])],
     'dependencies': [pgcrypto_deps, contrib_mod_args['dependencies']]
