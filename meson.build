@@ -43,6 +43,7 @@ if host_system == 'win32'
   windows = import('windows')
 endif
 
+not_found_dep = dependency('', required: false)
 thread_dep = dependency('threads')
 
 
@@ -363,7 +364,7 @@ dir_data_extension = dir_data / 'extension'
 ###############################################################
 
 bsd_authopt = get_option('bsd_auth')
-bsd_auth = dependency('', required: false)
+bsd_auth = not_found_dep
 if cc.check_header('bsd_auth.h', args: g_c_args, required: bsd_authopt)
   cdata.set('USE_BSD_AUTH', 1)
   bsd_auth = declare_dependency()
@@ -422,7 +423,7 @@ if not gssapiopt.disabled()
   endif
 endif
 if not have_gssapi
-  gssapi = dependency('', required: false)
+  gssapi = not_found_dep
 endif
 
 
@@ -484,7 +485,7 @@ if not ldapopt.disabled()
   endif
 
 else
-  ldap = dependency('', required: false)
+  ldap = not_found_dep
   ldap_r = ldap
 endif
 
@@ -555,7 +556,7 @@ if not llvmopt.disabled()
 
   endif
 else
-  llvm = dependency('', required: false)
+  llvm = not_found_dep
 endif
 
 
@@ -564,17 +565,18 @@ endif
 # Library: icu
 ###############################################################
 
-if not get_option('icu').disabled()
-  icu = dependency('icu-uc', required: get_option('icu').enabled())
-  icu_i18n = dependency('icu-i18n', required: get_option('icu').enabled())
+icuopt = get_option('icu')
+if not icuopt.disabled()
+  icu = dependency('icu-uc', required: icuopt.enabled())
+  icu_i18n = dependency('icu-i18n', required: icuopt.enabled())
 
   if icu.found()
     cdata.set('USE_ICU', 1)
   endif
 
 else
-  icu = dependency('', required: false)
-  icu_i18n = dependency('', required: false)
+  icu = not_found_dep
+  icu_i18n = not_found_dep
 endif
 
 
@@ -591,7 +593,7 @@ if not libxmlopt.disabled()
     cdata.set('USE_LIBXML', 1)
   endif
 else
-  libxml = dependency('', required: false)
+  libxml = not_found_dep
 endif
 
 
@@ -608,7 +610,7 @@ if not libxsltopt.disabled()
     cdata.set('USE_LIBXSLT', 1)
   endif
 else
-  libxslt = dependency('', required: false)
+  libxslt = not_found_dep
 endif
 
 
@@ -627,7 +629,7 @@ if not lz4opt.disabled()
   endif
 
 else
-  lz4 = dependency('', required: false)
+  lz4 = not_found_dep
 endif
 
 
@@ -642,9 +644,9 @@ endif
 # that behaviour to the meson build.
 ###############################################################
 
-tcl_dep = dependency('', required: false)
 tclopt = get_option('pltcl')
 tcl_version = get_option('tcl_version')
+tcl_dep = not_found_dep
 if not tclopt.disabled()
 
   # via pkg-config
@@ -657,7 +659,7 @@ if not tclopt.disabled()
   endif
 
   if not cc.has_header('tcl.h', dependencies: tcl_dep, required: tclopt)
-    tcl_dep = dependency('', required: false)
+    tcl_dep = not_found_dep
   endif
 endif
 
@@ -690,11 +692,11 @@ if not pamopt.disabled()
     if pam_header_found
       cdata.set('USE_PAM', 1)
     else
-      pam = dependency('', required: false)
+      pam = not_found_dep
     endif
   endif
 else
-  pam = dependency('', required: false)
+  pam = not_found_dep
 endif
 
 
@@ -704,8 +706,7 @@ endif
 ###############################################################
 
 perlopt = get_option('plperl')
-perl_dep = dependency('', required: false)
-
+perl_dep = not_found_dep
 if perlopt.disabled()
   perl_may_work = false
 else
@@ -858,10 +859,10 @@ if not pyopt.disabled()
   python3_inst = pm.find_installation(required: pyopt.enabled())
   python3_dep = python3_inst.dependency(embed: true, required: pyopt.enabled())
   if not cc.check_header('Python.h', dependencies: python3_dep, required: pyopt.enabled())
-    python3_dep = dependency('', required: false)
+    python3_dep = not_found_dep
   endif
 else
-  python3_dep = dependency('', required: false)
+  python3_dep = not_found_dep
 endif
 
 
@@ -976,7 +977,7 @@ Use -Dreadline=false to disable readline support.'''.format(readline_dep))
 
   # XXX: Figure out whether to implement mingw warning equivalent
 else
-  readline = dependency('', required: false)
+  readline = not_found_dep
 endif
 
 
@@ -985,7 +986,7 @@ endif
 # Library: selinux
 ###############################################################
 
-selinux = dependency('', required: false)
+selinux = not_found_dep
 selinuxopt = get_option('selinux')
 if meson.version().version_compare('>=0.59')
   selinuxopt = selinuxopt.disable_auto_if(host_system != 'linux')
@@ -1000,7 +1001,7 @@ cdata.set('HAVE_LIBSELINUX',
 # Library: systemd
 ###############################################################
 
-systemd = dependency('', required: false)
+systemd = not_found_dep
 systemdopt = get_option('systemd')
 if meson.version().version_compare('>=0.59')
   systemdopt = systemdopt.disable_auto_if(host_system != 'linux')
@@ -1086,7 +1087,7 @@ if get_option('ssl') == 'openssl'
             description: '''Define to the OpenSSL API version in use. This avoids deprecation warnings
    from newer OpenSSL versions.''')
 else
-  ssl = dependency('', required: false)
+  ssl = not_found_dep
 endif
 
 
@@ -1123,7 +1124,7 @@ if uuidopt != 'none'
   cdata.set('HAVE_UUID_@0@'.format(uuidname), 1,
            description: 'Define to 1 if you have @0@ UUID support.'.format(uuidname))
 else
-  uuid = dependency('', required: false)
+  uuid = not_found_dep
 endif
 
 
@@ -1133,7 +1134,7 @@ endif
 ###############################################################
 
 zlibopt = get_option('zlib')
-zlib = dependency('', required: false)
+zlib = not_found_dep
 if not zlibopt.disabled()
   zlib_t = dependency('zlib', required: zlibopt)
 
@@ -1202,7 +1203,7 @@ if not zstdopt.disabled()
   endif
 
 else
-  zstd = dependency('', required: false)
+  zstd = not_found_dep
 endif
 
 
@@ -2291,7 +2292,7 @@ cdata.set('ENABLE_THREAD_SAFETY', 1)
 
 i18n = import('i18n')
 nlsopt = get_option('nls')
-libintl = dependency('', required: false)
+libintl = not_found_dep
 
 if not nlsopt.disabled()
   # otherwise there'd be lots of
