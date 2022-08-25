@@ -1,0 +1,25 @@
+#!/usr/bin/env python3
+
+import os
+import shutil
+import subprocess
+import sys
+import argparse
+
+parser = argparse.ArgumentParser(
+    description='generate PostgreSQL JIT IR module')
+
+parser.add_argument('--index', type=str, required=True)
+parser.add_argument('--lto', type=str, required=True)
+parser.add_argument('--outdir', type=str, required=True)
+parser.add_argument('INPUT', type=str, nargs='+')
+
+args = parser.parse_args()
+
+file_names = [os.path.basename(f) for f in args.INPUT]
+command = [args.lto,
+           '-thinlto', '-thinlto-action=thinlink',
+           '-o', args.index] + file_names
+res = subprocess.run(command, cwd=args.outdir)
+
+exit(res.returncode)
