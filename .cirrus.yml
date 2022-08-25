@@ -1056,7 +1056,7 @@ windows_template: &windows_template
     # ForceNoAlign prevents msbuild from introducing line-breaks for long lines
     # disable file tracker, we're never going to rebuild, and it slows down the
     #   build
-    MSBFLAGS: -m -verbosity:minimal "-consoleLoggerParameters:Summary;ForceNoAlign" /p:TrackFileAccess=false -nologo
+    MSBFLAGS: -m -verbosity:m "-consoleLoggerParameters:Summary;ForceNoAlign;ShowCommandLine" /p:TrackFileAccess=false -nologo
 
     # If tests hang forever, cirrus eventually times out. In that case log
     # output etc is not uploaded, making the problem hard to debug. Of course

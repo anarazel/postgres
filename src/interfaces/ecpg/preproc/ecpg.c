@@ -504,5 +504,7 @@ main(int argc, char *const argv[])
 			free(input_filename);
 		}
 	}
+	if (ret_value != 0)
+		fprintf(stderr, "ecpg: main: %u\n", ret_value);
 	return ret_value;
 }
