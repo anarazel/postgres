@@ -39,12 +39,12 @@ ecpg_preproc_test_command_end = [
 
 ecpg_test_dependencies = []
 
-subdir('connect')
-subdir('sql')
-subdir('pgtypeslib')
-subdir('preproc')
 subdir('compat_informix')
 subdir('compat_oracle')
+subdir('connect')
+subdir('pgtypeslib')
+subdir('preproc')
+subdir('sql')
 subdir('thread')
 
 ecpg_test_files = files(

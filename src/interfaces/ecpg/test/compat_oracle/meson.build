@@ -3,7 +3,7 @@ pgc_files = [
 ]
 
 foreach pgc_file : pgc_files
-  exe_input = custom_target(pgc_file,
+  exe_input = custom_target('@0@.c'.format(pgc_file),
     input: '@0@.pgc'.format(pgc_file),
     output: '@BASENAME@.c',
     command: ecpg_preproc_test_command_start +
