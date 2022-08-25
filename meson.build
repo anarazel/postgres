@@ -510,6 +510,8 @@ if not llvmopt.disabled()
 
     ccache = find_program('ccache', native: true, required: false)
     clang = find_program(llvm_binpath / 'clang', required: true)
+    llvm_lto = find_program(llvm_binpath / 'llvm-lto', required: true)
+    irlink = find_program('src/tools/irlink', native: true)
   endif
 else
   llvm = not_found_dep

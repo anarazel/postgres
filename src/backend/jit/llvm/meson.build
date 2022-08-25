@@ -48,6 +48,19 @@ else
   llvm_irgen_command = clang
 endif
 
+llvm_irlink_kw = {
+  'command': [
+    irlink,
+    '--name', 'postgres',
+    '--lto', llvm_lto,
+    '--outdir', '@OUTPUT0@',
+    '--privdir', '@PRIVATE_DIR@',
+    '@INPUT@',
+  ],
+  'install': true,
+  'install_dir': dir_lib_pkg,
+}
+
 
 # XXX: Need to determine proper version of the function cflags for clang
 bitcode_cflags = ['-fno-strict-aliasing', '-fwrapv']
@@ -70,3 +83,11 @@ llvmjit_types = custom_target('llvmjit_types.bc',
   depfile: '@BASENAME@.c.bc.d',
 )
 backend_targets += llvmjit_types
+
+# Figure out -I's needed to build all postgres code, including all its
+# dependencies
+pkg_config = find_program(['pkg-config', 'pkgconf'], required: true)
+r = run_command(pkg_config,
+  ['--cflags-only-I', meson.build_root() / 'meson-uninstalled/postgresql-extension-uninstalled.pc'],
+  check: true)
+bitcode_cflags += r.stdout().split()
