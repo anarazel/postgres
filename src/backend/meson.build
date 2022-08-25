@@ -289,3 +289,49 @@ subdir('replication/libpqwalreceiver')
 subdir('replication/pgoutput')
 subdir('snowball')
 subdir('utils/mb/conversion_procs')
+
+
+
+###############################################################
+# emit LLVM bitcode of backend code for JIT inlining
+###############################################################
+
+if llvm.found()
+
+  # custom_target() insists on targeting files into the current
+  # directory. But we have files with the same name in different
+  # subdirectories.  generators() don't have that problem, but their results
+  # are not installable. The irlink command copies the files for us.
+  #
+  # FIXME: this needs to be in a central place
+  #
+  # generators don't accept CustomTargetIndex as input or 'depends', nor do
+  # they like targets with more than one output. However, a custom target
+  # accepts them as input without a problem. So we have the below transitive
+  # target :(
+
+  transitive_depend_target = custom_target('stamp',
+    input: generated_headers + generated_backend_headers + generated_backend_sources,
+    output: 'stamp',
+    command: [touch, '@OUTPUT@'],
+    install: false)
+
+  llvm_gen = generator(llvm_irgen_command,
+    arguments: llvm_irgen_args + bitcode_cflags,
+    depends: transitive_depend_target,
+    depfile: '@BASENAME@.c.bc.d',
+    output: '@PLAINNAME@.bc',
+  )
+
+  bc_backend_sources = llvm_gen.process(backend_sources,
+    preserve_path_from: meson.current_source_dir())
+
+  postgres_llvm = custom_target('bitcode',
+    output: ['bitcode'],
+    input: bc_backend_sources,
+    kwargs: llvm_irlink_kw,
+  )
+
+  backend_targets += postgres_llvm
+
+endif
