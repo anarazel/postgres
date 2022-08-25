@@ -1,6 +1,7 @@
 pgport_sources = [
   'bsearch_arg.c',
   'chklocale.c',
+  'debug.c',
   'inet_net_ntop.c',
   'noblock.c',
   'path.c',

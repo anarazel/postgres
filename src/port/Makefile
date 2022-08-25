@@ -42,6 +42,7 @@ OBJS = \
 	$(PG_CRC32C_OBJS) \
 	bsearch_arg.o \
 	chklocale.o \
+	debug.o \
 	inet_net_ntop.o \
 	noblock.o \
 	path.o \

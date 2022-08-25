@@ -11,6 +11,8 @@
 
 #include "preproc_extern.h"
 
+#include "port/debug.h"
+
 int			ret_value = 0;
 bool		autocommit = false,
 			auto_create_c = false,
@@ -131,6 +133,8 @@ main(int argc, char *const argv[])
 	const char *progname;
 	char		my_exec_path[MAXPGPATH];
 	char		include_path[MAXPGPATH];
+
+	make_debugging_work();
 
 	set_pglocale_pgservice(argv[0], PG_TEXTDOMAIN("ecpg"));
 
