@@ -9,6 +9,7 @@ project('postgresql',
   meson_version: '>=0.54',
   default_options: [
     'warning_level=2',
+    'b_pch=false',
     'buildtype=release',
   ]
 )
@@ -1569,6 +1570,13 @@ if cc.get_id() == 'msvc'
     '/wd4090',
     '/wd4267',
   ]
+
+  # Dirty hack to disable warnings due to some files defining
+  # UMDF_USING_NTSTATUS before including postgres.h. We need a better fix, but
+  # for now this allows us to see "real" warnings.
+  if get_option('b_pch')
+    warning_cflags += '/wd4005'
+  endif
 
   functional_cflags += [
     '/DWIN32',

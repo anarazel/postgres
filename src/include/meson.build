@@ -112,6 +112,7 @@ install_headers(
 subdir('catalog')
 subdir('nodes')
 subdir('parser')
+subdir('pch')
 subdir('storage')
 subdir('utils')
 

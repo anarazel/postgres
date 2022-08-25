@@ -10,6 +10,7 @@ hstore = shared_module('hstore',
     'hstore_op.c',
     'hstore_subs.c',
   ),
+  c_pch: pch_postgres_h,
   kwargs: contrib_mod_args,
 )
 
