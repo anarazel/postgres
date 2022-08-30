@@ -4,6 +4,7 @@ pgstattuple = shared_module('pgstattuple',
     'pgstatindex.c',
     'pgstattuple.c',
   ),
+  c_pch: pch_postgres_h,
   kwargs: contrib_mod_args,
 )
 

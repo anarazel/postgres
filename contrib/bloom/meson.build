@@ -9,6 +9,7 @@ bloom_sources = files(
 
 bloom = shared_module('bloom',
   bloom_sources,
+  c_pch: pch_postgres_h,
   kwargs: contrib_mod_args,
 )
 
