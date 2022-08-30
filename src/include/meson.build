@@ -110,6 +110,7 @@ install_headers(
 
 subdir('catalog')
 subdir('nodes')
+subdir('pch')
 subdir('storage')
 subdir('utils')
 

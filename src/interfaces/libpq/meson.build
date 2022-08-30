@@ -49,6 +49,7 @@ libpq_st = static_library('libpq',
   pic: true,
   include_directories: [libpq_inc, postgres_inc],
   c_args: ['-DSO_MAJOR_VERSION=5'],
+  c_pch: pch_postgres_fe_h,
   dependencies: libpq_deps,
   kwargs: default_lib_args,
 )

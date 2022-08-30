@@ -1174,7 +1174,7 @@ task:
 
   configure_script:
     - vcvarsall x64
-    - meson setup --buildtype debug --backend ninja  -Dcassert=true -Dssl=openssl -Dlz4=enabled -Dzlib=enabled -Dextra_lib_dirs=c:\openssl\1.1\lib -Dextra_include_dirs=c:\openssl\1.1\include -DTAR=c:/windows/system32/tar.exe build
+    - meson setup --buildtype debug --backend ninja  -Dcassert=true -Db_pch=true -Dssl=openssl -Dlz4=enabled -Dzlib=enabled -Dextra_lib_dirs=c:\openssl\1.1\lib -Dextra_include_dirs=c:\openssl\1.1\include -DTAR=c:/windows/system32/tar.exe build
 
   build_script:
     - vcvarsall x64
@@ -1201,7 +1201,7 @@ task:
 
   configure_script:
     - vcvarsall x64
-    - meson setup --buildtype debug --backend vs -Dcassert=true -Dssl=openssl -Dlz4=enabled -Dzlib=enabled -Dextra_lib_dirs=c:\openssl\1.1\lib -Dextra_include_dirs=c:\openssl\1.1\include -DTAR=c:/windows/system32/tar.exe build
+    - meson setup --buildtype debug --backend vs -Dcassert=true -Db_pch=true -Dssl=openssl -Dlz4=enabled -Dzlib=enabled -Dextra_lib_dirs=c:\openssl\1.1\lib -Dextra_include_dirs=c:\openssl\1.1\include -DTAR=c:/windows/system32/tar.exe build
 
   build_script:
     - vcvarsall x64
