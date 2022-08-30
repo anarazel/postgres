@@ -60,6 +60,7 @@ stemmer_inc = include_directories('../../include/snowball')
 
 dict_snowball = shared_module('dict_snowball',
   dict_snowball_sources,
+  c_pch: pch_postgres_h,
   kwargs: pg_mod_args + {
     'include_directories': [stemmer_inc],
   }

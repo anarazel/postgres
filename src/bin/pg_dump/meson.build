@@ -23,6 +23,7 @@ endif
 
 pg_dump_common = static_library('libpgdump_common',
   pg_dump_common_sources,
+  c_pch: pch_postgres_fe_h,
   dependencies: [frontend_code, libpq, zlib],
   kwargs: internal_lib_args,
 )

@@ -41,6 +41,7 @@ endforeach
 plperl_inc = include_directories('.')
 plperl = shared_module('plperl',
   plperl_sources,
+  c_pch: pch_postgres_h,
   include_directories: [plperl_inc, postgres_inc],
   kwargs: pg_mod_args + {
     'dependencies': [perl_dep, pg_mod_args['dependencies']],
