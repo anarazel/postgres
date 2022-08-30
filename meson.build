@@ -2773,7 +2773,7 @@ Conflicting files in source directory:
   @0@
 
 The conflicting files need to be removed, either by removing the files listed
-above, or by running configure and then make maintainer clean.
+above, or by running configure and then make maintainer-clean.
 '''
   errmsg_cleanup = errmsg_cleanup.format(' '.join(conflicting_files))
   error(errmsg_nonclean_base.format(errmsg_cleanup))
