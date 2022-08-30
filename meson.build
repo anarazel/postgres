@@ -159,6 +159,7 @@ portname = host_system
 
 exesuffix = '' # overridden below where necessary
 dlsuffix = '.so' # overridden below where necessary
+rpath_origin = '$ORIGIN'
 library_path_var = 'LD_LIBRARY_PATH'
 
 # Format of file to control exports from libraries, and how to pass them to
@@ -209,6 +210,7 @@ elif host_system == 'cygwin'
 elif host_system == 'darwin'
   dlsuffix = '.dylib'
   ld_library_path_var = 'DYLD_LIBRARY_PATH'
+  rpath_origin = '@loader_path'
 
   export_file_format = 'darwin'
   export_fmt = '-exported_symbols_list=@0@'
@@ -241,8 +243,16 @@ elif host_system == 'netbsd'
   # LDFLAGS.
   ldflags += ['-Wl,-z,now', '-Wl,-z,relro']
 
+  # netbsd patched their meson in a broken way:
+  # https://gnats.netbsd.org/cgi-bin/query-pr-single.pl?number=56959
+  # until there's a way out of that, disable rpath_origin
+  rpath_origin = ''
+
 elif host_system == 'openbsd'
-  # you're ok
+  # openbsd's $ORIGIN doesn't use an absolute path to the binary, but argv[0]
+  # (i.e. absolute when invoked with an absolute name, but e.g. not absolute
+  # when invoked via PATH search).
+  rpath_origin = ''
 
 elif host_system == 'sunos'
   portname = 'solaris'
@@ -254,6 +264,7 @@ elif host_system == 'windows'
   exesuffix = '.exe'
   dlsuffix = '.dll'
   ld_library_path_var = ''
+  rpath_origin = ''
 
   export_file_format = 'win'
   export_file_suffix = 'def'
@@ -2466,6 +2477,26 @@ bin_install_rpaths = []
 lib_install_rpaths = []
 mod_install_rpaths = []
 
+
+# If the host can form relative rpaths, use that to make the installation
+# properly relocatable
+if rpath_origin != ''
+  # PG binaries might need to link to libpq, use relative path to reference
+  bin_to_lib = run_command(python, files('src/tools/relpath.py'),
+    dir_bin, dir_lib, check: true).stdout().strip()
+  bin_install_rpaths += rpath_origin / bin_to_lib
+
+  # PG extensions might need to link to libpq, use relative path to reference
+  # (often just .)
+  mod_to_lib = run_command(python, files('src/tools/relpath.py'),
+    dir_lib_pkg, dir_lib, check: true).stdout().strip()
+  mod_install_rpaths += rpath_origin / mod_to_lib
+
+  test_use_library_path_var = false
+else
+  test_use_library_path_var = true
+endif
+
 # add extra_lib_dirs to rpath
 bin_install_rpaths += postgres_lib_d
 lib_install_rpaths += postgres_lib_d
@@ -2736,6 +2767,14 @@ above, or by running configure and then make maintainer clean.
 endif
 
 
+# To make MacOS installation work without a prior make install, even with SIP
+# enabled, make rpaths relative after installation. This also makes the
+# installation relocatable.
+if host_system == 'darwin'
+  meson.add_install_script('src/tools/relativize_shared_library_references')
+endif
+
+
 
 ###############################################################
 # Test prep
@@ -2801,10 +2840,9 @@ test_env.set('REGRESS_SHLIB', regress_module.full_path())
 # Export PG_TEST_EXTRA so it can be checked in individual tap tests.
 test_env.set('PG_TEST_EXTRA', get_option('PG_TEST_EXTRA'))
 
-# Add the temporary installation to the library search path on platforms where
-# that works (everything but windows, basically). On windows everything
-# library-like gets installed into bindir, solving that issue.
-if library_path_var != ''
+# On platforms without $ORIGIN support we need to add the temporary
+# installation to the library search path.
+if test_use_library_path_var and library_path_var != ''
   test_env.prepend(library_path_var, test_install_location / get_option('libdir'))
 endif
 
