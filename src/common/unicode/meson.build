@@ -1,6 +1,3 @@
-# These files are part of the Unicode Character Database. Download
-# them on demand.
-
 UNICODE_VERSION = '14.0.0'
 
 unicode_data = {}
@@ -10,6 +7,8 @@ if not wget.found()
   subdir_done()
 endif
 
+# These files are part of the Unicode Character Database. Download them on
+# demand.
 foreach f : ['UnicodeData.txt', 'EastAsianWidth.txt', 'DerivedNormalizationProps.txt', 'CompositionExclusions.txt', 'NormalizationTest.txt']
   url = unicode_baseurl.format(UNICODE_VERSION, f)
   target = custom_target(f,
