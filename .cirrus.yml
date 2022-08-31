@@ -1013,8 +1013,8 @@ task:
 
     meson setup \
       --buildtype debug \
-      -Dextra_include_dirs=$(brewpath)/include \
-      -Dextra_lib_dirs=$(brewpath)/lib \
+      -Dextra_include_dirs=${brewpath}/include \
+      -Dextra_lib_dirs=${brewpath}/lib \
       -Dcassert=true \
       -Dssl=openssl -Duuid=e2fs  -Ddtrace=auto \
       build
