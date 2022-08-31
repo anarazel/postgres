@@ -21,3 +21,5 @@ endif
 if icu.found()
   subdir('icu')
 endif
+
+subdir('perl')
