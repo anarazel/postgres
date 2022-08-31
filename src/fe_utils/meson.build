@@ -14,9 +14,9 @@ fe_utils_sources = files(
 )
 
 psqlscan = custom_target('psqlscan',
-  input: ['psqlscan.l'],
-  output: ['psqlscan.c'],
-  command: [flex_cmd, flex_backup, flex_fix_warning, '-Cfe', '-p', '-p', '@INPUT@'],
+  input: 'psqlscan.l',
+  output: 'psqlscan.c',
+  command: [flex_cmd, '--no-backup', '--fix-warnings', '--', '-Cfe', '-p', '-p'],
 )
 generated_sources += psqlscan
 fe_utils_sources += psqlscan

@@ -16,9 +16,9 @@ psql_sources = files(
 )
 
 psqlscanslash = custom_target('psqlscanslash',
-  input: ['psqlscanslash.l'],
-  output: ['psqlscanslash.c'],
-  command: [flex_cmd, flex_backup, flex_fix_warning, '-Cfe', '-p', '-p', '@INPUT@'])
+  input: 'psqlscanslash.l',
+  output: 'psqlscanslash.c',
+  command: [flex_cmd, '--no-backup', '--fix-warnings', '--', '-Cfe', '-p', '-p'])
 generated_sources += psqlscanslash
 psql_sources += psqlscanslash
 

@@ -2,9 +2,9 @@ backend_sources += files(
  'bootstrap.c')
 
 bootscanner = custom_target('bootscanner',
-  input: ['bootscanner.l'],
-  output: ['bootscanner.c'],
-  command: [flex_cmd, '@INPUT@'],
+  input: 'bootscanner.l',
+  output: 'bootscanner.c',
+  command: flex_cmd,
 )
 generated_sources += bootscanner
 

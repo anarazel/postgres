@@ -6,9 +6,9 @@ isolation_sources = pg_regress_c + files(
 
 # see src/backend/replication/meson.build for depend logic
 spec_scanner = custom_target('specscanner',
-  input: files('specscanner.l'),
-  output: ['specscanner.c'],
-  command: [flex_cmd, '@INPUT@'],
+  input: 'specscanner.l',
+  output: 'specscanner.c',
+  command: flex_cmd,
 )
 generated_sources += spec_scanner
 

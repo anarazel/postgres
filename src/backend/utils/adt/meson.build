@@ -108,9 +108,9 @@ backend_sources += files(
 
 
 jsonpath_scan = custom_target('jsonpath_scan',
-  input: ['jsonpath_scan.l'],
-  output: ['jsonpath_scan.c'],
-  command: [flex_cmd, flex_backup, '-CF', '-p', '-p', '@INPUT@'],
+  input: 'jsonpath_scan.l',
+  output: 'jsonpath_scan.c',
+  command: [flex_cmd, '--no-backup', '--', '-CF', '-p', '-p'],
 )
 generated_sources += jsonpath_scan
 

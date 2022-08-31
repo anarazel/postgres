@@ -13,9 +13,9 @@ backend_sources += files(
 # harmless.
 
 repl_scanner = custom_target('repl_scanner',
-  input: files('repl_scanner.l'),
-  output: ['repl_scanner.c'],
-  command: [flex_cmd, '@INPUT@'],
+  input: 'repl_scanner.l',
+  output: 'repl_scanner.c',
+  command: flex_cmd,
 )
 generated_sources += repl_scanner
 
@@ -30,7 +30,7 @@ generated_backend_sources += custom_target('repl_gram',
 syncrep_scanner = custom_target('syncrep_scanner',
   input: 'syncrep_scanner.l',
   output: 'syncrep_scanner.c',
-  command: [flex_cmd, '@INPUT@'],
+  command: flex_cmd,
 )
 generated_sources += syncrep_scanner
 

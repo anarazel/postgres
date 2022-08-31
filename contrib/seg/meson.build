@@ -4,16 +4,18 @@ seg_sources = files(
 
 # segscan is compiled as part of segparse
 seg_scan = custom_target('segscan',
-  input: ['segscan.l'],
-  output: ['segscan.c'],
-  command: [flex_cmd, '@INPUT@'],)
+  input: 'segscan.l',
+  output: 'segscan.c',
+  command: flex_cmd,
+)
 generated_sources += seg_scan
 
 seg_parse = custom_target('segparse',
   input: 'segparse.y',
   output: 'segparse.c',
   depends: seg_scan,
-  command: [bison_cmd, '@INPUT@'],)
+  command: [bison_cmd, '@INPUT@'],
+)
 generated_sources += seg_parse
 seg_sources += seg_parse
 

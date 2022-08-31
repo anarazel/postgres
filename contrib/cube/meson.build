@@ -4,9 +4,10 @@ cube_sources = files(
 
 # cubescan is compiled as part of cubeparse
 cube_scan = custom_target('cubescan',
-  input: ['cubescan.l'],
-  output: ['cubescan.c'],
-  command: [flex_cmd, '@INPUT@'],)
+  input: 'cubescan.l',
+  output: 'cubescan.c',
+  command: flex_cmd,
+)
 generated_sources += cube_scan
 
 cube_parse = custom_target('cubeparse',

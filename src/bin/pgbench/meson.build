@@ -7,9 +7,9 @@ pgbench_sources = files(
 # unnecessarily strict, but overall harmless.
 
 exprscan = custom_target('exprscan',
-  input: files('exprscan.l'),
-  output: ['exprscan.c'],
-  command: [flex_cmd, '@INPUT@'],
+  input: 'exprscan.l',
+  output: 'exprscan.c',
+  command: flex_cmd,
 )
 generated_sources += exprscan
 

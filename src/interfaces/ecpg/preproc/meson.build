@@ -12,9 +12,9 @@ ecpg_sources = files(
 )
 
 pgc = custom_target('pgc.c',
-  input: ['pgc.l'],
-  output: ['pgc.c'],
-  command: [flex_cmd, '@INPUT@'],
+  input: 'pgc.l',
+  output: 'pgc.c',
+  command: flex_cmd,
 )
 generated_sources += pgc
 ecpg_sources += pgc

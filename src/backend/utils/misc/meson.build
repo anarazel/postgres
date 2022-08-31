@@ -18,9 +18,9 @@ backend_sources += files(
 # added as a dependency for the executable. Not pretty, but there's no
 # obviously better solution right now
 guc_scan = custom_target('guc_scan',
-  input: ['guc-file.l'],
+  input: 'guc-file.l',
   output: ['guc-file.c', 'guc-file.c.h'],
-  command: [flex_cmd, '@INPUT@', '--stamp_header', '@OUTPUT1@'])
+  command: [flex_cmd, '--stamp-header', '@OUTPUT1@'])
 
 backend_build_deps += declare_dependency(
   sources: guc_scan[1],

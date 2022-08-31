@@ -1,63 +1,85 @@
 #!/usr/bin/env python3
 
+#
+# Wrapper around flex that:
+# - ensures lex.backup is created in a private directory
+# - can error out if lex.backup is created (--no-backup)
+# - can fix warnings (--fix-warnings)
+# - can create a stamp header (--stamp-header) to deal with some
+#   dependency situations
+
 import argparse
 import os
 import subprocess
 import sys
+from os.path import abspath
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--flex', dest='flex_command', help='flex executable to run', type=str)
-parser.add_argument('--perl', dest='perl_command', help='perl executable to run', type=str)
-parser.add_argument('--builddir', dest='builddir', help='build directory of meson build', type=str)
-parser.add_argument('--privatedir', dest='privatedir', help='temporary directory to avoid conflicts', type=str)
-parser.add_argument('--fix_warning_script', dest='fix_warning_script', help='script for fixing warnings', default='')
-parser.add_argument('-b', dest='no_backup', action='store_true', help='whether no_backup is enabled or not')
-parser.add_argument('-o', dest='output_file', help='output file')
-parser.add_argument('--stamp_header', dest='stamp_header', help='', default=None)
+parser.add_argument('--flex', type=abspath, required=True)
+parser.add_argument('--perl', type=abspath, required=True)
+parser.add_argument('--builddir', type=abspath, required=True)
+parser.add_argument('--srcdir', type=abspath, required=True)
+parser.add_argument('--privatedir', type=abspath, required=True,
+                    help='private directory for target')
 
-args, rest = parser.parse_known_args()
-rest, input_file = rest[:-1], rest[-1]
+parser.add_argument('-o', dest='output_file', type=abspath, required=True,
+                    help='output file')
+parser.add_argument('-i', dest='input_file', type=abspath, help='input file')
 
-# since 'lex.backup' is always named that,
-# change working directory to temporary directory
-# to avoid conflicts
+
+parser.add_argument('--fix-warnings', action='store_true',
+                    help='whether to fix warnings in generated file')
+parser.add_argument('--no-backup', action='store_true',
+                    help='whether no_backup is enabled or not')
+
+parser.add_argument('--stamp-header', type=abspath,
+                    help='', default=None)
+
+parser.add_argument('flex_flags', nargs='*', help='flags passed on to flex')
+
+args = parser.parse_args()
+
+# Since 'lex.backup' is always named that and ninja uses the top level build
+# directory as current directory for all commands, change directory to
+# temporary directory to avoid conflicts between concurrent flex
+# invocations. Only unreleased versions of flex have an argument to change
+# lex.filename to be named differently.
 os.chdir(os.path.dirname(args.privatedir))
 
-# make paths absolute if it is not absolute,
-# msbuild uses absolute paths as default
-args.output_file = args.output_file if os.path.isabs(args.output_file) else os.path.join(args.builddir, args.output_file)
-input_file = input_file if os.path.isabs(input_file) else os.path.join(args.builddir, input_file)
-
-# set flex flags
+# build flex invocation
+command = [args.flex, '-o', args.output_file]
 if args.no_backup:
-  flex_flags = ['-o', args.output_file, '-b'] + rest + [input_file]
-else:
-  flex_flags = ['-o', args.output_file] + rest + [input_file]
+    command += ['-b']
+command += args.flex_flags
+command += [args.input_file]
 
 # create .c file from .l file
-command = [args.flex_command] + flex_flags
-subprocess.run(command, check=True)
+sp = subprocess.run(command)
+if sp.returncode != 0:
+    sys.exit(sp.returncode)
 
- # check lex.backup
+# check lex.backup
 if args.no_backup:
-  with open('lex.backup') as lex:
-    if sum(1 for _ in lex) != 1:
-      sys.exit('Scanner requires backup; see lex.backup.')
-  os.remove('lex.backup')
+    with open('lex.backup') as lex:
+        if len(lex.readlines()) != 1:
+            sys.exit('Scanner requires backup; see lex.backup.')
+    os.remove('lex.backup')
 
 # fix warnings
-if args.fix_warning_script:
-  # make paths absolute if it is not absolute
-  args.fix_warning_script = args.fix_warning_script if os.path.isabs(args.fix_warning_script) else os.path.join(args.builddir, args.fix_warning_script)
+if args.fix_warnings:
+    fix_warning_script = os.path.join(args.srcdir,
+                                      'src/tools/fix-old-flex-code.pl')
 
-  command = [args.perl_command, args.fix_warning_script, args.output_file]
-  subprocess.run(command, check=True)
+    command = [args.perl, fix_warning_script, args.output_file]
+    sp = subprocess.run(command)
+    if sp.returncode != 0:
+        sys.exit(sp.returncode)
 
 #
 stamp_header = args.stamp_header
-if stamp_header != None:
-    if not os.path.isabs(stamp_header):
-        stamp_header = os.path.join(args.builddir, stamp_header)
-    with open(stamp_header, mode='w') as fh:
+if args.stamp_header is not None:
+    with open(args.stamp_header, mode='w') as fh:
         pass
+
+sys.exit(0)

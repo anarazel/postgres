@@ -347,12 +347,13 @@ bison_cmd = [bison, bison_flags, '-o', '@OUTPUT0@']
 
 flex_flags = []
 flex_wrapper = files('src/tools/pgflex')
-flex_cmd = [python, flex_wrapper, '--builddir', meson.build_root(),
- '--privatedir', '@PRIVATE_DIR@', '--flex', flex, '-o', '@OUTPUT0@']
-
-flex_backup = ['-b']
-flex_fix_warning_script = files('src/tools/fix-old-flex-code.pl')
-flex_fix_warning = ['--perl', perl, '--fix_warning_script', flex_fix_warning_script]
+flex_cmd = [python, flex_wrapper,
+  '--builddir', '@BUILD_ROOT@',
+  '--srcdir', '@SOURCE_ROOT@',
+  '--privatedir', '@PRIVATE_DIR@',
+  '--flex', flex, '--perl', perl,
+  '-i', '@INPUT@', '-o', '@OUTPUT0@',
+]
 
 wget = find_program('wget', required: false, native: true)
 wget_flags = ['-O', '@OUTPUT0@', '--no-use-server-timestamps']
