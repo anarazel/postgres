@@ -231,7 +231,7 @@ if pandoc.found() and xsltproc.found()
   # XXX: Perhaps we should just make all targets use this, to avoid repeatedly
   # building whole thing? It's comparatively fast though.
   postgres_full_xml = custom_target('postgres-full.xml',
-    input: ['resolv.xsl', 'postgres.sgml'],
+    input: ['resolve-entities.xsl', 'postgres.sgml'],
     output: ['postgres-full.xml'],
     depends: doc_generated + [postgres_sgml_valid],
     command: [xsltproc, '--path', '@OUTDIR@/', xsltproc_flags,

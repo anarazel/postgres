@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+#
+# Returns the path to the meson binary, for cases where we need to call it as
+# part of the build, e.g. to install into tmp_install/ for the tests.
 
 import os
 import shlex
