@@ -2928,6 +2928,7 @@ foreach test_dir : tests
         kwargs: test_kwargs,
       )
 
+      testport += 1
     elif kind == 'tap'
       if not tap_tests_enabled
         continue
