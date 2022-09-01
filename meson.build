@@ -2508,11 +2508,13 @@ else
   test_use_library_path_var = true
 endif
 
-# add extra_lib_dirs to rpath
-bin_install_rpaths += postgres_lib_d
-lib_install_rpaths += postgres_lib_d
-mod_install_rpaths += postgres_lib_d
-
+# Add extra_lib_dirs to rpath. Not needed on darwin, as the install_name of
+# libraries in extra_lib_dirs will be used anyway.
+if host_system != 'darwin'
+  bin_install_rpaths += postgres_lib_d
+  lib_install_rpaths += postgres_lib_d
+  mod_install_rpaths += postgres_lib_d
+endif
 
 # Define arguments for default targets
 
