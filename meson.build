@@ -2710,6 +2710,11 @@ backend_code = declare_dependency(
 # libraries.
 
 
+# Define targets
+bin_targets = []
+contrib_targets = []
+test_targets = []
+
 # Then through the main sources. That way contrib can have dependencies on
 # main sources. Note that this explicitly doesn't enter src/test, right now a
 # few regression tests depend on contrib files.
