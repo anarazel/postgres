@@ -156,7 +156,6 @@ break is not needed in a wider output rendering.
 
   &installbin;
   &installation;
-  &installation-meson;
   &installw;
   &runtime;
   &config;
