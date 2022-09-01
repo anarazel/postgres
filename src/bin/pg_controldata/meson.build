@@ -1,8 +1,9 @@
-executable('pg_controldata',
+pg_controldata = executable('pg_controldata',
   ['pg_controldata.c'],
   dependencies: [frontend_code],
   kwargs: default_bin_args,
 )
+bin_targets += pg_controldata
 
 tests += {
   'name': 'pg_controldata',

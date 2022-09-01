@@ -17,6 +17,7 @@ pg_rewind = executable('pg_rewind',
   c_args: ['-DFRONTEND'], # needed for xlogreader et al
   kwargs: default_bin_args,
 )
+bin_targets += pg_rewind
 
 
 tests += {

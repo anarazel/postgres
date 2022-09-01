@@ -1,8 +1,9 @@
-executable('pg_config',
+pg_config = executable('pg_config',
   ['pg_config.c'],
   dependencies: [frontend_code],
   kwargs: default_bin_args,
 )
+bin_targets += pg_config
 
 tests += {
   'name': 'pg_config',

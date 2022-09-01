@@ -22,6 +22,7 @@ pg_upgrade = executable('pg_upgrade',
   dependencies: [frontend_code, libpq],
   kwargs: default_bin_args,
 )
+bin_targets += pg_upgrade
 
 
 tests += {

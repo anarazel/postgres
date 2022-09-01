@@ -16,12 +16,13 @@ binaries = [
 ]
 
 foreach binary : binaries
-  executable(binary,
+  binary = executable(binary,
     files(binary + '.c'),
     link_with: [scripts_common],
     dependencies: [frontend_code, libpq],
     kwargs: default_bin_args,
   )
+  bin_targets += binary
 endforeach
 
 tests += {

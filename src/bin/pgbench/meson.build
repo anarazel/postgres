@@ -12,6 +12,7 @@ exprscan = custom_target('exprscan',
   command: flex_cmd,
 )
 generated_sources += exprscan
+bin_targets += exprscan
 
 exprparse = custom_target('exprparse',
   input: 'exprparse.y',
@@ -20,14 +21,15 @@ exprparse = custom_target('exprparse',
   command: [bison_cmd, '@INPUT@'],)
 generated_sources += exprparse
 pgbench_sources += exprparse
+bin_targets += exprparse
 
-executable('pgbench',
+pgbench = executable('pgbench',
   pgbench_sources,
   dependencies: [frontend_code, libpq, thread_dep],
   include_directories: include_directories('.'),
   kwargs: default_bin_args,
 )
-
+bin_targets += pgbench
 
 tests += {
   'name': 'pgbench',

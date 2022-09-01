@@ -1,8 +1,9 @@
-executable('pg_ctl',
+pg_ctl = executable('pg_ctl',
   ['pg_ctl.c'],
   dependencies: [frontend_code, libpq],
   kwargs: default_bin_args,
 )
+bin_targets += pg_ctl
 
 tests += {
   'name': 'pg_ctl',

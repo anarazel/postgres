@@ -14,6 +14,7 @@ pg_waldump = executable('pg_waldump',
   c_args: ['-DFRONTEND'], # needed for xlogreader et al
   kwargs: default_bin_args,
 )
+bin_targets += pg_waldump
 
 tests += {
   'name': 'pg_waldump',

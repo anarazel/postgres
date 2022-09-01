@@ -7,6 +7,7 @@ pg_amcheck = executable('pg_amcheck',
   dependencies: [frontend_code, libpq],
   kwargs: default_bin_args,
 )
+bin_targets += pg_amcheck
 
 tests += {
   'name': 'pg_amcheck',

@@ -21,6 +21,7 @@ psqlscanslash = custom_target('psqlscanslash',
   command: [flex_cmd, '--no-backup', '--fix-warnings', '--', '-Cfe', '-p', '-p'])
 generated_sources += psqlscanslash
 psql_sources += psqlscanslash
+bin_targets += psqlscanslash
 
 sql_help = custom_target('psql_help',
   output: ['sql_help.c', 'sql_help.h'],
@@ -35,6 +36,7 @@ sql_help = custom_target('psql_help',
 )
 generated_sources += sql_help.to_list()
 psql_sources += sql_help
+bin_targets += sql_help
 
 if host_system == 'windows'
   psql_sources += windows.compile_resources(
@@ -46,13 +48,14 @@ if host_system == 'windows'
   )
 endif
 
-executable('psql',
+psql = executable('psql',
   psql_sources,
   c_pch: pch_postgres_fe_h,
   include_directories: include_directories('.'),
   dependencies: [frontend_code, libpq, readline],
   kwargs: default_bin_args,
 )
+bin_targets += psql
 
 install_data('psqlrc.sample',
   install_dir: dir_data,

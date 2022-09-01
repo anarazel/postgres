@@ -3,6 +3,7 @@ pg_archivecleanup = executable('pg_archivecleanup',
   dependencies: [frontend_code],
   kwargs: default_bin_args,
 )
+bin_targets += pg_archivecleanup
 
 tests += {
   'name': 'pg_archivecleanup',

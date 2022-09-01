@@ -1,8 +1,9 @@
-executable('pg_resetwal',
+pg_resetwal = executable('pg_resetwal',
   files('pg_resetwal.c'),
   dependencies: [frontend_code],
   kwargs: default_bin_args,
 )
+bin_targets += pg_resetwal
 
 tests += {
   'name': 'pg_resetwal',

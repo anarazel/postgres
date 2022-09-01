@@ -14,6 +14,7 @@ win32ver_rc = custom_target(
     '--FILEDESC', 'Eventlog message formatter',
     '--NAME', 'pgevent',],
 )
+bin_targets += win32ver_rc
 
 pgevent_sources += windows.compile_resources(
   'pgmsgevent.rc',
@@ -27,7 +28,7 @@ if cc.get_id() == 'msvc'
   pgevent_link_args += '/ignore:4104'
 endif
 
-shared_library('pgevent',
+pgevent = shared_library('pgevent',
   pgevent_sources,
   dependencies: [frontend_code],
   link_args: pgevent_link_args,
@@ -36,3 +37,4 @@ shared_library('pgevent',
     'name_prefix': '',
   },
 )
+bin_targets += pgevent

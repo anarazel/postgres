@@ -17,26 +17,29 @@ pg_basebackup_common = static_library('libpg_basebackup_common',
   kwargs: internal_lib_args,
 )
 
-executable('pg_basebackup',
+pg_basebackup = executable('pg_basebackup',
   'pg_basebackup.c',
   link_with: [pg_basebackup_common],
   dependencies: pg_basebackup_deps,
   kwargs: default_bin_args,
 )
+bin_targets += pg_basebackup
 
-executable('pg_receivewal',
+pg_receivewal = executable('pg_receivewal',
   'pg_receivewal.c',
   link_with: [pg_basebackup_common],
   dependencies: pg_basebackup_deps,
   kwargs: default_bin_args,
 )
+bin_targets += pg_receivewal
 
-executable('pg_recvlogical',
+pg_recvlogical = executable('pg_recvlogical',
   'pg_recvlogical.c',
   link_with: [pg_basebackup_common],
   dependencies: pg_basebackup_deps,
   kwargs: default_bin_args,
 )
+bin_targets += pg_recvlogical
 
 tests += {
   'name': 'pg_basebackup',

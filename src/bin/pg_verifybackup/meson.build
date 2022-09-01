@@ -8,6 +8,7 @@ pg_verifybackup = executable('pg_verifybackup',
   dependencies: [frontend_code, libpq],
   kwargs: default_bin_args,
 )
+bin_targets += pg_verifybackup
 
 tests += {
   'name': 'pg_verifybackup',

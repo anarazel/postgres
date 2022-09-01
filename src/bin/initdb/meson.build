@@ -17,12 +17,13 @@ if host_system == 'windows'
   )
 endif
 
-executable('initdb',
+initdb = executable('initdb',
   initdb_sources,
   include_directories: [timezone_inc],
   dependencies: [frontend_code, libpq, icu, icu_i18n],
   kwargs: default_bin_args,
 )
+bin_targets += initdb
 
 tests += {
   'name': 'initdb',

@@ -35,37 +35,39 @@ pg_dump_sources = files(
   'pg_dump_sort.c',
 )
 
-executable('pg_dump',
+pg_dump = executable('pg_dump',
   pg_dump_sources,
   link_with: [pg_dump_common],
   dependencies: [frontend_code, libpq, zlib],
   kwargs: default_bin_args,
 )
+bin_targets += pg_dump
 
 
 pg_dumpall_sources = files(
   'pg_dumpall.c',
 )
 
-executable('pg_dumpall',
+pg_dumpall = executable('pg_dumpall',
   pg_dumpall_sources,
   link_with: [pg_dump_common],
   dependencies: [frontend_code, libpq, zlib],
   kwargs: default_bin_args,
 )
+bin_targets += pg_dumpall
 
 
 pg_restore_sources = files(
   'pg_restore.c',
 )
 
-executable('pg_restore',
+pg_restore = executable('pg_restore',
   pg_restore_sources,
   link_with: [pg_dump_common],
   dependencies: [frontend_code, libpq, zlib],
   kwargs: default_bin_args,
 )
-
+bin_targets += pg_restore
 
 tests += {
   'name': 'pg_dump',
