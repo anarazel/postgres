@@ -7,6 +7,7 @@ libpq_pipeline = executable('libpq_pipeline',
     'install': false,
   },
 )
+test_targets += libpq_pipeline
 
 tests += {
   'name': 'libpq_pipeline',

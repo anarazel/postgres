@@ -3,6 +3,7 @@ plsample = shared_module('plsample',
   ['plsample.c'],
   kwargs: pg_mod_args,
 )
+test_targets += plsample
 
 install_data(
   'plsample.control',

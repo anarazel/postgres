@@ -9,6 +9,7 @@ ssl_passphrase_callback = shared_module('ssl_passphrase_func',
     'dependencies': [ssl, pg_mod_args['dependencies']],
   },
 )
+test_targets += ssl_passphrase_callback
 
 # Targets to generate or remove the ssl certificate and key. Need to be copied
 # to the source afterwards. Normally not needed.
@@ -23,6 +24,7 @@ if openssl.found()
     build_by_default: false,
     install: false,
   )
+  test_targets += cert
 
   # needs to agree with what's in the test script
   pass = 'FooBaR1'
@@ -32,6 +34,7 @@ if openssl.found()
     output: ['server.key'],
     command: [openssl, 'rsa', '-aes256', '-in', '@INPUT0@', '-out', '@OUTPUT0@', '-passout', 'pass:@0@'.format(pass)]
   )
+  test_targets += enccert
 endif
 
 tests += {

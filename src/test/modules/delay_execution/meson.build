@@ -3,6 +3,7 @@ delay_execution = shared_module('delay_execution',
   ['delay_execution.c'],
   kwargs: pg_mod_args,
 )
+test_targets += delay_execution
 
 tests += {
   'name': 'delay_execution',

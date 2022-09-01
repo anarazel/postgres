@@ -3,6 +3,7 @@ test_lfind = shared_module('test_lfind',
   ['test_lfind.c'],
   kwargs: pg_mod_args,
 )
+test_targets += test_lfind
 
 install_data(
   'test_lfind.control',

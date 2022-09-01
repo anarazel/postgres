@@ -3,6 +3,7 @@ test_integerset = shared_module('test_integerset',
   ['test_integerset.c'],
   kwargs: pg_mod_args,
 )
+test_targets += test_integerset
 
 install_data(
   'test_integerset.control',

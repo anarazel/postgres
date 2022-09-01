@@ -3,6 +3,7 @@ test_oat_hooks = shared_module('test_oat_hooks',
   ['test_oat_hooks.c'],
   kwargs: pg_mod_args,
 )
+test_targets += test_oat_hooks
 
 tests += {
   'name': 'test_oat_hooks',

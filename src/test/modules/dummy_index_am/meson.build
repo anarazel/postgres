@@ -3,6 +3,7 @@ dummy_index_am = shared_module('dummy_index_am',
   ['dummy_index_am.c'],
   kwargs: pg_mod_args,
 )
+test_targets += dummy_index_am
 
 install_data(
   'dummy_index_am.control',

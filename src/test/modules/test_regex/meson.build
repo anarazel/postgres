@@ -3,6 +3,7 @@ test_regex = shared_module('test_regex',
   ['test_regex.c'],
   kwargs: pg_mod_args,
 )
+test_targets += test_regex
 
 install_data(
   'test_regex.control',

@@ -3,6 +3,7 @@ test_ddl_deparse = shared_module('test_ddl_deparse',
   ['test_ddl_deparse.c'],
   kwargs: pg_mod_args,
 )
+test_targets += test_ddl_deparse
 
 install_data(
   'test_ddl_deparse.control',

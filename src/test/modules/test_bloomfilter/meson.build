@@ -3,6 +3,7 @@ test_bloomfilter = shared_module('test_bloomfilter',
   ['test_bloomfilter.c'],
   kwargs: pg_mod_args,
 )
+test_targets += test_bloomfilter
 
 install_data(
   'test_bloomfilter.control',

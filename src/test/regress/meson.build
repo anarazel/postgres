@@ -16,6 +16,7 @@ pg_regress = executable('pg_regress',
     'install_dir': dir_pgxs / 'src/test/regress',
   },
 )
+test_targets += pg_regress
 
 regress_module = shared_module('regress',
   ['regress.c'],
@@ -23,6 +24,7 @@ regress_module = shared_module('regress',
     'install': false,
   },
 )
+test_targets += regress_module
 
 # Get some extra C modules from contrib/spi but mark them as not to be
 # installed.
@@ -42,6 +44,7 @@ shared_module('refint',
     'install': false,
   },
 )
+test_targets += refint
 
 
 tests += {

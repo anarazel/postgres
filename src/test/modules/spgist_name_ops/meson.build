@@ -3,6 +3,7 @@ spgist_name_ops = shared_module('spgist_name_ops',
   ['spgist_name_ops.c'],
   kwargs: pg_mod_args,
 )
+test_targets += spgist_name_ops
 
 install_data(
   'spgist_name_ops.control',

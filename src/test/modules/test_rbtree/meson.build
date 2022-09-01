@@ -3,6 +3,7 @@ test_rbtree = shared_module('test_rbtree',
   ['test_rbtree.c'],
   kwargs: pg_mod_args,
 )
+test_targets += test_rbtree
 
 install_data(
   'test_rbtree.control',

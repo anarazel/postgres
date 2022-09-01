@@ -3,6 +3,7 @@ dummy_seclabel = shared_module('dummy_seclabel',
   ['dummy_seclabel.c'],
   kwargs: pg_mod_args,
 )
+test_targets += dummy_seclabel
 
 install_data(
   'dummy_seclabel.control',

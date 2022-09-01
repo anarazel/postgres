@@ -11,6 +11,7 @@ spec_scanner = custom_target('specscanner',
   command: flex_cmd,
 )
 generated_sources += spec_scanner
+test_targets += spec_scanner
 
 isolationtester_sources = files('isolationtester.c')
 spec_parser = custom_target('specparse',
@@ -21,6 +22,7 @@ spec_parser = custom_target('specparse',
 )
 isolationtester_sources += spec_parser
 generated_sources += spec_parser
+test_targets += spec_parser
 
 pg_isolation_regress = executable('pg_isolation_regress',
   isolation_sources,
@@ -31,6 +33,7 @@ pg_isolation_regress = executable('pg_isolation_regress',
     'install_dir': dir_pgxs / 'src/test/isolation',
   },
 )
+test_targets += pg_isolation_regress
 
 isolationtester = executable('isolationtester',
   isolationtester_sources,
@@ -40,6 +43,7 @@ isolationtester = executable('isolationtester',
     'install_dir': dir_pgxs / 'src/test/isolation',
   },
 )
+test_targets += isolationtester
 
 tests += {
   'name': 'main',

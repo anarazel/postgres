@@ -3,6 +3,7 @@ test_rls_hooks = shared_module('test_rls_hooks',
   ['test_rls_hooks.c'],
   kwargs: pg_mod_args,
 )
+test_targets += test_rls_hooks
 
 tests += {
   'name': 'test_rls_hooks',

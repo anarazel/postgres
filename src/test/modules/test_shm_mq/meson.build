@@ -7,6 +7,7 @@ test_shm_mq = shared_module('test_shm_mq',
   ),
   kwargs: pg_mod_args,
 )
+test_targets += test_shm_mq
 
 install_data(
   'test_shm_mq.control',

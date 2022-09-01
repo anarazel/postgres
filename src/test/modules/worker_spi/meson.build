@@ -5,6 +5,7 @@ test_worker_spi = shared_module('worker_spi',
   ),
   kwargs: pg_mod_args,
 )
+test_targets += test_worker_spi
 
 install_data(
   'worker_spi.control',

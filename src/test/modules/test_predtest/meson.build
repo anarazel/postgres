@@ -3,6 +3,7 @@ test_predtest = shared_module('test_predtest',
   ['test_predtest.c'],
   kwargs: pg_mod_args,
 )
+test_targets += test_predtest
 
 install_data(
   'test_predtest.control',

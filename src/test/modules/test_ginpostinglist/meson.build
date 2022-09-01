@@ -3,6 +3,7 @@ test_ginpostinglist = shared_module('test_ginpostinglist',
   ['test_ginpostinglist.c'],
   kwargs: pg_mod_args,
 )
+test_targets += test_ginpostinglist
 
 install_data(
   'test_ginpostinglist.control',

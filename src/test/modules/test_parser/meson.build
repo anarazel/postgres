@@ -3,6 +3,7 @@ test_parser = shared_module('test_parser',
   ['test_parser.c'],
   kwargs: pg_mod_args,
 )
+test_targets += test_parser
 
 install_data(
   'test_parser.control',
