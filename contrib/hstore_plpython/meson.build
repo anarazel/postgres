@@ -14,6 +14,7 @@ hstore_plpython = shared_module('hstore_plpython3',
     'dependencies': [python3_dep, contrib_mod_args['dependencies']],
   },
 )
+contrib_targets += hstore_plpython
 
 install_data(
   'hstore_plpython3u--1.0.sql',

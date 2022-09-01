@@ -10,6 +10,7 @@ sslinfo = shared_module('sslinfo',
     'dependencies': [ssl, contrib_mod_args['dependencies']],
   }
 )
+contrib_targets += sslinfo
 
 install_data(
   'sslinfo--1.0--1.1.sql',

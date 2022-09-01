@@ -17,6 +17,7 @@ pg_walinspect = shared_module('pg_walinspect',
       'dependencies': contrib_mod_args['dependencies'],
   },
 )
+contrib_targets += pg_walinspect
 
 install_data(
   'pg_walinspect.control',

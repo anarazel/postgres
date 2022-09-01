@@ -4,6 +4,7 @@ pg_visibility = shared_module('pg_visibility',
   ),
   kwargs: contrib_mod_args,
 )
+contrib_targets += pg_visibility
 
 install_data(
   'pg_visibility--1.0--1.1.sql',

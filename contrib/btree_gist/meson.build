@@ -30,6 +30,7 @@ btree_gist = shared_module('btree_gist',
   c_pch: pch_postgres_h,
   kwargs: contrib_mod_args,
 )
+contrib_targets += btree_gist
 
 install_data(
   'btree_gist.control',

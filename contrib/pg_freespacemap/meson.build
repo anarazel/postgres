@@ -4,6 +4,7 @@ pg_freespacemap = shared_module('pg_freespacemap',
   ),
   kwargs: contrib_mod_args,
 )
+contrib_targets += pg_freespacemap
 
 install_data(
   'pg_freespacemap--1.0--1.1.sql',

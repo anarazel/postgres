@@ -77,6 +77,7 @@ pgcrypto = shared_module('pgcrypto',
     'dependencies': [pgcrypto_deps, contrib_mod_args['dependencies']]
   },
 )
+contrib_targets += pgcrypto
 
 install_data(
   'pgcrypto--1.0--1.1.sql',

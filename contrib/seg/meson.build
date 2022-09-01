@@ -9,6 +9,7 @@ seg_scan = custom_target('segscan',
   command: flex_cmd,
 )
 generated_sources += seg_scan
+contrib_targets += seg_scan
 
 seg_parse = custom_target('segparse',
   input: 'segparse.y',
@@ -18,12 +19,14 @@ seg_parse = custom_target('segparse',
 )
 generated_sources += seg_parse
 seg_sources += seg_parse
+contrib_targets += seg_parse
 
 seg = shared_module('seg',
   seg_sources,
   include_directories: include_directories('.'),
   kwargs: contrib_mod_args,
 )
+contrib_targets += seg
 
 install_data(
   'seg.control',

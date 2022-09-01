@@ -6,6 +6,7 @@ citext = shared_module('citext',
   citext_sources,
   kwargs: contrib_mod_args,
 )
+contrib_targets += citext
 
 install_data(
   'citext.control',

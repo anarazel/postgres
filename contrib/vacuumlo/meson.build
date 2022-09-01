@@ -1,8 +1,9 @@
-executable('vacuumlo',
+vacuumlo = executable('vacuumlo',
   ['vacuumlo.c'],
   dependencies: [frontend_code, libpq],
   kwargs: default_bin_args,
 )
+contrib_targets += vacuumlo
 
 tests += {
   'name': 'vacuumlo',

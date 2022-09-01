@@ -14,6 +14,7 @@ jsonb_plpython = shared_module('jsonb_plpython3',
     'dependencies': [python3_dep, contrib_mod_args['dependencies']],
   },
 )
+contrib_targets += jsonb_plpython
 
 install_data(
   'jsonb_plpython3u.control',

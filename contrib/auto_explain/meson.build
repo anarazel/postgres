@@ -2,6 +2,7 @@ auto_explain = shared_module('auto_explain',
   files('auto_explain.c'),
   kwargs: contrib_mod_args,
 )
+contrib_targets += auto_explain
 
 tests += {
   'name': 'auto_explain',

@@ -2,6 +2,7 @@ dict_int = shared_module('dict_int',
   files('dict_int.c'),
   kwargs: contrib_mod_args,
 )
+contrib_targets += dict_int
 
 install_data(
   'dict_int.control',

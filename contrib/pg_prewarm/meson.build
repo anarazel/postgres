@@ -5,6 +5,7 @@ pg_prewarm = shared_module('pg_prewarm',
   ),
   kwargs: contrib_mod_args,
 )
+contrib_targets += pg_prewarm
 
 install_data(
   'pg_prewarm--1.0--1.1.sql',

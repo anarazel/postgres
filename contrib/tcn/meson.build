@@ -4,6 +4,7 @@ tcn = shared_module('tcn',
   ),
   kwargs: contrib_mod_args,
 )
+contrib_targets += tcn
 
 install_data(
   'tcn--1.0.sql',

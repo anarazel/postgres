@@ -12,6 +12,7 @@ intarray = shared_module('_int',
   intarray_sources,
   kwargs: contrib_mod_args,
 )
+contrib_targets += intarray
 
 install_data(
   'intarray.control',

@@ -9,6 +9,7 @@ cube_scan = custom_target('cubescan',
   command: flex_cmd,
 )
 generated_sources += cube_scan
+contrib_targets += cube_scan
 
 cube_parse = custom_target('cubeparse',
   input: 'cubeparse.y',
@@ -17,12 +18,14 @@ cube_parse = custom_target('cubeparse',
   command: [bison_cmd, '@INPUT@'],)
 generated_sources += cube_parse
 cube_sources += cube_parse
+contrib_targets += cube_parse
 
 cube = shared_module('cube',
   cube_sources,
   include_directories: include_directories('.'),
   kwargs: contrib_mod_args,
 )
+contrib_targets += cube
 
 install_data(
   'cube.control',

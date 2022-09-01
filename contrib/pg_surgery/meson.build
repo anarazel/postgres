@@ -4,6 +4,7 @@ pg_surgery = shared_module('pg_surgery',
   ),
   kwargs: contrib_mod_args,
 )
+contrib_targets += pg_surgery
 
 install_data(
   'pg_surgery--1.0.sql',

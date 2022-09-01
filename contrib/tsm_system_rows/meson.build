@@ -4,6 +4,7 @@ tsm_system_rows = shared_module('tsm_system_rows',
   ),
   kwargs: contrib_mod_args,
 )
+contrib_targets += tsm_system_rows
 
 install_data(
   'tsm_system_rows--1.0.sql',

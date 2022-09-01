@@ -5,6 +5,7 @@ fuzzystrmatch = shared_module('fuzzystrmatch',
   ),
   kwargs: contrib_mod_args,
 )
+contrib_targets += fuzzystrmatch
 
 install_data(
   'fuzzystrmatch.control',

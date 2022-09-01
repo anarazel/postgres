@@ -15,6 +15,7 @@ bool_plperl = shared_module('bool_plperl',
     'build_rpath': '@0@/CORE'.format(archlibexp),
   },
 )
+contrib_targets += bool_plperl
 
 install_data(
   'bool_plperl.control',

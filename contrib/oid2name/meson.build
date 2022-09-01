@@ -1,8 +1,9 @@
-executable('oid2name',
+oid2name = executable('oid2name',
   ['oid2name.c'],
   dependencies: [frontend_code, libpq],
   kwargs: default_bin_args,
 )
+contrib_targets += oid2name
 
 tests += {
   'name': 'oid2name',

@@ -4,6 +4,7 @@ amcheck = shared_module('amcheck', [
   ],
   kwargs: contrib_mod_args,
 )
+contrib_targets += amcheck
 
 install_data(
   'amcheck.control',

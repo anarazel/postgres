@@ -12,6 +12,7 @@ postgres_fdw = shared_module('postgres_fdw',
     'dependencies': contrib_mod_args['dependencies'] + [libpq],
   },
 )
+contrib_targets += postgres_fdw
 
 install_data(
   'postgres_fdw.control',

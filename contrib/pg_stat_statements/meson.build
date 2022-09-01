@@ -4,6 +4,7 @@ pg_stat_statements = shared_module('pg_stat_statements',
     'dependencies': contrib_mod_args['dependencies'],
   },
 )
+contrib_targets += pg_stat_statements
 
 install_data(
   'pg_stat_statements.control',

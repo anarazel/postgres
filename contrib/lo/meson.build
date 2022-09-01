@@ -6,6 +6,7 @@ lo = shared_module('lo',
   lo_sources,
   kwargs: contrib_mod_args,
 )
+contrib_targets += lo
 
 install_data(
   'lo.control',

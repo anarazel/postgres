@@ -15,6 +15,7 @@ jsonb_plperl = shared_module('jsonb_plperl',
     'build_rpath': '@0@/CORE'.format(archlibexp),
   },
 )
+contrib_targets += jsonb_plperl
 
 install_data(
   'jsonb_plperl.control',

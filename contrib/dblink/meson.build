@@ -8,6 +8,7 @@ dblink = shared_module('dblink',
     'dependencies': contrib_mod_args['dependencies'] + [libpq],
   },
 )
+contrib_targets += dblink
 
 install_data(
   'dblink.control',

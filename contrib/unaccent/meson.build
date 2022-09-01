@@ -4,6 +4,7 @@ unaccent = shared_module('unaccent',
   ),
   kwargs: contrib_mod_args,
 )
+contrib_targets += unaccent
 
 install_data(
   'unaccent--1.0--1.1.sql',

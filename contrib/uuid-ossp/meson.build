@@ -9,8 +9,8 @@ uuid_ossp = shared_module('uuid-ossp',
   kwargs: contrib_mod_args + {
     'dependencies': [uuid, contrib_mod_args['dependencies']],
   },
-
 )
+contrib_targets += uuid_ossp
 
 install_data(
   'uuid-ossp--1.0--1.1.sql',

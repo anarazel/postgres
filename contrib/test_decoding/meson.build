@@ -6,6 +6,7 @@ test_decoding = shared_module('test_decoding',
   test_decoding_sources,
   kwargs: contrib_mod_args,
 )
+contrib_targets += test_decoding
 
 tests += {
   'name': 'test_decoding',

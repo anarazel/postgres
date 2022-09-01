@@ -17,6 +17,7 @@ ltree = shared_module('ltree',
   ltree_sources,
   kwargs: contrib_mod_args,
 )
+contrib_targets += ltree
 
 install_data(
   'ltree.control',

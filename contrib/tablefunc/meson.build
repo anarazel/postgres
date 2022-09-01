@@ -4,6 +4,7 @@ tablefunc = shared_module('tablefunc',
   ),
   kwargs: contrib_mod_args,
 )
+contrib_targets += tablefunc
 
 install_data(
   'tablefunc--1.0.sql',

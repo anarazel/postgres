@@ -7,6 +7,7 @@ pgstattuple = shared_module('pgstattuple',
   c_pch: pch_postgres_h,
   kwargs: contrib_mod_args,
 )
+contrib_targets += pgstattuple
 
 install_data(
   'pgstattuple--1.0--1.1.sql',

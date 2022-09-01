@@ -15,6 +15,7 @@ hstore_plperl = shared_module('hstore_plperl',
     'build_rpath': '@0@/CORE'.format(archlibexp),
   },
 )
+contrib_targets += hstore_plperl
 
 install_data(
   'hstore_plperl.control',

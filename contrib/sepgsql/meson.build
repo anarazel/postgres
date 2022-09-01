@@ -21,6 +21,7 @@ sepgsql = shared_module('sepgsql',
     'dependencies': [selinux, contrib_mod_args['dependencies']],
   }
 )
+contrib_targets += sepgsql
 
 custom_target('sepgsql.sql',
   input: 'sepgsql.sql.in',

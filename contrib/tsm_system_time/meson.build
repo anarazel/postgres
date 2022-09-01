@@ -4,6 +4,7 @@ tsm_system_time = shared_module('tsm_system_time',
   ),
   kwargs: contrib_mod_args,
 )
+contrib_targets += tsm_system_time
 
 install_data(
   'tsm_system_time--1.0.sql',

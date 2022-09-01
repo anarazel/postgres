@@ -6,6 +6,7 @@ basic_archive = shared_module('basic_archive',
   basic_archive_sources,
   kwargs: contrib_mod_args,
 )
+contrib_targets += basic_archive
 
 tests += {
   'name': 'basic_archive',

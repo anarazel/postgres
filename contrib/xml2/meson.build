@@ -12,6 +12,7 @@ xml2 = shared_module('pgxml',
     'dependencies': [libxml, libxslt, contrib_mod_args['dependencies']],
   },
 )
+contrib_targets += xml2
 
 install_data(
   'xml2--1.0--1.1.sql',

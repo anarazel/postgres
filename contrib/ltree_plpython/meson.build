@@ -14,6 +14,7 @@ ltree_plpython = shared_module('ltree_plpython3',
     'dependencies': [python3_dep, contrib_mod_args['dependencies']],
   },
 )
+contrib_targets += ltree_plpython
 
 install_data(
   'ltree_plpython3u--1.0.sql',

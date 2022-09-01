@@ -2,6 +2,7 @@ btree_gin = shared_module('btree_gin',
   files('btree_gin.c'),
   kwargs: contrib_mod_args,
 )
+contrib_targets += btree_gin
 
 install_data(
   'btree_gin.control',

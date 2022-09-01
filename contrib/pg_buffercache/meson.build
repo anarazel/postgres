@@ -4,6 +4,7 @@ pg_buffercache = shared_module('pg_buffercache',
   ),
   kwargs: contrib_mod_args,
 )
+contrib_targets += pg_buffercache
 
 install_data(
   'pg_buffercache--1.0--1.1.sql',

@@ -6,6 +6,7 @@ isn = shared_module('isn',
   isn_sources,
   kwargs: contrib_mod_args,
 )
+contrib_targets += isn
 
 install_data(
   'isn.control',

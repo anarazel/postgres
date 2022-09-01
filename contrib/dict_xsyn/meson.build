@@ -2,6 +2,7 @@ dict_xsyn = shared_module('dict_xsyn',
   files('dict_xsyn.c'),
   kwargs: contrib_mod_args,
 )
+contrib_targets += dict_xsyn
 
 install_data(
   'dict_xsyn.control',

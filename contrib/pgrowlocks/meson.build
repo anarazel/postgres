@@ -4,6 +4,7 @@ pgrowlocks = shared_module('pgrowlocks',
   ),
   kwargs: contrib_mod_args,
 )
+contrib_targets += pgrowlocks
 
 install_data(
   'pgrowlocks--1.0--1.1.sql',

@@ -2,6 +2,7 @@ file_fdw = shared_module('file_fdw',
   files('file_fdw.c'),
   kwargs: contrib_mod_args,
 )
+contrib_targets += file_fdw
 
 install_data(
   'file_fdw.control',

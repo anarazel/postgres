@@ -2,6 +2,7 @@ earthdistance = shared_module('earthdistance',
   files('earthdistance.c'),
   kwargs: contrib_mod_args,
 )
+contrib_targets += earthdistance
 
 install_data(
   'earthdistance.control',

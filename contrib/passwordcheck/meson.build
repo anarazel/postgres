@@ -16,6 +16,7 @@ passwordcheck = shared_module('passwordcheck',
     'dependencies': contrib_mod_args.get('dependencies') + passwordcheck_deps,
   }
 )
+contrib_targets += passwordcheck
 
 tests += {
   'name': 'passwordcheck',

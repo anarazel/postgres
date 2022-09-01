@@ -2,6 +2,7 @@ adminpack = shared_module('adminpack',
   ['adminpack.c'],
   kwargs: contrib_mod_args,
 )
+contrib_targets += adminpack
 
 install_data(
   'adminpack.control',
