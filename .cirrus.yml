@@ -35,6 +35,7 @@ on_failure_ac: &on_failure_ac
       - "**/*.log"
       - "**/*.diffs"
       - "**/regress_log_*"
+      - "**/*.stackdump"
     type: text/plain
 
 on_failure_meson: &on_failure_meson
@@ -355,23 +356,36 @@ task:
     cores_script: src/tools/ci/cores_backtrace.sh macos "${HOME}/cores"
 
 
+WINDOWS_ENVIRONMENT_BASE: &WINDOWS_ENVIRONMENT_BASE
+    env:
+      # Half the allowed per-user CPU cores
+      CPUS: 4
+      TEST_JOBS: 8 # wild guess, data based value welcome
+
+      # The default working dir is in a directory msbuild complains about
+      CIRRUS_WORKING_DIR: "c:/cirrus"
+
+      # Avoids port conflicts between concurrent tap test runs
+      PG_TEST_USE_UNIX_SOCKETS: 1
+
+      # git's tar doesn't deal with drive letters, see
+      # https://postgr.es/m/b6782dc3-a7b0-ed56-175f-f8f54cb08d67%40dunslane.net
+      TAR: "c:/windows/system32/tar.exe"
+
+    sysinfo_script: |
+      chcp
+      systeminfo
+      powershell -Command get-psdrive -psprovider filesystem
+      set
+
 task:
   name: Windows - Server 2019, VS 2019 - Meson & ninja
+  << : *WINDOWS_ENVIRONMENT_BASE
 
   env:
-    # Half the allowed per-user CPU cores
-    CPUS: 4
-    TEST_JOBS: 8 # wild guess, data based value welcome
-
-    # The default cirrus working dir is in a directory msbuild complains about
-    CIRRUS_WORKING_DIR: "c:/cirrus"
     # Avoid re-installing over and over
     NO_TEMP_INSTALL: 1
-    # git's tar doesn't deal with drive letters, see
-    # https://postgr.es/m/b6782dc3-a7b0-ed56-175f-f8f54cb08d67%40dunslane.net
-    TAR: "c:/windows/system32/tar.exe"
-    # Avoids port conflicts between concurrent tap test runs
-    PG_TEST_USE_UNIX_SOCKETS: 1
+
     PG_REGRESS_SOCK_DIR: "c:/cirrus/"
 
     # startcreate_script starts a postgres instance that we don't want to get
@@ -397,33 +411,136 @@ task:
     cpu: $CPUS
     memory: 4G
 
-  sysinfo_script: |
-    chcp
-    systeminfo
-    powershell -Command get-psdrive -psprovider filesystem
-    set
-
   setup_additional_packages_script: |
     REM choco install -y --no-progress ...
-
   # Use /DEBUG:FASTLINK to avoid high memory usage during linking
   configure_script: |
     vcvarsall x64
-    meson setup --backend ninja --buildtype debug -Dc_link_args=/DEBUG:FASTLINK -Dcassert=true -Dssl=openssl -Dextra_lib_dirs=c:\openssl\1.1\lib -Dextra_include_dirs=c:\openssl\1.1\include -DTAR=c:/windows/system32/tar.exe -DPG_TEST_EXTRA="%PG_TEST_EXTRA%" build
-
+    meson setup --backend ninja --buildtype debug -Dc_link_args=/DEBUG:FASTLINK -Dcassert=true -Dssl=openssl -Dextra_lib_dirs=c:\openssl\1.1\lib -Dextra_include_dirs=c:\openssl\1.1\include -DTAR=%TAR% -DPG_TEST_EXTRA="%PG_TEST_EXTRA%" build
   build_script: |
     vcvarsall x64
     ninja -C build
-
   check_world_script: |
     vcvarsall x64
     meson test %MTEST_ARGS% --num-processes %TEST_JOBS%
-
   on_failure:
     <<: *on_failure_meson
     crashlog_artifacts:
       path: "crashlog-*.txt"
       type: text/plain
+
+task:
+  << : *WINDOWS_ENVIRONMENT_BASE
+  name: Windows - Server 2019, MinGW64 - Autoconf
+  
+  # This task needs to be triggered manually on Cirrus CI.
+  # Otherwise it will not run and be shown as paused
+  # XXX: Below line needs to be uncommented before merge. It's commented for now so that cfbot can run it    
+  #trigger_type: manual
+
+  windows_container:
+    image: $CONTAINER_REPO/windows_ci_mingw64:latest
+    cpu: $CPUS
+    memory: 4G
+  env:
+    CCACHE_DIR: C:/msys64/ccache
+    BUILD_DIR: "%CIRRUS_WORKING_DIR%/build"
+
+  ccache_cache:
+    folder: ${CCACHE_DIR}
+
+  setup_additional_packages_script: |
+    REM C:\msys64\usr\bin\pacman.exe -S --noconfirm ...
+
+  mingw_info_script:
+    - C:\msys64\usr\bin\dash.exe -lc "where gcc"
+    - C:\msys64\usr\bin\dash.exe -lc "gcc --version"
+    - C:\msys64\usr\bin\dash.exe -lc "where perl"
+    - C:\msys64\usr\bin\dash.exe -lc "perl --version"
+
+  configure_script:
+    # Try to configure with the cache file, and retry without if it fails, in case the flags changed.
+    - C:\msys64\usr\bin\dash.exe -lc "mkdir %BUILD_DIR% &&
+      cd %BUILD_DIR% &&
+      %CIRRUS_WORKING_DIR%/configure
+        --cache-file=${CCACHE_DIR}/configure.cache
+        --enable-cassert
+        --enable-debug
+        --enable-tap-tests
+        --with-icu
+        --with-libxml
+        --with-libxslt
+        --with-lz4
+        CC='ccache gcc'
+        CXX='ccache g++'
+        CFLAGS='-Og -ggdb -pipe'
+        CXXFLAGS='-Og -ggdb';
+        "
+
+  build_script:
+    - C:\msys64\usr\bin\dash.exe -lc "cd %BUILD_DIR% && make -s -j${CPUS} world-bin"
+    - C:\msys64\usr\bin\dash.exe -lc "cd %BUILD_DIR% && make -s -j${CPUS} -C src/test"
+    - C:\msys64\usr\bin\dash.exe -lc "cd %BUILD_DIR% && make -s -j${CPUS} -C src/interfaces/ecpg/test"
+    - C:\msys64\usr\bin\dash.exe -lc "cd %BUILD_DIR% && make -s -j${CPUS} -C src/interfaces/libpq/test"
+
+  upload_caches: ccache
+
+  test_world_script:
+    - set "NoDefaultCurrentDirectoryInExePath=0"
+    - C:\msys64\usr\bin\dash.exe -lc "cd %BUILD_DIR% && make -s ${CHECK} ${CHECKFLAGS} -j${TEST_JOBS} TMPDIR=%BUILD_DIR%/tmp_install"
+
+  on_failure:
+    <<: *on_failure_ac
+    cores_script:
+      - C:\msys64\usr\bin\dash.exe -lc "cd %BUILD_DIR% src/tools/ci/cores_backtrace.sh msys %BUILD_DIR%/tmp_install"
+
+task:
+  << : *WINDOWS_ENVIRONMENT_BASE
+  name: Windows - Server 2019, MinGW64 - Meson
+  
+  # This task needs to be triggered manually on Cirrus CI.
+  # Otherwise it will not run and be shown as paused
+  # XXX: Below line needs to be uncommented before merge. It's commented for now so that cfbot can run it    
+  #trigger_type: manual
+
+  only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*mingw.*'
+
+  windows_container:
+    image: $CONTAINER_REPO/windows_ci_mingw64:latest
+    cpu: $CPUS
+    memory: 4G
+  env:
+    CCACHE_DIR: C:/msys64/ccache
+    BUILD_DIR: "%CIRRUS_WORKING_DIR%/build"
+
+  ccache_cache:
+    folder: ${CCACHE_DIR}
+
+  setup_additional_packages_script: |
+    REM C:\msys64\usr\bin\pacman.exe -S --noconfirm ...
+
+  mingw_info_script:
+    - C:\msys64\usr\bin\dash.exe -lc "where gcc"
+    - C:\msys64\usr\bin\dash.exe -lc "gcc --version"
+    - C:\msys64\usr\bin\dash.exe -lc "where perl"
+    - C:\msys64\usr\bin\dash.exe -lc "perl --version"
+
+  configure_script:
+    # Try to configure with the cache file, and retry without if it fails, in case the flags changed.
+    - C:\msys64\usr\bin\dash.exe -lc "export PATH=%BUILD_DIR%:/%BUILD_DIR%/tmp_install:$PATH &&
+      cd %CIRRUS_WORKING_DIR% &&
+      meson setup --buildtype=debug -Dcassert=true %BUILD_DIR%"
+
+  build_script:
+    - C:\msys64\usr\bin\dash.exe -lc "cd %CIRRUS_WORKING_DIR% && ninja -C %BUILD_DIR%"
+
+  test_world_script:
+    - C:\msys64\usr\bin\dash.exe -lc "cd %CIRRUS_WORKING_DIR% && meson test --print-errorlogs -C %BUILD_DIR%"
+
+  on_failure:
+    <<: *on_failure_meson
+    cores_script:
+      - C:\msys64\usr\bin\dash.exe -lc "cd %BUILD_DIR% src/tools/ci/cores_backtrace.sh msys %BUILD_DIR%/tmp_install"
 
 
 task:

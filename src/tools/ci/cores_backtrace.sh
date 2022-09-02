@@ -10,11 +10,24 @@ directory=$2
 
 case $os in
     freebsd|linux|macos)
-    ;;
+        ;;
+
+    msys)
+        # XXX Evidently I don't know how to write two arguments here without pathname expansion later, other than eval.
+        #findargs='-name "*.stackdump"'
+        for corefile in $(find "$directory" -type f -name "*.stackdump") ; do
+            binary=`basename "$corefile" .stackdump`
+            echo;echo;
+            echo "dumping ${corefile} for ${binary}"
+            awk '/^0/{print $2}' $corefile |addr2line -f -i -e ./src/backend/postgres.exe
+        done
+        exit 0
+        ;;
+
     *)
         echo "unsupported operating system ${os}"
         exit 1
-    ;;
+        ;;
 esac
 
 first=1
