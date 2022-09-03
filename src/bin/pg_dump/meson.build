@@ -11,16 +11,6 @@ pg_dump_common_sources = files(
   'pg_backup_utils.c',
 )
 
-if host_system == 'windows'
-  pg_dump_common_sources += windows.compile_resources(
-    custom_target('win32ver.rc', kwargs: rcgen_kw,
-      command: rcgen_bin_cmd + [
-        '--FILEDESC', 'pg_dump/pg_restore/pg_dumpall - backup and restore PostgreSQL databases',
-        '--NAME', 'pg_dump',]),
-    kwargs: rccompile_kw,
-  )
-endif
-
 pg_dump_common = static_library('libpgdump_common',
   pg_dump_common_sources,
   c_pch: pch_postgres_fe_h,
@@ -35,6 +25,19 @@ pg_dump_sources = files(
   'pg_dump_sort.c',
 )
 
+if host_system == 'windows'
+  pg_dump_sources += windows.compile_resources(
+    custom_target('pg_dump.rc',
+      command: rcgen_bin_cmd + [
+        '--FILEDESC', 'pg_dump - backup one PostgreSQL database',
+        '--NAME', 'pg_dump',],
+      kwargs: rcgen_kw + {
+        'output': 'pg_dump.rc',
+      }),
+    kwargs: rccompile_kw,
+  )
+endif
+
 pg_dump = executable('pg_dump',
   pg_dump_sources,
   link_with: [pg_dump_common],
@@ -48,6 +51,19 @@ pg_dumpall_sources = files(
   'pg_dumpall.c',
 )
 
+if host_system == 'windows'
+  pg_dumpall_sources += windows.compile_resources(
+    custom_target('pg_dumpall.rc',
+      command: rcgen_bin_cmd + [
+        '--FILEDESC', 'pg_dumpall - backup PostgreSQL databases',
+        '--NAME', 'pg_dumpall',],
+      kwargs: rcgen_kw + {
+        'output': 'pg_dumpall.rc',
+      }),
+    kwargs: rccompile_kw,
+  )
+endif
+
 pg_dumpall = executable('pg_dumpall',
   pg_dumpall_sources,
   link_with: [pg_dump_common],
@@ -60,6 +76,19 @@ bin_targets += pg_dumpall
 pg_restore_sources = files(
   'pg_restore.c',
 )
+
+if host_system == 'windows'
+  pg_restore_sources += windows.compile_resources(
+    custom_target('pg_restore.rc',
+      command: rcgen_bin_cmd + [
+        '--FILEDESC', 'pg_restore - restore PostgreSQL databases',
+        '--NAME', 'pg_restore',],
+      kwargs: rcgen_kw + {
+        'output': 'pg_restore.rc',
+      }),
+    kwargs: rccompile_kw,
+  )
+endif
 
 pg_restore = executable('pg_restore',
   pg_restore_sources,
