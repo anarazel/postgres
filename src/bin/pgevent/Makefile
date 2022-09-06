@@ -17,7 +17,8 @@ ifeq ($(PORTNAME), win32)
 
 OBJS = \
 	pgevent.o \
-	pgmsgevent.o
+	pgmsgevent.o \
+	$(WIN32RES)
 NAME=pgevent
 
 SHLIB_LINK =
@@ -28,9 +29,6 @@ all: all-lib
 install: all install-lib
 
 include $(top_srcdir)/src/Makefile.shlib
-
-pgmsgevent.o: pgmsgevent.rc win32ver.rc
-	$(WINDRES) $< -o $@ --include-dir=$(top_builddir)/src/include --include-dir=$(top_srcdir)/src/include --include-dir=$(srcdir) --include-dir=.
 
 clean distclean: clean-lib
 	rm -f $(OBJS) win32ver.rc

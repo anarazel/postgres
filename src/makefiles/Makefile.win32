@@ -78,7 +78,7 @@ win32ver.rc: $(top_srcdir)/src/port/win32ver.rc
 win32ver.rc: $(top_builddir)/src/Makefile.global
 endif
 
-win32ver.o: win32ver.rc
+%.o: %.rc
 	$(WINDRES) -i $< -o $@ --include-dir=$(top_builddir)/src/include --include-dir=$(srcdir)
 
 # Rule for building a shared library from a single .o file
