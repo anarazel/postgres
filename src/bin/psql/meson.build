@@ -39,13 +39,9 @@ psql_sources += sql_help
 bin_targets += sql_help
 
 if host_system == 'windows'
-  psql_sources += windows.compile_resources(
-    custom_target('win32ver.rc', kwargs: rcgen_kw,
-      command: rcgen_bin_cmd + [
-        '--FILEDESC', 'psql - the PostgreSQL interactive terminal',
-        '--NAME', 'psql',]),
-    kwargs: rccompile_kw,
-  )
+  psql_sources += rc_bin_gen.process(win32ver_rc_in, extra_args: [
+    '--NAME', 'psql',
+    '--FILEDESC', 'psql - the PostgreSQL interactive terminal',])
 endif
 
 psql = executable('psql',

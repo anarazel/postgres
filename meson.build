@@ -2569,34 +2569,56 @@ gen_export_kwargs = {
 ### windows resources related stuff
 ###
 
-pg_ico = meson.source_root() / 'src' / 'port' / 'win32.ico'
-win32ver_rc_in = files('src/port/win32ver.rc.in')
-rcgen = find_program('src/tools/rcgen', native: true)
+if host_system == 'windows'
+  pg_ico = meson.source_root() / 'src' / 'port' / 'win32.ico'
+  win32ver_rc_in = files('src/port/win32ver.rc.in')
+  rcgen = find_program('src/tools/rcgen', native: true)
 
-rcgen_cmd = [rcgen, '@INPUT@', '-o', '@OUTPUT@', '--depfile', '@DEPFILE@']
-rcgen_bin_cmd = rcgen_cmd + [
-  '--VFT_TYPE', 'VFT_APP',
-  '--FILEENDING', 'exe',
-  '--ICO', pg_ico,
-]
+  rcgen_base_args = [
+    '--srcdir', '@SOURCE_DIR@',
+    '--builddir', meson.build_root(),
+    '--depfile', '@DEPFILE@',
+    '--rcout', '@OUTPUT0@',
+    '--out', '@OUTPUT1@',
+    '--input', '@INPUT@',
+    '@EXTRA_ARGS@',
+  ]
 
-rcgen_lib_cmd = rcgen_cmd + [
-  '--VFT_TYPE', 'VFT_DLL',
-  '--FILEENDING', 'dll',
-]
+  if cc.get_argument_syntax() == 'msvc'
+    rcgen_base_args += [
+      '--rc', find_program('rc', required: true).path(),
+    ]
+    rcgen_outputs = ['@BASENAME@', '@BASENAME@.res']
+  else
+    rcgen_base_args += [
+      '--windres', find_program('windres', required: true).path(),
+    ]
+    rcgen_outputs = ['@BASENAME@', '@BASENAME@.obj']
+  endif
 
-rcgen_inc = [postgres_inc]
+  rcgen_bin_args = rcgen_base_args + [
+    '--VFT_TYPE', 'VFT_APP',
+    '--FILEENDING', 'exe',
+    '--ICO', pg_ico
+  ]
 
-rcgen_kw = {
-  'input': win32ver_rc_in,
-  'output': 'win32ver.rc',
-  'depfile': '@BASENAME@.d',
-}
+  rcgen_lib_args = rcgen_base_args + [
+    '--VFT_TYPE', 'VFT_DLL',
+    '--FILEENDING', 'dll',
+  ]
 
-rccompile_kw = {
-  'include_directories': rcgen_inc,
-}
+  rc_bin_gen = generator(rcgen,
+    depfile: '@BASENAME@.d',
+    arguments: rcgen_bin_args,
+    output: rcgen_outputs,
+  )
 
+  rc_lib_gen = generator(rcgen,
+    depfile: '@BASENAME@.d',
+    arguments: rcgen_lib_args,
+    output: rcgen_outputs,
+  )
+endif
 
 
 # headers that the whole build tree depends on

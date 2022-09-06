@@ -1,14 +1,9 @@
 pg_walinspect_sources = files('pg_walinspect.c')
 
 if host_system == 'windows'
-  pg_walinspect_sources += windows.compile_resources(
-    custom_target('win32ver.rc', kwargs: rcgen_kw,
-      command: rcgen_bin_cmd + [
-        '--FILEDESC', 'pg_walinspect - functions to inspect contents of PostgreSQL Write-Ahead Log',
-        '--NAME', 'pg_walinspect',
-      ]),
-    kwargs: rccompile_kw,
-  )
+  pg_walinspect_sources += rc_bin_gen.process(win32ver_rc_in, extra_args: [
+    '--NAME', 'pg_walinspect',
+    '--FILEDESC', 'pg_walinspect - functions to inspect contents of PostgreSQL Write-Ahead Log',])
 endif
 
 pg_walinspect = shared_module('pg_walinspect',

@@ -1,36 +1,88 @@
 #!/usr/bin/env python3
 
 import argparse
+import os
+import subprocess
+import sys
 
 parser = argparse.ArgumentParser(description='generate PostgreSQL rc file')
 
-parser.add_argument('INPUT', type=argparse.FileType('r'))
-parser.add_argument('-o', '--output', type=argparse.FileType('w'),
+parser.add_argument('--srcdir', type=os.path.abspath,
                     required=True)
-parser.add_argument('--depfile', type=argparse.FileType('w'),
-                    required=False)
+parser.add_argument('--builddir', type=os.path.abspath,
+                    required=True)
 
-parser.add_argument('--FILEDESC', type=str, required=True)
-parser.add_argument('--NAME', type=str, required=True)
-parser.add_argument('--VFT_TYPE', type=str, required=True)
-parser.add_argument('--FILEENDING', type=str, required=True)
-parser.add_argument('--ICO', type=str)
+binaries = parser.add_argument_group('binaries')
+binaries.add_argument('--windres', type=os.path.abspath)
+binaries.add_argument('--rc', type=os.path.abspath)
 
+inout = parser.add_argument_group('inout')
+inout.add_argument('--depfile', type=argparse.FileType('w'),
+                   required=True)
+inout.add_argument('--input', type=argparse.FileType('r'),
+                   required=True)
+inout.add_argument('--rcout', type=argparse.FileType('w'),
+                   required=True)
+inout.add_argument('--out', type=str,
+                   required=True)
+
+replacements = parser.add_argument_group('replacements')
+replacements.add_argument('--FILEDESC', type=str)
+replacements.add_argument('--NAME', type=str, required=True)
+replacements.add_argument('--VFT_TYPE', type=str, required=True)
+replacements.add_argument('--FILEENDING', type=str, required=True)
+replacements.add_argument('--ICO', type=str)
 
 args = parser.parse_args()
 
-data = args.INPUT.read()
+data = args.input.read()
 
-data = data.replace('@FILEDESC@', args.FILEDESC)
-data = data.replace('@NAME@', args.NAME)
 data = data.replace('@VFT_TYPE@', args.VFT_TYPE)
+data = data.replace('@NAME@', args.NAME)
 data = data.replace('@FILEENDING@', args.FILEENDING)
+
+
+# if no description is passed in, generate one based on the name
+desc = ''
+if args.FILEDESC:
+    desc = args.FILEDESC
+elif args.NAME:
+  if args.VFT_TYPE == 'VFT_DLL':
+      ddata = data.replace('@FILEDESC@', 'PostgreSQL {0} library', args.name)
+  else:
+      data = data.replace('@FILEDESC@', 'PostgreSQL {0} binary', args.name)
+data = data.replace('@FILEDESC@', desc)
 
 if args.ICO:
     data = data.replace('@ICO@', args.ICO)
-    if args.depfile:
-        args.depfile.write("{0} : {1}\n".format(args.INPUT.name, args.ICO))
+    args.depfile.write("{0} : {1}\n".format(args.rcout.name, args.ICO))
 else:
     data = data.replace("IDI_ICON ICON \"@ICO@\"\n", '')
 
-args.output.write(data)
+args.rcout.write(data)
+args.rcout.close()
+
+args.depfile.write("{0} : {1}\n".format(args.rcout.name, args.input.name))
+
+if args.windres:
+    cmd = [
+        args.windres,
+        '-I{0}/src/include/'.format(args.builddir), '-I{0}/src/include/'.format(args.srcdir),
+         '-o', args.out, '-i', args.rcout.name,
+    ]
+elif args.rc:
+    cmd = [
+        args.rc, '/nologo',
+        '-I{0}/src/include/'.format(args.builddir), '-I{0}/src/include/'.format(args.srcdir),
+        '/fo', args.out, args.rcout.name,
+    ]
+else:
+    sys.exit('either --windres or --rc and --cvtres need to be specified ')
+
+sp = subprocess.run(cmd)
+if sp.returncode != 0:
+    sys.exit(sp.returncode)
+
+# It'd be nicer if we could generate correct dependencies here, but 'rc'
+# doesn't support doing so. It's unlikely we'll ever need more, so...
+args.depfile.write("{0} : {1}/{2}\n".format(args.out, args.builddir, 'src/include/pg_config.h'))

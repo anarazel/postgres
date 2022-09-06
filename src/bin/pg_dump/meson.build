@@ -26,16 +26,9 @@ pg_dump_sources = files(
 )
 
 if host_system == 'windows'
-  pg_dump_sources += windows.compile_resources(
-    custom_target('pg_dump.rc',
-      command: rcgen_bin_cmd + [
-        '--FILEDESC', 'pg_dump - backup one PostgreSQL database',
-        '--NAME', 'pg_dump',],
-      kwargs: rcgen_kw + {
-        'output': 'pg_dump.rc',
-      }),
-    kwargs: rccompile_kw,
-  )
+  pg_dump_sources += rc_bin_gen.process(win32ver_rc_in, extra_args: [
+    '--NAME', 'pg_dump',
+    '--FILEDESC', 'pg_dump - backup one PostgreSQL database',])
 endif
 
 pg_dump = executable('pg_dump',
@@ -52,16 +45,9 @@ pg_dumpall_sources = files(
 )
 
 if host_system == 'windows'
-  pg_dumpall_sources += windows.compile_resources(
-    custom_target('pg_dumpall.rc',
-      command: rcgen_bin_cmd + [
-        '--FILEDESC', 'pg_dumpall - backup PostgreSQL databases',
-        '--NAME', 'pg_dumpall',],
-      kwargs: rcgen_kw + {
-        'output': 'pg_dumpall.rc',
-      }),
-    kwargs: rccompile_kw,
-  )
+  pg_dumpall_sources += rc_bin_gen.process(win32ver_rc_in, extra_args: [
+    '--NAME', 'pg_dumpall',
+    '--FILEDESC', 'pg_dumpall - backup PostgreSQL databases'])
 endif
 
 pg_dumpall = executable('pg_dumpall',
@@ -78,16 +64,9 @@ pg_restore_sources = files(
 )
 
 if host_system == 'windows'
-  pg_restore_sources += windows.compile_resources(
-    custom_target('pg_restore.rc',
-      command: rcgen_bin_cmd + [
-        '--FILEDESC', 'pg_restore - restore PostgreSQL databases',
-        '--NAME', 'pg_restore',],
-      kwargs: rcgen_kw + {
-        'output': 'pg_restore.rc',
-      }),
-    kwargs: rccompile_kw,
-  )
+  pg_restore_sources += rc_bin_gen.process(win32ver_rc_in, extra_args: [
+    '--NAME', 'pg_restore',
+    '--FILEDESC', 'pg_restore - restore PostgreSQL databases'])
 endif
 
 pg_restore = executable('pg_restore',

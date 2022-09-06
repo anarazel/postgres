@@ -6,21 +6,11 @@ pgevent_sources = files(
   'pgevent.c',
 )
 
-# built as part of pgmsgevent.rc, via #include
-win32ver_rc = custom_target(
-  'win32ver.rc',
-  kwargs: rcgen_kw,
-  command: rcgen_lib_cmd + [
-    '--FILEDESC', 'Eventlog message formatter',
-    '--NAME', 'pgevent',],
-)
-bin_targets += win32ver_rc
+pgevent_sources += rc_bin_gen.process(win32ver_rc_in, extra_args: [
+  '--NAME', 'pgevent',
+  '--FILEDESC', 'Eventlog message formatter',])
 
-pgevent_sources += windows.compile_resources(
-  'pgmsgevent.rc',
-  depends: win32ver_rc, # included in file
-  kwargs: rccompile_kw,
-)
+pgevent_sources += windows.compile_resources('pgmsgevent.rc')
 
 # FIXME: copied from Mkvcbuild.pm, but I don't think that's the right approach
 pgevent_link_args = []
