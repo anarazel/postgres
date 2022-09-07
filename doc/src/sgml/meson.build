@@ -81,19 +81,27 @@ postgres_sgml_valid = custom_target('postgres.sgml.valid',
 # Full documentation as html, text
 #
 if xsltproc.found()
+  xsltproc_wrapper = find_program('xsltproc_depfile_wrapper.py')
   xsltproc_flags = [
     '--stringparam', 'pg.version', pg_version,
     '--param', 'website.stylesheet', '1'
   ]
 
+  xsltproc_cmd = [
+    xsltproc_wrapper,
+    '--xsltproc', xsltproc,
+    '--targetname', '@OUTPUT@',
+    '--depfile', '@DEPFILE@',
+    '--',
+      '--path', '@OUTDIR@',
+  ]
 
-  # FIXME: Should use a wrapper around xsltproc --load-trace to compute a
-  # depfile
   html = custom_target('html',
     input: ['stylesheet.xsl', 'postgres.sgml'],
     output: 'html',
+    depfile: 'html.d',
     depends: doc_generated + [postgres_sgml_valid],
-    command: [xsltproc, '--path', '@OUTDIR@', '-o', '@OUTDIR@/', xsltproc_flags, '@INPUT@'],
+    command: [xsltproc_cmd, '-o', '@OUTDIR@/', xsltproc_flags, '@INPUT@'],
     build_by_default: false,
   )
   alldocs += html
@@ -115,8 +123,9 @@ if xsltproc.found()
   postgres_html = custom_target('postgres.html',
     input: ['stylesheet-html-nochunk.xsl', 'postgres.sgml'],
     output: 'postgres.html',
+    depfile: 'postgres.d',
     depends: doc_generated + [postgres_sgml_valid],
-    command: [xsltproc, '--path', '@OUTDIR@', '-o', '@OUTPUT@', xsltproc_flags, '@INPUT@'],
+    command: [xsltproc_cmd, '-o', '@OUTPUT@', xsltproc_flags, '@INPUT@'],
     build_by_default: false,
   )
   alldocs += postgres_html
@@ -178,8 +187,9 @@ if xsltproc.found()
   man = custom_target('man',
     input: ['stylesheet-man.xsl', 'postgres.sgml'],
     output: ['man1', 'man3', 'man7'],
+    depfile: 'man.d',
     depends: doc_generated + [postgres_sgml_valid],
-    command: [xsltproc, '--path', '@OUTDIR@', '-o', '@OUTDIR@/', xsltproc_flags, '@INPUT@'],
+    command: [xsltproc_cmd, '-o', '@OUTDIR@/', xsltproc_flags, '@INPUT@'],
     build_by_default: false,
   )
 
