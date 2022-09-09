@@ -9,7 +9,7 @@
 
  <para>
   The <filename>pg_buffercache</filename> module provides a means for
-  examining what's happening in the shared buffer cache in real time.
+  examining what's happening in the shared buffer in real time.
  </para>
 
  <indexterm>
@@ -17,10 +17,19 @@
  </indexterm>
 
  <para>
-  The module provides a C function <function>pg_buffercache_pages</function>
-  that returns a set of records, plus a view
-  <structname>pg_buffercache</structname> that wraps the function for
-  convenient use.
+  The module provides C functions <function>pg_buffercache_pages</function>
+  and <function>pg_buffercache_summary</function>.
+ </para>
+
+ <para>
+  The <function>pg_buffercache_pages</function> function
+  returns a set of records, plus a view <structname>pg_buffercache</structname> that wraps the function for
+  convenient use is provided.
+ </para>
+
+ <para>
+  The <function>pg_buffercache_summary</function> function returns a table with a single row
+  that contains summarized and aggregated information about shared buffer.
  </para>
 
  <para>
@@ -165,6 +174,91 @@
  </sect2>
 
  <sect2>
+  <title>The <structname>pg_buffercache_summary</structname> Function</title>
+
+  <para>
+   The definitions of the columns exposed by the function are shown in <xref linkend="pgbuffercachesummary-columns"/>.
+  </para>
+
+  <table id="pgbuffercachesummary-columns">
+   <title><structname>pg_buffercachesummary</structname> Columns</title>
+   <tgroup cols="1">
+    <thead>
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       Column Type
+      </para>
+      <para>
+       Description
+      </para></entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>buffers_used</structfield> <type>int4</type>
+      </para>
+      <para>
+       Number of shared buffers currently being used
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>buffers_unused</structfield> <type>int4</type>
+      </para>
+      <para>
+        Number of shared buffers that not currently being used
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>buffers_dirty</structfield> <type>int4</type>
+      </para>
+      <para>
+       Number of dirty shared buffers
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>buffers_pinned</structfield> <type>int4</type>
+      </para>
+      <para>
+       Number of shared buffers that has a pinned backend
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>usagecount_avg</structfield> <type>float</type>
+      </para>
+      <para>
+       Average usagecount of used shared buffers
+      </para></entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+  <para>
+   There is a single row to show summarized information of all shared buffers.
+   <function>pg_buffercache_summary</function> is not interested
+   in the state of each shared buffer, only shows aggregated information.
+  </para>
+
+  <para>
+   The <function>pg_buffercache_summary</function> doesn't provide a result
+   that is consistent across all buffers. This is intentional. The purpose
+   of this function is to provide a general idea about the state of shared
+   buffers as fast as possible. Additionally, <function>pg_buffercache_summary</function>
+   allocates much less memory.
+  </para>
+ </sect2>
+
+ <sect2>
   <title>Sample Output</title>
 
 <screen>
@@ -191,6 +285,13 @@ regression=# SELECT n.nspname, c.relname, count(*) AS buffers
  public     | gin_test_tbl           |     188
  public     | spgist_text_tbl        |     182
 (10 rows)
+
+
+regression=# SELECT * FROM pg_buffercache_summary();
+ buffers_used | buffers_unused | buffers_dirty | buffers_pinned | usagecount_avg
+--------------+----------------+---------------+----------------+----------------
+          248 |        2096904 |            39 |              0 |       3.141129
+(1 row)
 </screen>
  </sect2>
 
