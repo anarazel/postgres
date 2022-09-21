@@ -1,5 +1,10 @@
 test_fsync_sources = files('pg_test_fsync.c')
 
+if host_system == 'windows'
+  test_fsync_sources += rc_bin_gen.process(win32ver_rc, extra_args: [
+    '--NAME', 'pg_test_fsync'])
+endif
+
 pg_test_fsync = executable('pg_test_fsync',
   test_fsync_sources,
   dependencies: [frontend_code],
