@@ -38,6 +38,12 @@ generated_sources += sql_help.to_list()
 psql_sources += sql_help
 bin_targets += sql_help
 
+if host_system == 'windows'
+  psql_sources += rc_bin_gen.process(win32ver_rc, extra_args: [
+    '--NAME', 'psql',
+    '--FILEDESC', 'psql - the PostgreSQL interactive terminal',])
+endif
+
 psql = executable('psql',
   psql_sources,
   include_directories: include_directories('.'),

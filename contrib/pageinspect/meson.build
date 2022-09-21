@@ -9,6 +9,11 @@ pageinspect_sources = files(
   'rawpage.c',
 )
 
+if host_system == 'windows'
+  initdb_sources += rc_lib_gen.process(win32ver_rc, extra_args: [
+    '--NAME', 'pageinspect',])
+endif
+
 pageinspect = shared_module('pageinspect',
   pageinspect_sources,
   kwargs: contrib_mod_args,

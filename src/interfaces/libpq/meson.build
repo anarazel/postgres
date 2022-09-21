@@ -16,9 +16,13 @@ libpq_sources = files(
   'libpq-events.c',
   'pqexpbuffer.c',
 )
+libpq_so_sources = [] # only for shared lib, in addition to above
 
 if host_system == 'windows'
   libpq_sources += files('pthread-win32.c', 'win32.c')
+  libpq_so_sources += rc_lib_gen.process(win32ver_rc, extra_args: [
+    '--NAME', 'libpq',
+    '--FILEDESC', 'PostgreSQL Access Library',])
 endif
 
 if ssl.found()
@@ -52,6 +56,7 @@ libpq_st = static_library('libpq',
 # not using both_libraries here, causes problems with precompiled headers and
 # resource files with msbuild
 libpq_so = shared_library('libpq',
+  libpq_so_sources,
   dependencies: libpq_deps,
   include_directories: [libpq_inc, postgres_inc],
   c_args: ['-DSO_MAJOR_VERSION=5'],
