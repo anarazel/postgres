@@ -261,7 +261,6 @@ task:
   env:
     CPUS: 12 # always get that much for cirrusci macOS instances
     BUILD_JOBS: $CPUS
-    TEST_JOBS: $CPUS # already fast enough to not be worth tuning
 
     CIRRUS_WORKING_DIR: ${HOME}/pgsql/
     CCACHE_DIR: ${HOME}/ccache
@@ -274,6 +273,23 @@ task:
     CXXFLAGS: -Og -ggdb
 
   only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*(macos|darwin|osx).*'
+
+  matrix:
+    - name: macOS - Monterey - Meson 4
+      env:
+        TEST_JOBS: 4
+    - name: macOS - Monterey - Meson 6
+      env:
+        TEST_JOBS: 6
+    - name: macOS - Monterey - Meson 8
+      env:
+        TEST_JOBS: 8
+    - name: macOS - Monterey - Meson 10
+      env:
+        TEST_JOBS: 10
+    - name: macOS - Monterey - Meson 12
+      env:
+        TEST_JOBS: 12
 
   osx_instance:
     image: monterey-base
