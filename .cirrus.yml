@@ -518,6 +518,10 @@ task:
   ccache_cache:
     folder: $CCACHE_DIR
 
+  ccache_stats_start_script:
+    ccache -s
+    ccache -z
+
   setup_additional_packages_script: |
     #apt-get update
     #DEBIAN_FRONTEND=noninteractive apt-get -y install ...
@@ -526,8 +530,6 @@ task:
   # Test that code can be built with gcc/clang without warnings
   ###
 
-  setup_script: echo "COPT=-Werror" > src/Makefile.custom
-
   # Trace probes have a history of getting accidentally broken. Use the
   # different compilers to build with different combinations of dtrace on/off
   # and cassert on/off.
@@ -535,57 +537,57 @@ task:
   # gcc, cassert off, dtrace on
   always:
     gcc_warning_script: |
-      time ./configure \
-        --cache gcc.cache \
-        --enable-dtrace \
-        ${LINUX_CONFIGURE_FEATURES} \
-        CC="ccache gcc" CXX="ccache g++" CLANG="ccache clang"
-      make -s -j${BUILD_JOBS} clean
-      time make -s -j${BUILD_JOBS} world-bin
+      mkdir build-gcc && cd build-gcc
+      CC="ccache gcc" CXX="ccache g++" \
+        meson setup \
+          -Dwerror=true \
+          -Dcassert=false \
+          -Ddtrace=enabled \
+          ${LINUX_MESON_FEATURES} \
+          ..
+      time ninja -j${BUILD_JOBS}
 
   # gcc, cassert on, dtrace off
   always:
     gcc_a_warning_script: |
-      time ./configure \
-        --cache gcc.cache \
-        --enable-cassert \
-        ${LINUX_CONFIGURE_FEATURES} \
-        CC="ccache gcc" CXX="ccache g++" CLANG="ccache clang"
-      make -s -j${BUILD_JOBS} clean
-      time make -s -j${BUILD_JOBS} world-bin
+      cd build-gcc
+      meson configure \
+        -Dcassert=true \
+        -Ddtrace=disabled
+      time ninja -j${BUILD_JOBS}
 
   # clang, cassert off, dtrace off
   always:
     clang_warning_script: |
-      time ./configure \
-        --cache clang.cache \
-        ${LINUX_CONFIGURE_FEATURES} \
-        CC="ccache clang" CXX="ccache clang++" CLANG="ccache clang"
-      make -s -j${BUILD_JOBS} clean
-      time make -s -j${BUILD_JOBS} world-bin
+      mkdir build-clang && cd build-clang
+      CC="ccache clang" CXX="ccache clang++" \
+        meson setup \
+          -Dwerror=true \
+          -Dcassert=false \
+          -Ddtrace=disabled \
+          ${LINUX_MESON_FEATURES} \
+          ..
+      time ninja -j${BUILD_JOBS}
 
   # clang, cassert on, dtrace on
   always:
     clang_a_warning_script: |
-      time ./configure \
-        --cache clang.cache \
-        --enable-cassert \
-        --enable-dtrace \
-        ${LINUX_CONFIGURE_FEATURES} \
-        CC="ccache clang" CXX="ccache clang++" CLANG="ccache clang"
-      make -s -j${BUILD_JOBS} clean
-      time make -s -j${BUILD_JOBS} world-bin
+      cd build-clang
+      meson configure \
+        -Dcassert=true \
+        -Ddtrace=enabled
+      time ninja -j${BUILD_JOBS}
 
   # cross-compile to windows
   always:
     mingw_cross_warning_script: |
-      time ./configure \
-        --host=x86_64-w64-mingw32 \
-        --enable-cassert \
-        CC="ccache x86_64-w64-mingw32-gcc" \
-        CXX="ccache x86_64-w64-mingw32-g++"
-      make -s -j${BUILD_JOBS} clean
-      time make -s -j${BUILD_JOBS} world-bin
+      mkdir build-w64 && cd build-w64
+      meson setup \
+        --cross-file=../src/tools/ci/linux-mingw-w64-64bit.txt \
+        -Dwerror=true \
+        -Dcassert=true \
+        ..
+      time ninja -j${BUILD_JOBS}
 
   ###
   # Verify docs can be built
@@ -593,13 +595,8 @@ task:
   # XXX: Only do this if there have been changes in doc/ since last build
   always:
     docs_build_script: |
-      time ./configure \
-        --cache gcc.cache \
-        CC="ccache gcc" \
-        CXX="ccache g++" \
-        CLANG="ccache clang"
-      make -s -j${BUILD_JOBS} clean
-      time make -s -j${BUILD_JOBS} -C doc
+      cd build-gcc
+      time ninja docs
 
   ###
   # Verify headerscheck / cpluspluscheck succeed
@@ -612,15 +609,19 @@ task:
   ###
   always:
     headers_headerscheck_script: |
-      time ./configure \
+      mkdir build-ac && cd build-ac
+      time ../configure \
         ${LINUX_CONFIGURE_FEATURES} \
         --without-icu \
         --quiet \
-        CC="gcc" CXX"=g++" CLANG="clang"
-      make -s -j${BUILD_JOBS} clean
+        CC="gcc" CXX="g++" CLANG="clang"
+      make -s -j${BUILD_JOBS} world-bin
       time make -s headerscheck EXTRAFLAGS='-fmax-errors=10'
     headers_cpluspluscheck_script: |
+      cd build-ac
       time make -s cpluspluscheck EXTRAFLAGS='-fmax-errors=10'
 
   always:
+    ccache_stats_end_script:
+      ccache -s
     upload_caches: ccache
