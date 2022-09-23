@@ -8,6 +8,12 @@ regress_sources = pg_regress_c + files(
 
 pg_regress_cflags = ['-DHOST_TUPLE="frak"', '-DSHELLPROG="/bin/sh"']
 
+if host_system == 'windows'
+  regress_sources += rc_bin_gen.process(win32ver_rc, extra_args: [
+    '--NAME', 'pg_regress',
+    '--FILEDESC', 'pg_regress - test driver',])
+endif
+
 pg_regress = executable('pg_regress',
   regress_sources,
   c_args: pg_regress_cflags,

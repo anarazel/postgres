@@ -1,7 +1,11 @@
 export_file = custom_target('libpq.exports', kwargs: gen_export_kwargs)
 
-ecpg_compat = both_libraries('libecpg_compat',
+ecpg_compat_sources = files(
   'informix.c',
+)
+
+ecpg_compat = both_libraries('libecpg_compat',
+  ecpg_compat_sources,
   include_directories: ['.', ecpg_inc, postgres_inc, libpq_inc],
   c_args: ['-DSO_MAJOR_VERSION=3'],
   dependencies: [frontend_code, thread_dep],

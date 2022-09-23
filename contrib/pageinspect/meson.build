@@ -10,8 +10,9 @@ pageinspect_sources = files(
 )
 
 if host_system == 'windows'
-  initdb_sources += rc_lib_gen.process(win32ver_rc, extra_args: [
-    '--NAME', 'pageinspect',])
+  pageinspect_sources += rc_lib_gen.process(win32ver_rc, extra_args: [
+    '--NAME', 'pageinspect',
+    '--FILEDESC', 'pageinspect - functions to inspect contents of database pages',])
 endif
 
 pageinspect = shared_module('pageinspect',
