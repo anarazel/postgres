@@ -79,6 +79,7 @@ tests += {
     'test_kwargs': {
       'depends': ecpg_test_dependencies,
     },
+    'dbname': 'ecpg1_regression,ecpg2_regression',
     'regress_args': ecpg_regress_args,
   },
 }

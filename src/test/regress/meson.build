@@ -67,5 +67,6 @@ tests += {
       'priority': 50,
       'timeout': 1000,
     },
+    'dbname': 'regression',
   },
 }

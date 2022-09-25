@@ -19,5 +19,6 @@ tests += {
     'regress_args': [
       '--temp-config', files('basic_archive.conf'),
     ],
+    'runningcheck': false,
   },
 }
