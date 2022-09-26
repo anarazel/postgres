@@ -198,7 +198,7 @@ do
 	    src/pl/plperl/*)
 		EXTRAINCLUDES="$perl_includespec" ;;
 	    src/pl/plpython/*)
-		EXTRAINCLUDES="$python_includespec" ;;
+		EXTRAINCLUDES="$python_includespec"; ;;
 	    src/interfaces/ecpg/*)
 		EXTRAINCLUDES="-I $builddir/src/interfaces/ecpg/include -I $srcdir/src/interfaces/ecpg/include" ;;
 	    src/backend/parser/*)
