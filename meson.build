@@ -1789,6 +1789,11 @@ if cc.get_id() == 'msvc'
   ldflags_mod += '/NOIMPLIB'
 endif
 
+if host_system == 'sunos'
+  solaris_export_dynamic = cc.has_link_argument('-Wl,-E')
+else
+  solaris_export_dynamic = false
+endif
 
 
 ###############################################################

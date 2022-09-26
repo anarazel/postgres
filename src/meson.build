@@ -76,7 +76,8 @@ pgxs_kv = {
   'CC': var_cc,
   'CPP': var_cpp,
   'GCC': cc.get_argument_syntax() == 'gcc' ? 'yes' : 'no',
-  'with_gnu_ld': (cc.get_linker_id() in ['ld.bfd', 'ld.gold', 'ld.lld', 'ld.mold'] ? 'yes' : 'no'),
+
+  'SOLARIS_EXPORT_DYNAMIC': solaris_export_dynamic ? 'yes' : 'no',
 
   'CFLAGS': var_cflags,
   'CPPFLAGS': var_cppflags,
@@ -84,8 +85,7 @@ pgxs_kv = {
   'CFLAGS_SL': var_cflags_sl,
   'CFLAGS_SL_MODULE': ' '.join(cflags_mod),
   'CXXFLAGS_SL_MODULE': ' '.join(cxxflags_mod),
-  'CFLAGS_SSE42': ' '.join(cflags_crc),
-  'CFLAGS_ARMV8_CRC32C': ' '.join(cflags_crc),
+  'CFLAGS_CRC': ' '.join(cflags_crc),
 
   'CFLAGS_UNROLL_LOOPS': ' '.join(unroll_loops_cflags),
   'CFLAGS_VECTORIZE': ' '.join(vectorize_cflags),
@@ -118,11 +118,6 @@ else
   }
 endif
 
-# FIXME: figure out which platforms we still need the linker "directly" -
-# can't be many?
-
-ld_program = find_program(cc.get_linker_id(), native: true, required: false)
-
 pgxs_bins = {
   'BISON': bison,
   'FLEX': flex,
@@ -134,7 +129,6 @@ pgxs_bins = {
   'TAR': tar,
   'ZSTD': program_zstd,
   'DTRACE': dtrace,
-  'LD': ld_program,
   'install_bin': install_sh,
 }
 
@@ -143,7 +137,6 @@ pgxs_empty = [
   'ICU_CFLAGS', # needs to be added, included by public server headers
 
   # probably need most of these?
-  'RANLIB',
   'LN_S',
   'AR',
   'AWK',
