@@ -272,3 +272,10 @@ install_data(
 install_data(
   'makefiles/pgxs.mk',
   install_dir: dir_pgxs / 'src' / 'makefiles')
+
+
+run_target('headerscheck',
+  command: [files('tools/pginclude/headerscheck'), '@SOURCE_ROOT@', '@BUILD_ROOT@'])
+
+run_target('cpluspluscheck',
+  command: [files('tools/pginclude/cpluspluscheck'), '@SOURCE_ROOT@', '@BUILD_ROOT@'])
