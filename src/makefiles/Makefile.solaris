@@ -1,7 +1,7 @@
 # src/makefiles/Makefile.solaris
 rpath = -Wl,-rpath,'$(rpathdir)'
 
-ifeq ($(with_gnu_ld), yes)
+ifeq ($(SOLARIS_EXPORT_DYNAMIC), yes)
 export_dynamic = -Wl,-E
 endif
 

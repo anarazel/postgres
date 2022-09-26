@@ -1126,8 +1126,6 @@ LDFLAGS="$LDFLAGS $LIBDIRS"
 AC_ARG_VAR(LDFLAGS_EX, [extra linker flags for linking executables only])
 AC_ARG_VAR(LDFLAGS_SL, [extra linker flags for linking shared libraries only])
 
-PGAC_PROG_LD
-AC_SUBST(with_gnu_ld)
 PGAC_CHECK_STRIP
 AC_CHECK_TOOL(AR, ar, ar)
 if test "$PORTNAME" = "win32"; then
@@ -2364,6 +2362,14 @@ elif test "$PORTNAME" = "openbsd"; then
   PGAC_PROG_CC_LDFLAGS_OPT([-Wl,-Bdynamic], $link_test_func)
 else
   PGAC_PROG_CC_LDFLAGS_OPT([-Wl,--as-needed], $link_test_func)
+fi
+
+# Check if linker on solaris supports -Wl,-E (gnu linker does, solaris linker
+# doesn't).
+if test "$PORTNAME" = "solaris"; then
+  PGAC_PROG_CC_LD_EXPORT_DYNAMIC()
+  SOLARIS_EXPORT_DYNAMIC=$pgac_cv_prog_cc_ld_export_dynamic
+  AC_SUBST(SOLARIS_EXPORT_DYNAMIC)
 fi
 
 # Create compiler version string

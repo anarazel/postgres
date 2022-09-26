@@ -491,6 +491,22 @@ fi
 undefine([Ac_cachevar])dnl
 ])# PGAC_PROG_CC_LDFLAGS_OPT
 
+
+# PGAC_PROG_CC_LD_EXPORT_DYNAMIC
+# ------------------------
+# Checks if the compiler / linker supports -Wl,-E and set
+# pgac_cv_prog_cc_ld_export_dynamic if so.
+AC_DEFUN([PGAC_PROG_CC_LD_EXPORT_DYNAMIC],
+[AC_CACHE_CHECK([whether $CC supports -Wl,-E], [pgac_cv_prog_cc_ld_export_dynamic],
+[pgac_save_LDFLAGS=$LDFLAGS
+LDFLAGS="$pgac_save_LDFLAGS -Wl,-E"
+AC_LINK_IFELSE([AC_LANG_PROGRAM([], [return 0;])],
+               [pgac_cv_prog_cc_ld_export_dynamic=yes],
+               [pgac_cv_prog_cc_ld_export_dynamic=no])
+LDFLAGS="$pgac_save_LDFLAGS"])
+])# PGAC_PROG_CC_LD_EXPORT_DYNAMIC
+
+
 # PGAC_HAVE_GCC__SYNC_CHAR_TAS
 # ----------------------------
 # Check if the C compiler understands __sync_lock_test_and_set(char),

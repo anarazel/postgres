@@ -289,7 +289,7 @@ LDAP_LIBS_FE = @LDAP_LIBS_FE@
 LDAP_LIBS_BE = @LDAP_LIBS_BE@
 UUID_LIBS = @UUID_LIBS@
 LLVM_LIBS=@LLVM_LIBS@
-with_gnu_ld = @with_gnu_ld@
+SOLARIS_EXPORT_DYNAMIC=@SOLARIS_EXPORT_DYNAMIC@
 
 # It's critical that within LDFLAGS, all -L switches pointing to build-tree
 # directories come before any -L switches pointing to external directories.
