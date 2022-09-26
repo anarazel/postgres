@@ -51,3 +51,20 @@ install_data(
 install_data(
   'makefiles/pgxs.mk',
   install_dir: dir_pgxs / 'src' / 'makefiles')
+
+
+generated_sources_stamp = custom_target('generated-sources-stamp.h',
+  output: 'generated-sources-stamp.h',
+  input: [generated_sources, generated_headers_stamp, generated_backend_headers_stamp],
+  command: stamp_cmd,
+)
+
+run_target('headerscheck',
+  command: [files('tools/pginclude/headerscheck'), '@SOURCE_ROOT@', '@BUILD_ROOT@'],
+  depends: [generated_sources_stamp, generated_headers_stamp, generated_backend_headers_stamp],
+)
+
+run_target('cpluspluscheck',
+  command: [files('tools/pginclude/cpluspluscheck'), '@SOURCE_ROOT@', '@BUILD_ROOT@'],
+  depends: [generated_sources_stamp, generated_headers_stamp, generated_backend_headers_stamp],
+)
