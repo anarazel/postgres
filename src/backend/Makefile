@@ -100,8 +100,10 @@ ifeq ($(PORTNAME), aix)
 postgres: $(POSTGRES_IMP)
 	$(CC) $(CFLAGS) $(call expand_subsys,$(OBJS)) $(LDFLAGS) $(LDFLAGS_EX) -Wl,-bE:$(top_builddir)/src/backend/$(POSTGRES_IMP) $(LIBS) -Wl,-brtllib -o $@
 
+# linking to a single .o with -r is a lot faster than building a .a or passing
+# all objects to MKLDEXPORT
 $(POSTGRES_IMP): $(OBJS)
-	$(LD) $(LDREL) $(LDOUT) SUBSYS.o $(call expand_subsys,$^)
+	$(CC) -r -o SUBSYS.o $(call expand_subsys,$^)
 	$(MKLDEXPORT) SUBSYS.o . > $@
 	@rm -f SUBSYS.o
 
