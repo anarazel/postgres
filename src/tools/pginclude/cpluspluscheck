@@ -166,9 +166,9 @@ do
 	# Some subdirectories need extra -I switches.
 	case "$f" in
 	    src/pl/plperl/*)
-		EXTRAINCLUDES="$perl_includespec" ;;
+		EXTRAINCLUDES="$perl_includespec"; continue; ;;
 	    src/pl/plpython/*)
-		EXTRAINCLUDES="$python_includespec" ;;
+		EXTRAINCLUDES="$python_includespec"; continue; ;;
 	    src/interfaces/ecpg/*)
 		EXTRAINCLUDES="-I $builddir/src/interfaces/ecpg/include -I $srcdir/src/interfaces/ecpg/include" ;;
 		src/backend/parser/*)
