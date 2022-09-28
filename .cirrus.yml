@@ -432,10 +432,10 @@ task:
 task:
   << : *WINDOWS_ENVIRONMENT_BASE
   name: Windows - Server 2019, MinGW64 - Autoconf
-  
+
   # This task needs to be triggered manually on Cirrus CI.
   # Otherwise it will not run and be shown as paused
-  # XXX: Below line needs to be uncommented before merge. It's commented for now so that cfbot can run it    
+  # XXX: Below line needs to be uncommented before merge. It's commented for now so that cfbot can run it
   #trigger_type: manual
 
   windows_container:
@@ -497,10 +497,10 @@ task:
 task:
   << : *WINDOWS_ENVIRONMENT_BASE
   name: Windows - Server 2019, MinGW64 - Meson
-  
+
   # This task needs to be triggered manually on Cirrus CI.
   # Otherwise it will not run and be shown as paused
-  # XXX: Below line needs to be uncommented before merge. It's commented for now so that cfbot can run it    
+  # XXX: Below line needs to be uncommented before merge. It's commented for now so that cfbot can run it
   #trigger_type: manual
 
   only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*mingw.*'
@@ -533,6 +533,8 @@ task:
 
   build_script:
     - C:\msys64\usr\bin\dash.exe -lc "cd %CIRRUS_WORKING_DIR% && ninja -C %BUILD_DIR%"
+
+  upload_caches: ccache
 
   test_world_script:
     - C:\msys64\usr\bin\dash.exe -lc "cd %CIRRUS_WORKING_DIR% && meson test --print-errorlogs -C %BUILD_DIR%"
