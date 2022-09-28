@@ -405,6 +405,7 @@ task:
     CIRRUS_WINDOWS_ERROR_MODE: 0x8001
 
   only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*windows.*'
+  trigger_type: manual
 
   windows_container:
     image: $CONTAINER_REPO/windows_ci_vs_2019:latest
@@ -437,6 +438,7 @@ task:
   # Otherwise it will not run and be shown as paused
   # XXX: Below line needs to be uncommented before merge. It's commented for now so that cfbot can run it
   #trigger_type: manual
+  trigger_type: manual
 
   windows_container:
     image: $CONTAINER_REPO/windows_ci_mingw64:latest
