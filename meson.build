@@ -279,6 +279,7 @@ elif host_system == 'windows'
     ldflags += '-Wl,--stack,@0@'.format(cdata.get('WIN32_STACK_RLIMIT'))
     # Need to allow multiple definitions, we e.g. want to override getopt.
     ldflags += '-Wl,--allow-multiple-definition'
+    ldflags += '-Wl,--disable-auto-import'
   endif
 
   os_deps += cc.find_library('ws2_32', required: true)
@@ -1079,6 +1080,13 @@ Use -Dreadline=false to disable readline support.'''.format(readline_dep))
     if readline.type_name() == 'library'
       readline = declare_dependency(dependencies: readline,
         include_directories: postgres_inc)
+    endif
+
+    # On windows with mingw readline requires auto-import to successfully
+    # link, as the headers don't use declspec(dllimport)
+    if host_system == 'windows' and cc.get_id() != 'msvc'
+      readline = declare_dependency(dependencies: readline,
+        link_args: '-Wl,--enable-auto-import')
     endif
   endif
 
