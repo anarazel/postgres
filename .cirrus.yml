@@ -372,6 +372,8 @@ WINDOWS_ENVIRONMENT_BASE: &WINDOWS_ENVIRONMENT_BASE
       # https://postgr.es/m/b6782dc3-a7b0-ed56-175f-f8f54cb08d67%40dunslane.net
       TAR: "c:/windows/system32/tar.exe"
 
+      PG_REGRESS_SOCK_DIR: "c:/cirrus/"
+
     sysinfo_script: |
       chcp
       systeminfo
@@ -385,8 +387,6 @@ task:
   env:
     # Avoid re-installing over and over
     NO_TEMP_INSTALL: 1
-
-    PG_REGRESS_SOCK_DIR: "c:/cirrus/"
 
     # startcreate_script starts a postgres instance that we don't want to get
     # killed at the end of that script (it's stopped in stop_script). Can't
