@@ -204,6 +204,7 @@ task:
 
   matrix:
     - name: Linux - Debian Bullseye - Autoconf
+      trigger_type: manual
 
       configure_script: |
         su postgres <<-EOF
@@ -238,6 +239,7 @@ task:
             --buildtype=debug \
             -Dcassert=true \
             ${LINUX_MESON_FEATURES} \
+            -Dwal_blocksize=4 \
             -DPG_TEST_EXTRA="$PG_TEST_EXTRA" \
             build
         EOF
@@ -461,6 +463,7 @@ task:
 
 task:
   name: CompilerWarnings
+  only_if: false
 
   # To limit unnecessary work only run this once the normal linux test succeeds
   depends_on:
