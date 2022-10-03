@@ -491,6 +491,22 @@ fi
 undefine([Ac_cachevar])dnl
 ])# PGAC_PROG_CC_LDFLAGS_OPT
 
+
+# PGAC_PROG_CC_LD_EXPORT_DYNAMIC
+# ------------------------
+# Checks if the compiler / linker supports -Wl,-E and set
+# pgac_cv_prog_cc_ld_export_dynamic if so.
+AC_DEFUN([PGAC_PROG_CC_LD_EXPORT_DYNAMIC],
+[AC_CACHE_CHECK([whether $CC supports -Wl,-E], [pgac_cv_prog_cc_ld_export_dynamic],
+[pgac_save_LDFLAGS=$LDFLAGS
+LDFLAGS="$pgac_save_LDFLAGS -Wl,-E"
+AC_LINK_IFELSE([AC_LANG_PROGRAM([], [return 0;])],
+               [pgac_cv_prog_cc_ld_export_dynamic=yes],
+               [pgac_cv_prog_cc_ld_export_dynamic=no])
+LDFLAGS="$pgac_save_LDFLAGS"])
+])# PGAC_PROG_CC_LD_EXPORT_DYNAMIC
+
+
 # PGAC_HAVE_GCC__SYNC_CHAR_TAS
 # ----------------------------
 # Check if the C compiler understands __sync_lock_test_and_set(char),
@@ -597,7 +613,7 @@ fi])# PGAC_HAVE_GCC__ATOMIC_INT64_CAS
 # the other ones are, on x86-64 platforms)
 #
 # An optional compiler flag can be passed as argument (e.g. -msse4.2). If the
-# intrinsics are supported, sets pgac_sse42_crc32_intrinsics, and CFLAGS_SSE42.
+# intrinsics are supported, sets pgac_sse42_crc32_intrinsics, and CFLAGS_CRC.
 AC_DEFUN([PGAC_SSE42_CRC32_INTRINSICS],
 [define([Ac_cachevar], [AS_TR_SH([pgac_cv_sse42_crc32_intrinsics_$1])])dnl
 AC_CACHE_CHECK([for _mm_crc32_u8 and _mm_crc32_u32 with CFLAGS=$1], [Ac_cachevar],
@@ -613,7 +629,7 @@ AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <nmmintrin.h>],
   [Ac_cachevar=no])
 CFLAGS="$pgac_save_CFLAGS"])
 if test x"$Ac_cachevar" = x"yes"; then
-  CFLAGS_SSE42="$1"
+  CFLAGS_CRC="$1"
   pgac_sse42_crc32_intrinsics=yes
 fi
 undefine([Ac_cachevar])dnl
@@ -629,7 +645,7 @@ undefine([Ac_cachevar])dnl
 #
 # An optional compiler flag can be passed as argument (e.g.
 # -march=armv8-a+crc). If the intrinsics are supported, sets
-# pgac_armv8_crc32c_intrinsics, and CFLAGS_ARMV8_CRC32C.
+# pgac_armv8_crc32c_intrinsics, and CFLAGS_CRC.
 AC_DEFUN([PGAC_ARMV8_CRC32C_INTRINSICS],
 [define([Ac_cachevar], [AS_TR_SH([pgac_cv_armv8_crc32c_intrinsics_$1])])dnl
 AC_CACHE_CHECK([for __crc32cb, __crc32ch, __crc32cw, and __crc32cd with CFLAGS=$1], [Ac_cachevar],
@@ -647,7 +663,7 @@ AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <arm_acle.h>],
   [Ac_cachevar=no])
 CFLAGS="$pgac_save_CFLAGS"])
 if test x"$Ac_cachevar" = x"yes"; then
-  CFLAGS_ARMV8_CRC32C="$1"
+  CFLAGS_CRC="$1"
   pgac_armv8_crc32c_intrinsics=yes
 fi
 undefine([Ac_cachevar])dnl
