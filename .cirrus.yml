@@ -445,7 +445,7 @@ task:
 
         - name: Linux - Centos 8 - Meson
           env:
-            DOCKERFILE_PATH: src/tools/ci/docker/linux_centos7
+            DOCKERFILE_PATH: src/tools/ci/docker/linux_centos8
             DEBUGINFO: "http://debuginfo.centos.org/"
 
         - name: Linux - Centos 7 - Meson
