@@ -412,7 +412,7 @@ task:
             ${LINUX_MESON_FEATURES} \
             -Dllvm=disabled \
             --pkg-config-path /usr/lib/i386-linux-gnu/pkgconfig/ \
-            -DPERL=perl5.32-i386-linux-gnu \
+            -DPERL=$(echo /usr/bin/perl5*-i386-linux-gnu) \
             -DPG_TEST_EXTRA="$PG_TEST_EXTRA" \
             build-32
         EOF
