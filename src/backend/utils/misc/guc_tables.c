@@ -1085,7 +1085,7 @@ struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 	{
-		{"fsync", PGC_SIGHUP, WAL_SETTINGS,
+		{"fsync", PGC_POSTMASTER, WAL_SETTINGS,
 			gettext_noop("Forces synchronization of updates to disk."),
 			gettext_noop("The server will use the fsync() system call in several places to make "
 						 "sure that updates are physically written to disk. This insures "
@@ -4836,7 +4836,7 @@ struct config_enum ConfigureNamesEnum[] =
 	},
 
 	{
-		{"wal_sync_method", PGC_SIGHUP, WAL_SETTINGS,
+		{"wal_sync_method", PGC_POSTMASTER, WAL_SETTINGS,
 			gettext_noop("Selects the method used for forcing WAL updates to disk."),
 			NULL
 		},
