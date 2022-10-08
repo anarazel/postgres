@@ -394,8 +394,6 @@ task:
 
 
 task:
-  name: Windows - Server 2019, VS 2019 - Meson & ninja
-
   env:
     # Half the allowed per-user CPU cores
     CPUS: 4
@@ -427,6 +425,18 @@ task:
     # given that it explicitly prevents crash dumps from working...
     # 0x8001 is SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX
     CIRRUS_WINDOWS_ERROR_MODE: 0x8001
+
+  matrix:
+    - env:
+        TEST_JOBS: 2
+    - env:
+        TEST_JOBS: 4
+    - env:
+        TEST_JOBS: 6
+    - env:
+        TEST_JOBS: 8
+
+  name: Windows - Server 2019, VS 2019 - Meson & ninja - $TEST_JOBS
 
   only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*windows.*'
 
