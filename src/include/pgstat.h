@@ -242,7 +242,8 @@ typedef struct PgStat_TableXactStatus
  * ------------------------------------------------------------
  */
 
-#define PGSTAT_FILE_FORMAT_ID	0x01A5BCA7
+/* FIXME: before push: only in master */
+#define PGSTAT_FILE_FORMAT_ID	0x01A5BCA8
 
 typedef struct PgStat_ArchiverStats
 {
@@ -321,7 +322,10 @@ typedef struct PgStat_StatFuncEntry
 
 typedef struct PgStat_StatReplSlotEntry
 {
-	NameData	slotname;
+	/* FIXME: perform branch specific action before push */
+#if IN_PG_15_ONLY_UNUSED
+	NameData	slotname_unused;
+#endif
 	PgStat_Counter spill_txns;
 	PgStat_Counter spill_count;
 	PgStat_Counter spill_bytes;
