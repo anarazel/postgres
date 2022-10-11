@@ -161,3 +161,12 @@ pg_config_paths.h: $(top_builddir)/src/Makefile.global
 clean distclean maintainer-clean:
 	rm -f libpgport.a libpgport_shlib.a libpgport_srv.a
 	rm -f $(OBJS) $(OBJS_SHLIB) $(OBJS_SRV) pg_config_paths.h
+
+%.test: t/%.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) $< libpgport.a -o $@
+
+C_TESTS=\
+	001_filesystem.test
+
+check: $(C_TESTS)
+	$(prove_check)
