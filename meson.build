@@ -2768,6 +2768,7 @@ subdir('src')
 subdir('contrib')
 
 subdir('src/test')
+subdir('src/port/t')
 subdir('src/interfaces/libpq/test')
 subdir('src/interfaces/ecpg/test')
 
