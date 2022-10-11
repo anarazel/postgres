@@ -32,9 +32,16 @@ os.chdir(args.srcdir)
 # mark test as having started
 open(os.path.join(testdir, 'test.start'), 'x')
 
+testdatadir = os.path.join(testdir, 'data')
+testlogdir = os.path.join(testdir, 'log')
+
+# pre-create dirs so that the test's infrastructure doesn't have to
+os.makedirs(testdatadir)
+os.makedirs(testlogdir)
+
 env_dict = {**os.environ,
-            'TESTDATADIR': os.path.join(testdir, 'data'),
-            'TESTLOGDIR': os.path.join(testdir, 'log')}
+            'TESTDATADIR': testdatadir,
+            'TESTLOGDIR': testlogdir}
 
 sp = subprocess.run(args.test_command, env=env_dict)
 
