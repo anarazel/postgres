@@ -88,9 +88,8 @@ simple_tests(void)
 
 #ifdef DT_REG
 /*
- * Linux, *BSD, macOS and our Windows wrappers have d_type.  On a few rare file
- * systems, it may reported as DT_UNKNOWN so we have to tolerate that too (see
- * also get_dirent_type() which handles that).
+ * Linux, *BSD, macOS and our Windows wrappers have BSD d_type.  On a few rare
+ * file systems, it may reported as DT_UNKNOWN so we have to tolerate that too.
  */
 #define LOAD(name, variable) if (strcmp(de->d_name, name) == 0) variable = de->d_type
 #define CHECK(name, variable, type) \
@@ -98,8 +97,8 @@ simple_tests(void)
 	PG_EXPECT(variable == DT_UNKNOWN || variable == type, name " has type DT_UNKNOWN or " #type)
 #else
 /*
- * Solaris, AIX and Cygwin do not have the common BSD d_type extension so we
- * just check that we saw the file and ignore the type.
+ * Solaris, AIX and Cygwin do not have it (it's not in POSIX).  Just check that
+ * we saw the file and ignore the type.
  */
 #define LOAD(name, variable) if (strcmp(de->d_name, name) == 0) variable = 0
 #define CHECK(name, variable, type) \
@@ -124,7 +123,9 @@ simple_tests(void)
 		CHECK("dir3", dir3, DT_LNK);
 		CHECK("test.txt", test_txt, DT_REG);
 	}
-	
+
+#undef LOAD
+#undef CHECK
 
 	/* Tests for fstat(). */
 
@@ -168,15 +169,16 @@ simple_tests(void)
 	PG_EXPECT(S_ISREG(statbuf.st_mode), "type is REG");
 	PG_EXPECT(statbuf.st_size == 12, "has expected size");
 
-	make_path(path, "dir1/dir2");
+	make_path(path2, "dir1/dir2");
 	memset(&statbuf, 0, sizeof(statbuf));
-	PG_EXPECT(lstat(path, &statbuf) == 0, "lstat directory");
+	PG_EXPECT(lstat(path2, &statbuf) == 0, "lstat directory");
 	PG_EXPECT(S_ISDIR(statbuf.st_mode), "type is DIR");
 
 	make_path(path, "dir1/dir3");
 	memset(&statbuf, 0, sizeof(statbuf));
 	PG_EXPECT(lstat(path, &statbuf) == 0, "lstat symlink");
 	PG_EXPECT(S_ISLNK(statbuf.st_mode), "type is LNK");
+	PG_EXPECT_EQ(statbuf.st_size, strlen(path2), "got expected symlink size");
 }
 
 #ifdef WIN32
