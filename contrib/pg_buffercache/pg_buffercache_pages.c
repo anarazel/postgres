@@ -253,22 +253,10 @@ pg_buffercache_summary(PG_FUNCTION_ARGS)
 	int32		buffers_unused = 0;
 	int32		buffers_dirty = 0;
 	int32		buffers_pinned = 0;
-	float		usagecount_avg = 0;
+	int64		usagecount_total = 0;
 
-	/* Construct a tuple descriptor for the result rows. */
-	tupledesc = CreateTemplateTupleDesc(NUM_BUFFERCACHE_SUMMARY_ELEM);
-	TupleDescInitEntry(tupledesc, (AttrNumber) 1, "buffers_used",
-					   INT4OID, -1, 0);
-	TupleDescInitEntry(tupledesc, (AttrNumber) 2, "buffers_unused",
-					   INT4OID, -1, 0);
-	TupleDescInitEntry(tupledesc, (AttrNumber) 3, "buffers_dirty",
-					   INT4OID, -1, 0);
-	TupleDescInitEntry(tupledesc, (AttrNumber) 4, "buffers_pinned",
-					   INT4OID, -1, 0);
-	TupleDescInitEntry(tupledesc, (AttrNumber) 5, "usagecount_avg",
-					   FLOAT4OID, -1, 0);
-
-	BlessTupleDesc(tupledesc);
+	if (get_call_result_type(fcinfo, NULL, &tupledesc) != TYPEFUNC_COMPOSITE)
+		elog(ERROR, "return type must be a row type");
 
 	for (int i = 0; i < NBuffers; i++)
 	{
@@ -287,7 +275,7 @@ pg_buffercache_summary(PG_FUNCTION_ARGS)
 		if (buf_state & BM_VALID)
 		{
 			buffers_used++;
-			usagecount_avg += BUF_STATE_GET_USAGECOUNT(buf_state);
+			usagecount_total += BUF_STATE_GET_USAGECOUNT(buf_state);
 
 			if (buf_state & BM_DIRTY)
 				buffers_dirty++;
@@ -306,14 +294,9 @@ pg_buffercache_summary(PG_FUNCTION_ARGS)
 	values[3] = Int32GetDatum(buffers_pinned);
 
 	if (buffers_used != 0)
-	{
-		usagecount_avg = usagecount_avg / buffers_used;
-		values[4] = Float4GetDatum(usagecount_avg);
-	}
+		values[4] = Float8GetDatum((double) usagecount_total / buffers_used);
 	else
-	{
 		nulls[4] = true;
-	}
 
 	/* Build and return the tuple. */
 	tuple = heap_form_tuple(tupledesc, values, nulls);
