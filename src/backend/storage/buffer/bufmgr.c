@@ -1293,7 +1293,7 @@ BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 				 * "regular" write of a dirty shared buffer.
 				 */
 
-				io_context = from_ring ? IOContextForStrategy(strategy) : IOCONTEXT_SHARED;
+				io_context = IOContextForStrategy(strategy);
 
 				/* OK, do the I/O */
 				TRACE_POSTGRESQL_BUFFER_WRITE_DIRTY_START(forkNum, blockNum,
@@ -1322,6 +1322,10 @@ BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 				continue;
 			}
 		}
+
+		/* new stats counting location */
+		if (from_ring)
+			pgstat_count_io_op(IOOP_REUSE, IOContextForStrategy(strategy));
 
 		/*
 		 * To change the association of a valid buffer, we'll need to have

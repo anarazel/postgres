@@ -197,7 +197,6 @@ StrategyGetBuffer(BufferAccessStrategy strategy, uint32 *buf_state, bool *from_r
 {
 	BufferDesc *buf;
 	int			bgwprocno;
-	IOContext	io_context;
 	int			trycounter;
 	uint32		local_buf_state;	/* to avoid repeated (de-)referencing */
 
@@ -209,8 +208,6 @@ StrategyGetBuffer(BufferAccessStrategy strategy, uint32 *buf_state, bool *from_r
 	 */
 	if (strategy != NULL)
 	{
-		io_context = IOContextForStrategy(strategy);
-
 		buf = GetBufferFromRing(strategy, buf_state);
 		if (buf != NULL)
 		{
@@ -221,12 +218,9 @@ StrategyGetBuffer(BufferAccessStrategy strategy, uint32 *buf_state, bool *from_r
 			 * purposes of IO Operation statistics tracking.
 			 */
 			*from_ring = true;
-			pgstat_count_io_op(IOOP_REUSE, io_context);
 			return buf;
 		}
 	}
-	else
-		io_context = IOCONTEXT_SHARED;
 
 	/*
 	 * If asked, we need to waken the bgwriter. Since we don't want to rely on
@@ -269,7 +263,7 @@ StrategyGetBuffer(BufferAccessStrategy strategy, uint32 *buf_state, bool *from_r
 	 * when all existing buffers in the ring are pinned or have a usage count
 	 * above one.
 	 */
-	pgstat_count_io_op(IOOP_CLOCKSWEEP, io_context);
+	pgstat_count_io_op(IOOP_CLOCKSWEEP, IOContextForStrategy(strategy));
 
 	/*
 	 * First check, without acquiring the lock, whether there's buffers in the
@@ -624,7 +618,7 @@ FreeAccessStrategy(BufferAccessStrategy strategy)
 
 /*
  * GetBufferFromRing -- returns a buffer from the ring, or NULL if the
- *		ring is empty.
+ *		ring is empty / not usable.
  *
  * The bufhdr spin lock is held on the returned buffer.
  */
@@ -694,17 +688,18 @@ AddBufferToRing(BufferAccessStrategy strategy, BufferDesc *buf)
 IOContext
 IOContextForStrategy(BufferAccessStrategy strategy)
 {
-	Assert(strategy);
+	if (!strategy)
+		return IOCONTEXT_SHARED;
 
 	switch (strategy->btype)
 	{
 		case BAS_NORMAL:
-
 			/*
 			 * Currently, GetAccessStrategy() returns NULL for
-			 * BufferAccessStrategyType BAS_NORMAL, so this case is unlikely
-			 * to be hit.
+			 * BufferAccessStrategyType BAS_NORMAL, so this case is
+			 * unreachable.
 			 */
+			pg_unreachable();
 			return IOCONTEXT_SHARED;
 		case BAS_BULKREAD:
 			return IOCONTEXT_BULKREAD;
