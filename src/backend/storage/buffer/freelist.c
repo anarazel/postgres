@@ -83,12 +83,6 @@ typedef struct BufferAccessStrategyData
 	int			current;
 
 	/*
-	 * True if the buffer just returned by StrategyGetBuffer had been in the
-	 * ring already.
-	 */
-	bool		current_was_in_ring;
-
-	/*
 	 * Array of buffer numbers.  InvalidBuffer (that is, zero) indicates we
 	 * have not yet selected a buffer for this ring slot.  For allocation
 	 * simplicity this is palloc'd together with the fixed fields of the
@@ -653,10 +647,7 @@ GetBufferFromRing(BufferAccessStrategy strategy, uint32 *buf_state)
 	 */
 	bufnum = strategy->buffers[strategy->current];
 	if (bufnum == InvalidBuffer)
-	{
-		strategy->current_was_in_ring = false;
 		return NULL;
-	}
 
 	/*
 	 * If the buffer is pinned we cannot use it under any circumstances.
@@ -672,7 +663,6 @@ GetBufferFromRing(BufferAccessStrategy strategy, uint32 *buf_state)
 	if (BUF_STATE_GET_REFCOUNT(local_buf_state) == 0
 		&& BUF_STATE_GET_USAGECOUNT(local_buf_state) <= 1)
 	{
-		strategy->current_was_in_ring = true;
 		*buf_state = local_buf_state;
 		return buf;
 	}
@@ -682,7 +672,6 @@ GetBufferFromRing(BufferAccessStrategy strategy, uint32 *buf_state)
 	 * Tell caller to allocate a new buffer with the normal allocation
 	 * strategy.  He'll then replace this ring element via AddBufferToRing.
 	 */
-	strategy->current_was_in_ring = false;
 	return NULL;
 }
 
@@ -740,14 +729,14 @@ IOContextForStrategy(BufferAccessStrategy strategy)
  * if this buffer should be written and re-used.
  */
 bool
-StrategyRejectBuffer(BufferAccessStrategy strategy, BufferDesc *buf)
+StrategyRejectBuffer(BufferAccessStrategy strategy, BufferDesc *buf, bool from_ring)
 {
 	/* We only do this in bulkread mode */
 	if (strategy->btype != BAS_BULKREAD)
 		return false;
 
 	/* Don't muck with behavior of normal buffer-replacement strategy */
-	if (!strategy->current_was_in_ring ||
+	if (!from_ring ||
 		strategy->buffers[strategy->current] != BufferDescriptorGetBuffer(buf))
 		return false;
 
