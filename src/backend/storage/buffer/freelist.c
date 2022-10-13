@@ -256,16 +256,6 @@ StrategyGetBuffer(BufferAccessStrategy strategy, uint32 *buf_state, bool *from_r
 	pg_atomic_fetch_add_u32(&StrategyControl->numBufferAllocs, 1);
 
 	/*
-	 * When a BufferAccessStrategy is in use, clocksweeps adding a shared
-	 * buffer to the strategy ring are counted in the corresponding strategy's
-	 * context. This includes the clocksweeps done to add buffers to the ring
-	 * initially as well as those done to add a new shared buffer to the ring
-	 * when all existing buffers in the ring are pinned or have a usage count
-	 * above one.
-	 */
-	pgstat_count_io_op(IOOP_CLOCKSWEEP, IOContextForStrategy(strategy));
-
-	/*
 	 * First check, without acquiring the lock, whether there's buffers in the
 	 * freelist. Since we otherwise don't require the spinlock in every
 	 * StrategyGetBuffer() invocation, it'd be sad to acquire it here -
@@ -326,6 +316,16 @@ StrategyGetBuffer(BufferAccessStrategy strategy, uint32 *buf_state, bool *from_r
 			UnlockBufHdr(buf, local_buf_state);
 		}
 	}
+
+	/*
+	 * When a BufferAccessStrategy is in use, clocksweeps adding a shared
+	 * buffer to the strategy ring are counted in the corresponding strategy's
+	 * context. This includes the clocksweeps done to add buffers to the ring
+	 * initially as well as those done to add a new shared buffer to the ring
+	 * when all existing buffers in the ring are pinned or have a usage count
+	 * above one.
+	 */
+	pgstat_count_io_op(IOOP_CLOCKSWEEP, IOContextForStrategy(strategy));
 
 	/* Nothing on the freelist, so run the "clock sweep" algorithm */
 	trycounter = NBuffers;
