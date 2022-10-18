@@ -442,6 +442,7 @@ task:
     CIRRUS_WINDOWS_ERROR_MODE: 0x8001
 
   only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*windows.*'
+  skip: true
 
   windows_container:
     image: $CONTAINER_REPO/windows_ci_vs_2019:latest
@@ -491,6 +492,7 @@ task:
     MSYS: winjitdebug
     CCACHE_SLOPPINESS: pch_defines,time_macros
     CCACHE_DEPEND: 1
+    CCACHE_MAXSIZE: "750M"
 
   ccache_cache:
     folder: ${CCACHE_DIR}
@@ -506,10 +508,12 @@ task:
 
   configure_script:
     - C:\msys64\usr\bin\bash.exe -lc "cd %CIRRUS_WORKING_DIR% &&
-      meson setup --buildtype debug -Dcassert=true -Db_pch=true -DTAR=%TAR% build"
+      meson setup -Ddebug=true -Doptimization=g -Dcassert=true -Db_pch=true -DTAR=%TAR% build"
 
   build_script:
+    - C:\msys64\usr\bin\bash.exe -lc "ccache -s -vv; ccache -z"
     - C:\msys64\usr\bin\bash.exe -lc "cd %CIRRUS_WORKING_DIR% && ninja -C %BUILD_DIR%"
+    - C:\msys64\usr\bin\bash.exe -lc "ccache -s -vv"
 
   upload_caches: ccache
 
