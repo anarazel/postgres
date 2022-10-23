@@ -3988,6 +3988,55 @@ DropDatabaseBuffers(Oid dbid)
  *		use only.
  * -----------------------------------------------------------------
  */
+
+#include "utils/memutils.h"
+
+void
+PrintBufferDesc(BufferDesc *buf_hdr, const char *msg)
+{
+	Buffer		buffer = BufferDescriptorGetBuffer(buf_hdr);
+	uint32		buf_state = pg_atomic_read_u32(&buf_hdr->state);
+	char	   *path = "";
+	BlockNumber blockno = InvalidBlockNumber;
+
+	CurrentMemoryContext->allowInCritSection = true;
+	if (buf_state & BM_TAG_VALID)
+	{
+		path = relpathbackend(BufTagGetRelFileLocator(&buf_hdr->tag),
+							  InvalidBackendId, BufTagGetForkNum(&buf_hdr->tag));
+		blockno = buf_hdr->tag.blockNum;
+	}
+
+	fprintf(stderr, "%d: [%u] msg: %s, rel: %s, block %u: refcount: %u / %u, usagecount: %u, flags:%s%s%s%s%s%s%s%s%s%s\n",
+			MyProcPid,
+			buffer,
+			msg,
+			path,
+			blockno,
+			BUF_STATE_GET_REFCOUNT(buf_state),
+			GetPrivateRefCount(buffer),
+			BUF_STATE_GET_USAGECOUNT(buf_state),
+			buf_state & BM_LOCKED ? " BM_LOCKED" : "",
+			buf_state & BM_DIRTY ? " BM_DIRTY" : "",
+			buf_state & BM_VALID ? " BM_VALID" : "",
+			buf_state & BM_TAG_VALID ? " BM_TAG_VALID" : "",
+			buf_state & BM_IO_IN_PROGRESS ? " BM_IO_IN_PROGRESS" : "",
+			buf_state & BM_IO_ERROR ? " BM_IO_ERROR" : "",
+			buf_state & BM_JUST_DIRTIED ? " BM_JUST_DIRTIED" : "",
+			buf_state & BM_PIN_COUNT_WAITER ? " BM_PIN_COUNT_WAITER" : "",
+			buf_state & BM_CHECKPOINT_NEEDED ? " BM_CHECKPOINT_NEEDED" : "",
+			buf_state & BM_PERMANENT ? " BM_PERMANENT" : ""
+		);
+}
+
+void
+PrintBuffer(Buffer buffer, const char *msg)
+{
+	BufferDesc *buf_hdr = GetBufferDescriptor(buffer - 1);
+
+	PrintBufferDesc(buf_hdr, msg);
+}
+
 #ifdef NOT_USED
 void
 PrintBufferDescs(void)

@@ -391,6 +391,9 @@ extern void WritebackContextInit(WritebackContext *context, int *max_pending);
 extern void IssuePendingWritebacks(WritebackContext *context);
 extern void ScheduleBufferTagForWriteback(WritebackContext *context, BufferTag *tag);
 
+extern void PrintBuffer(Buffer buffer, const char *msg);
+extern void PrintBufferDesc(BufferDesc *buf_hdr, const char *msg);
+
 /* freelist.c */
 extern IOContext IOContextForStrategy(BufferAccessStrategy bas);
 extern BufferDesc *StrategyGetBuffer(BufferAccessStrategy strategy,
