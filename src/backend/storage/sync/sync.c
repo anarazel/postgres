@@ -36,6 +36,7 @@
 #include "storage/md.h"
 #include "utils/hsearch.h"
 #include "utils/inval.h"
+#include "utils/timestamp.h"
 #include "utils/memutils.h"
 
 /*
@@ -702,6 +703,8 @@ RegisterSyncRequest(const FileTag *ftag, SyncRequestType type,
 					bool retryOnError)
 {
 	bool		ret;
+	int wait_count = 0;
+	TimestampTz wait_start_time = 0;
 
 	if (pendingOps != NULL)
 	{
@@ -732,9 +735,25 @@ RegisterSyncRequest(const FileTag *ftag, SyncRequestType type,
 		if (ret || (!ret && !retryOnError))
 			break;
 
-		elog(LOG, "RegisterSyncRequest not registering");
+		if (wait_start_time == 0)
+			wait_start_time = GetCurrentTimestamp();
+		wait_count++;
+		ereport(LOG,
+				errmsg("RegisterSyncRequest not registering, loops: %d, wait_time so far: %.2fs",
+					   wait_count,
+					   TimestampDifferenceSeconds(wait_start_time, GetCurrentTimestamp())),
+				errhidecontext(wait_count > 1),
+				errhidestmt(wait_count > 1)
+			);
 		WaitLatch(NULL, WL_EXIT_ON_PM_DEATH | WL_TIMEOUT, 10,
 				  WAIT_EVENT_REGISTER_SYNC_REQUEST);
+	}
+
+	if (wait_count > 0)
+	{
+		elog(LOG, "RegisterSyncRequest done, loops: %d, wait_time total: %.2fs",
+			 wait_count,
+			 TimestampDifferenceSeconds(wait_start_time, GetCurrentTimestamp()));
 	}
 
 	return ret;
