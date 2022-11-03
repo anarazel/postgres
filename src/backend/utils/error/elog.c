@@ -62,7 +62,9 @@
 #ifdef HAVE_SYSLOG
 #include <syslog.h>
 #endif
-#ifdef HAVE_EXECINFO_H
+#if defined(HAVE_BACKTRACE_CREATE_STATE)
+#include <backtrace.h>
+#elif defined(HAVE_EXECINFO_H)
 #include <execinfo.h>
 #endif
 
@@ -1105,6 +1107,35 @@ errbacktrace(void)
 	return 0;
 }
 
+#ifdef HAVE_BACKTRACE_CREATE_STATE
+static void
+pg_backtrace_error_callback(void *data, const char *msg,
+							int errnum)
+{
+	StringInfo errtrace = (StringInfo) data;
+
+	appendStringInfo(errtrace, "backtrace failure: msg: %s, errnum: %d\n", msg, errnum);
+}
+
+static int
+pg_backtrace_full_callback(void *data, uintptr_t pc,
+						   const char *filename, int lineno,
+						   const char *function)
+{
+	StringInfo errtrace = (StringInfo) data;
+
+	if (pc == 0xffffffffffffffff)
+		return 1;
+
+	appendStringInfo(errtrace, "[%p] %s: %s:%d\n",
+					 (void *) pc,
+					 function ? function : "[unknown]",
+					 filename ? filename : "[unknown]", lineno);
+
+	return 0;
+}
+#endif
+
 /*
  * Compute backtrace data and add it to the supplied ErrorData.  num_skip
  * specifies how many inner frames to skip.  Use this to avoid showing the
@@ -1118,7 +1149,29 @@ set_backtrace(ErrorData *edata, int num_skip)
 
 	initStringInfo(&errtrace);
 
-#ifdef HAVE_BACKTRACE_SYMBOLS
+#ifdef HAVE_BACKTRACE_CREATE_STATE
+	{
+		static struct backtrace_state *state;
+
+		/*
+		 * The state is long-lived and can't be freed. The error callback, if
+		 * necessary, will be called while backtrace_create_state() is
+		 * running, so it's ok to pass errtrace here.
+		 */
+		if (state == NULL)
+		{
+			state = backtrace_create_state(
+				NULL, /* threaded = */ false,
+				pg_backtrace_error_callback, &errtrace);
+		}
+
+		appendStringInfo(&errtrace, "\n");
+		backtrace_full(state, 2,
+					   pg_backtrace_full_callback,
+					   pg_backtrace_error_callback,
+					   &errtrace);
+	}
+#elif defined(HAVE_BACKTRACE_SYMBOLS)
 	{
 		void	   *buf[100];
 		int			nframes;
