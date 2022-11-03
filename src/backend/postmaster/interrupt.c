@@ -76,6 +76,10 @@ SignalHandlerForConfigReload(SIGNAL_ARGS)
 void
 SignalHandlerForCrashExit(SIGNAL_ARGS)
 {
+	/* to figure out why checkpoint sometimes doesn't shut down */
+	ereport(WARNING, errmsg("received SIGQUIT"),
+			errbacktrace());
+
 	/*
 	 * We DO NOT want to run proc_exit() or atexit() callbacks -- we're here
 	 * because shared memory may be corrupted, so we don't want to try to
