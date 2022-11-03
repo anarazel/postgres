@@ -62,12 +62,10 @@
 #ifdef HAVE_SYSLOG
 #include <syslog.h>
 #endif
-#ifdef HAVE_EXECINFO_H
-#include <execinfo.h>
-#endif
 
 #include "access/transam.h"
 #include "access/xact.h"
+#include "common/pg_backtrace.h"
 #include "libpq/libpq.h"
 #include "libpq/pqformat.h"
 #include "mb/pg_wchar.h"
@@ -1118,25 +1116,14 @@ set_backtrace(ErrorData *edata, int num_skip)
 
 	initStringInfo(&errtrace);
 
-#ifdef HAVE_BACKTRACE_SYMBOLS
+	if (pg_bt_is_supported())
 	{
-		void	   *buf[100];
-		int			nframes;
-		char	  **strfrms;
-
-		nframes = backtrace(buf, lengthof(buf));
-		strfrms = backtrace_symbols(buf, nframes);
-		if (strfrms == NULL)
-			return;
-
-		for (int i = num_skip; i < nframes; i++)
-			appendStringInfo(&errtrace, "\n%s", strfrms[i]);
-		free(strfrms);
+		pg_bt_print_to_stringinfo(&errtrace, num_skip + 1,
+								  "\n", "");
 	}
-#else
-	appendStringInfoString(&errtrace,
-						   "backtrace generation is not supported by this installation");
-#endif
+	else
+		appendStringInfoString(&errtrace,
+							   "backtrace generation is not supported by this installation");
 
 	edata->backtrace = errtrace.data;
 }

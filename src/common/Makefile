@@ -66,6 +66,7 @@ OBJS_COMMON = \
 	link-canary.o \
 	md5_common.o \
 	percentrepl.o \
+	pg_backtrace.o \
 	pg_get_line.o \
 	pg_lzcompress.o \
 	pg_prng.o \

@@ -31,6 +31,7 @@
 #endif
 
 #include "bootstrap/bootstrap.h"
+#include "common/pg_backtrace.h"
 #include "common/username.h"
 #include "port/atomics.h"
 #include "postmaster/postmaster.h"
@@ -136,6 +137,10 @@ main(int argc, char *argv[])
 	 * variables installed by pg_perm_setlocale have force.
 	 */
 	unsetenv("LC_ALL");
+
+	pg_bt_initialize(progname, /* threaded = */ false);
+	/* XXX: Should this be conditional? On what? */
+	pg_bt_setup_crash_handler();
 
 	/*
 	 * Catch standard options before doing much else, in particular before we

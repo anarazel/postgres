@@ -15,9 +15,8 @@
 #include "postgres.h"
 
 #include <unistd.h>
-#ifdef HAVE_EXECINFO_H
-#include <execinfo.h>
-#endif
+
+#include "common/pg_backtrace.h"
 
 /*
  * ExceptionalCondition - Handles the failure of an Assert()
@@ -43,16 +42,13 @@ ExceptionalCondition(const char *conditionName,
 	/* Usually this shouldn't be needed, but make sure the msg went out */
 	fflush(stderr);
 
-	/* If we have support for it, dump a simple backtrace */
-#ifdef HAVE_BACKTRACE_SYMBOLS
-	{
-		void	   *buf[100];
-		int			nframes;
-
-		nframes = backtrace(buf, lengthof(buf));
-		backtrace_symbols_fd(buf, nframes, fileno(stderr));
-	}
-#endif
+	/*
+	 * If we have support for it, dump a simple backtrace. Be paranoid and use
+	 * the variant printing the backtraces to stderr, in case global state is
+	 * corrupted.
+	 */
+	if (pg_bt_is_supported())
+		pg_bt_print_to_fd(STDERR_FILENO, true);
 
 	/*
 	 * If configured to do so, sleep indefinitely to allow user to attach a

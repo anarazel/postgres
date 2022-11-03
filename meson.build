@@ -2131,6 +2131,7 @@ endif
 # unnecessary checks over and over, particularly on windows.
 header_checks = [
   'atomic.h',
+  'backtrace.h',
   'copyfile.h',
   'crtdefs.h',
   'execinfo.h',
@@ -2393,11 +2394,18 @@ else
   socket_dep = not_found_dep
 endif
 
+backtrace_dep = cc.find_library('backtrace',
+  has_headers: 'backtrace.h',
+  header_include_directories: postgres_inc,
+  dirs: test_lib_d,
+  required: false)
+
 # XXX: Might be worth conditioning some checks on the OS, to avoid doing
 # unnecessary checks over and over, particularly on windows.
 func_checks = [
   ['_configthreadlocale', {'skip': host_system != 'windows'}],
   ['backtrace_symbols', {'dependencies': [execinfo_dep]}],
+  ['backtrace_create_state', {'dependencies': [backtrace_dep]}],
   ['clock_gettime', {'dependencies': [rt_dep, posix4_dep], 'define': false}],
   ['copyfile'],
   # gcc/clang's sanitizer helper library provides dlopen but not dlsym, thus
@@ -2411,6 +2419,7 @@ func_checks = [
   ['getopt_long', {'dependencies': [getopt_dep, gnugetopt_dep], 'skip': always_replace_getopt_long}],
   ['getpeereid'],
   ['getpeerucred'],
+  ['gettid'],
   ['inet_aton'],
   ['inet_pton'],
   ['kqueue'],

@@ -63,6 +63,12 @@
 /* Define to 1 if you have the <atomic.h> header file. */
 #undef HAVE_ATOMIC_H
 
+/* Define to 1 if you have the `backtrace_create_state' function. */
+#undef HAVE_BACKTRACE_CREATE_STATE
+
+/* Define to 1 if you have the <backtrace.h> header file. */
+#undef HAVE_BACKTRACE_H
+
 /* Define to 1 if you have the `backtrace_symbols' function. */
 #undef HAVE_BACKTRACE_SYMBOLS
 
@@ -191,6 +197,9 @@
 
 /* Define to 1 if you have the `getpeerucred' function. */
 #undef HAVE_GETPEERUCRED
+
+/* Define to 1 if you have the `gettid' function. */
+#undef HAVE_GETTID
 
 /* Define to 1 if you have the <gssapi_ext.h> header file. */
 #undef HAVE_GSSAPI_EXT_H

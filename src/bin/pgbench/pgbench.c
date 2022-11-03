@@ -55,6 +55,7 @@
 
 #include "common/int.h"
 #include "common/logging.h"
+#include "common/pg_backtrace.h"
 #include "common/pg_prng.h"
 #include "common/string.h"
 #include "common/username.h"
@@ -6663,6 +6664,9 @@ main(int argc, char **argv)
 	pg_logging_init(argv[0]);
 	progname = get_progname(argv[0]);
 
+	pg_bt_initialize(progname, true);
+	pg_bt_setup_crash_handler();
+
 	if (argc > 1)
 	{
 		if (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-?") == 0)
@@ -7344,6 +7348,9 @@ threadRun(void *arg)
 				next_report;
 	StatsData	last,
 				aggs;
+
+	if (thread->tid > 0)
+		pg_bt_setup_crash_handler();
 
 	/* open log file if requested */
 	if (use_log)

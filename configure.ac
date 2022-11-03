@@ -1293,6 +1293,8 @@ AC_SEARCH_LIBS(shmget, cygipc)
 # *BSD:
 AC_SEARCH_LIBS(backtrace_symbols, execinfo)
 
+AC_SEARCH_LIBS(backtrace_create_state, backtrace)
+
 AC_SEARCH_LIBS(pthread_barrier_wait, pthread)
 
 if test "$with_readline" = yes; then
@@ -1478,6 +1480,7 @@ AC_HEADER_STDBOOL
 
 AC_CHECK_HEADERS(m4_normalize([
 	atomic.h
+	backtrace.h
 	copyfile.h
 	execinfo.h
 	getopt.h
@@ -1776,10 +1779,12 @@ LIBS_including_readline="$LIBS"
 LIBS=`echo "$LIBS" | sed -e 's/-ledit//g' -e 's/-lreadline//g'`
 
 AC_CHECK_FUNCS(m4_normalize([
+	backtrace_create_state
 	backtrace_symbols
 	copyfile
 	getifaddrs
 	getpeerucred
+	gettid
 	inet_pton
 	kqueue
 	mbstowcs_l

@@ -3516,6 +3516,7 @@ pgParameterStatus
 pg_atomic_flag
 pg_atomic_uint32
 pg_atomic_uint64
+pg_backtrace_print_state
 pg_be_sasl_mech
 pg_checksum_context
 pg_checksum_raw_context
