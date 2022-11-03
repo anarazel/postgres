@@ -1708,6 +1708,17 @@ TimestampDifferenceMilliseconds(TimestampTz start_time, TimestampTz stop_time)
 		return (long) ((diff + 999) / 1000);
 }
 
+double
+TimestampDifferenceSeconds(TimestampTz start_time, TimestampTz stop_time)
+{
+	TimestampTz diff = stop_time - start_time;
+
+	if (diff <= 0)
+		return 0;
+	else
+		return (double) diff / USECS_PER_SEC;
+}
+
 /*
  * TimestampDifferenceExceeds -- report whether the difference between two
  *		timestamps is >= a threshold (expressed in milliseconds)

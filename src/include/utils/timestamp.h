@@ -104,6 +104,8 @@ extern void TimestampDifference(TimestampTz start_time, TimestampTz stop_time,
 								long *secs, int *microsecs);
 extern long TimestampDifferenceMilliseconds(TimestampTz start_time,
 											TimestampTz stop_time);
+extern double TimestampDifferenceSeconds(TimestampTz start_time,
+										 TimestampTz stop_time);
 extern bool TimestampDifferenceExceeds(TimestampTz start_time,
 									   TimestampTz stop_time,
 									   int msec);
