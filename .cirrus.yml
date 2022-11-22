@@ -163,7 +163,7 @@ task:
     - name: NetBSD - 9 - Meson
       only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*netbsd.*'
       env:
-        IMAGE_NAME: pg-ci-netbsd-postgres-9-2
+        IMAGE_NAME: pg-ci-netbsd-postgres-9-3
         PLATFORM: netbsd
         INCLUDE_DIRS: -Dextra_lib_dirs=/usr/pkg/lib -Dextra_include_dirs=/usr/pkg/include
 
