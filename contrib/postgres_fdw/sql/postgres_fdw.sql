@@ -3080,6 +3080,7 @@ ALTER SERVER loopback OPTIONS (application_name 'fdw_retry_check');
 -- impossible to test termination meaningfully.  So turn that off
 -- for this test.
 SET debug_discard_caches = 0;
+SET log_min_messages=debug3;
 
 -- Make sure we have a remote connection.
 SELECT 1 FROM ft1 LIMIT 1;
@@ -3105,6 +3106,7 @@ SELECT 1 FROM ft1 LIMIT 1;    -- should fail
 \set VERBOSITY default
 COMMIT;
 
+RESET log_min_messages;
 RESET debug_discard_caches;
 
 -- =============================================================================

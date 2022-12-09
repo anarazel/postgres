@@ -1123,6 +1123,13 @@ UnlinkLockFiles(int status, Datum arg)
 	 */
 	ereport(IsPostmasterEnvironment ? LOG : NOTICE,
 			(errmsg("database system is shut down")));
+
+	/*
+	 * FIXME: to test whether FDs only getting released at process exit, but
+	 * pg_ctl just waiting for the lock file to be removed, is the cause of
+	 * windows tests occasionally failing, delay process exit.
+	 */
+	pg_usleep(USECS_PER_SEC / 5);
 }
 
 /*
