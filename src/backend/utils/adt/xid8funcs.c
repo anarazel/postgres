@@ -302,15 +302,18 @@ parse_snapshot(const char *str, Node *escontext)
 	const char *str_start = str;
 	char	   *endp;
 	StringInfo	buf;
+	uint64		raw_fxid;
 
-	xmin = FullTransactionIdFromU64(strtou64(str, &endp, 10));
-	if (*endp != ':')
+	raw_fxid = strtou64(str, &endp, 10);
+	if (*endp != ':' || !InFullTransactionIdRange(raw_fxid))
 		goto bad_format;
+	xmin = FullTransactionIdFromU64(raw_fxid);
 	str = endp + 1;
 
-	xmax = FullTransactionIdFromU64(strtou64(str, &endp, 10));
-	if (*endp != ':')
+	raw_fxid = strtou64(str, &endp, 10);
+	if (*endp != ':' || !InFullTransactionIdRange(raw_fxid))
 		goto bad_format;
+	xmax = FullTransactionIdFromU64(raw_fxid);
 	str = endp + 1;
 
 	/* it should look sane */
@@ -326,7 +329,11 @@ parse_snapshot(const char *str, Node *escontext)
 	while (*str != '\0')
 	{
 		/* read next value */
-		val = FullTransactionIdFromU64(strtou64(str, &endp, 10));
+		raw_fxid = strtou64(str, &endp, 10);
+
+		val = FullTransactionIdFromU64(raw_fxid);
+		if (!InFullTransactionIdRange(raw_fxid))
+			goto bad_format;
 		str = endp;
 
 		/* require the input to be in order */

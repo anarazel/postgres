@@ -44,15 +44,6 @@
 #define TransactionIdStore(xid, dest)	(*(dest) = (xid))
 #define StoreInvalidTransactionId(dest) (*(dest) = InvalidTransactionId)
 
-#define EpochFromFullTransactionId(x)	((uint32) ((x).value >> 32))
-#define XidFromFullTransactionId(x)		((uint32) (x).value)
-#define U64FromFullTransactionId(x)		((x).value)
-#define FullTransactionIdEquals(a, b)	((a).value == (b).value)
-#define FullTransactionIdPrecedes(a, b)	((a).value < (b).value)
-#define FullTransactionIdPrecedesOrEquals(a, b) ((a).value <= (b).value)
-#define FullTransactionIdFollows(a, b) ((a).value > (b).value)
-#define FullTransactionIdFollowsOrEquals(a, b) ((a).value >= (b).value)
-#define FullTransactionIdIsValid(x)		TransactionIdIsValid(XidFromFullTransactionId(x))
 #define InvalidFullTransactionId		FullTransactionIdFromEpochAndXid(0, InvalidTransactionId)
 #define FirstNormalFullTransactionId	FullTransactionIdFromEpochAndXid(0, FirstNormalTransactionId)
 #define FullTransactionIdIsNormal(x)	FullTransactionIdFollowsOrEquals(x, FirstNormalFullTransactionId)
@@ -61,11 +52,126 @@
  * A 64 bit value that contains an epoch and a TransactionId.  This is
  * wrapped in a struct to prevent implicit conversion to/from TransactionId.
  * Not all values represent valid normal XIDs.
+ *
+ * 64bit xids that would map to a non-normal 32bit xid are not allowed, for
+ * obvious reasons.
+
+ * In addition, no xids with all the upper 32bit sets are allowed to exist,
+ * this is to make it easier to catch conversion errors from 32bit xids (which
+ * can point to "before" xid 0).
  */
 typedef struct FullTransactionId
 {
 	uint64		value;
 } FullTransactionId;
+
+#define MAX_FULL_TRANSACTION_ID ((((uint64)~(uint32)0)<<32) - 1)
+
+/*
+ * This is separate from FullTransactionIdValidRange() so that input routines
+ * can check for invalid values without triggering an assert.
+ */
+static inline bool
+InFullTransactionIdRange(uint64 val)
+{
+	/* 64bit xid above the upper bound */
+	if (val > MAX_FULL_TRANSACTION_ID)
+		return false;
+
+	/*
+	 * normal 64bit xids that'd map to special 32 xids aren't allowed.
+	 */
+	if (val >= (uint64) FirstNormalTransactionId &&
+		(uint32) val < FirstNormalTransactionId)
+		return false;
+	return true;
+}
+
+/*
+ * Validation routine, typically used in asserts.
+ */
+static inline bool
+FullTransactionIdValidRange(FullTransactionId x)
+{
+	return InFullTransactionIdRange(x.value);
+}
+
+static inline uint64
+U64FromFullTransactionId(FullTransactionId x)
+{
+	Assert(FullTransactionIdValidRange(x));
+
+	return x.value;
+}
+
+static inline TransactionId
+XidFromFullTransactionId(FullTransactionId x)
+{
+	Assert(FullTransactionIdValidRange(x));
+
+	return (TransactionId) x.value;
+}
+
+static inline uint32
+EpochFromFullTransactionId(FullTransactionId x)
+{
+	Assert(FullTransactionIdValidRange(x));
+
+	return (uint32) (x.value >> 32);
+}
+
+static inline bool
+FullTransactionIdEquals(FullTransactionId a, FullTransactionId b)
+{
+	Assert(FullTransactionIdValidRange(a));
+	Assert(FullTransactionIdValidRange(b));
+
+	return a.value == b.value;
+}
+
+static inline bool
+FullTransactionIdPrecedes(FullTransactionId a, FullTransactionId b)
+{
+	Assert(FullTransactionIdValidRange(a));
+	Assert(FullTransactionIdValidRange(b));
+
+	return a.value < b.value;
+}
+
+static inline bool
+FullTransactionIdPrecedesOrEquals(FullTransactionId a, FullTransactionId b)
+{
+	Assert(FullTransactionIdValidRange(a));
+	Assert(FullTransactionIdValidRange(b));
+
+	return a.value <= b.value;
+}
+
+static inline bool
+FullTransactionIdFollows(FullTransactionId a, FullTransactionId b)
+{
+	Assert(FullTransactionIdValidRange(a));
+	Assert(FullTransactionIdValidRange(b));
+
+	return a.value > b.value;
+}
+
+static inline bool
+FullTransactionIdFollowsOrEquals(FullTransactionId a, FullTransactionId b)
+{
+	Assert(FullTransactionIdValidRange(a));
+	Assert(FullTransactionIdValidRange(b));
+
+	return a.value >= b.value;
+}
+
+static inline bool
+FullTransactionIdIsValid(FullTransactionId x)
+{
+	Assert(FullTransactionIdValidRange(x));
+
+	return x.value != (uint64) InvalidTransactionId;
+}
 
 static inline FullTransactionId
 FullTransactionIdFromEpochAndXid(uint32 epoch, TransactionId xid)
@@ -73,6 +179,8 @@ FullTransactionIdFromEpochAndXid(uint32 epoch, TransactionId xid)
 	FullTransactionId result;
 
 	result.value = ((uint64) epoch) << 32 | xid;
+
+	Assert(FullTransactionIdValidRange(result));
 
 	return result;
 }
@@ -83,6 +191,8 @@ FullTransactionIdFromU64(uint64 value)
 	FullTransactionId result;
 
 	result.value = value;
+
+	Assert(FullTransactionIdValidRange(result));
 
 	return result;
 }
@@ -102,6 +212,8 @@ FullTransactionIdFromU64(uint64 value)
 static inline void
 FullTransactionIdRetreat(FullTransactionId *dest)
 {
+	Assert(FullTransactionIdValidRange(*dest));
+
 	dest->value--;
 
 	/*
@@ -118,6 +230,8 @@ FullTransactionIdRetreat(FullTransactionId *dest)
 	 */
 	while (XidFromFullTransactionId(*dest) < FirstNormalTransactionId)
 		dest->value--;
+
+	Assert(FullTransactionIdValidRange(*dest));
 }
 
 /*
@@ -127,6 +241,8 @@ FullTransactionIdRetreat(FullTransactionId *dest)
 static inline void
 FullTransactionIdAdvance(FullTransactionId *dest)
 {
+	Assert(FullTransactionIdValidRange(*dest));
+
 	dest->value++;
 
 	/* see FullTransactionIdAdvance() */
@@ -135,6 +251,8 @@ FullTransactionIdAdvance(FullTransactionId *dest)
 
 	while (XidFromFullTransactionId(*dest) < FirstNormalTransactionId)
 		dest->value++;
+
+	Assert(FullTransactionIdValidRange(*dest));
 }
 
 /* back up a transaction ID variable, handling wraparound correctly */

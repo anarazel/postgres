@@ -188,6 +188,13 @@ xid8in(PG_FUNCTION_ARGS)
 	uint64		result;
 
 	result = uint64in_subr(str, NULL, "xid8", fcinfo->context);
+
+	if (!InFullTransactionIdRange(result))
+		ereturn(fcinfo->context, 0,
+				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
+				 errmsg("value \"%s\" is out of range for type %s",
+						str, "xid8")));
+
 	PG_RETURN_FULLTRANSACTIONID(FullTransactionIdFromU64(result));
 }
 

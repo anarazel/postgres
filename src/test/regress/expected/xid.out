@@ -6,11 +6,11 @@ select '010'::xid,
        '-1'::xid,
 	   '010'::xid8,
 	   '42'::xid8,
-	   '0xffffffffffffffff'::xid8,
-	   '-1'::xid8;
- xid | xid |    xid     |    xid     | xid8 | xid8 |         xid8         |         xid8         
------+-----+------------+------------+------+------+----------------------+----------------------
-   8 |  42 | 4294967295 | 4294967295 |    8 |   42 | 18446744073709551615 | 18446744073709551615
+	   '0xfffffffeffffffff'::xid8,
+	   '0'::xid8;
+ xid | xid |    xid     |    xid     | xid8 | xid8 |         xid8         | xid8 
+-----+-----+------------+------------+------+------+----------------------+------
+   8 |  42 | 4294967295 | 4294967295 |    8 |   42 | 18446744069414584319 |    0
 (1 row)
 
 -- garbage values
@@ -29,6 +29,18 @@ LINE 1: select ''::xid8;
 select 'asdf'::xid8;
 ERROR:  invalid input syntax for type xid8: "asdf"
 LINE 1: select 'asdf'::xid8;
+               ^
+select '-1'::xid8;
+ERROR:  value "-1" is out of range for type xid8
+LINE 1: select '-1'::xid8;
+               ^
+select '0xffffffffffffffff'::xid8;
+ERROR:  value "0xffffffffffffffff" is out of range for type xid8
+LINE 1: select '0xffffffffffffffff'::xid8;
+               ^
+select '0x0000300000000001'::xid8;
+ERROR:  value "0x0000300000000001" is out of range for type xid8
+LINE 1: select '0x0000300000000001'::xid8;
                ^
 -- Also try it with non-error-throwing API
 SELECT pg_input_is_valid('42', 'xid');
@@ -65,6 +77,24 @@ SELECT pg_input_error_message('0xffffffffffffffffffff', 'xid8');
                     pg_input_error_message                    
 --------------------------------------------------------------
  value "0xffffffffffffffffffff" is out of range for type xid8
+(1 row)
+
+SELECT pg_input_is_valid('-1', 'xid8');
+ pg_input_is_valid 
+-------------------
+ f
+(1 row)
+
+SELECT pg_input_is_valid('0xffffffffffffffff', 'xid8');
+ pg_input_is_valid 
+-------------------
+ f
+(1 row)
+
+SELECT pg_input_is_valid('0x0000300000000001', 'xid8');
+ pg_input_is_valid 
+-------------------
+ f
 (1 row)
 
 -- equality
@@ -160,11 +190,11 @@ select xid8cmp('1', '2'), xid8cmp('2', '2'), xid8cmp('2', '1');
 
 -- min() and max() for xid8
 create table xid8_t1 (x xid8);
-insert into xid8_t1 values ('0'), ('010'), ('42'), ('0xffffffffffffffff'), ('-1');
+insert into xid8_t1 values ('0'), ('010'), ('42'), ('0xfffffffeffffffff');
 select min(x), max(x) from xid8_t1;
  min |         max          
 -----+----------------------
-   0 | 18446744073709551615
+   0 | 18446744069414584319
 (1 row)
 
 -- xid8 has btree and hash opclasses

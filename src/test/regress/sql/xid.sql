@@ -7,14 +7,17 @@ select '010'::xid,
        '-1'::xid,
 	   '010'::xid8,
 	   '42'::xid8,
-	   '0xffffffffffffffff'::xid8,
-	   '-1'::xid8;
+	   '0xfffffffeffffffff'::xid8,
+	   '0'::xid8;
 
 -- garbage values
 select ''::xid;
 select 'asdf'::xid;
 select ''::xid8;
 select 'asdf'::xid8;
+select '-1'::xid8;
+select '0xffffffffffffffff'::xid8;
+select '0x0000300000000001'::xid8;
 
 -- Also try it with non-error-throwing API
 SELECT pg_input_is_valid('42', 'xid');
@@ -23,6 +26,9 @@ SELECT pg_input_error_message('0xffffffffff', 'xid');
 SELECT pg_input_is_valid('42', 'xid8');
 SELECT pg_input_is_valid('asdf', 'xid8');
 SELECT pg_input_error_message('0xffffffffffffffffffff', 'xid8');
+SELECT pg_input_is_valid('-1', 'xid8');
+SELECT pg_input_is_valid('0xffffffffffffffff', 'xid8');
+SELECT pg_input_is_valid('0x0000300000000001', 'xid8');
 
 -- equality
 select '1'::xid = '1'::xid;
@@ -51,7 +57,7 @@ select xid8cmp('1', '2'), xid8cmp('2', '2'), xid8cmp('2', '1');
 
 -- min() and max() for xid8
 create table xid8_t1 (x xid8);
-insert into xid8_t1 values ('0'), ('010'), ('42'), ('0xffffffffffffffff'), ('-1');
+insert into xid8_t1 values ('0'), ('010'), ('42'), ('0xfffffffeffffffff');
 select min(x), max(x) from xid8_t1;
 
 -- xid8 has btree and hash opclasses
