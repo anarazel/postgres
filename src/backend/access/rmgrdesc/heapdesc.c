@@ -114,6 +114,37 @@ heap_desc(StringInfo buf, XLogReaderState *record)
 		appendStringInfo(buf, "off %u", xlrec->offnum);
 	}
 }
+
+static void
+print_offset_array(StringInfo buf, const char *label, OffsetNumber *offsets, int count)
+{
+	if (count == 0)
+		return;
+	appendStringInfo(buf, "%s [", label);
+	for (int i = 0; i < count; i++)
+	{
+		if (i > 0)
+			appendStringInfoString(buf, ", ");
+		appendStringInfo(buf, "%u", offsets[i]);
+	}
+	appendStringInfoString(buf, "]");
+}
+
+static void
+print_redirect_array(StringInfo buf, const char *label, OffsetNumber *offsets, int count)
+{
+	if (count == 0)
+		return;
+	appendStringInfo(buf, "%s [", label);
+	for (int i = 0; i < count; i++)
+	{
+		if (i > 0)
+			appendStringInfoString(buf, ", ");
+		appendStringInfo(buf, "%u->%u", offsets[i * 2], offsets[i * 2 + 1]);
+	}
+	appendStringInfoString(buf, "]");
+}
+
 void
 heap2_desc(StringInfo buf, XLogReaderState *record)
 {
@@ -129,12 +160,48 @@ heap2_desc(StringInfo buf, XLogReaderState *record)
 						 xlrec->snapshotConflictHorizon,
 						 xlrec->nredirected,
 						 xlrec->ndead);
+
+
+		if (!XLogRecHasBlockImage(record, 0))
+		{
+			OffsetNumber *end;
+			OffsetNumber *redirected;
+			OffsetNumber *nowdead;
+			OffsetNumber *nowunused;
+			int			nredirected;
+			int			nunused;
+			Size		datalen;
+
+			redirected = (OffsetNumber *) XLogRecGetBlockData(record, 0, &datalen);
+
+			nredirected = xlrec->nredirected;
+			end = (OffsetNumber *) ((char *) redirected + datalen);
+			nowdead = redirected + (nredirected * 2);
+			nowunused = nowdead + xlrec->ndead;
+			nunused = (end - nowunused);
+			Assert(nunused >= 0);
+
+			appendStringInfo(buf, " nunused %u", nunused);
+			print_offset_array(buf, ", unused:", nowunused, nunused);
+			print_redirect_array(buf, ", redirected:", redirected, nredirected);
+			print_offset_array(buf, ", dead:", nowdead, xlrec->ndead);
+		}
 	}
 	else if (info == XLOG_HEAP2_VACUUM)
 	{
 		xl_heap_vacuum *xlrec = (xl_heap_vacuum *) rec;
 
 		appendStringInfo(buf, "nunused %u", xlrec->nunused);
+
+		if (!XLogRecHasBlockImage(record, 0))
+		{
+			OffsetNumber *nowunused;
+			Size		datalen;
+
+			nowunused = (OffsetNumber *) XLogRecGetBlockData(record, 0, &datalen);
+
+			print_offset_array(buf, " unused:", nowunused, xlrec->nunused);
+		}
 	}
 	else if (info == XLOG_HEAP2_FREEZE_PAGE)
 	{
@@ -142,6 +209,30 @@ heap2_desc(StringInfo buf, XLogReaderState *record)
 
 		appendStringInfo(buf, "snapshotConflictHorizon %u nplans %u",
 						 xlrec->snapshotConflictHorizon, xlrec->nplans);
+
+		if (!XLogRecHasBlockImage(record, 0))
+		{
+			OffsetNumber *offsets;
+			xl_heap_freeze_plan *plans;
+			int			curoff = 0;
+
+			plans = (xl_heap_freeze_plan *) XLogRecGetBlockData(record, 0, NULL);
+			offsets = (OffsetNumber *) ((char *) plans +
+										(xlrec->nplans *
+										 sizeof(xl_heap_freeze_plan)));
+
+			for (int p = 0; p < xlrec->nplans; p++)
+			{
+				xl_heap_freeze_plan plan;
+
+				memcpy(&plan, &plans[p], sizeof(xl_heap_freeze_plan));
+
+				appendStringInfo(buf, "; plan #%d: xmax %u infomask %u infomask2 %u",
+								 p, plan.xmax, plan.t_infomask, plan.t_infomask2);
+				print_offset_array(buf, ", offsets", offsets + curoff, plan.ntuples);
+				curoff += plan.ntuples;
+			}
+		}
 	}
 	else if (info == XLOG_HEAP2_VISIBLE)
 	{
@@ -153,9 +244,12 @@ heap2_desc(StringInfo buf, XLogReaderState *record)
 	else if (info == XLOG_HEAP2_MULTI_INSERT)
 	{
 		xl_heap_multi_insert *xlrec = (xl_heap_multi_insert *) rec;
+		bool		isinit = (XLogRecGetInfo(record) & XLOG_HEAP_INIT_PAGE) != 0;
 
 		appendStringInfo(buf, "%d tuples flags 0x%02X", xlrec->ntuples,
 						 xlrec->flags);
+		if (!XLogRecHasBlockImage(record, 0) && !isinit)
+			print_offset_array(buf, " offsets", xlrec->offsets, xlrec->ntuples);
 	}
 	else if (info == XLOG_HEAP2_LOCK_UPDATED)
 	{
