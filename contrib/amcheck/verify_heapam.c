@@ -1576,11 +1576,25 @@ FullTransactionIdFromXidAndCtx(TransactionId xid, const HeapCheckContext *ctx)
 {
 	uint32		epoch;
 
+	Assert(TransactionIdIsValid(ctx->next_xid));
+	Assert(FullTransactionIdIsValid(ctx->next_fxid));
+
 	if (!TransactionIdIsNormal(xid))
 		return FullTransactionIdFromEpochAndXid(0, xid);
 	epoch = EpochFromFullTransactionId(ctx->next_fxid);
 	if (xid > ctx->next_xid)
+	{
+		/*
+		 * FIXME, doubtful this is the best fix.
+		 *
+		 * Can't represent the 32bit xid as a 64bit xid, as it's before fxid
+		 * 0. Represent it as an xid from the future instead.
+		 */
+		if (epoch == 0)
+			return FullTransactionIdFromEpochAndXid(0, xid);
+
 		epoch--;
+	}
 	return FullTransactionIdFromEpochAndXid(epoch, xid);
 }
 
@@ -1597,8 +1611,8 @@ update_cached_xid_range(HeapCheckContext *ctx)
 	LWLockRelease(XidGenLock);
 
 	/* And compute alternate versions of the same */
-	ctx->oldest_fxid = FullTransactionIdFromXidAndCtx(ctx->oldest_xid, ctx);
 	ctx->next_xid = XidFromFullTransactionId(ctx->next_fxid);
+	ctx->oldest_fxid = FullTransactionIdFromXidAndCtx(ctx->oldest_xid, ctx);
 }
 
 /*
