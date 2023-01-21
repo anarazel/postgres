@@ -429,8 +429,7 @@ static void
 BufFileLoadBuffer(BufFile *file)
 {
 	File		thisfile;
-	instr_time	io_start;
-	instr_time	io_time;
+	instr_time	io_start = INSTR_TIME_ZERO();
 
 	/*
 	 * Advance to next component file if necessary and possible.
@@ -446,8 +445,6 @@ BufFileLoadBuffer(BufFile *file)
 
 	if (track_io_timing)
 		INSTR_TIME_SET_CURRENT(io_start);
-	else
-		INSTR_TIME_SET_ZERO(io_start);
 
 	/*
 	 * Read whatever we can get, up to a full bufferload.
@@ -468,7 +465,8 @@ BufFileLoadBuffer(BufFile *file)
 
 	if (track_io_timing)
 	{
-		INSTR_TIME_SET_CURRENT(io_time);
+		instr_time	io_time = INSTR_TIME_CURRENT();
+
 		INSTR_TIME_SUBTRACT(io_time, io_start);
 		INSTR_TIME_ADD(pgBufferUsage.temp_blk_read_time, io_time);
 	}
@@ -500,8 +498,7 @@ BufFileDumpBuffer(BufFile *file)
 	while (wpos < file->nbytes)
 	{
 		off_t		availbytes;
-		instr_time	io_start;
-		instr_time	io_time;
+		instr_time	io_start = INSTR_TIME_ZERO();
 
 		/*
 		 * Advance to next component file if necessary and possible.
@@ -527,8 +524,6 @@ BufFileDumpBuffer(BufFile *file)
 
 		if (track_io_timing)
 			INSTR_TIME_SET_CURRENT(io_start);
-		else
-			INSTR_TIME_SET_ZERO(io_start);
 
 		bytestowrite = FileWrite(thisfile,
 								 file->buffer.data + wpos,
@@ -543,7 +538,8 @@ BufFileDumpBuffer(BufFile *file)
 
 		if (track_io_timing)
 		{
-			INSTR_TIME_SET_CURRENT(io_time);
+			instr_time	io_time = INSTR_TIME_CURRENT();
+
 			INSTR_TIME_SUBTRACT(io_time, io_start);
 			INSTR_TIME_ADD(pgBufferUsage.temp_blk_write_time, io_time);
 		}

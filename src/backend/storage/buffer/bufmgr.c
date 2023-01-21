@@ -1012,19 +1012,17 @@ ReadBuffer_common(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 			MemSet((char *) bufBlock, 0, BLCKSZ);
 		else
 		{
-			instr_time	io_start,
-						io_time;
+			instr_time	io_start = INSTR_TIME_ZERO();
 
 			if (track_io_timing)
 				INSTR_TIME_SET_CURRENT(io_start);
-			else
-				INSTR_TIME_SET_ZERO(io_start);
 
 			smgrread(smgr, forkNum, blockNum, (char *) bufBlock);
 
 			if (track_io_timing)
 			{
-				INSTR_TIME_SET_CURRENT(io_time);
+				instr_time	io_time = INSTR_TIME_CURRENT();
+
 				INSTR_TIME_SUBTRACT(io_time, io_start);
 				pgstat_count_buffer_read_time(INSTR_TIME_GET_MICROSEC(io_time));
 				INSTR_TIME_ADD(pgBufferUsage.blk_read_time, io_time);
@@ -2826,8 +2824,7 @@ FlushBuffer(BufferDesc *buf, SMgrRelation reln)
 {
 	XLogRecPtr	recptr;
 	ErrorContextCallback errcallback;
-	instr_time	io_start,
-				io_time;
+	instr_time	io_start = INSTR_TIME_ZERO();
 	Block		bufBlock;
 	char	   *bufToWrite;
 	uint32		buf_state;
@@ -2904,8 +2901,6 @@ FlushBuffer(BufferDesc *buf, SMgrRelation reln)
 
 	if (track_io_timing)
 		INSTR_TIME_SET_CURRENT(io_start);
-	else
-		INSTR_TIME_SET_ZERO(io_start);
 
 	/*
 	 * bufToWrite is either the shared buffer or a copy, as appropriate.
@@ -2918,7 +2913,8 @@ FlushBuffer(BufferDesc *buf, SMgrRelation reln)
 
 	if (track_io_timing)
 	{
-		INSTR_TIME_SET_CURRENT(io_time);
+		instr_time	io_time = INSTR_TIME_CURRENT();
+
 		INSTR_TIME_SUBTRACT(io_time, io_start);
 		pgstat_count_buffer_write_time(INSTR_TIME_GET_MICROSEC(io_time));
 		INSTR_TIME_ADD(pgBufferUsage.blk_write_time, io_time);

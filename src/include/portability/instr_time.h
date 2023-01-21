@@ -17,6 +17,10 @@
  *
  * INSTR_TIME_IS_LT(x, y)			x < y
  *
+ * INSTR_TIME_ZERO()				an instr_time set to 0
+ *
+ * INSTR_TIME_CURRENT()				an instr_time set to current time
+ *
  * INSTR_TIME_SET_ZERO(t)			set t to zero (memset is acceptable too)
  *
  * INSTR_TIME_SET_CURRENT(t)		set t to current time
@@ -110,7 +114,7 @@ typedef struct instr_time
 #define PG_INSTR_CLOCK	CLOCK_REALTIME
 #endif
 
-/* helper for INSTR_TIME_SET_CURRENT */
+/* helper for INSTR_TIME_CURRENT */
 static inline instr_time
 pg_clock_gettime_ns(void)
 {
@@ -123,8 +127,8 @@ pg_clock_gettime_ns(void)
 	return now;
 }
 
-#define INSTR_TIME_SET_CURRENT(t) \
-	((t) = pg_clock_gettime_ns())
+#define INSTR_TIME_CURRENT(t) \
+	pg_clock_gettime_ns()
 
 #define INSTR_TIME_SET_SECONDS(t, s) \
 	((t).ticks = NS_PER_S * (s))
@@ -138,7 +142,7 @@ pg_clock_gettime_ns(void)
 
 /* Use QueryPerformanceCounter() */
 
-/* helper for INSTR_TIME_SET_CURRENT */
+/* helper for INSTR_TIME_CURRENT */
 static inline instr_time
 pg_query_performance_counter(void)
 {
@@ -160,8 +164,8 @@ GetTimerFrequency(void)
 	return (double) f.QuadPart;
 }
 
-#define INSTR_TIME_SET_CURRENT(t) \
-	((t) = pg_query_performance_counter())
+#define INSTR_TIME_CURRENT(t) \
+	pg_query_performance_counter()
 
 #define INSTR_TIME_SET_SECONDS(t, s) \
 	((t).ticks = s * GetTimerFrequency())
@@ -181,7 +185,13 @@ GetTimerFrequency(void)
 #define INSTR_TIME_IS_LT(x, y)	((x).ticks < (y).ticks)
 
 
-#define INSTR_TIME_SET_ZERO(t)	((t).ticks = 0)
+#define INSTR_TIME_ZERO(t)	(instr_time){0}
+
+#define INSTR_TIME_SET_CURRENT(t) \
+	(t) = INSTR_TIME_CURRENT()
+
+#define INSTR_TIME_SET_ZERO(t) \
+	((t) = INSTR_TIME_ZERO())
 
 #define INSTR_TIME_SET_CURRENT_LAZY(t) \
 	(INSTR_TIME_IS_ZERO(t) ? INSTR_TIME_SET_CURRENT(t), true : false)

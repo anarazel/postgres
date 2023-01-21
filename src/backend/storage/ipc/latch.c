@@ -1385,8 +1385,7 @@ WaitEventSetWait(WaitEventSet *set, long timeout,
 				 uint32 wait_event_info)
 {
 	int			returned_events = 0;
-	instr_time	start_time;
-	instr_time	cur_time;
+	instr_time	start_time = INSTR_TIME_ZERO();
 	long		cur_timeout = -1;
 
 	Assert(nevents > 0);
@@ -1401,8 +1400,6 @@ WaitEventSetWait(WaitEventSet *set, long timeout,
 		Assert(timeout >= 0 && timeout <= INT_MAX);
 		cur_timeout = timeout;
 	}
-	else
-		INSTR_TIME_SET_ZERO(start_time);
 
 	pgstat_report_wait_start(wait_event_info);
 
@@ -1489,7 +1486,8 @@ WaitEventSetWait(WaitEventSet *set, long timeout,
 		/* If we're not done, update cur_timeout for next iteration */
 		if (returned_events == 0 && timeout >= 0)
 		{
-			INSTR_TIME_SET_CURRENT(cur_time);
+			instr_time	cur_time = INSTR_TIME_CURRENT();
+
 			INSTR_TIME_SUBTRACT(cur_time, start_time);
 			cur_timeout = timeout - (long) INSTR_TIME_GET_MILLISEC(cur_time);
 			if (cur_timeout <= 0)

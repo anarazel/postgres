@@ -2178,7 +2178,7 @@ XLogWrite(XLogwrtRqst WriteRqst, TimeLineID tli, bool flexible)
 			Size		nbytes;
 			Size		nleft;
 			int			written;
-			instr_time	start;
+			instr_time	start = INSTR_TIME_ZERO();
 
 			/* OK to write the page(s) */
 			from = XLogCtl->pages + startidx * (Size) XLOG_BLCKSZ;
@@ -2191,8 +2191,6 @@ XLogWrite(XLogwrtRqst WriteRqst, TimeLineID tli, bool flexible)
 				/* Measure I/O timing to write WAL data */
 				if (track_wal_io_timing)
 					INSTR_TIME_SET_CURRENT(start);
-				else
-					INSTR_TIME_SET_ZERO(start);
 
 				pgstat_report_wait_start(WAIT_EVENT_WAL_WRITE);
 				written = pg_pwrite(openLogFile, from, nleft, startoffset);
@@ -2204,9 +2202,8 @@ XLogWrite(XLogwrtRqst WriteRqst, TimeLineID tli, bool flexible)
 				 */
 				if (track_wal_io_timing)
 				{
-					instr_time	duration;
+					instr_time	duration = INSTR_TIME_CURRENT();
 
-					INSTR_TIME_SET_CURRENT(duration);
 					INSTR_TIME_SUBTRACT(duration, start);
 					PendingWalStats.wal_write_time += INSTR_TIME_GET_MICROSEC(duration);
 				}
@@ -8137,7 +8134,7 @@ void
 issue_xlog_fsync(int fd, XLogSegNo segno, TimeLineID tli)
 {
 	char	   *msg = NULL;
-	instr_time	start;
+	instr_time	start = INSTR_TIME_ZERO();
 
 	Assert(tli != 0);
 
@@ -8153,8 +8150,6 @@ issue_xlog_fsync(int fd, XLogSegNo segno, TimeLineID tli)
 	/* Measure I/O timing to sync the WAL file */
 	if (track_wal_io_timing)
 		INSTR_TIME_SET_CURRENT(start);
-	else
-		INSTR_TIME_SET_ZERO(start);
 
 	pgstat_report_wait_start(WAIT_EVENT_WAL_SYNC);
 	switch (sync_method)

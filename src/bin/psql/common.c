@@ -1269,15 +1269,12 @@ DescribeQuery(const char *query, double *elapsed_msec)
 	bool		timing = pset.timing;
 	PGresult   *result;
 	bool		OK;
-	instr_time	before,
-				after;
+	instr_time	before = INSTR_TIME_ZERO();
 
 	*elapsed_msec = 0;
 
 	if (timing)
 		INSTR_TIME_SET_CURRENT(before);
-	else
-		INSTR_TIME_SET_ZERO(before);
 
 	/*
 	 * To parse the query but not execute it, we prepare it, using the unnamed
@@ -1350,7 +1347,8 @@ DescribeQuery(const char *query, double *elapsed_msec)
 
 			if (timing)
 			{
-				INSTR_TIME_SET_CURRENT(after);
+				instr_time	after = INSTR_TIME_CURRENT();
+
 				INSTR_TIME_SUBTRACT(after, before);
 				*elapsed_msec += INSTR_TIME_GET_MILLISEC(after);
 			}
@@ -1400,16 +1398,13 @@ ExecQueryAndProcessResults(const char *query,
 {
 	bool		timing = pset.timing;
 	bool		success;
-	instr_time	before,
-				after;
+	instr_time	before = INSTR_TIME_ZERO();
 	PGresult   *result;
 	FILE	   *gfile_fout = NULL;
 	bool		gfile_is_pipe = false;
 
 	if (timing)
 		INSTR_TIME_SET_CURRENT(before);
-	else
-		INSTR_TIME_SET_ZERO(before);
 
 	if (pset.bind_flag)
 		success = PQsendQueryParams(pset.db, query, pset.bind_nparams, NULL, (const char * const *) pset.bind_params, NULL, NULL, 0);
@@ -1490,7 +1485,8 @@ ExecQueryAndProcessResults(const char *query,
 			 */
 			if (timing)
 			{
-				INSTR_TIME_SET_CURRENT(after);
+				instr_time	after = INSTR_TIME_CURRENT();
+
 				INSTR_TIME_SUBTRACT(after, before);
 				*elapsed_msec = INSTR_TIME_GET_MILLISEC(after);
 			}
@@ -1595,7 +1591,8 @@ ExecQueryAndProcessResults(const char *query,
 		 */
 		if (timing)
 		{
-			INSTR_TIME_SET_CURRENT(after);
+			instr_time	after = INSTR_TIME_CURRENT();
+
 			INSTR_TIME_SUBTRACT(after, before);
 			*elapsed_msec = INSTR_TIME_GET_MILLISEC(after);
 		}
@@ -1693,8 +1690,7 @@ ExecQueryUsingCursor(const char *query, double *elapsed_msec)
 	int			ntuples;
 	int			fetch_count;
 	char		fetch_cmd[64];
-	instr_time	before,
-				after;
+	instr_time	before = INSTR_TIME_ZERO();
 	int			flush_error;
 
 	*elapsed_msec = 0;
@@ -1706,8 +1702,6 @@ ExecQueryUsingCursor(const char *query, double *elapsed_msec)
 
 	if (timing)
 		INSTR_TIME_SET_CURRENT(before);
-	else
-		INSTR_TIME_SET_ZERO(before);
 
 	/* if we're not in a transaction, start one */
 	if (PQtransactionStatus(pset.db) == PQTRANS_IDLE)
@@ -1738,7 +1732,8 @@ ExecQueryUsingCursor(const char *query, double *elapsed_msec)
 
 	if (timing)
 	{
-		INSTR_TIME_SET_CURRENT(after);
+		instr_time	after = INSTR_TIME_CURRENT();
+
 		INSTR_TIME_SUBTRACT(after, before);
 		*elapsed_msec += INSTR_TIME_GET_MILLISEC(after);
 	}
@@ -1786,7 +1781,8 @@ ExecQueryUsingCursor(const char *query, double *elapsed_msec)
 
 		if (timing)
 		{
-			INSTR_TIME_SET_CURRENT(after);
+			instr_time	after = INSTR_TIME_CURRENT();
+
 			INSTR_TIME_SUBTRACT(after, before);
 			*elapsed_msec += INSTR_TIME_GET_MILLISEC(after);
 		}
@@ -1926,7 +1922,8 @@ cleanup:
 
 	if (timing)
 	{
-		INSTR_TIME_SET_CURRENT(after);
+		instr_time	after = INSTR_TIME_CURRENT();
+
 		INSTR_TIME_SUBTRACT(after, before);
 		*elapsed_msec += INSTR_TIME_GET_MILLISEC(after);
 	}
