@@ -414,9 +414,9 @@ extern Oid	GetNewObjectId(void);
 extern void StopGeneratingPinnedObjectIds(void);
 
 #ifdef USE_ASSERT_CHECKING
-extern void AssertTransactionIdInAllowableRange(TransactionId xid);
+extern void AssertTransactionIdInAllowableRange(TransactionId xid, bool strict);
 #else
-#define AssertTransactionIdInAllowableRange(xid) ((void)true)
+#define AssertTransactionIdInAllowableRange(xid, strict) ((void)true)
 #endif
 
 /*

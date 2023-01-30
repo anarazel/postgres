@@ -4338,7 +4338,7 @@ TransactionIdRetreatSafely(TransactionId *xid, int retreat_by, FullTransactionId
 
 	Assert(TransactionIdIsNormal(original_xid));
 	Assert(retreat_by >= 0);	/* relevant GUCs are stored as ints */
-	AssertTransactionIdInAllowableRange(original_xid);
+	AssertTransactionIdInAllowableRange(original_xid, true);
 
 	if (retreat_by == 0)
 		return;
@@ -4354,6 +4354,8 @@ TransactionIdRetreatSafely(TransactionId *xid, int retreat_by, FullTransactionId
 		Assert(TransactionIdIsNormal(*xid));
 		Assert(NormalTransactionIdPrecedes(*xid, original_xid));
 	}
+
+	AssertTransactionIdInAllowableRange(*xid, false);
 }
 
 /*
@@ -4376,7 +4378,7 @@ FullXidRelativeTo(FullTransactionId rel, TransactionId xid)
 	Assert(TransactionIdIsValid(rel_xid));
 
 	/* not guaranteed to find issues, but likely to catch mistakes */
-	AssertTransactionIdInAllowableRange(xid);
+	AssertTransactionIdInAllowableRange(xid, false);
 
 	return FullTransactionIdFromU64(U64FromFullTransactionId(rel)
 									+ (int32) (xid - rel_xid));

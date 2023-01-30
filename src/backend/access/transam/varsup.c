@@ -643,7 +643,7 @@ StopGeneratingPinnedObjectIds(void)
  * introduced that depends on the return value.
  */
 void
-AssertTransactionIdInAllowableRange(TransactionId xid)
+AssertTransactionIdInAllowableRange(TransactionId xid, bool strict)
 {
 	TransactionId oldest_xid;
 	TransactionId next_xid;
@@ -672,7 +672,16 @@ AssertTransactionIdInAllowableRange(TransactionId xid)
 	oldest_xid = ShmemVariableCache->oldestXid;
 	next_xid = XidFromFullTransactionId(ShmemVariableCache->nextXid);
 
-	Assert(TransactionIdFollowsOrEquals(xid, oldest_xid) ||
-		   TransactionIdPrecedesOrEquals(xid, next_xid));
+	Assert(TransactionIdPrecedesOrEquals(xid, next_xid));
+
+	if (strict)
+		Assert(TransactionIdFollowsOrEquals(xid, oldest_xid));
+	else
+	{
+		if (!TransactionIdFollowsOrEquals(xid, oldest_xid))
+		{
+			Assert(TransactionIdFollowsOrEquals(xid, TransactionIdRetreatedBy(next_xid, (MaxTransactionId >> 1))));
+		}
+	}
 }
 #endif
