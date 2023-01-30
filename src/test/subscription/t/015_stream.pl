@@ -28,26 +28,20 @@ sub test_streaming
 	my ($node_publisher, $node_subscriber, $appname, $is_parallel) = @_;
 
 	# Interleave a pair of transactions, each exceeding the 64kB limit.
-	my $in  = '';
-	my $out = '';
-
 	my $offset = 0;
 
-	my $timer = IPC::Run::timeout($PostgreSQL::Test::Utils::timeout_default);
-
-	my $h = $node_publisher->background_psql('postgres', \$in, \$out, $timer,
+	my $h = $node_publisher->background_psql('postgres',
 		on_error_stop => 0);
 
 	# Check the subscriber log from now on.
 	$offset = -s $node_subscriber->logfile;
 
-	$in .= q{
+	$h->query_safe(q{
 	BEGIN;
 	INSERT INTO test_tab SELECT i, md5(i::text) FROM generate_series(3, 5000) s(i);
 	UPDATE test_tab SET b = md5(b) WHERE mod(a,2) = 0;
 	DELETE FROM test_tab WHERE mod(a,3) = 0;
-	};
-	$h->pump_nb;
+	});
 
 	$node_publisher->safe_psql(
 		'postgres', q{
@@ -57,11 +51,10 @@ sub test_streaming
 	COMMIT;
 	});
 
-	$in .= q{
-	COMMIT;
-	\q
-	};
-	$h->finish;    # errors make the next test fail, so ignore them here
+	$h->query_safe('COMMIT');
+	$h->quit;
+	# XXX: Not sure what this means
+    # errors make the next test fail, so ignore them here
 
 	$node_publisher->wait_for_catchup($appname);
 
@@ -219,12 +212,7 @@ $node_subscriber->reload;
 $node_subscriber->safe_psql('postgres', q{SELECT 1});
 
 # Interleave a pair of transactions, each exceeding the 64kB limit.
-my $in  = '';
-my $out = '';
-
-my $timer = IPC::Run::timeout($PostgreSQL::Test::Utils::timeout_default);
-
-my $h = $node_publisher->background_psql('postgres', \$in, \$out, $timer,
+my $h = $node_publisher->background_psql('postgres',
 	on_error_stop => 0);
 
 # Confirm if a deadlock between the leader apply worker and the parallel apply
@@ -232,11 +220,10 @@ my $h = $node_publisher->background_psql('postgres', \$in, \$out, $timer,
 
 my $offset = -s $node_subscriber->logfile;
 
-$in .= q{
+$h->query_safe(q{
 BEGIN;
 INSERT INTO test_tab_2 SELECT i FROM generate_series(1, 5000) s(i);
-};
-$h->pump_nb;
+});
 
 # Ensure that the parallel apply worker executes the insert command before the
 # leader worker.
@@ -246,11 +233,8 @@ $node_subscriber->wait_for_log(
 
 $node_publisher->safe_psql('postgres', "INSERT INTO test_tab_2 values(1)");
 
-$in .= q{
-COMMIT;
-\q
-};
-$h->finish;
+$h->query_safe('COMMIT');
+$h->quit;
 
 $node_subscriber->wait_for_log(qr/ERROR: ( [A-Z0-9]+:)? deadlock detected/,
 	$offset);
@@ -277,11 +261,10 @@ $node_subscriber->safe_psql('postgres',
 # Check the subscriber log from now on.
 $offset = -s $node_subscriber->logfile;
 
-$in .= q{
+$h->query_safe(q{
 BEGIN;
 INSERT INTO test_tab_2 SELECT i FROM generate_series(1, 5000) s(i);
-};
-$h->pump_nb;
+});
 
 # Ensure that the first parallel apply worker executes the insert command
 # before the second one.
@@ -292,11 +275,8 @@ $node_subscriber->wait_for_log(
 $node_publisher->safe_psql('postgres',
 	"INSERT INTO test_tab_2 SELECT i FROM generate_series(1, 5000) s(i)");
 
-$in .= q{
-COMMIT;
-\q
-};
-$h->finish;
+$h->query_safe('COMMIT');
+$h->quit;
 
 $node_subscriber->wait_for_log(qr/ERROR: ( [A-Z0-9]+:)? deadlock detected/,
 	$offset);
