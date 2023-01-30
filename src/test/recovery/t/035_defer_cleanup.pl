@@ -64,33 +64,17 @@ $primary->safe_psql('postgres', qq[
 ]);
 
 
-# start a background psql on both nodes, to test effects on running sessions
-my $psql_timeout = IPC::Run::timer($PostgreSQL::Test::Utils::timeout_default);
-my %psql_primary = ('stdin' => '', 'stdout' => '');
-$psql_primary{run} =
-  $primary->background_psql('postgres', \$psql_primary{stdin},
-	\$psql_primary{stdout},
-	$psql_timeout);
+my $psql_primary = $primary->background_psql('postgres');
+my $psql_standby = $standby->background_psql('postgres');
 
-my %psql_standby = ('stdin' => '', 'stdout' => '');
-$psql_standby{run} =
-  $standby->background_psql('postgres', \$psql_standby{stdin},
-	\$psql_standby{stdout},
-	$psql_timeout);
-
-$psql_primary{stdin} .= '\t\set QUIET off';
-$psql_standby{stdin} .= '\t\set QUIET off';
-
-# start transaction on the standby
+# start transaction on primary and standby
 my $q = qq[
 SET application_name = 'background_psql';
 BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ;
 SELECT 1;
 ];
-$psql_primary{stdin} .= $q;
-$psql_standby{stdin} .= $q;
-ok( pump_until_primary(qr/\n\(1 row\)\n$/s), 'started transaction');
-ok( pump_until_standby(qr/\n\(1 row\)\n$/s), 'started transaction');
+$psql_primary->query_safe($q);
+$psql_standby->query_safe($q);
 
 # update a row on the primary, select from the table to remove old row version
 my $res = $primary->safe_psql('postgres', qq[
@@ -113,47 +97,19 @@ is($primary->safe_psql('postgres', $q), '1-updated', "query result on primary as
 is($standby->safe_psql('postgres', $q), '1-updated', "query result on standby as expected");
 
 $q = "SELECT data FROM testdata WHERE id = 1;\n";
-$psql_primary{stdin} .= $q;
-$psql_standby{stdin} .= $q;
+my $expect = "1\n";
 
-$res = pump_until_primary(qr/^.*\n\(1 row\)\n$/s);
-my $expect = "data\n1\n(1 row)\n";
+$res = $psql_primary->query_safe($q);
 is( $res, $expect, 'version 1 still visible on primary after update on primary');
-$res = pump_until_standby(qr/.*\n\(1 row\)\n$/s);
+$res = $psql_standby->query_safe($q);
 is( $res, $expect, 'row 1, version 1 still visible on standby after update on primary');
 
-$psql_primary{stdin} .= "COMMIT;\n";
-is(pump_until_primary(qr/^COMMIT\n/m), "COMMIT\n", "release on primary");
+$psql_primary->query_safe("COMMIT");
 
+$psql_primary->quit();
+$psql_standby->quit();
 
 done_testing();
-
-sub pump_until_node
-{
-	my $psql = shift;
-	my $match = shift;
-	my $ret;
-
-	pump_until($$psql{run}, $psql_timeout,
-		\$$psql{stdout}, $match);
-	$ret = $$psql{stdout};
-	$$psql{stdout} = '';
-	return $ret;
-}
-
-sub pump_until_primary
-{
-	my $match = shift;
-
-	return pump_until_node(\%psql_primary, $match);
-}
-
-sub pump_until_standby
-{
-	my $match = shift;
-
-	return pump_until_node(\%psql_standby, $match);
-}
 
 sub burn_xids
 {
