@@ -522,8 +522,41 @@ sub init
 	mkdir $self->backup_dir;
 	mkdir $self->archive_dir;
 
-	PostgreSQL::Test::Utils::system_or_bail('initdb', '-D', $pgdata, '-A',
-		'trust', '-N', @{ $params{extra} });
+	if (defined $params{extra} or !defined $ENV{INITDB_TEMPLATE})
+	{
+		note("*not* using initdb template");
+		PostgreSQL::Test::Utils::system_or_bail('initdb', '-D', $pgdata, '-A',
+			'trust', '-N', @{ $params{extra} });
+	}
+	else
+	{
+		my @copycmd;
+		my $expected_exitcode;
+
+		note("using initdb template");
+
+		if ($PostgreSQL::Test::Utils::windows_os)
+		{
+			@copycmd = qw(robocopy /E /NJS /NJH /NFL /NDL /NP);
+			$expected_exitcode = 1; # 1 denotes files were copied
+		}
+		else
+		{
+			@copycmd = qw(cp -a);
+			$expected_exitcode = 0;
+		}
+
+		@copycmd = (@copycmd, $ENV{INITDB_TEMPLATE}, $pgdata);
+
+		my $ret = PostgreSQL::Test::Utils::system_log(@copycmd);
+		if ($ret & 127 or $ret >> 8 != $expected_exitcode)
+		{
+			BAIL_OUT(
+				sprintf(
+					"failed to execute command \"%s\": $ret", join(" ", @copycmd)));
+		}
+	}
+
 	PostgreSQL::Test::Utils::system_or_bail($ENV{PG_REGRESS},
 		'--config-auth', $pgdata, @{ $params{auth_extra} });
 

@@ -3056,8 +3056,11 @@ testport = 40000
 test_env = environment()
 
 temp_install_bindir = test_install_location / get_option('bindir')
+test_initdb_template = meson.build_root() / 'tmp_install' / 'initdb-template'
+testwrap = files('src/tools/testwrap')
 test_env.set('PG_REGRESS', pg_regress.full_path())
 test_env.set('REGRESS_SHLIB', regress_module.full_path())
+test_env.set('INITDB_TEMPLATE', test_initdb_template)
 
 # Test suites that are not safe by default but can be run if selected
 # by the user via the whitespace-separated list in variable PG_TEST_EXTRA.
@@ -3070,6 +3073,31 @@ test_env.set('PG_TEST_EXTRA', get_option('PG_TEST_EXTRA'))
 if library_path_var != ''
   test_env.prepend(library_path_var, test_install_location / get_option('libdir'))
 endif
+
+
+test('initdb_cache_cleanup',
+    find_program('rm'),
+    args: ['-rf', test_initdb_template],
+    priority: 99,
+    timeout: 300,
+    is_parallel: false,
+    suite: ['setup'])
+
+test('initdb_cache_create',
+    testwrap,
+    args: [
+      '--basedir', meson.build_root(),
+      '--srcdir', meson.source_root(),
+      '--testgroup', 'setup',
+      '--testname', 'initdb_cache_create',
+      '--',
+      temp_install_bindir / 'initdb',
+      '-A', 'trust', '-N', '--no-instructions', test_initdb_template],
+    priority: 98,
+    timeout: 300,
+    is_parallel: false,
+    env: test_env,
+    suite: ['setup'])
 
 
 
