@@ -3029,6 +3029,43 @@ $SIG{TERM} = $SIG{INT} = sub {
 
 =pod
 
+=item $node->create_logical_slot_on_standby(self, primary, slot_name, dbname)
+
+Create logical replication slot on given standby
+
+=cut
+
+sub create_logical_slot_on_standby
+{
+	my ($self, $primary, $slot_name, $dbname) = @_;
+	my ($stdout, $stderr);
+
+	my $handle;
+
+	$handle = IPC::Run::start(['pg_recvlogical', '-d', $self->connstr($dbname), '-P', 'test_decoding', '-S', $slot_name, '--create-slot'], '>', \$stdout, '2>', \$stderr);
+
+	# Once slot restart_lsn is created, the standby looks for xl_running_xacts
+	# WAL record from the restart_lsn onwards. So firstly, wait until the slot
+	# restart_lsn is evaluated.
+
+	$self->poll_query_until(
+		'postgres', qq[
+		SELECT restart_lsn IS NOT NULL
+		FROM pg_catalog.pg_replication_slots WHERE slot_name = '$slot_name'
+	]) or die "timed out waiting for logical slot to calculate its restart_lsn";
+
+	# Now arrange for the xl_running_xacts record for which pg_recvlogical
+	# is waiting.
+	$primary->safe_psql('postgres', 'SELECT pg_log_standby_snapshot()');
+
+	$handle->finish();
+
+	is($self->slot($slot_name)->{'slot_type'}, 'logical', $slot_name . ' on standby created')
+		or die "could not create slot" . $slot_name;
+}
+
+=pod
+
 =back
 
 =cut
