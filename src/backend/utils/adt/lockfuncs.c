@@ -659,7 +659,13 @@ pg_isolation_test_session_is_blocked(PG_FUNCTION_ARGS)
 		for (j = 0; j < num_interesting_pids; j++)
 		{
 			if (blocking_pids[i] == interesting_pids[j])
+			{
+				ereport(LOG,
+						errmsg("pid %d blocked due to blocking_pids by pid: %d", blocked_pid, blocking_pids[i]),
+						errhidestmt(true),
+						errhidecontext(true));
 				PG_RETURN_BOOL(true);
+			}
 		}
 
 	/*
@@ -672,7 +678,13 @@ pg_isolation_test_session_is_blocked(PG_FUNCTION_ARGS)
 	 * buffer and check if the number of safe snapshot blockers is non-zero.
 	 */
 	if (GetSafeSnapshotBlockingPids(blocked_pid, &dummy, 1) > 0)
+	{
+		ereport(LOG,
+				errmsg("pid %d blocked due to snapshot by pid: %d", blocked_pid, dummy),
+				errhidestmt(true),
+				errhidecontext(true));
 		PG_RETURN_BOOL(true);
+	}
 
 	PG_RETURN_BOOL(false);
 }

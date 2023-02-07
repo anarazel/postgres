@@ -13,6 +13,7 @@ setup
   CREATE TABLE a6 ();
   CREATE TABLE a7 ();
   CREATE TABLE a8 ();
+  SET log_statement = 'all';
 }
 
 teardown

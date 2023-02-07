@@ -102,7 +102,7 @@ ReceiveSharedInvalidMessages(void (*invalFunction) (SharedInvalidationMessage *m
 		if (getResult < 0)
 		{
 			/* got a reset message */
-			elog(DEBUG4, "cache state reset");
+			elog(LOG, "cache state reset");
 			SharedInvalidMessageCounter++;
 			resetFunction();
 			break;				/* nothing more to do */

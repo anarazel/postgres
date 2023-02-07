@@ -7,6 +7,7 @@
 setup
 {
   CREATE TABLE a1 ();
+  SET log_statement = 'all';
 }
 
 teardown

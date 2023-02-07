@@ -1143,7 +1143,7 @@ pgfdw_inval_callback(Datum arg, int cacheid, uint32 hashvalue)
 			 */
 			if (entry->xact_depth == 0)
 			{
-				elog(DEBUG3, "discarding connection %p", entry->conn);
+				elog(LOG, "discarding connection %p", entry->conn);
 				disconnect_pg_server(entry);
 			}
 			else
