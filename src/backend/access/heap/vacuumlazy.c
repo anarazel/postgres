@@ -180,6 +180,7 @@ typedef struct LVRelState
 	OffsetNumber offnum;		/* used only for heap operations */
 	VacErrPhase phase;
 	bool		verbose;		/* VACUUM VERBOSE? */
+	int			elevel;
 
 	/*
 	 * dead_items stores TIDs whose index tuples are deleted by index
@@ -324,10 +325,33 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 				StartPageDirty = VacuumPageDirty;
 	ErrorContextCallback errcallback;
 	char	  **indnames = NULL;
+	int			elevel;
 
-	verbose = (params->options & VACOPT_VERBOSE) != 0;
-	instrument = (verbose || (IsAutoVacuumWorkerProcess() &&
-							  params->log_min_duration >= 0));
+	if (params->options & VACOPT_VERBOSE)
+	{
+		verbose = true;
+		elevel = INFO;
+		instrument = true;
+	}
+	else if (IsAutoVacuumWorkerProcess() && params->log_min_duration >= 0)
+	{
+		verbose = true;
+		elevel = LOG;
+		instrument = true;
+	}
+	else if (message_level_is_interesting(DEBUG1))
+	{
+		verbose = true;
+		elevel = DEBUG1;
+		instrument = true;
+	}
+	else
+	{
+		verbose = false;
+		elevel = DEBUG5; /* avoid compiler warning, not reached */
+		instrument = false;
+	}
+
 	if (instrument)
 	{
 		pg_rusage_init(&ru0);
@@ -361,6 +385,7 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 	vacrel->indname = NULL;
 	vacrel->phase = VACUUM_ERRCB_PHASE_UNKNOWN;
 	vacrel->verbose = verbose;
+	vacrel->elevel = elevel;
 	errcallback.callback = vacuum_error_callback;
 	errcallback.arg = vacrel;
 	errcallback.previous = error_context_stack;
@@ -475,12 +500,12 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 	if (verbose)
 	{
 		if (vacrel->aggressive)
-			ereport(INFO,
+			ereport(elevel,
 					(errmsg("aggressively vacuuming \"%s.%s.%s\"",
 							vacrel->dbname, vacrel->relnamespace,
 							vacrel->relname)));
 		else
-			ereport(INFO,
+			ereport(elevel,
 					(errmsg("vacuuming \"%s.%s.%s\"",
 							vacrel->dbname, vacrel->relnamespace,
 							vacrel->relname)));
@@ -765,7 +790,7 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 							 (unsigned long long) walusage.wal_bytes);
 			appendStringInfo(&buf, _("system usage: %s"), pg_rusage_show(&ru0));
 
-			ereport(verbose ? INFO : LOG,
+			ereport(elevel,
 					(errmsg_internal("%s", buf.data)));
 			pfree(buf.data);
 		}
@@ -2707,7 +2732,11 @@ lazy_vacuum_one_index(Relation indrel, IndexBulkDeleteResult *istat,
 	ivinfo.analyze_only = false;
 	ivinfo.report_progress = false;
 	ivinfo.estimated_count = true;
-	ivinfo.message_level = DEBUG2;
+	/*
+	 * FIXME: This shows more information for VACUUM VERBOSE, uses DEBUG1
+	 * instead of DEBUG2.
+	 */
+	ivinfo.message_level = vacrel->elevel;
 	ivinfo.num_heap_tuples = reltuples;
 	ivinfo.strategy = vacrel->bstrategy;
 
@@ -2755,7 +2784,11 @@ lazy_cleanup_one_index(Relation indrel, IndexBulkDeleteResult *istat,
 	ivinfo.analyze_only = false;
 	ivinfo.report_progress = false;
 	ivinfo.estimated_count = estimated_count;
-	ivinfo.message_level = DEBUG2;
+	/*
+	 * FIXME: This shows more information for VACUUM VERBOSE, uses DEBUG1
+	 * instead of DEBUG2.
+	 */
+	ivinfo.message_level = vacrel->elevel;
 
 	ivinfo.num_heap_tuples = reltuples;
 	ivinfo.strategy = vacrel->bstrategy;
@@ -2875,7 +2908,7 @@ lazy_truncate_heap(LVRelState *vacrel)
 				 * We failed to establish the lock in the specified number of
 				 * retries. This means we give up truncating.
 				 */
-				ereport(vacrel->verbose ? INFO : DEBUG2,
+				ereport(vacrel->elevel,
 						(errmsg("\"%s\": stopping truncate due to conflicting lock request",
 								vacrel->relname)));
 				return;
@@ -2945,7 +2978,7 @@ lazy_truncate_heap(LVRelState *vacrel)
 		vacrel->removed_pages += orig_rel_pages - new_rel_pages;
 		vacrel->rel_pages = new_rel_pages;
 
-		ereport(vacrel->verbose ? INFO : DEBUG2,
+		ereport(vacrel->elevel,
 				(errmsg("table \"%s\": truncated %u to %u pages",
 						vacrel->relname,
 						orig_rel_pages, new_rel_pages)));
@@ -3007,7 +3040,7 @@ count_nondeletable_pages(LVRelState *vacrel, bool *lock_waiter_detected)
 			{
 				if (LockHasWaitersRelation(vacrel->rel, AccessExclusiveLock))
 				{
-					ereport(vacrel->verbose ? INFO : DEBUG2,
+					ereport(vacrel->elevel,
 							(errmsg("table \"%s\": suspending truncate due to conflicting lock request",
 									vacrel->relname)));
 
@@ -3175,7 +3208,7 @@ dead_items_alloc(LVRelState *vacrel, int nworkers)
 			vacrel->pvs = parallel_vacuum_init(vacrel->rel, vacrel->indrels,
 											   vacrel->nindexes, nworkers,
 											   max_items,
-											   vacrel->verbose ? INFO : DEBUG2,
+											   vacrel->elevel,
 											   vacrel->bstrategy);
 
 		/* If parallel mode started, dead_items space is allocated in DSM */
