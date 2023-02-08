@@ -339,10 +339,10 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 		elevel = LOG;
 		instrument = true;
 	}
-	else if (message_level_is_interesting(DEBUG1))
+	else if (message_level_is_interesting(LOG) && IsUnderPostmaster)
 	{
 		verbose = true;
-		elevel = DEBUG1;
+		elevel = LOG;
 		instrument = true;
 	}
 	else
