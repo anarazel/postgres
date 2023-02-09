@@ -551,6 +551,8 @@ task:
     # given that it explicitly prevents crash dumps from working...
     # 0x8001 is SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX
     CIRRUS_WINDOWS_ERROR_MODE: 0x8001
+    ICUDATA: "c:/cirrus/build/subprojects/icu/source/stubdata"
+    ICU_DATA: "c:/cirrus/build/subprojects/icu/source/stubdata"
 
   depends_on: SanityCheck
   only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*windows.*'
@@ -565,21 +567,59 @@ task:
   setup_additional_packages_script: |
     REM choco install -y --no-progress ...
 
+  prereq_cache:
+    folder: vcpkg
+
+  prereq_install_script: |
+    vcvarsall x64
+    git clone https://github.com/Microsoft/vcpkg.git || true
+    cd vcpkg
+    git pull
+    bootstrap-vcpkg.bat
+    vcpkg.exe install --triplet x64-windows pkgconf icu
+    dir installed\x64-windows\ || true
+    dir installed\x64-windows\tools\pkgconf || true
+    dir c:\cirrus\vcpkg\installed\x64-windows\debug\lib\pkgconfig || true
+
+  always:
+    upload_caches: prereq
+
   # Use /DEBUG:FASTLINK to avoid high memory usage during linking
   configure_script: |
     vcvarsall x64
-    meson setup --backend ninja --buildtype debug -Dc_link_args=/DEBUG:FASTLINK -Dcassert=true -Db_pch=true -Dssl=openssl -Dextra_lib_dirs=c:\openssl\1.1\lib -Dextra_include_dirs=c:\openssl\1.1\include -DTAR=%TAR% -DPG_TEST_EXTRA="%PG_TEST_EXTRA%" build
+
+    set PATH=c:/cirrus/vcpkg/installed/x64-windows/tools/pkgconf;c:/cirrus/vcpkg/installed/x64-windows/lib;c:/cirrus/vcpkg/installed/x64-windows/tools/bin;%PATH%
+    set PKG_CONFIG=pkgconf
+    where.exe pkgconf.exe || true
+    ldd c:/cirrus/vcpkg/installed/x64-windows/tools/pkgconf/pkgconf.exe
+
+    meson setup --backend ninja --buildtype debug -Dc_link_args=/DEBUG:FASTLINK -Dcassert=true -Db_pch=true -Dssl=openssl -Dextra_lib_dirs=c:\openssl\1.1\lib -Dextra_include_dirs=c:\openssl\1.1\include -Dicu=enabled -DTAR=%TAR% -DPG_TEST_EXTRA="%PG_TEST_EXTRA%" -Dpkg_config_path=c:/cirrus/vcpkg/installed/x64-windows/debug/lib/pkgconfig build
 
   build_script: |
     vcvarsall x64
     ninja -C build
+    ls %ICUDATA% || true
 
   check_world_script: |
     vcvarsall x64
+
+    set PATH=c:/cirrus/vcpkg/installed/x64-windows/tools/pkgconf;c:/cirrus/vcpkg/installed/x64-windows/lib;c:/cirrus/vcpkg/installed/x64-windows/tools/bin;%PATH%
+
+    meson test %MTEST_ARGS% --suite setup
+    ldd build/tmp_install/usr/local/pgsql/bin/postgres.exe || true
+
+    meson test %MTEST_ARGS% --suite adminpack
     meson test %MTEST_ARGS% --num-processes %TEST_JOBS%
 
   on_failure:
     <<: *on_failure_meson
+    icu_artifacts:
+      paths:
+        - "build/subprojects/icu/**/*.dll"
+        - "**/*.exe"
+        - "build/tmp_install/**/*.exe"
+        - "**/*.pc"
+
     crashlog_artifacts:
       path: "crashlog-*.txt"
       type: text/plain
