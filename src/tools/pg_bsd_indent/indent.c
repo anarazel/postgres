@@ -60,7 +60,7 @@ const char *in_name = "Standard Input";	/* will always point to name of input
 					 * file */
 const char *out_name = "Standard Output";	/* will always point to name
 						 * of output file */
-char        bakfile[MAXPATHLEN] = "";
+char        bakfile[MAXPGPATH] = "";
 
 int
 main(int argc, char **argv)
