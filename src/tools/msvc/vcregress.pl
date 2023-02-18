@@ -92,10 +92,6 @@ my $maxconn = "";
 $maxconn = "--max-connections=$ENV{MAX_CONNECTIONS}"
   if $ENV{MAX_CONNECTIONS};
 
-my $temp_config = "";
-$temp_config = "--temp-config=\"$ENV{TEMP_CONFIG}\""
-  if $ENV{TEMP_CONFIG};
-
 chdir "src/test/regress";
 
 my %command = (
@@ -202,7 +198,6 @@ sub check
 		"--no-locale",
 		"--temp-instance=./tmp_check");
 	push(@args, $maxconn) if $maxconn;
-	push(@args, $temp_config) if $temp_config;
 	system(@args);
 	my $status = $? >> 8;
 	exit $status if $status;

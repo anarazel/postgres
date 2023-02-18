@@ -2134,6 +2134,14 @@ regression_main(int argc, char *argv[],
 		hostname = "localhost";
 
 	/*
+	 * If the TEMP_CONFIG environment variable is set, use it. Give higher
+	 * precedence to an explicitly specified --temp-config by adding it later
+	 * to the list, as later config assignments override earlier ones.
+	 */
+	if (getenv("TEMP_CONFIG"))
+		add_stringlist_item(&temp_configs, getenv("TEMP_CONFIG"));
+
+	/*
 	 * We call the initialization function here because that way we can set
 	 * default parameters and let them be overwritten by the commandline.
 	 */
