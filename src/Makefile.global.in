@@ -655,12 +655,6 @@ ifdef NO_LOCALE
 NOLOCALE += --no-locale
 endif
 
-# file with extra config for temp build
-TEMP_CONF =
-ifdef TEMP_CONFIG
-TEMP_CONF += --temp-config=$(TEMP_CONFIG)
-endif
-
 pg_regress_locale_flags = $(if $(ENCODING),--encoding=$(ENCODING)) $(NOLOCALE)
 pg_regress_clean_files = results/ regression.diffs regression.out tmp_check/ tmp_check_iso/ log/ output_iso/
 
@@ -671,7 +665,6 @@ pg_regress_check = \
     --temp-instance=./tmp_check \
     --inputdir=$(srcdir) \
     --bindir= \
-    $(TEMP_CONF) \
     $(pg_regress_locale_flags) $(EXTRA_REGRESS_OPTS)
 pg_regress_installcheck = \
     echo "+++ regress install-check in $(subdir) +++" && \
@@ -687,7 +680,6 @@ pg_isolation_regress_check = \
     --temp-instance=./tmp_check_iso \
     --inputdir=$(srcdir) --outputdir=output_iso \
     --bindir= \
-    $(TEMP_CONF) \
     $(pg_regress_locale_flags) $(EXTRA_REGRESS_OPTS)
 pg_isolation_regress_installcheck = \
     echo "+++ isolation install-check in $(subdir) +++" && \
