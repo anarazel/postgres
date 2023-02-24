@@ -557,7 +557,8 @@ task:
 
   compute_engine_instance:
     image_project: $IMAGE_PROJECT
-    image: family/pg-ci-windows-ci-vs-2019
+    #image: family/pg-ci-windows-ci-vs-2019
+    image: pg-ci-windows-ci-vs-2019-2023-02-24t02-09-15
     platform: windows
     cpu: $CPUS
     memory: 4G
