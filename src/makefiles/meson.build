@@ -116,6 +116,10 @@ pgxs_kv = {
   'FLEXFLAGS': ' '.join(flex_flags),
 
   'LIBS': var_libs,
+
+  # Needed for headerscheck/cpluspluscheck
+  'perl_includespec': perl_dep.found() ? ' '.join(perl_ccflags) : '',
+  'python_includespec': python3_dep.found() ? '-I@0@'.format(python3_inst.get_variable('INCLUDEPY')) : '',
 }
 
 if llvm.found()
@@ -179,8 +183,8 @@ pgxs_empty = [
   'LIBOBJS', 'PG_CRC32C_OBJS', 'TAS',
   'DTRACEFLAGS', # only server has dtrace probes
 
-  'perl_archlibexp', 'perl_embed_ccflags', 'perl_embed_ldflags', 'perl_includespec', 'perl_privlibexp',
-  'python_additional_libs', 'python_includespec', 'python_libdir', 'python_libspec', 'python_majorversion', 'python_version',
+  'perl_archlibexp', 'perl_embed_ccflags', 'perl_embed_ldflags', 'perl_privlibexp',
+  'python_additional_libs', 'python_libdir', 'python_libspec', 'python_majorversion', 'python_version',
 
   # possible that some of these are referenced explicitly in pgxs makefiles?
   # For now not worth it.
