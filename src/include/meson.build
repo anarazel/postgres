@@ -186,3 +186,17 @@ install_subdir('catalog',
 
 # autoconf generates the file there, ensure we get a conflict
 generated_sources_ac += {'src/include': ['stamp-h', 'stamp-ext-h']}
+
+
+generated_headers_stamp = custom_target('generated-headers-stamp.h',
+  output: 'generated-headers-stamp.h',
+  input: [generated_headers],
+  command: stamp_cmd,
+)
+
+generated_backend_headers_stamp = custom_target('generated-backend-headers-stamp.h',
+  output: 'generated-backend-headers-stamp.h',
+  input: [generated_backend_headers],
+  depends: generated_headers_stamp,
+  command: stamp_cmd,
+)
