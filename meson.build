@@ -2698,6 +2698,8 @@ gen_export_kwargs = {
   'install': false,
 }
 
+# command to create stamp files on all OSs
+stamp_cmd = [python, '-c', 'import sys; open(sys.argv[1], "w")', '@OUTPUT0@']
 
 
 ###
@@ -2815,14 +2817,14 @@ subdir('src/port')
 frontend_common_code = declare_dependency(
   compile_args: ['-DFRONTEND'],
   include_directories: [postgres_inc],
-  sources: generated_headers,
+  sources: generated_headers_stamp,
   dependencies: [os_deps, zlib, zstd],
 )
 
 backend_common_code = declare_dependency(
   compile_args: ['-DBUILDING_DLL'],
   include_directories: [postgres_inc],
-  sources: generated_headers,
+  sources: generated_headers_stamp,
   dependencies: [os_deps, zlib, zstd],
 )
 
@@ -2837,7 +2839,7 @@ shlib_code = declare_dependency(
 frontend_stlib_code = declare_dependency(
   include_directories: [postgres_inc],
   link_with: [common_static, pgport_static],
-  sources: generated_headers,
+  sources: generated_headers_stamp,
   dependencies: [os_deps, libintl],
 )
 
@@ -2845,7 +2847,7 @@ frontend_stlib_code = declare_dependency(
 frontend_shlib_code = declare_dependency(
   include_directories: [postgres_inc],
   link_with: [common_shlib, pgport_shlib],
-  sources: generated_headers,
+  sources: generated_headers_stamp,
   dependencies: [shlib_code, os_deps, libintl],
 )
 
@@ -2867,7 +2869,7 @@ subdir('src/fe_utils')
 frontend_code = declare_dependency(
   include_directories: [postgres_inc],
   link_with: [fe_utils, common_static, pgport_static],
-  sources: generated_headers,
+  sources: generated_headers_stamp,
   dependencies: [os_deps, libintl],
 )
 
@@ -2895,7 +2897,7 @@ backend_code = declare_dependency(
   include_directories: [postgres_inc],
   link_args: ldflags_be,
   link_with: [],
-  sources: generated_headers + generated_backend_headers,
+  sources: [generated_backend_headers_stamp],
   dependencies: os_deps + backend_both_deps + backend_deps,
 )
 
