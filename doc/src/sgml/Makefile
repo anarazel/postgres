@@ -144,7 +144,6 @@ html: html-stamp
 
 html-stamp: stylesheet.xsl postgres-full.xml $(ALL_IMAGES)
 	$(XSLTPROC) $(XMLINCLUDE) $(XSLTPROCFLAGS) $(XSLTPROC_HTML_FLAGS) $(wordlist 1,2,$^)
-	cp $(ALL_IMAGES) html/
 	cp $(srcdir)/stylesheet.css html/
 	touch $@
 
@@ -152,7 +151,6 @@ htmlhelp: htmlhelp-stamp
 
 htmlhelp-stamp: stylesheet-hh.xsl postgres-full.xml $(ALL_IMAGES)
 	$(XSLTPROC) $(XMLINCLUDE) $(XSLTPROCFLAGS) $(wordlist 1,2,$^)
-	cp $(ALL_IMAGES) htmlhelp/
 	cp $(srcdir)/stylesheet.css htmlhelp/
 	touch $@
 

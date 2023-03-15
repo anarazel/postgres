@@ -29,7 +29,12 @@
 </xsl:param>
 
 
-<!-- strip directory name from image filerefs -->
+<xsl:template match="imageobject">
+  <xsl:call-template name="write-image"/>
+  <!-- copy images to the output directory, so the output is self contained -->
+  <xsl:apply-templates select="imagedata"/>
+</xsl:template>
+
 <xsl:template match="imagedata/@fileref">
  <xsl:value-of select="substring-after(., '/')"/>
 </xsl:template>
