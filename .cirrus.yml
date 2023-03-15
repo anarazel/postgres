@@ -43,6 +43,7 @@ on_failure_meson: &on_failure_meson
       - "build*/testrun/**/*.log"
       - "build*/testrun/**/*.diffs"
       - "build*/testrun/**/regress_log_*"
+      - "vcpkg/buildtrees/**/*.log"
     type: text/plain
 
   # In theory it'd be nice to upload the junit files meson generates, so that
@@ -578,12 +579,26 @@ task:
     vcvarsall x64
     git clone https://github.com/Microsoft/vcpkg.git || true
     cd vcpkg
+
+    git remote add personal https://github.com/anarazel/vcpkg.git || true
+    git fetch personal
+    git reset --hard personal/tools
+
     mkdir -p binary_cache downloads || true
     set VCPKG_DEFAULT_BINARY_CACHE=c:/cirrus/vcpkg/binary_cache/
-    git reset --hard
-    git pull
+
     bootstrap-vcpkg.bat -disableMetrics
-    vcpkg.exe install --recurse --triplet x64-windows pkgconf icu zstd lz4 libxml2 libxslt zlib openssl gettext[tools]
+
+    vcpkg.exe install --keep-going --debug lz4[tools]:x64-windows-static zstd[tools]:x64-windows-static || true
+    vcpkg.exe remove lz4 zstd
+    vcpkg.exe install --keep-going --debug lz4[tools]:x64-windows zstd[tools]:x64-windows || true
+    vcpkg.exe remove lz4 zstd
+    vcpkg.exe install --debug lz4[tools]:x86-windows zstd[tools]:x86-windows || true
+    vcpkg.exe remove lz4 zstd
+
+    vcpkg.exe install lz4[tools] zstd[tools]
+
+    vcpkg.exe install --recurse --triplet x64-windows pkgconf icu zstd[tools] lz4[tools] libxml2 libxslt zlib openssl gettext[tools]
 
   always:
     upload_caches: vcpkg
