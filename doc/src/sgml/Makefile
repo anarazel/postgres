@@ -53,7 +53,7 @@ else
 XSLTPROC = $(missing) xsltproc
 endif
 
-override XSLTPROCFLAGS += --stringparam pg.version '$(VERSION)'
+override XSLTPROCFLAGS += --xincludestyle --stringparam pg.version '$(VERSION)'
 
 
 GENERATED_SGML = version.sgml \
@@ -144,14 +144,12 @@ html: html-stamp
 
 html-stamp: stylesheet.xsl postgres-full.xml $(ALL_IMAGES)
 	$(XSLTPROC) $(XMLINCLUDE) $(XSLTPROCFLAGS) $(XSLTPROC_HTML_FLAGS) $(wordlist 1,2,$^)
-	cp $(srcdir)/stylesheet.css html/
 	touch $@
 
 htmlhelp: htmlhelp-stamp
 
 htmlhelp-stamp: stylesheet-hh.xsl postgres-full.xml $(ALL_IMAGES)
 	$(XSLTPROC) $(XMLINCLUDE) $(XSLTPROCFLAGS) $(wordlist 1,2,$^)
-	cp $(srcdir)/stylesheet.css htmlhelp/
 	touch $@
 
 # single-page HTML

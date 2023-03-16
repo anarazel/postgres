@@ -1,7 +1,8 @@
 <?xml version='1.0'?>
 <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
                 version='1.0'
-                xmlns="http://www.w3.org/1999/xhtml">
+                xmlns="http://www.w3.org/1999/xhtml"
+                xmlns:xi="http://www.w3.org/2001/XInclude">
 
 <xsl:import href="http://docbook.sourceforge.net/release/xsl/current/xhtml/chunk.xsl"/>
 <xsl:include href="stylesheet-common.xsl" />
@@ -17,17 +18,13 @@
 <xsl:param name="chunk.quietly" select="1"></xsl:param>
 <xsl:param name="admon.style"></xsl:param>  <!-- handled by CSS stylesheet -->
 
-<xsl:param name="website.stylesheet" select="0"/>
-
 <xsl:param name="html.stylesheet">
-  <xsl:choose>
-    <xsl:when test="$website.stylesheet = 0">stylesheet.css</xsl:when>
-    <xsl:otherwise>
-      https://www.postgresql.org/media/css/docs-complete.css
-    </xsl:otherwise>
-  </xsl:choose>
+  <xsl:call-template name="stylesheet-reference"/>
 </xsl:param>
 
+<xsl:template name="stylesheet-contents">
+  <xi:include href="stylesheet.css" parse="text"/>
+</xsl:template>
 
 <xsl:template match="imageobject">
   <xsl:call-template name="write-image"/>

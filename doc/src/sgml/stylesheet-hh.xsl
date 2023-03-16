@@ -1,5 +1,6 @@
 <?xml version='1.0'?>
 <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                xmlns:xi="http://www.w3.org/2001/XInclude"
                 version='1.0'>
 
 <xsl:import href="http://docbook.sourceforge.net/release/xsl/current/htmlhelp/htmlhelp.xsl"/>
@@ -9,7 +10,6 @@
 <xsl:param name="htmlhelp.use.hhk" select="'1'"/>
 
 <xsl:param name="base.dir" select="'htmlhelp/'"></xsl:param>
-<xsl:param name="html.stylesheet" select="'stylesheet.css'"></xsl:param>
 <xsl:param name="use.id.as.filename" select="'1'"></xsl:param>
 <xsl:param name="manifest.in.base.dir" select="1"/>
 <xsl:param name="make.valid.html" select="1"></xsl:param>
@@ -18,6 +18,14 @@
 <xsl:param name="link.mailto.url">pgsql-docs@lists.postgresql.org</xsl:param>
 <xsl:param name="chunker.output.indent" select="'yes'"/>
 <xsl:param name="chunk.quietly" select="1"></xsl:param>
+
+<xsl:param name="html.stylesheet">
+  <xsl:call-template name="stylesheet-reference"/>
+</xsl:param>
+
+<xsl:template name="stylesheet-contents">
+  <xi:include href="stylesheet.css" parse="text"/>
+</xsl:template>
 
 
 <!-- Change display of some elements -->

@@ -41,6 +41,8 @@
 <xsl:param name="variablelist.term.break.after">1</xsl:param>
 <xsl:param name="variablelist.term.separator"></xsl:param>
 <xsl:param name="xref.with.number.and.title" select="0"></xsl:param>
+<!-- currently htmlhelp and other html have no common stylesheet -->
+<xsl:param name="website.stylesheet" select="0"/>
 
 
 <!-- Change display of some elements -->
@@ -122,5 +124,23 @@
  </xsl:call-template>
 </xsl:template>
 
+<xsl:template name="stylesheet-reference">
+  <xsl:choose>
+    <xsl:when test="$website.stylesheet = 0">stylesheet.css
+    <xsl:variable name="styleout" select="concat($base.dir, 'stylesheet.css')"/>
+    <xsl:call-template name="write.chunk">
+      <xsl:with-param name="filename" select="$styleout"/>
+      <xsl:with-param name="omit-xml-declaration" select="'yes'"/>
+      <xsl:with-param name="content">
+        <!-- xinclude is only processed in toplevel stylesheet -->
+        <xsl:call-template name="stylesheet-contents"/>
+      </xsl:with-param>
+    </xsl:call-template>
+    </xsl:when>
+    <xsl:otherwise>
+      https://www.postgresql.org/media/css/docs-complete.css
+    </xsl:otherwise>
+  </xsl:choose>
+</xsl:template>
 
 </xsl:stylesheet>

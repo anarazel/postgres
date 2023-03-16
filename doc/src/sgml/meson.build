@@ -104,7 +104,7 @@ if xsltproc_bin.found()
   xsltproc_flags = [
     '--nonet',
     '--stringparam', 'pg.version', pg_version,
-    '--param', 'website.stylesheet', '1'
+    '--xincludestyle',
   ]
 
   xsltproc = xmltools_wrapper + [
