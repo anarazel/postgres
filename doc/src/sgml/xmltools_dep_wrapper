@@ -14,6 +14,7 @@ parser = argparse.ArgumentParser(
 parser.add_argument('--targetname', type=str, required=False, nargs='+')
 parser.add_argument('--depfile', type=str, required=False)
 parser.add_argument('--tool', type=str, required=True)
+parser.add_argument('--stamp', type=str, required=False, default=None)
 parser.add_argument('flags', nargs='*')
 
 args = parser.parse_args()
@@ -50,5 +51,9 @@ if args.depfile:
 else:
     command = [args.tool] + args.flags
     res = subprocess.run(command)
+
+if args.stamp is not None:
+    with open(args.stamp, "w") as f:
+        pass
 
 exit(res.returncode)

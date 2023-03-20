@@ -121,6 +121,23 @@ if xsltproc_bin.found()
   )
   alldocs += html
 
+  parts = ['bookinfo', 'preface', 'tutorial', 'sql', 'admin', 'client-interfaces', 'server-programming', 'reference', 'internals', 'appendixes', 'biblio', 'bookindex']
+  html_parts = []
+  foreach part : parts
+      html_parts += custom_target('html-@0@'.format(part),
+      input: ['stylesheet.xsl', postgres_full_xml],
+      output: 'html-stamp-@0@'.format(part),
+      depfile: 'html.d',
+      depends: doc_generated,
+      command: [
+        xmltools_wrapper, '--tool', xsltproc_bin, '--stamp', '@OUTPUT0@', '--',
+        '-o', '@OUTDIR@/', xsltproc_flags, '--stringparam', 'rootid', part, '@INPUT@',
+      ],
+      build_by_default: false,
+    )
+  endforeach
+  alias_target('html-parts', html_parts)
+
   install_doc_html = custom_target('install-html',
     output: 'install-html',
     command: [

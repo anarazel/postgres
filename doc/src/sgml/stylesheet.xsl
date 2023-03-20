@@ -15,7 +15,7 @@
 <xsl:param name="use.id.as.filename" select="'1'"></xsl:param>
 <xsl:param name="generate.legalnotice.link" select="1"></xsl:param>
 <xsl:param name="chunk.first.sections" select="1"/>
-<xsl:param name="chunk.quietly" select="1"></xsl:param>
+<xsl:param name="chunk.quietly" select="0"></xsl:param>
 <xsl:param name="admon.style"></xsl:param>  <!-- handled by CSS stylesheet -->
 
 <xsl:param name="html.stylesheet">
@@ -36,6 +36,55 @@
  <xsl:value-of select="substring-after(., '/')"/>
 </xsl:template>
 
+<!-- Emit index.html and legalnotice.html -->
+<xsl:template name="pg.write.bookinfo">
+   <xsl:for-each select="/book">
+     <xsl:call-template name="process-chunk">
+       <xsl:with-param name="prev" select="/dontexist"/>
+       <xsl:with-param name="next" select="preface"/>
+       <xsl:with-param name="content">
+
+         <div>
+           <xsl:apply-templates select="." mode="common.html.attributes"/>
+           <xsl:call-template name="id.attribute">
+             <xsl:with-param name="conditional" select="0"/>
+           </xsl:call-template>
+
+           <xsl:call-template name="book.titlepage"/>
+
+           <xsl:apply-templates select="dedication" mode="dedication"/>
+           <xsl:apply-templates select="acknowledgements" mode="acknowledgements"/>
+
+           <xsl:variable name="toc.params">
+             <xsl:call-template name="find.path.params">
+               <xsl:with-param name="table" select="normalize-space($generate.toc)"/>
+             </xsl:call-template>
+           </xsl:variable>
+
+           <xsl:call-template name="make.lots">
+             <xsl:with-param name="toc.params" select="$toc.params"/>
+             <xsl:with-param name="toc">
+               <xsl:call-template name="division.toc">
+                 <xsl:with-param name="toc.title.p" select="contains($toc.params, 'title')"/>
+               </xsl:call-template>
+             </xsl:with-param>
+           </xsl:call-template>
+         </div>
+       </xsl:with-param>
+     </xsl:call-template>
+   </xsl:for-each>
+</xsl:template>
+
+<xsl:template match="/book/bookinfo" mode="process.root" priority="2">
+  <xsl:choose>
+    <xsl:when test="$rootid = 'bookinfo'">
+      <xsl:call-template name="pg.write.bookinfo"/>
+    </xsl:when>
+    <xsl:otherwise>
+      <xsl:apply-imports/>
+    </xsl:otherwise>
+  </xsl:choose>
+</xsl:template>
 
 <!--
 Customization of header

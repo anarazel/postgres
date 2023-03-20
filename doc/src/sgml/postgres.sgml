@@ -23,7 +23,7 @@ break is not needed in a wider output rendering.
 <book id="postgres">
  <title>PostgreSQL &version; Documentation</title>
 
- <bookinfo>
+ <bookinfo id="bookinfo">
   <corpauthor>The PostgreSQL Global Development Group</corpauthor>
   <productname>PostgreSQL</productname>
   <productnumber>&version;</productnumber>
