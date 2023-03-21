@@ -59,12 +59,9 @@ generated_sources_stamp = custom_target('generated-sources-stamp.h',
   command: stamp_cmd,
 )
 
-run_target('headerscheck',
-  command: [files('tools/pginclude/headerscheck'), '@SOURCE_ROOT@', '@BUILD_ROOT@'],
-  depends: [generated_sources_stamp, generated_headers_stamp, generated_backend_headers_stamp],
-)
-
-run_target('cpluspluscheck',
-  command: [files('tools/pginclude/cpluspluscheck'), '@SOURCE_ROOT@', '@BUILD_ROOT@'],
-  depends: [generated_sources_stamp, generated_headers_stamp, generated_backend_headers_stamp],
-)
+foreach tgt : ['headerscheck', 'cpluspluscheck']
+  run_target(tgt,
+    command: [files('tools/pginclude/@0@'.format(tgt)), meson.source_root(), meson.build_root()],
+    depends: [generated_sources_stamp, generated_headers_stamp, generated_backend_headers_stamp],
+  )
+endforeach

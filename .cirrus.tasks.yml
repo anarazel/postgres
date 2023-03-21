@@ -1085,17 +1085,10 @@ task:
   ###
   always:
     headers_headerscheck_script: |
-      mkdir build-ac && cd build-ac
-      time ../configure \
-        ${LINUX_CONFIGURE_FEATURES} \
-        --without-icu \
-        --quiet \
-        CC="gcc" CXX="g++" CLANG="clang"
-      make -s -j${BUILD_JOBS} world-bin
-      time make -s headerscheck EXTRAFLAGS='-fmax-errors=10'
+      CC=gcc meson setup build-headerscheck -Dicu=disabled
+      ninja -C build-headerscheck headerscheck
     headers_cpluspluscheck_script: |
-      cd build-ac
-      time make -s cpluspluscheck EXTRAFLAGS='-fmax-errors=10'
+      ninja -C build-headerscheck cpluspluscheck
 
   always:
     ccache_stats_end_script:
