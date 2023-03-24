@@ -287,6 +287,42 @@ if pandoc.found() and xsltproc_bin.found()
   alldocs += postgres_epub
 endif
 
+
+##
+## Experimental Texinfo targets
+##
+
+db2x_xsltproc = find_program('db2x_xsltproc', native: true, required: false)
+db2x_texixml = find_program('db2x_texixml', native: true, required: false)
+makeinfo = find_program('makeinfo', native: true, required: false)
+
+if db2x_texixml.found() and db2x_xsltproc.found() and makeinfo.found()
+    postgres_texixml = custom_target('postgres.texixml',
+      input: postgres_full_xml,
+      output: 'postgres.texixml',
+      command: [db2x_xsltproc, '-s', 'texi',
+                '-g', 'output-file=postgres',
+                '@INPUT@', '-o', '@OUTPUT@'],
+      build_by_default: false,
+    )
+    postgres_texi = custom_target('postgres.texi',
+      input: postgres_texixml,
+      output: 'postgres.texi',
+      command: [db2x_texixml, '--encoding=utf-8', '@INPUT@',
+                '--output-dir=@OUTDIR@'],
+      build_by_default: false,
+    )
+    postgres_info = custom_target('postgres.info',
+      input: postgres_texi,
+      output: 'postgres.info',
+      command: [makeinfo, '--enable-encoding', '--no-split', '--no-validate',
+                '@INPUT@', '-o', '@OUTPUT0@'],
+      build_by_default: false,
+    )
+    alldocs += postgres_info
+endif
+
+
 if docs.length() == 0
   run_target('docs', command: [missing, 'xsltproc'])
 else
