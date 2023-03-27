@@ -561,8 +561,8 @@ task:
     cpu: $CPUS
     memory: 4G
 
-  setup_additional_packages_script: |
-    REM choco install -y --no-progress ...
+  meson_test_version_script:
+    pip install git+https://github.com/eli-schwartz/meson@python-dep-redefinition
 
   # Use /DEBUG:FASTLINK to avoid high memory usage during linking
   configure_script: |
