@@ -1,0 +1,49 @@
+-- Basic test of gist's killtuples / pruning during split implementation. This
+-- is not guaranteed to reach those paths, concurrent activity could prevent
+-- cleanup of dead tuples or such. But it's likely to reach them, which seems
+-- better than nothing.
+set enable_seqscan=off;
+set enable_bitmapscan=off;
+
+CREATE TABLE test_gist_killtuples (
+	k point,
+	v int DEFAULT 0
+);
+
+CREATE INDEX ON test_gist_killtuples USING gist(k);
+
+-- create index entries pointing to deleted tuples
+INSERT INTO test_gist_killtuples(k, v) SELECT point(generate_series(1, 1000), 0), 0;
+-- via deletes
+DELETE FROM test_gist_killtuples WHERE k << point(500, 0);
+-- and updates
+UPDATE test_gist_killtuples SET k = k + point(1, 0), v = 1 WHERE k >> point(500, 0);
+
+-- make the index see tuples are dead via killtuples
+PREPARE engage_killtuples AS
+SELECT sum(k <-> point(0, 0)) FROM test_gist_killtuples WHERE k >> point(0, 0);
+EXPLAIN (COSTS OFF) EXECUTE engage_killtuples;
+EXECUTE engage_killtuples;
+
+-- create new index entries, in the same ranges, this should see the dead entries and prune the pages
+INSERT INTO test_gist_killtuples(k, v) SELECT point(generate_series(1, 300), 0), 2;
+UPDATE test_gist_killtuples SET k = k + point(1, 0), v = 3 WHERE k >> point(600, 0);
+
+-- do some basic cross checking of index scans vs sequential scan
+-- use prepared statement, so we can explain and execute without repeating the statement
+PREPARE check_query AS SELECT tgk.v, min(tgk.k <-> point(0, 0)), max(tgk.k <-> point(0, 0)), count(*),
+  brute = ROW(tgk.v, min(tgk.k <-> point(0, 0)), max(tgk.k <-> point(0, 0)), count(*)) AS are_equal
+FROM (
+    SELECT v, min(k <-> point(0, 0)), max(k <-> point(0, 0)), count(*)
+    FROM test_gist_killtuples GROUP BY v ORDER BY v
+  ) brute,
+  test_gist_killtuples tgk
+WHERE tgk.k >> point(brute.min - 1, 0) AND tgk.k << point(brute.max + 1, 0)
+GROUP BY brute, tgk.v
+ORDER BY tgk.v;
+
+EXPLAIN (COSTS OFF) EXECUTE check_query;
+EXECUTE check_query;
+
+-- Leave the table/index around, so that an index that has been affected by
+-- killtuples could be seen by amcheck or such.
