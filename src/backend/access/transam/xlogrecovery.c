@@ -1936,6 +1936,30 @@ ApplyWalRecord(XLogReaderState *xlogreader, XLogRecord *record, TimeLineID *repl
 	SpinLockRelease(&XLogRecoveryCtl->info_lck);
 
 	/*
+	 * Wakeup walsenders:
+	 *
+	 * On the standby, the WAL is flushed first (which will only wake up
+	 * physical walsenders) and then applied, which will only wake up logical
+	 * walsenders.
+	 *
+	 * Indeed, logical walsenders on standby can't decode and send data until
+	 * it's been applied.
+	 *
+	 * Physical walsenders don't need to be woken up during replay unless
+	 * cascading replication is allowed and time line change occured (so that
+	 * they can notice that they are on a new time line).
+	 *
+	 * That's why the wake up conditions are for:
+	 *
+	 *  - physical walsenders in case of new time line and cascade
+	 *  replication is allowed.
+	 *  - logical walsenders in case cascade replication is allowed (could not
+	 *  be created otherwise).
+	 */
+	if (AllowCascadeReplication())
+		WalSndWakeup(switchedTLI, true);
+
+	/*
 	 * If rm_redo called XLogRequestWalReceiverReply, then we wake up the
 	 * receiver so that it notices the updated lastReplayedEndRecPtr and sends
 	 * a reply to the primary.
@@ -1957,12 +1981,6 @@ ApplyWalRecord(XLogReaderState *xlogreader, XLogRecord *record, TimeLineID *repl
 		 * bogus) future WAL segments on the old timeline.
 		 */
 		RemoveNonParentXlogFiles(xlogreader->EndRecPtr, *replayTLI);
-
-		/*
-		 * Wake up any walsenders to notice that we are on a new timeline.
-		 */
-		if (AllowCascadeReplication())
-			WalSndWakeup();
 
 		/* Reset the prefetcher. */
 		XLogPrefetchReconfigure();
