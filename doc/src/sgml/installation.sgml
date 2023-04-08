@@ -24,13 +24,6 @@ documentation.  See standalone-profile.xsl for details.
   and see <xref linkend="install-binaries" /> instead.
  </para>
 
- <para>
-  If you are building <productname>PostgreSQL</productname> for Microsoft
-  Windows, read this chapter if you intend to build with MinGW or Cygwin;
-  but if you intend to build with Microsoft's <productname>Visual
-  C++</productname>, see <xref linkend="install-windows"/> instead.
- </para>
-
  <sect1 id="install-requirements">
   <title>Requirements</title>
 
@@ -3545,8 +3538,8 @@ ERROR:  could not load library "/opt/dbs/pgsql/lib/plperl.so": Bad address
 
    <para>
     PostgreSQL can be built using Cygwin, a Linux-like environment for
-    Windows, but that method is inferior to the native Windows build
-    <phrase condition="standalone-ignore">(see <xref linkend="install-windows"/>)</phrase> and
+    Windows, but that method is inferior to targeting native Windows
+    <phrase condition="standalone-ignore">(see <xref linkend="install-meson"/>)</phrase> and
     running a server under Cygwin is no longer recommended.
    </para>
 
@@ -3722,11 +3715,11 @@ xcrun --show-sdk-path
 
    <para>
     PostgreSQL for Windows can be built using MinGW, a Unix-like build
-    environment for Microsoft operating systems, or using
-    Microsoft's <productname>Visual C++</productname> compiler suite.
-    The MinGW build procedure uses the normal build system described in
-    this chapter; the Visual C++ build works completely differently
-    and is described in <xref linkend="install-windows"/>.
+    environment for Microsoft operating systems, or using Microsoft's
+    <productname>Visual C++</productname> compiler suite. Using MinGW
+    <productname>PostgreSQL</productname> can be built with both <xref
+    linkend="install-make"/> and <xref linkend="install-meson"/>, with
+    <productname>Visual C++</productname> only the latter can be used.
    </para>
 
    <para>
