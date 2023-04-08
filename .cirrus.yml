@@ -915,6 +915,8 @@ task:
 
   depends_on: SanityCheck
   only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*windows.*'
+  # Doesn't build anymore currently
+  trigger_type: manual
 
   env:
     # Our windows infrastructure doesn't have test concurrency above the level
