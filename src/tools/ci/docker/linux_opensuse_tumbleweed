@@ -34,7 +34,7 @@ RUN \
   libxml2-devel \
   libxslt-devel \
   libzstd-devel \
-  llvm-devel \
+  llvm15-devel \
   pam-devel \
   python38-devel \
   readline-devel \
