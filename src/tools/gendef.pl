@@ -11,7 +11,7 @@ my @def;
 #
 # Script that generates a .DEF file for all objects in a directory
 #
-# src/tools/msvc/gendef.pl
+# src/tools/gendef.pl
 #
 
 # Given a symbol file path, loops over its contents
