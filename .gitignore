@@ -25,8 +25,6 @@ objfiles.txt
 lcov*.info
 coverage/
 coverage-html-stamp
-*.vcproj
-*.vcxproj
 win32ver.rc
 *.exe
 lib*dll.def
@@ -37,9 +35,5 @@ lib*.pc
 /config.cache
 /config.log
 /config.status
-/pgsql.sln
-/pgsql.sln.cache
-/Debug/
-/Release/
 /tmp_install/
 /portlock/
