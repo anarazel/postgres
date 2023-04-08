@@ -66,6 +66,23 @@ AC_DEFUN([PGAC_CHECK_PERL_CONFIGS],
 # of 2017, all supported ActivePerl and Strawberry Perl are MinGW-built.  If
 # that changes or an MSVC-built Perl distribution becomes prominent, we can
 # revisit this limitation.
+#
+# FIXME FIXME FIXME: Referenced Mkvcbuild.pm comment:
+#
+# Windows offers several 32-bit ABIs.  Perl is sensitive to
+# sizeof(time_t), one of the ABI dimensions.  To get 32-bit time_t,
+# use "cl -D_USE_32BIT_TIME_T" or plain "gcc".  For 64-bit time_t, use
+# "gcc -D__MINGW_USE_VC2005_COMPAT" or plain "cl".  Before MSVC 2005,
+# plain "cl" chose 32-bit time_t.  PostgreSQL doesn't support building
+# with pre-MSVC-2005 compilers, but it does support linking to Perl
+# built with such a compiler.  MSVC-built Perl 5.13.4 and later report
+# -D_USE_32BIT_TIME_T in $Config{ccflags} if applicable, but
+# MinGW-built Perl never reports -D_USE_32BIT_TIME_T despite typically
+# needing it.  Ignore the $Config{ccflags} opinion about
+# -D_USE_32BIT_TIME_T, and use a runtime test to deduce the ABI Perl
+# expects.  Specifically, test use of PL_modglobal, which maps to a
+# PerlInterpreter field whose position depends on sizeof(time_t).
+#
 AC_DEFUN([PGAC_CHECK_PERL_EMBED_CCFLAGS],
 [AC_REQUIRE([PGAC_PATH_PERL])
 AC_MSG_CHECKING([for CFLAGS recommended by Perl])
