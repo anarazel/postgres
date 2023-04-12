@@ -227,6 +227,7 @@ sub GenerateFiles
 		HAVE_BACKTRACE_SYMBOLS => undef,
 		HAVE_BIO_GET_DATA => undef,
 		HAVE_BIO_METH_NEW => undef,
+		HAVE__BUILTIN_PREFETCH => undef,
 		HAVE_COMPUTED_GOTO => undef,
 		HAVE_COPYFILE => undef,
 		HAVE_COPYFILE_H => undef,

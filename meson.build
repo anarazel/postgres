@@ -1688,10 +1688,11 @@ builtins = [
   'bswap32',
   'bswap64',
   'clz',
-  'ctz',
   'constant_p',
+  'ctz',
   'frame_address',
   'popcount',
+  'prefetch',
   'unreachable',
 ]
 

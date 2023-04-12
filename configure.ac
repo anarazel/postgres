@@ -1825,6 +1825,9 @@ PGAC_CHECK_BUILTIN_FUNC([__builtin_popcount], [unsigned int x])
 # so it needs a different test function.
 PGAC_CHECK_BUILTIN_FUNC_PTR([__builtin_frame_address], [0])
 
+# Can we use a built-in to prefetch memory?
+PGAC_CHECK_BUILTIN_VOID_FUNC([__builtin_prefetch], [void *x])
+
 # We require 64-bit fseeko() to be available, but run this check anyway
 # in case it finds that _LARGEFILE_SOURCE has to be #define'd for that.
 AC_FUNC_FSEEKO

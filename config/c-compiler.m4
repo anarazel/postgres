@@ -355,6 +355,23 @@ AC_DEFINE_UNQUOTED(AS_TR_CPP([HAVE$1]), 1,
                    [Define to 1 if your compiler understands $1.])
 fi])# PGAC_CHECK_BUILTIN_FUNC
 
+# PGAC_CHECK_BUILTIN_VOID_FUNC
+# -----------------------
+# Variant for void functions.
+AC_DEFUN([PGAC_CHECK_BUILTIN_VOID_FUNC],
+[AC_CACHE_CHECK(for $1, pgac_cv$1,
+[AC_LINK_IFELSE([AC_LANG_PROGRAM([
+void
+call$1($2)
+{
+    $1(x);
+}], [])],
+[pgac_cv$1=yes],
+[pgac_cv$1=no])])
+if test x"${pgac_cv$1}" = xyes ; then
+AC_DEFINE_UNQUOTED(AS_TR_CPP([HAVE$1]), 1,
+                   [Define to 1 if your compiler understands $1.])
+fi])# PGAC_CHECK_BUILTIN_VOID_FUNC
 
 
 # PGAC_CHECK_BUILTIN_FUNC_PTR
