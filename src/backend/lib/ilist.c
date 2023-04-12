@@ -51,13 +51,12 @@ slist_delete(slist_head *head, const slist_node *node)
 	slist_check(head);
 }
 
-#ifdef ILIST_DEBUG
 /*
  * dlist_member_check
  *		Validate that 'node' is a member of 'head'
  */
 void
-dlist_member_check(const dlist_head *head, const dlist_node *node)
+dlist_member_check_force(const dlist_head *head, const dlist_node *node)
 {
 	const dlist_node *cur;
 
@@ -74,12 +73,12 @@ dlist_member_check(const dlist_head *head, const dlist_node *node)
  * Verify integrity of a doubly linked list
  */
 void
-dlist_check(const dlist_head *head)
+dlist_check_force(const dlist_head *head)
 {
 	dlist_node *cur;
 
 	if (head == NULL)
-		elog(ERROR, "doubly linked list head address is NULL");
+		elog(PANIC, "doubly linked list head address is NULL");
 
 	if (head->head.next == NULL && head->head.prev == NULL)
 		return;					/* OK, initialized as zeroes */
@@ -92,7 +91,7 @@ dlist_check(const dlist_head *head)
 			cur->prev == NULL ||
 			cur->prev->next != cur ||
 			cur->next->prev != cur)
-			elog(ERROR, "doubly linked list is corrupted");
+			elog(PANIC, "doubly linked list is corrupted");
 	}
 
 	/* iterate in backward direction */
@@ -103,7 +102,7 @@ dlist_check(const dlist_head *head)
 			cur->prev == NULL ||
 			cur->prev->next != cur ||
 			cur->next->prev != cur)
-			elog(ERROR, "doubly linked list is corrupted");
+			elog(PANIC, "doubly linked list is corrupted");
 	}
 }
 
@@ -111,12 +110,12 @@ dlist_check(const dlist_head *head)
  * Verify integrity of a singly linked list
  */
 void
-slist_check(const slist_head *head)
+slist_check_force(const slist_head *head)
 {
 	slist_node *cur;
 
 	if (head == NULL)
-		elog(ERROR, "singly linked list head address is NULL");
+		elog(PANIC, "singly linked list head address is NULL");
 
 	/*
 	 * there isn't much we can test in a singly linked list except that it
@@ -126,4 +125,20 @@ slist_check(const slist_head *head)
 		;
 }
 
-#endif							/* ILIST_DEBUG */
+bool
+dlist_is_member(const dlist_head *head, const dlist_node *node)
+{
+	const dlist_node *cur;
+
+	/* iteration open-coded to due to the use of const */
+	if (head->head.next == NULL)
+		return false;
+
+	for (cur = head->head.next; cur != &head->head; cur = cur->next)
+	{
+		if (cur == node)
+			return true;
+	}
+
+	return false;
+}
