@@ -2948,8 +2948,7 @@ quickdie(SIGNAL_ARGS)
 			/* Immediate-mode stop */
 			ereport(WARNING_CLIENT_ONLY,
 					(errcode(ERRCODE_ADMIN_SHUTDOWN),
-					 errmsg("terminating connection due to immediate shutdown command"),
-					 errbacktrace()));
+					 errmsg("terminating connection due to immediate shutdown command")));
 			break;
 	}
 
