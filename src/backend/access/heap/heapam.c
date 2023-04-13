@@ -57,6 +57,7 @@
 #include "pgstat.h"
 #include "port/atomics.h"
 #include "port/pg_bitutils.h"
+#include "storage/aio.h"
 #include "storage/bufmgr.h"
 #include "storage/freespace.h"
 #include "storage/lmgr.h"
@@ -225,6 +226,121 @@ static const int MultiXactStatusLock[MaxMultiXactStatus + 1] =
  * ----------------------------------------------------------------
  */
 
+static PgStreamingReadNextStatus
+heap_pgsr_next_single(uintptr_t pgsr_private, PgAioInProgress *aio, uintptr_t *read_private)
+{
+	HeapScanDesc scan = (HeapScanDesc) pgsr_private;
+	Buffer buf;
+	bool already_valid;
+	BlockNumber blockno;
+
+	Assert(!scan->rs_base.rs_parallel);
+	Assert(scan->rs_nblocks > 0);
+
+	if (scan->rs_prefetch_block == InvalidBlockNumber)
+	{
+		scan->rs_prefetch_block = blockno = scan->rs_startblock;
+	}
+	else
+	{
+		blockno = ++scan->rs_prefetch_block;
+		if (blockno >= scan->rs_nblocks)
+			scan->rs_prefetch_block = blockno = 0;
+		if (blockno == scan->rs_startblock ||
+			(scan->rs_numblocks != InvalidBlockNumber &&
+			 --scan->rs_numblocks == 0))
+		{
+			*read_private = 0;
+			return PGSR_NEXT_END;
+		}
+	}
+
+	buf = ReadBufferAsync(scan->rs_base.rs_rd, MAIN_FORKNUM, blockno,
+						  RBM_NORMAL, scan->rs_strategy, &already_valid,
+						  &aio);
+
+	*read_private = (uintptr_t) buf;
+
+	if (already_valid)
+		return PGSR_NEXT_NO_IO;
+	else
+		return PGSR_NEXT_IO;
+}
+
+static PgStreamingReadNextStatus
+heap_pgsr_next_parallel(uintptr_t pgsr_private, PgAioInProgress *aio, uintptr_t *read_private)
+{
+	HeapScanDesc scan = (HeapScanDesc) pgsr_private;
+	ParallelBlockTableScanDesc pbscan =
+		(ParallelBlockTableScanDesc) scan->rs_base.rs_parallel;
+	ParallelBlockTableScanWorker pbscanwork =
+		scan->rs_parallelworkerdata;
+	BlockNumber blockno;
+	Buffer buf;
+	bool already_valid;
+
+	Assert(scan->rs_base.rs_parallel);
+	Assert(scan->rs_nblocks > 0);
+
+	blockno = table_block_parallelscan_nextpage(scan->rs_base.rs_rd,
+												pbscanwork, pbscan);
+
+	/* Other processes might have already finished the scan. */
+	if (blockno == InvalidBlockNumber)
+	{
+		*read_private = 0;
+		return PGSR_NEXT_END;
+	}
+
+	buf = ReadBufferAsync(scan->rs_base.rs_rd, MAIN_FORKNUM, blockno,
+						  RBM_NORMAL, scan->rs_strategy, &already_valid,
+						  &aio);
+	*read_private = (uintptr_t) buf;
+
+	if (already_valid)
+		return PGSR_NEXT_NO_IO;
+	else
+		return PGSR_NEXT_IO;
+}
+
+static void
+heap_pgsr_release(uintptr_t pgsr_private, uintptr_t read_private)
+{
+	HeapScanDesc scan = (HeapScanDesc) pgsr_private;
+	Buffer buf = (Buffer) read_private;
+
+	ereport(DEBUG5,
+			errmsg("pgsr %s: releasing buf %d",
+				   NameStr(scan->rs_base.rs_rd->rd_rel->relname),
+				   buf),
+			errhidestmt(true),
+			errhidecontext(true));
+
+	Assert(BufferIsValid(buf));
+	ReleaseBuffer(buf);
+}
+
+static PgStreamingRead *
+heap_pgsr_single_alloc(HeapScanDesc scan)
+{
+	int iodepth = Max(Min(128, NBuffers / 128), 1);
+
+	return pg_streaming_read_alloc(iodepth, (uintptr_t) scan,
+								   heap_pgsr_next_single,
+								   heap_pgsr_release);
+}
+
+static PgStreamingRead *
+heap_pgsr_parallel_alloc(HeapScanDesc scan)
+{
+	int iodepth = Max(Min(128, NBuffers / 128), 1);
+
+	return pg_streaming_read_alloc(iodepth, (uintptr_t) scan,
+								   heap_pgsr_next_parallel,
+								   heap_pgsr_release);
+}
+
+
 /* ----------------
  *		initscan - scan code common to heap_beginscan and heap_rescan
  * ----------------
@@ -342,6 +458,26 @@ initscan(HeapScanDesc scan, ScanKey key, bool keep_startblock)
 	 */
 	if (scan->rs_base.rs_flags & SO_TYPE_SEQSCAN)
 		pgstat_count_heap_scan(scan->rs_base.rs_rd);
+
+	scan->rs_prefetch_block = InvalidBlockNumber;
+	if (scan->pgsr)
+	{
+		pg_streaming_read_free(scan->pgsr);
+		scan->pgsr = NULL;
+	}
+
+	/*
+	 * FIXME: This probably should be done in the !rs_inited blocks instead.
+	 */
+	scan->pgsr = NULL;
+	if (!RelationUsesLocalBuffers(scan->rs_base.rs_rd) &&
+		(scan->rs_base.rs_flags & SO_TYPE_SEQSCAN))
+	{
+		if (scan->rs_base.rs_parallel)
+			scan->pgsr = heap_pgsr_parallel_alloc(scan);
+		else
+			scan->pgsr = heap_pgsr_single_alloc(scan);
+	}
 }
 
 /*
@@ -374,7 +510,7 @@ heap_setscanlimits(TableScanDesc sscan, BlockNumber startBlk, BlockNumber numBlk
  * which tuples on the page are visible.
  */
 void
-heapgetpage(TableScanDesc sscan, BlockNumber block)
+heapgetpage(TableScanDesc sscan, BlockNumber block, Buffer pgsr_buffer)
 {
 	HeapScanDesc scan = (HeapScanDesc) sscan;
 	Buffer		buffer;
@@ -401,9 +537,20 @@ heapgetpage(TableScanDesc sscan, BlockNumber block)
 	 */
 	CHECK_FOR_INTERRUPTS();
 
-	/* read page using selected strategy */
-	scan->rs_cbuf = ReadBufferExtended(scan->rs_base.rs_rd, MAIN_FORKNUM, block,
-									   RBM_NORMAL, scan->rs_strategy);
+	if (BufferIsValid(pgsr_buffer))
+	{
+		Assert(scan->pgsr);
+		Assert(BufferGetBlockNumber(pgsr_buffer) == block);
+		scan->rs_cbuf = pgsr_buffer;
+	}
+	else
+	{
+		Assert(!scan->pgsr);
+
+		/* read page using selected strategy */
+		scan->rs_cbuf = ReadBufferExtended(scan->rs_base.rs_rd, MAIN_FORKNUM, block,
+										   RBM_NORMAL, scan->rs_strategy);
+	}
 	scan->rs_cblock = block;
 
 	if (!(scan->rs_base.rs_flags & SO_ALLOW_PAGEMODE))
@@ -491,7 +638,7 @@ heapgetpage(TableScanDesc sscan, BlockNumber block)
  * of the pages before we can get a chance to get our first page.
  */
 static BlockNumber
-heapgettup_initial_block(HeapScanDesc scan, ScanDirection dir)
+heapgettup_initial_block(HeapScanDesc scan, ScanDirection dir, Buffer *pgsr_buf)
 {
 	Assert(!scan->rs_inited);
 
@@ -501,16 +648,25 @@ heapgettup_initial_block(HeapScanDesc scan, ScanDirection dir)
 
 	if (ScanDirectionIsForward(dir))
 	{
+		if (scan->rs_base.rs_parallel != NULL)
+			table_block_parallelscan_startblock_init(scan->rs_base.rs_rd,
+													 scan->rs_parallelworkerdata,
+													 (ParallelBlockTableScanDesc) scan->rs_base.rs_parallel);
+
+		/* FIXME: Integrate more neatly */
+		if (scan->pgsr)
+		{
+			*pgsr_buf = pg_streaming_read_get_next(scan->pgsr);
+			if (*pgsr_buf == InvalidBuffer)
+				return InvalidBlockNumber;
+			return BufferGetBlockNumber(*pgsr_buf);
+		}
+
 		/* serial scan */
 		if (scan->rs_base.rs_parallel == NULL)
 			return scan->rs_startblock;
 		else
 		{
-			/* parallel scan */
-			table_block_parallelscan_startblock_init(scan->rs_base.rs_rd,
-													 scan->rs_parallelworkerdata,
-													 (ParallelBlockTableScanDesc) scan->rs_base.rs_parallel);
-
 			/* may return InvalidBlockNumber if there are no more blocks */
 			return table_block_parallelscan_nextpage(scan->rs_base.rs_rd,
 													 scan->rs_parallelworkerdata,
@@ -529,6 +685,12 @@ heapgettup_initial_block(HeapScanDesc scan, ScanDirection dir)
 		 * scanners.
 		 */
 		scan->rs_base.rs_flags &= ~SO_ALLOW_SYNC;
+
+		if (scan->pgsr)
+		{
+			pg_streaming_read_free(scan->pgsr);
+			scan->pgsr = NULL;
+		}
 
 		/*
 		 * Start from last page of the scan.  Ensure we take into account
@@ -635,11 +797,23 @@ heapgettup_continue_page(HeapScanDesc scan, ScanDirection dir, int *linesleft,
  * heap_setscanlimits().
  */
 static inline BlockNumber
-heapgettup_advance_block(HeapScanDesc scan, BlockNumber block, ScanDirection dir)
+heapgettup_advance_block(HeapScanDesc scan, BlockNumber block, ScanDirection dir,
+						 Buffer *pgsr_buf)
 {
 	if (ScanDirectionIsForward(dir))
 	{
-		if (scan->rs_base.rs_parallel == NULL)
+		if (scan->pgsr)
+		{
+			block++;
+
+			*pgsr_buf = pg_streaming_read_get_next(scan->pgsr);
+			if (*pgsr_buf == InvalidBuffer)
+				return InvalidBlockNumber;
+			Assert(scan->rs_base.rs_parallel ||
+				   block == BufferGetBlockNumber(*pgsr_buf));
+			return BufferGetBlockNumber(*pgsr_buf);
+		}
+		else if (scan->rs_base.rs_parallel == NULL)
 		{
 			block++;
 
@@ -684,6 +858,12 @@ heapgettup_advance_block(HeapScanDesc scan, BlockNumber block, ScanDirection dir
 	}
 	else
 	{
+		if (scan->pgsr)
+		{
+			pg_streaming_read_free(scan->pgsr);
+			scan->pgsr = NULL;
+		}
+
 		/* we're done if the last block is the start position */
 		if (block == scan->rs_startblock)
 			return InvalidBlockNumber;
@@ -733,13 +913,14 @@ heapgettup(HeapScanDesc scan,
 {
 	HeapTuple	tuple = &(scan->rs_ctup);
 	BlockNumber block;
+	Buffer		pgsr_buf = InvalidBuffer;
 	Page		page;
 	OffsetNumber lineoff;
 	int			linesleft;
 
 	if (unlikely(!scan->rs_inited))
 	{
-		block = heapgettup_initial_block(scan, dir);
+		block = heapgettup_initial_block(scan, dir, &pgsr_buf);
 		/* ensure rs_cbuf is invalid when we get InvalidBlockNumber */
 		Assert(block != InvalidBlockNumber || !BufferIsValid(scan->rs_cbuf));
 		scan->rs_inited = true;
@@ -760,7 +941,7 @@ heapgettup(HeapScanDesc scan,
 	 */
 	while (block != InvalidBlockNumber)
 	{
-		heapgetpage((TableScanDesc) scan, block);
+		heapgetpage((TableScanDesc) scan, block, pgsr_buf);
 		LockBuffer(scan->rs_cbuf, BUFFER_LOCK_SHARE);
 		page = heapgettup_start_page(scan, dir, &linesleft, &lineoff);
 continue_page:
@@ -812,9 +993,10 @@ continue_page:
 		 * it's time to move to the next.
 		 */
 		LockBuffer(scan->rs_cbuf, BUFFER_LOCK_UNLOCK);
+		pgsr_buf = InvalidBuffer;
 
 		/* get the BlockNumber to scan next */
-		block = heapgettup_advance_block(scan, block, dir);
+		block = heapgettup_advance_block(scan, block, dir, &pgsr_buf);
 	}
 
 	/* end of scan */
@@ -848,13 +1030,14 @@ heapgettup_pagemode(HeapScanDesc scan,
 {
 	HeapTuple	tuple = &(scan->rs_ctup);
 	BlockNumber block;
+	Buffer		pgsr_buf = InvalidBuffer;
 	Page		page;
 	int			lineindex;
 	int			linesleft;
 
 	if (unlikely(!scan->rs_inited))
 	{
-		block = heapgettup_initial_block(scan, dir);
+		block = heapgettup_initial_block(scan, dir, &pgsr_buf);
 		/* ensure rs_cbuf is invalid when we get InvalidBlockNumber */
 		Assert(block != InvalidBlockNumber || !BufferIsValid(scan->rs_cbuf));
 		scan->rs_inited = true;
@@ -882,7 +1065,7 @@ heapgettup_pagemode(HeapScanDesc scan,
 	 */
 	while (block != InvalidBlockNumber)
 	{
-		heapgetpage((TableScanDesc) scan, block);
+		heapgetpage((TableScanDesc) scan, block, pgsr_buf);
 		page = BufferGetPage(scan->rs_cbuf);
 		TestForOldSnapshot(scan->rs_base.rs_snapshot, scan->rs_base.rs_rd, page);
 		linesleft = scan->rs_ntuples;
@@ -915,7 +1098,7 @@ continue_page:
 		}
 
 		/* get the BlockNumber to scan next */
-		block = heapgettup_advance_block(scan, block, dir);
+		block = heapgettup_advance_block(scan, block, dir, &pgsr_buf);
 	}
 
 	/* end of scan */
@@ -962,6 +1145,8 @@ heap_beginscan(Relation relation, Snapshot snapshot,
 	scan->rs_base.rs_flags = flags;
 	scan->rs_base.rs_parallel = parallel_scan;
 	scan->rs_strategy = NULL;	/* set in initscan */
+
+	scan->pgsr = NULL;
 
 	/*
 	 * Disable page-at-a-time mode if it's not a MVCC-safe snapshot.
@@ -1068,6 +1253,12 @@ heap_endscan(TableScanDesc sscan)
 	 */
 	if (BufferIsValid(scan->rs_cbuf))
 		ReleaseBuffer(scan->rs_cbuf);
+
+	if (scan->pgsr)
+	{
+		pg_streaming_read_free(scan->pgsr);
+		scan->pgsr = NULL;
+	}
 
 	/*
 	 * decrement relation reference count and free scan descriptor storage
