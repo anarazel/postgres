@@ -1592,7 +1592,9 @@ SlruSyncFileTagComplete(PgStreamingWrite *pgsw, void *pgsw_private, int result, 
 
 	CloseTransientFile((int) entry->handler_data);
 
-	SyncRequestCompleted(entry, result >= 0, result >= 0 ? 0 : -result);
+	/* FIXME: hack for test_slru.c's benefit */
+	if (entry->hash_entry)
+		SyncRequestCompleted(entry, result >= 0, result >= 0 ? 0 : -result);
 }
 
 static bool
