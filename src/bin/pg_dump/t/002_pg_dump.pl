@@ -1907,6 +1907,15 @@ my %tests = (
 		},
 	},
 
+	'CREATE DATABASE invalid...' => {
+		create_order => 1,
+		create_sql => q(CREATE DATABASE invalid; UPDATE pg_database SET datconnlimit = -2 WHERE datname = 'invalid'),
+		regexp => qr/^CREATE DATABASE invalid/m,
+		not_like => {
+			pg_dumpall_dbprivs => 1,
+		},
+	},
+
 	'CREATE ACCESS METHOD gist2' => {
 		create_order => 52,
 		create_sql =>
@@ -4689,6 +4698,14 @@ command_fails_like(
 	[ 'pg_dump', '-p', "$port", 'qqq' ],
 	qr/pg_dump: error: connection to server .* failed: FATAL:  database "qqq" does not exist/,
 	'connecting to a non-existent database');
+
+#########################################
+# Test connecting to an invalid database
+
+$node->command_fails_like(
+	[ 'pg_dump', '-d', 'invalid' ],
+	qr/pg_dump: error: connection to server .* failed: FATAL:  cannot connect to invalid database "invalid"/,
+	'connecting to an invalid database');
 
 #########################################
 # Test connecting with an unprivileged user

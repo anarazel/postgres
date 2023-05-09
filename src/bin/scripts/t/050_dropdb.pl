@@ -31,4 +31,13 @@ $node->issues_sql_like(
 $node->command_fails([ 'dropdb', 'nonexistent' ],
 	'fails with nonexistent database');
 
+# check that invalid database can be dropped with dropdb
+$node->safe_psql(
+	'postgres', q(
+	CREATE DATABASE invalid;
+	UPDATE pg_database SET datconnlimit = -2 WHERE datname = 'invalid';
+));
+$node->command_ok([ 'dropdb', 'invalid' ],
+  'invalid database can be dropped');
+
 done_testing();
