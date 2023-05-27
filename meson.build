@@ -3014,6 +3014,44 @@ run_target('install-test-files',
 
 
 ###############################################################
+# Indentation and similar targets
+###############################################################
+
+indent_base_cmd = [perl, files('src/tools/pgindent/pgindent'),
+    '--indent', pg_bsd_indent.full_path(),
+    '--sourcetree=@SOURCE_ROOT@']
+indent_depend = [pg_bsd_indent]
+
+# reindent the entire tree
+# Reindent the entire tree
+run_target('indent-tree',
+  command: indent_base_cmd + ['.'],
+  depends: indent_depend
+)
+
+# Reindent the last commit
+run_target('indent-head',
+  command: indent_base_cmd + ['--commit=HEAD'],
+  depends: indent_depend
+)
+
+# Silently check if any file is not corectly indented (fails the build if
+# there are differences)
+run_target('indent-check',
+  command: indent_base_cmd + ['--silent-diff', '.'],
+  depends: indent_depend
+)
+
+# Show a diff of all the unindented files (doesn't fail the build if there are
+# differences)
+run_target('indent-diff',
+  command: indent_base_cmd + ['--show-diff', '.'],
+  depends: indent_depend
+)
+
+
+
+###############################################################
 # Test prep
 ###############################################################
 

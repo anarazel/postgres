@@ -23,7 +23,7 @@ my $devnull = File::Spec->devnull;
 
 my ($typedefs_file, $typedef_str, @excludes,
 	$indent, $build, $show_diff,
-	$silent_diff, $help, @commits,);
+	$silent_diff, $sourcetree, $help, @commits,);
 
 $help = 0;
 
@@ -35,7 +35,8 @@ my %options = (
 	"excludes=s" => \@excludes,
 	"indent=s" => \$indent,
 	"show-diff" => \$show_diff,
-	"silent-diff" => \$silent_diff,);
+	"silent-diff" => \$silent_diff,
+	"sourcetree=s" => \$sourcetree);
 GetOptions(%options) || usage("bad command line argument");
 
 usage() if $help;
@@ -52,6 +53,13 @@ $typedefs_file ||= $ENV{PGTYPEDEFS};
 
 # get indent location for environment or default
 $indent ||= $ENV{PGINDENT} || $ENV{INDENT} || "pg_bsd_indent";
+
+# When invoked from the build directory, change into source tree, otherwise
+# the heuristics in locate_sourcedir() don't work.
+if (defined $sourcetree)
+{
+	chdir $sourcetree;
+}
 
 my $sourcedir = locate_sourcedir();
 
