@@ -1145,16 +1145,8 @@ SELECT
 FROM pg_stat_get_io() b;
 
 CREATE VIEW pg_stat_wal AS
-    SELECT
-        w.wal_records,
-        w.wal_fpi,
-        w.wal_bytes,
-        w.wal_buffers_full,
-        w.wal_write,
-        w.wal_sync,
-        w.wal_write_time,
-        w.wal_sync_time,
-        w.stats_reset
+    /* FIXME: easier to maintain without column names during development */
+    SELECT w.*
     FROM pg_stat_get_wal() w;
 
 CREATE VIEW pg_stat_aio_backends AS

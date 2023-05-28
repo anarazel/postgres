@@ -1461,7 +1461,7 @@ pg_stat_get_io(PG_FUNCTION_ARGS)
 Datum
 pg_stat_get_wal(PG_FUNCTION_ARGS)
 {
-#define PG_STAT_GET_WAL_COLS	9
+#define PG_STAT_GET_WAL_COLS	17
 	TupleDesc	tupdesc;
 	Datum		values[PG_STAT_GET_WAL_COLS] = {0};
 	bool		nulls[PG_STAT_GET_WAL_COLS] = {0};
@@ -1486,7 +1486,23 @@ pg_stat_get_wal(PG_FUNCTION_ARGS)
 					   FLOAT8OID, -1, 0);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 8, "wal_sync_time",
 					   FLOAT8OID, -1, 0);
-	TupleDescInitEntry(tupdesc, (AttrNumber) 9, "stats_reset",
+	TupleDescInitEntry(tupdesc, (AttrNumber) 9, "wal_already_done_unlocked",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 10, "wal_already_done_locked",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 11, "wal_just_wait",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 12, "wal_lock_immed",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 13, "wal_lock_wait",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 14, "wal_partial_wait",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 15, "wal_partial_pad",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 16, "wal_partial_pad_bytes",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 17, "stats_reset",
 					   TIMESTAMPTZOID, -1, 0);
 
 	BlessTupleDesc(tupdesc);
@@ -1495,25 +1511,35 @@ pg_stat_get_wal(PG_FUNCTION_ARGS)
 	wal_stats = pgstat_fetch_stat_wal();
 
 	/* Fill values and NULLs */
-	values[0] = Int64GetDatum(wal_stats->wal_records);
-	values[1] = Int64GetDatum(wal_stats->wal_fpi);
+	values[ 0] = Int64GetDatum(wal_stats->wal_records);
+	values[ 1] = Int64GetDatum(wal_stats->wal_fpi);
 
 	/* Convert to numeric. */
 	snprintf(buf, sizeof buf, UINT64_FORMAT, wal_stats->wal_bytes);
-	values[2] = DirectFunctionCall3(numeric_in,
+	values[ 2] = DirectFunctionCall3(numeric_in,
 									CStringGetDatum(buf),
 									ObjectIdGetDatum(0),
 									Int32GetDatum(-1));
 
-	values[3] = Int64GetDatum(wal_stats->wal_buffers_full);
-	values[4] = Int64GetDatum(wal_stats->wal_write);
-	values[5] = Int64GetDatum(wal_stats->wal_sync);
+	values[ 3] = Int64GetDatum(wal_stats->wal_buffers_full);
+
+	values[ 4] = Int64GetDatum(wal_stats->wal_write);
+	values[ 5] = Int64GetDatum(wal_stats->wal_sync);
 
 	/* Convert counters from microsec to millisec for display */
-	values[6] = Float8GetDatum(((double) wal_stats->wal_write_time) / 1000.0);
-	values[7] = Float8GetDatum(((double) wal_stats->wal_sync_time) / 1000.0);
+	values[ 6] = Float8GetDatum(((double) wal_stats->wal_write_time) / 1000.0);
+	values[ 7] = Float8GetDatum(((double) wal_stats->wal_sync_time) / 1000.0);
 
-	values[8] = TimestampTzGetDatum(wal_stats->stat_reset_timestamp);
+	values[ 8] = Int64GetDatum(wal_stats->wal_already_done_unlocked);
+	values[ 9] = Int64GetDatum(wal_stats->wal_already_done_locked);
+	values[10] = Int64GetDatum(wal_stats->wal_just_wait);
+	values[11] = Int64GetDatum(wal_stats->wal_lock_immed);
+	values[12] = Int64GetDatum(wal_stats->wal_lock_wait);
+	values[13] = Int64GetDatum(wal_stats->wal_partial_wait);
+	values[14] = Int64GetDatum(wal_stats->wal_partial_pad);
+	values[15] = Int64GetDatum(wal_stats->wal_partial_pad_bytes);
+
+	values[16] = TimestampTzGetDatum(wal_stats->stat_reset_timestamp);
 
 	/* Returns the record as Datum */
 	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(tupdesc, values, nulls)));

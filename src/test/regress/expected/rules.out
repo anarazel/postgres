@@ -2253,8 +2253,16 @@ pg_stat_wal| SELECT wal_records,
     wal_sync,
     wal_write_time,
     wal_sync_time,
+    wal_already_done_unlocked,
+    wal_already_done_locked,
+    wal_just_wait,
+    wal_lock_immed,
+    wal_lock_wait,
+    wal_partial_wait,
+    wal_partial_pad,
+    wal_partial_pad_bytes,
     stats_reset
-   FROM pg_stat_get_wal() w(wal_records, wal_fpi, wal_bytes, wal_buffers_full, wal_write, wal_sync, wal_write_time, wal_sync_time, stats_reset);
+   FROM pg_stat_get_wal() w(wal_records, wal_fpi, wal_bytes, wal_buffers_full, wal_write, wal_sync, wal_write_time, wal_sync_time, wal_already_done_unlocked, wal_already_done_locked, wal_just_wait, wal_lock_immed, wal_lock_wait, wal_partial_wait, wal_partial_pad, wal_partial_pad_bytes, stats_reset);
 pg_stat_wal_receiver| SELECT pid,
     status,
     receive_start_lsn,

@@ -107,6 +107,14 @@ pgstat_flush_wal(bool nowait)
 	WALSTAT_ACC(wal_sync, PendingWalStats);
 	WALSTAT_ACC_INSTR_TIME(wal_write_time);
 	WALSTAT_ACC_INSTR_TIME(wal_sync_time);
+	WALSTAT_ACC(wal_already_done_unlocked, PendingWalStats);
+	WALSTAT_ACC(wal_already_done_locked, PendingWalStats);
+	WALSTAT_ACC(wal_just_wait, PendingWalStats);
+	WALSTAT_ACC(wal_lock_immed, PendingWalStats);
+	WALSTAT_ACC(wal_lock_wait, PendingWalStats);
+	WALSTAT_ACC(wal_partial_wait, PendingWalStats);
+	WALSTAT_ACC(wal_partial_pad, PendingWalStats);
+	WALSTAT_ACC(wal_partial_pad_bytes, PendingWalStats);
 #undef WALSTAT_ACC_INSTR_TIME
 #undef WALSTAT_ACC
 
