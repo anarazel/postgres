@@ -345,6 +345,8 @@ XLogPrefetcherNextBlock(uintptr_t pgsr_private,
 	for (;;)
 	{
 		DecodedXLogRecord *record;
+		uint8		rmid;
+		uint8		record_type;
 
 		/* Try to read a new future record, if we don't already have one. */
 		if (prefetcher->record == NULL)
@@ -402,15 +404,15 @@ XLogPrefetcherNextBlock(uintptr_t pgsr_private,
 			record = prefetcher->record;
 		}
 
+		rmid = record->header.xl_rmid;
+		record_type = record->header.xl_info & ~XLR_INFO_MASK;
+
 		/*
 		 * Check for operations that require us to filter out block ranges, or
 		 * pause readahead completely.
 		 */
 		if (replaying_lsn < record->lsn)
 		{
-			uint8		rmid = record->header.xl_rmid;
-			uint8		record_type = record->header.xl_info & ~XLR_INFO_MASK;
-
 			if (rmid == RM_XLOG_ID)
 			{
 				if (record_type == XLOG_CHECKPOINT_SHUTDOWN ||
@@ -570,6 +572,19 @@ XLogPrefetcherNextBlock(uintptr_t pgsr_private,
 			 * page, so don't bother trying to prefetch.
 			 */
 			if (block->has_image)
+			{
+				XLogPrefetchIncrement(&SharedStats->skip_fpw);
+				block->prefetch_get_next = true;
+				return PGSR_NEXT_NO_IO;
+			}
+
+			/*
+			 * FPI_FOR_HINT is special, with full_page_writes = off and
+			 * wal_log_hints = true, the record is solely used to include
+			 * knowledge about modified blocks in the WAL.
+			 */
+			if (rmid == RM_XLOG_ID && record_type == XLOG_FPI_FOR_HINT &&
+				!block->has_image)
 			{
 				XLogPrefetchIncrement(&SharedStats->skip_fpw);
 				block->prefetch_get_next = true;
@@ -913,12 +928,14 @@ XLogPrefetcherReadRecord(XLogPrefetcher *prefetcher, char **errmsg)
 	{
 		DecodedXLogRecord *last_record = prefetcher->reader->record;
 
-		for (int i = 0; i < last_record->max_block_id; ++i)
+		for (int i = 0; i <= last_record->max_block_id; ++i)
 		{
 			if (last_record->blocks[i].in_use &&
 				last_record->blocks[i].prefetch_buffer_pinned)
 				elog(ERROR,
-					 "redo routine did not read buffer pinned by prefetcher");
+					 "redo routine did not read buffer pinned by prefetcher, LSN %X/%X",
+					 LSN_FORMAT_ARGS(last_record->lsn)
+					);
 		}
 	}
 #endif
