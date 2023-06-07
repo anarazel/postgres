@@ -138,6 +138,7 @@ task:
     TEST_JOBS: 3
 
     CCACHE_DIR: /tmp/ccache_dir
+    INSTALL_DIR: /tmp/meson-install
     CPPFLAGS: -DRELCACHE_FORCE_RELEASE -DCOPY_PARSE_PLAN_TREES -DWRITE_READ_PARSE_PLAN_TREES -DRAW_EXPRESSION_COVERAGE_TEST
     CFLAGS: -Og -ggdb
 
@@ -181,12 +182,14 @@ task:
     su postgres <<-EOF
       meson setup \
         --buildtype=debug \
+        --prefix=${INSTALL_DIR} \
         -Dcassert=true -Duuid=bsd -Dtcl_version=tcl86 -Ddtrace=auto \
         -DPG_TEST_EXTRA="$PG_TEST_EXTRA" \
         -Dextra_lib_dirs=/usr/local/lib -Dextra_include_dirs=/usr/local/include/ \
         build
     EOF
   build_script: su postgres -c 'ninja -C build -j${BUILD_JOBS}'
+  install_script: su postgres -c 'ninja -C build install'
   upload_caches: ccache
 
   test_world_script: |
@@ -201,13 +204,13 @@ task:
       set -e
       ulimit -c unlimited
       meson test $MTEST_ARGS --quiet --suite setup
-      export LD_LIBRARY_PATH="$(pwd)/build/tmp_install/usr/local/pgsql/lib/:$LD_LIBRARY_PATH"
+      export LD_LIBRARY_PATH="${INSTALL_DIR}/lib/:$LD_LIBRARY_PATH"
       mkdir -p build/testrun
-      build/tmp_install/usr/local/pgsql/bin/initdb -N build/runningcheck --no-instructions -A trust
+      ${INSTALL_DIR}/bin/initdb -N build/runningcheck --no-instructions -A trust
       echo "include '$(pwd)/src/tools/ci/pg_ci_base.conf'" >> build/runningcheck/postgresql.conf
-      build/tmp_install/usr/local/pgsql/bin/pg_ctl -c -o '-c fsync=off' -D build/runningcheck -l build/testrun/runningcheck.log start
+      ${INSTALL_DIR}/bin/pg_ctl -c -o '-c fsync=off' -D build/runningcheck -l build/testrun/runningcheck.log start
       meson test $MTEST_ARGS --num-processes ${TEST_JOBS} --setup running
-      build/tmp_install/usr/local/pgsql/bin/pg_ctl -D build/runningcheck stop
+      ${INSTALL_DIR}/bin/pg_ctl -D build/runningcheck stop
     EOF
 
   on_failure:
@@ -231,6 +234,7 @@ task:
 
     CIRRUS_WORKING_DIR: /home/postgres/postgres
     CCACHE_DIR: /tmp/ccache_dir
+    INSTALL_DIR: /tmp/meson-install
 
     PATH: /usr/sbin:$PATH
 
@@ -288,6 +292,7 @@ task:
     su postgres <<-EOF
       meson setup \
         --buildtype debug \
+        --prefix=${INSTALL_DIR} \
         -Dcassert=true -Dssl=openssl ${UUID} \
         -DPG_TEST_EXTRA="$PG_TEST_EXTRA" \
         ${INCLUDE_DIRS} \
@@ -295,6 +300,7 @@ task:
     EOF
 
   build_script: su postgres -c 'ninja -C build -j${BUILD_JOBS}'
+  install_script: su postgres -c 'ninja -C build install'
   upload_caches: ccache
 
   test_world_script: |
@@ -355,6 +361,7 @@ task:
     TEST_JOBS: 8 # experimentally derived to be a decent choice
 
     CCACHE_DIR: /tmp/ccache_dir
+    INSTALL_DIR: /tmp/meson-install
     DEBUGINFOD_URLS: "https://debuginfod.debian.net"
 
     # Enable a reasonable set of sanitizers. Use the linux task for that, as
@@ -462,6 +469,7 @@ task:
         su postgres <<-EOF
           meson setup \
             --buildtype=debug \
+            --prefix=${INSTALL_DIR} \
             -Dcassert=true \
             ${LINUX_MESON_FEATURES} \
             -DPG_TEST_EXTRA="$PG_TEST_EXTRA" \
@@ -475,6 +483,7 @@ task:
           export CC='ccache gcc -m32'
           meson setup \
             --buildtype=debug \
+            --prefix=${INSTALL_DIR}-32 \
             -Dcassert=true \
             ${LINUX_MESON_FEATURES} \
             -Dllvm=disabled \
@@ -486,6 +495,7 @@ task:
 
       build_script: su postgres -c 'ninja -C build -j${BUILD_JOBS}'
       build_32_script: su postgres -c 'ninja -C build-32 -j${BUILD_JOBS}'
+      install_script: su postgres -c 'ninja -C build install'
 
       upload_caches: ccache
 
@@ -496,6 +506,8 @@ task:
         EOF
         # so that we don't upload 64bit logs if 32bit fails
         rm -rf build/
+
+      install_32_script: su postgres -c 'ninja -C build-32 install'
 
       # There's currently no coverage of icu with LANG=C in the buildfarm. We
       # can easily provide some here by running one of the sets of tests that
@@ -521,6 +533,7 @@ task:
     TEST_JOBS: 8 # experimentally derived to be a decent choice
 
     CCACHE_DIR: /tmp/ccache_dir
+    INSTALL_DIR: /tmp/meson-install
     DEBUGINFOD_URLS: ${DEBUGINFO}
 
     TCL_DIR: /usr/lib64/
@@ -572,12 +585,14 @@ task:
     su postgres <<-EOF
       meson setup \
         --buildtype debug \
+        --prefix=${INSTALL_DIR} \
         -Dcassert=true -Dssl=openssl -Duuid=e2fs ${LLVM} \
         -DPG_TEST_EXTRA="$PG_TEST_EXTRA" \
         build
     EOF
 
   build_script: su postgres -c 'ninja -C build -j${BUILD_JOBS}'
+  install_script: su postgres -c 'ninja -C build install'
   upload_caches: ccache
 
   test_world_script: |
@@ -603,6 +618,7 @@ task:
 
     CIRRUS_WORKING_DIR: ${HOME}/pgsql/
     CCACHE_DIR: ${HOME}/ccache
+    INSTALL_DIR: /tmp/meson-install
     HOMEBREW_CACHE: ${HOME}/homebrew-cache
     PERL5LIB: ${HOME}/perl5/lib/perl5
 
@@ -675,6 +691,8 @@ task:
 
     meson setup \
       --buildtype=debug \
+      --prefix=${INSTALL_DIR} \
+      -Dpkg_config_path=$PKG_CONFIG_PATH \
       -Dextra_include_dirs=${brewpath}/include \
       -Dextra_lib_dirs=${brewpath}/lib \
       -Dcassert=true \
@@ -684,6 +702,7 @@ task:
       build
 
   build_script: ninja -C build -j${BUILD_JOBS}
+  install_script: ninja -C build install
   upload_caches: ccache
 
   test_world_script: |

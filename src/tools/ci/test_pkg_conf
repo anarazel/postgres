@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+
+import argparse
+import ast
+import shutil
+import subprocess
+import os
+import sys
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument('--rootdir', help='root directory',
+                    type=str, required=True)
+parser.add_argument('--pkgconf_installdir', help='pkgconf install directory',
+                    type=str, required=True)
+parser.add_argument('--builddir', help='build directory',
+                    type=str, required=True)
+parser.add_argument('--meson', help='path to meson binary',
+                    type=str, required=True)
+parser.add_argument('--meson_args', help='args of meson binary',
+                    type=str, nargs='*', required=False)
+parser.add_argument('--pkg_conf_path',
+                    help='PKG_CONF_PATH from surrounding meson build',
+                    type=str, nargs='?', const='', required=False)
+
+parser.add_argument('c_args', help='c_args from surrounding meson build',
+                     nargs='*')
+
+args = parser.parse_args()
+
+rootdir = os.path.realpath(args.rootdir)
+builddir = os.path.realpath(args.builddir)
+pkgconf_installdir = os.path.realpath(args.pkgconf_installdir)
+adminpackdir = os.path.join(rootdir, 'contrib/adminpack/')
+workdir = os.path.join(builddir, 'contrib/adminpack_tmp')
+meson_args = ' '.join(args.meson_args)
+c_args = ' '.join(args.c_args)
+exit_code = 0
+
+adminpack_meson_build_file = \
+  '''
+  project('adminpack', 'c')
+
+  pg_ext = dependency('postgresql-extension-warnings')
+
+  adminpack = shared_module('adminpack',
+    ['{}adminpack.c'],
+    dependencies: pg_ext,
+    name_prefix: '',
+    install_dir: pg_ext.get_variable(pkgconfig: 'dir_mod')
+  )
+
+  install_data(
+    '{}adminpack.control',
+    '{}adminpack--1.0.sql',
+    '{}adminpack--1.0--1.1.sql',
+    '{}adminpack--1.1--2.0.sql',
+    '{}adminpack--2.0--2.1.sql',
+    install_dir: pg_ext.get_variable(pkgconfig: 'dir_data')
+  )
+  '''.format(adminpackdir, adminpackdir, adminpackdir, adminpackdir,
+             adminpackdir, adminpackdir)
+
+# clear workdir
+if os.path.exists(workdir):
+    shutil.rmtree(workdir)
+os.makedirs(workdir)
+
+# overwrite meson.build file
+meson_file = os.path.join(workdir, 'meson.build')
+with open(meson_file, 'w') as f:
+    f.write(adminpack_meson_build_file)
+
+
+def remove_duplicates(duplicate_str):
+  words = duplicate_str.split()
+  return ' '.join(sorted(set(words), key=words.index))
+
+
+# run tests
+def run_tests(pkg_conf_path, message=''):
+    print('\n{}\n{}\n'.format('#' * 60, message), flush=True)
+
+    adminpack_builddir = os.path.join(workdir, 'build')
+
+    env = {**os.environ, }
+    env['PKG_CONFIG_PATH'] = '{}:{}:{}'.format(
+      pkg_conf_path, args.pkg_conf_path, env.get('PKG_CONFIG_PATH', ''),
+    ).strip(': ')
+    env['CC'] = '{} {}'.format(
+      c_args, env.get('CC', ''),
+    )
+    env['CC'] = remove_duplicates(env['CC'])
+
+    if os.path.exists(adminpack_builddir):
+        shutil.rmtree(adminpack_builddir)
+
+    if meson_args:
+      meson_setup_command = [args.meson, meson_args, 'setup', 'build']
+    else:
+      meson_setup_command = [args.meson, 'setup', 'build']
+
+    ninja_build_command = ['ninja', '-C', 'build', '-v']
+    if subprocess.run(meson_setup_command, env=env,
+                      cwd=workdir).returncode != 0:
+        return False
+    if subprocess.run(ninja_build_command, cwd=workdir).returncode != 0:
+        return False
+    return True
+
+
+# test postgresql-extension-warnings
+if not run_tests(pkgconf_installdir,
+          message='Testing postgresql-extension-warnings'):
+  exit_code = exit_code + 1
+
+
+# test postgresql-extension-warnings-uninstalled
+if not run_tests(os.path.join(builddir, 'meson-uninstalled'),
+          message='Testing postgresql-extension-warnings-uninstalled'):
+  exit_code = exit_code + 1
+
+sys.exit(exit_code)

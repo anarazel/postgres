@@ -3102,6 +3102,26 @@ test('install_test_files',
 
 test_result_dir = meson.build_root() / 'testrun'
 
+# it seems freebsd doesn't use libdir for pkgconfig path
+if host_system == 'freebsd'
+  pkgconf_installdir =  dir_prefix / 'libdata' / 'pkgconfig'
+else
+  pkgconf_installdir = dir_prefix / dir_lib / 'pkgconfig'
+endif
+test_pkg_conf_file = files('src/tools/ci/test_pkg_conf')
+test('pkg_conf_extensions',
+    test_pkg_conf_file,
+    args: [
+      '--meson', meson_bin.path(),
+      '--meson_args', meson_args,
+      '--rootdir', meson.source_root(),
+      '--pkgconf_installdir', pkgconf_installdir,
+      '--builddir', meson.build_root(),
+      '--pkg_conf_path', get_option('pkg_config_path'),
+      '--',
+        cc.cmd_array(),
+      ],)
+
 
 # XXX: pg_regress doesn't assign unique ports on windows. To avoid the
 # inevitable conflicts from running tests in parallel, hackishly assign
