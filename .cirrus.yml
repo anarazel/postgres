@@ -446,6 +446,61 @@ task:
       on_failure:
         <<: *on_failure_ac
 
+    - name: Linux - Debian Bullseye - Meson - Test Extensions
+      env:
+        INSTALL_DIR: ${CIRRUS_WORKING_DIR}/meson-install
+        PATH: ${INSTALL_DIR}/bin:${PATH}
+
+      allow_failures: true
+      depends_on:
+        - Linux - Debian Bullseye - Meson
+
+      configure_script: |
+        su postgres <<-EOF
+          meson setup \
+            --buildtype=debug \
+            --prefix=${INSTALL_DIR} \
+            -Dcassert=true \
+            ${LINUX_MESON_FEATURES} \
+            -DPG_TEST_EXTRA="$PG_TEST_EXTRA" \
+            build
+        EOF
+      build_script: su postgres -c 'ninja -C build -j${BUILD_JOBS}'
+
+      install_script: su postgres -c 'ninja -C build install'
+
+      install_required_packages_for_extensions_script: |
+        apt-get update
+        DEBIAN_FRONTEND=noninteractive apt-get -y install \
+          autoconf \
+          libtool \
+          libgeos-dev \
+          libproj-dev \
+          libprotobuf-c-dev \
+          protobuf-c-compiler
+
+      always:
+        test_pg_qualstats_script: su postgres -c 'python3 src/tools/ci/test_extensions --only pg_qualstats'
+        test_pg_cron_script: su postgres -c 'python3 src/tools/ci/test_extensions --only pg_cron'
+        test_hypopg_script: su postgres -c 'python3 src/tools/ci/test_extensions --only hypopg'
+        test_orafce_script: su postgres -c 'python3 src/tools/ci/test_extensions --only orafce'
+        test_postgis_script: |
+          su postgres <<-EOF
+            export LD_LIBRARY_PATH=${INSTALL_DIR}/lib/x86_64-linux-gnu/:${LD_LIBRARY_PATH}
+            python3 src/tools/ci/test_extensions --only postgis
+          EOF
+        test_pg_partman_script: su postgres -c 'python3 src/tools/ci/test_extensions --only pg_partman'
+        test_pgbouncer_script: su postgres -c 'python3 src/tools/ci/test_extensions --only pgbouncer'
+
+      on_failure:
+        testrun_artifacts:
+          paths:
+            - "extension_test/**/*.log"
+            - "extension_test/**/*.diffs"
+            - "extension_test/**/regress_log_*"
+            - "*-logfile"
+          type: text/plain
+
     - matrix:
         - name: Linux - Debian Bullseye - Meson
         - name: Linux - Debian Sid - Meson

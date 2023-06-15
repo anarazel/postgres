@@ -1,0 +1,300 @@
+#!/usr/bin/env python3
+
+import argparse
+import enum
+import os
+import shutil
+import subprocess
+import sys
+
+# set default workdir to .../${root_path_of_branch}/extension_test
+# with the using relative path to the current file
+current_file_path = os.path.dirname(os.path.abspath(__file__))
+default_workdir = os.path.join(current_file_path, '../../../extension_test')
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument('--only', type=str, required=False, default=[], nargs='+')
+parser.add_argument('--workdir', type=str,
+                    required=False, default=default_workdir)
+args = parser.parse_args()
+
+only_run_ext = args.only
+workdir = args.workdir
+
+extensions = []
+git_clone_command = ['git', 'clone', '--depth', '1']
+ext_exit_status = []
+
+
+class ExitStatus(enum.IntEnum):
+    success = 0
+    missing_steps = 1
+    failed = 2
+
+
+# add pg_qualstats
+extensions.append(
+    {
+        'name': 'pg_qualstats',
+        'shared_preload_name': 'pg_qualstats',
+        'download': [
+            git_clone_command
+                + ['https://github.com/powa-team/pg_qualstats.git'],
+        ],
+        'build': [
+            ['make', 'install'],
+        ],
+        'test': [
+            ['make', 'installcheck'],
+        ],
+    }
+)
+
+
+# add pg_cron
+extensions.append(
+    {
+        'name': 'pg_cron',
+        'shared_preload_name': 'pg_cron',
+        'download': [
+            git_clone_command + ['https://github.com/citusdata/pg_cron.git'],
+        ],
+        'build': [
+            ['make', 'install'],
+        ],
+        'test': [
+            ['make', 'installcheck'],
+        ],
+    }
+)
+
+# add hypopg
+extensions.append(
+    {
+        'name': 'hypopg',
+        'download': [
+            git_clone_command + ['https://github.com/HypoPG/hypopg.git'],
+        ],
+        'build': [
+            ['make', 'install'],
+        ],
+        'test': [
+            ['make', 'installcheck'],
+        ],
+    }
+)
+
+# add orafce
+extensions.append(
+    {
+        'name': 'orafce',
+        'download': [
+            git_clone_command + ['https://github.com/orafce/orafce.git'],
+        ],
+        'build': [
+            ['make'],
+            ['make', 'install'],
+        ],
+        'test': [
+            ['make', 'installcheck'],
+        ],
+    }
+)
+
+# add postgis
+extensions.append(
+    {
+        'name': 'postgis',
+        'download': [
+            git_clone_command + ['https://github.com/postgis/postgis.git'],
+        ],
+        'build': [
+            ['./autogen.sh'],
+            ['./configure', '--without-raster'],
+            ['make'],
+        ],
+        'test': [
+            ['make', 'check'],
+        ],
+    }
+)
+
+# add pg_partman
+extensions.append(
+    {
+        'name': 'pg_partman',
+        'shared_preload_name': 'pg_partman_bgw',
+        'download': [
+            git_clone_command
+                + ['https://github.com/pgpartman/pg_partman.git'],
+        ],
+        'build': [
+            ['make'],
+            ['make', 'install'],
+        ],
+        'test': [
+            # there is no test command,
+            # see bottom of https://github.com/pgpartman/pg_partman
+        ],
+    }
+)
+
+# add timescaledb
+# doesn't support PG 15 yet
+# extensions.append(
+#     {
+#         'name': 'timescaledb',
+#         'shared_preload_name': 'timescaledb',
+#         'download': [
+#             ['git', 'clone', 'https://github.com/timescale/timescaledb.git'],
+#         ],
+#         'build': [
+#             ['./bootstrap'],
+#             ['make', '-C', 'build'],
+#             ['make', '-C', 'build', 'install'],
+#         ],
+#         'test': [
+#             ['make', 'check'],
+#         ],
+#     }
+# )
+
+# add pgbouncer
+extensions.append(
+    {
+        'name': 'pgbouncer',
+        'download': [
+            git_clone_command
+                + ['https://github.com/pgbouncer/pgbouncer.git'],
+        ],
+        'build': [
+            ['git', 'submodule', 'init'],
+            ['git', 'submodule', 'update'],
+            ['./autogen.sh'],
+            ['./configure', '--prefix=/home/naziryavuz/projects/install-meson'],
+            ['make'],
+            ['make', 'install'],
+        ],
+        'test': [
+            ['make', '-C', './test', 'all'],
+            ['make', '-C', './test', 'check'],
+        ],
+    }
+)
+
+# filter elements of only-run-ext list
+if only_run_ext:
+    # check if all elements of only-list exists
+    ext_names = [elem['name'] for elem in extensions]
+    if not set(only_run_ext).issubset(ext_names):
+        sys.exit('There are unsupported extensions. Supported extensions are: '
+                 + ' '.join(ext_names))
+
+    extensions = [ext for ext in extensions if ext['name'] in only_run_ext]
+
+
+def stop_and_start_postgres_server(logfile_prefix='',
+                                   shared_preload_string=''):
+    pgsql_data_path = '/tmp/pgsql/data'
+    logfile_name = '{}-logfile'.format(logfile_prefix).strip('-')
+    postgresql_conf = pgsql_data_path + '/postgresql.conf'
+    to_write_pgconf = ''
+
+    postgres_server_commands = [
+        ['rm', '-rf', pgsql_data_path],
+        ['mkdir', '-p', pgsql_data_path],
+        ['initdb', '-D', pgsql_data_path],
+        ['pg_ctl', '-D', pgsql_data_path, '-l', logfile_name, 'start'],
+    ]
+
+    if os.path.isdir(pgsql_data_path):
+        postgres_server_commands.insert(0,
+            ['pg_ctl', 'stop', '-D', pgsql_data_path])
+
+    if shared_preload_string:
+        to_write_pgconf = to_write_pgconf + 'shared_preload_libraries = \
+            \'{}\''.format(shared_preload_string)
+
+    # start and stop postgres server
+    print('Stopping and starting postgres server...\n\n', flush=True)
+    for i, command in enumerate(postgres_server_commands):
+        # appending config contents before starting server
+        if i == len(postgres_server_commands) - 1:
+            with open(postgresql_conf, 'a') as pg_conf:
+                pg_conf.write(to_write_pgconf)
+
+        if subprocess.run(command).returncode:
+            sys.exit('\nCan not stop and start postgres server.')
+    print('Done.', flush=True)
+
+
+def run_commands(extension, current_process, cwd):
+    ext_name = extension['name']
+    ext_command = extension.get(current_process, [])
+
+    if extension.get('exit_status', False):
+        return
+    elif ext_command:
+        print('\n\n### `{}` `{}` ###\n'.format(
+            current_process, ext_name), flush=True)
+
+        for command in ext_command:
+            print('Command = {}'.format(command))
+            result = subprocess.run(command, cwd=cwd)
+
+            if result.returncode:
+                extension['message'] = '`{}` failed at step `{}`'.format(
+                    ext_name, current_process)
+                extension['exit_status'] = ExitStatus.failed
+            else:
+                extension['message'] = '`{}` finished successfully'.format(
+                    ext_name)
+                extension['exit_status'] = ExitStatus.success
+    else:
+        extension['message'] = 'No `{}` command found for `{}`'.format(
+            current_process, ext_name)
+        extension['exit_status'] = ExitStatus.missing_steps
+
+        print('\n\n### {} ###\n'.format(extension['message']), flush=True)
+
+
+def clear_directory(directory):
+    if os.path.exists(directory) and os.path.isdir(directory):
+        print('### Clearing {} ###'.format(directory), flush=True)
+        shutil.rmtree(directory)
+
+
+def main():
+    for extension in extensions:
+        ext_name = extension['name']
+        ext_workdir = os.path.join(workdir, ext_name)
+
+        clear_directory(ext_workdir)
+        os.makedirs(ext_workdir)
+
+        run_commands(extension, 'download', workdir)
+        run_commands(extension, 'build', ext_workdir)
+
+        stop_and_start_postgres_server(
+            ext_name, extension.get('shared_preload_name', ''))
+
+        run_commands(extension, 'test', ext_workdir)
+
+    # sort by exit status(success, missing step, failed)
+    extensions_sorted = sorted(extensions, key=lambda d: d['exit_status'])
+
+    previous_exit_status = extensions_sorted[0]['exit_status']
+    print('\nScript finished, results are:\n', flush=True)
+    for extension in extensions_sorted:
+        if extension['exit_status'] != previous_exit_status:
+            print('\n', flush=True)
+        print(extension['message'], flush=True)
+        previous_exit_status = extension['exit_status']
+
+    if previous_exit_status == ExitStatus.failed:
+        sys.exit('\nThere are failed extensions, exiting')
+
+
+if __name__ == "__main__":
+    main()
