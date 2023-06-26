@@ -108,13 +108,15 @@ typedef enum vartag_external
  * compiler might otherwise think it could generate code that assumes
  * alignment while touching fields of a 1-byte-header varlena.
  */
+typedef struct va_4byte
+{
+	uint32		va_header;
+	char		va_data[FLEXIBLE_ARRAY_MEMBER];
+} va_4byte;
+
 typedef union
 {
-	struct						/* Normal varlena (4-byte length) */
-	{
-		uint32		va_header;
-		char		va_data[FLEXIBLE_ARRAY_MEMBER];
-	}			va_4byte;
+	va_4byte va_4byte;			/* Normal varlena (4-byte length) */
 	struct						/* Compressed-in-line format */
 	{
 		uint32		va_header;
@@ -197,7 +199,7 @@ typedef struct
 	(((varattrib_1b_e *) (PTR))->va_tag)
 
 #define SET_VARSIZE_4B(PTR,len) \
-	(((varattrib_4b *) (PTR))->va_4byte.va_header = (len) & 0x3FFFFFFF)
+	(((struct va_4byte *) (PTR))->va_header = (len) & 0x3FFFFFFF)
 #define SET_VARSIZE_4B_C(PTR,len) \
 	(((varattrib_4b *) (PTR))->va_4byte.va_header = ((len) & 0x3FFFFFFF) | 0x40000000)
 #define SET_VARSIZE_1B(PTR,len) \
@@ -223,14 +225,14 @@ typedef struct
 
 /* VARSIZE_4B() should only be used on known-aligned data */
 #define VARSIZE_4B(PTR) \
-	((((varattrib_4b *) (PTR))->va_4byte.va_header >> 2) & 0x3FFFFFFF)
+	((((struct va_4byte *) (PTR))->va_header >> 2) & 0x3FFFFFFF)
 #define VARSIZE_1B(PTR) \
 	((((varattrib_1b *) (PTR))->va_header >> 1) & 0x7F)
 #define VARTAG_1B_E(PTR) \
 	(((varattrib_1b_e *) (PTR))->va_tag)
 
 #define SET_VARSIZE_4B(PTR,len) \
-	(((varattrib_4b *) (PTR))->va_4byte.va_header = (((uint32) (len)) << 2))
+	(((struct va_4byte *) (PTR))->va_header = (((uint32) (len)) << 2))
 #define SET_VARSIZE_4B_C(PTR,len) \
 	(((varattrib_4b *) (PTR))->va_4byte.va_header = (((uint32) (len)) << 2) | 0x02)
 #define SET_VARSIZE_1B(PTR,len) \
@@ -241,7 +243,7 @@ typedef struct
 
 #endif							/* WORDS_BIGENDIAN */
 
-#define VARDATA_4B(PTR)		(((varattrib_4b *) (PTR))->va_4byte.va_data)
+#define VARDATA_4B(PTR)		(((va_4byte *) (PTR))->va_data)
 #define VARDATA_4B_C(PTR)	(((varattrib_4b *) (PTR))->va_compressed.va_data)
 #define VARDATA_1B(PTR)		(((varattrib_1b *) (PTR))->va_data)
 #define VARDATA_1B_E(PTR)	(((varattrib_1b_e *) (PTR))->va_data)
