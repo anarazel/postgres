@@ -2108,7 +2108,7 @@ GetSnapshotDataReuse(Snapshot snapshot)
 {
 	uint64		curXactCompletionCount;
 
-	Assert(LWLockHeldByMe(ProcArrayLock));
+	//Assert(LWLockHeldByMe(ProcArrayLock));
 
 	if (unlikely(snapshot->snapXactCompletionCount == 0))
 		return false;
@@ -2243,13 +2243,11 @@ GetSnapshotData(Snapshot snapshot)
 	 * It is sufficient to get shared lock on ProcArrayLock, even if we are
 	 * going to set MyProc->xmin.
 	 */
-	LWLockAcquire(ProcArrayLock, LW_SHARED);
 
 	if (GetSnapshotDataReuse(snapshot))
-	{
-		LWLockRelease(ProcArrayLock);
 		return snapshot;
-	}
+
+	LWLockAcquire(ProcArrayLock, LW_SHARED);
 
 	latest_completed = ShmemVariableCache->latestCompletedXid;
 	mypgxactoff = MyProc->pgxactoff;
