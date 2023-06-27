@@ -679,10 +679,10 @@ _bt_compare(Relation rel,
 	BTPageOpaque opaque = BTPageGetOpaque(page);
 	IndexTuple	itup;
 	ItemPointer heapTid;
+	int			ski;
 	ScanKey		scankey;
-	int			ncmpkey;
-	int			ntupatts;
 	int32		result;
+	int			ntupatts = 0;
 
 	Assert(_bt_check_natts(rel, key->heapkeyspace, page, offnum));
 	Assert(key->keysz <= IndexRelationGetNumberOfKeyAttributes(rel));
@@ -696,7 +696,6 @@ _bt_compare(Relation rel,
 		return 1;
 
 	itup = (IndexTuple) PageGetItem(page, PageGetItemId(page, offnum));
-	ntupatts = BTreeTupleGetNAtts(itup, rel);
 
 	/*
 	 * The scan key is set up with the attribute number associated with each
@@ -708,13 +707,17 @@ _bt_compare(Relation rel,
 	 * We don't test for violation of this condition here, however.  The
 	 * initial setup for the index scan had better have gotten it right (see
 	 * _bt_first).
+	 *
+	 * We rely on the assumption that every tuple has at least one
+	 * non-truncated attribute from here on.  Delaying our call to
+	 * BTreeTupleGetNAtts() till the end of the first loop iteration has been
+	 * shown to increase throughput on memory-bound workloads.
 	 */
-
-	ncmpkey = Min(ntupatts, key->keysz);
-	Assert(key->heapkeyspace || ncmpkey == key->keysz);
+	//Assert(BTreeTupleGetNAtts(itup, rel) >= key->keysz);
 	Assert(!BTreeTupleIsPosting(itup) || key->allequalimage);
+	ski = 1;
 	scankey = key->scankeys;
-	for (int i = 1; i <= ncmpkey; i++)
+	for (;;)
 	{
 		Datum		datum;
 		bool		isNull;
@@ -760,7 +763,13 @@ _bt_compare(Relation rel,
 		if (result != 0)
 			return result;
 
+		ski++;
 		scankey++;
+		if (!ntupatts)
+			ntupatts = BTreeTupleGetNAtts(itup, rel);
+
+		if (ski > key->keysz || ski > ntupatts)
+			break;
 	}
 
 	/*
