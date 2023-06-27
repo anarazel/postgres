@@ -35,6 +35,7 @@
 #include "storage/procarray.h"
 #include "utils/memdebug.h"
 #include "utils/memutils.h"
+#include "utils/rel.h"
 #include "utils/snapmgr.h"
 
 static BTMetaPageData *_bt_getmeta(Relation rel, Buffer metabuf);
@@ -344,7 +345,7 @@ Buffer
 _bt_getroot(Relation rel, Relation heaprel, int access)
 {
 	Buffer		metabuf;
-	Buffer		rootbuf;
+	Buffer		rootbuf = InvalidBuffer;
 	Page		rootpage;
 	BTPageOpaque rootopaque;
 	BlockNumber rootblkno;
@@ -373,7 +374,20 @@ _bt_getroot(Relation rel, Relation heaprel, int access)
 		Assert(rootblkno != P_NONE);
 		rootlevel = metad->btm_fastlevel;
 
-		rootbuf = _bt_getbuf(rel, rootblkno, BT_READ);
+
+		if (BufferIsValid(rel->rd_recent_root))
+		{
+			if (ReadRecentBuffer(rel->rd_locator, MAIN_FORKNUM, rootblkno,
+								 rel->rd_recent_root))
+			{
+				rootbuf = rel->rd_recent_root;
+				_bt_lockbuf(rel, rootbuf, BT_READ);
+				_bt_checkpage(rel, rootbuf);
+			}
+		}
+
+		if (rootbuf == InvalidBuffer)
+			rootbuf = _bt_getbuf(rel, rootblkno, BT_READ);
 		rootpage = BufferGetPage(rootbuf);
 		rootopaque = BTPageGetOpaque(rootpage);
 
@@ -390,6 +404,7 @@ _bt_getroot(Relation rel, Relation heaprel, int access)
 			P_RIGHTMOST(rootopaque))
 		{
 			/* OK, accept cached page as the root */
+			rel->rd_recent_root = rootbuf;
 			return rootbuf;
 		}
 		_bt_relbuf(rel, rootbuf);
@@ -554,6 +569,8 @@ _bt_getroot(Relation rel, Relation heaprel, int access)
 				 rootblkno, RelationGetRelationName(rel),
 				 rootopaque->btpo_level, rootlevel);
 	}
+
+	rel->rd_recent_root = rootbuf;
 
 	/*
 	 * By here, we have a pin and read lock on the root page, and no lock set

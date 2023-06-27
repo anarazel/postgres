@@ -160,11 +160,17 @@ _bt_search(Relation rel, Relation heaprel, BTScanInsert key, Buffer *bufP,
 		 * stack entry for this page/level.  If caller ends up splitting a
 		 * page one level down, it usually ends up inserting a new pivot
 		 * tuple/downlink immediately after the location recorded here.
+		 *
+		 * FIXME: Unfortunately this isn't a usable gating condition, as
+		 * vacuum uses BT_READ and needs the stack.
 		 */
-		new_stack = (BTStack) palloc(sizeof(BTStackData));
-		new_stack->bts_blkno = BufferGetBlockNumber(*bufP);
-		new_stack->bts_offset = offnum;
-		new_stack->bts_parent = stack_in;
+		if (false && access == BT_WRITE)
+		{
+			new_stack = (BTStack) palloc(sizeof(BTStackData));
+			new_stack->bts_blkno = BufferGetBlockNumber(*bufP);
+			new_stack->bts_offset = offnum;
+			new_stack->bts_parent = stack_in;
+		}
 
 		/*
 		 * Page level 1 is lowest non-leaf page level prior to leaves.  So, if
@@ -178,7 +184,8 @@ _bt_search(Relation rel, Relation heaprel, BTScanInsert key, Buffer *bufP,
 		*bufP = _bt_relandgetbuf(rel, *bufP, child, page_access);
 
 		/* okay, all set to move down a level */
-		stack_in = new_stack;
+		if (false && access == BT_WRITE)
+			stack_in = new_stack;
 	}
 
 	/*
