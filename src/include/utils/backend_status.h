@@ -96,6 +96,10 @@ typedef struct PgBackendGSSStatus
  */
 typedef struct PgBackendStatus
 {
+#ifdef pg_attribute_aligned
+	pg_attribute_aligned(PG_CACHE_LINE_SIZE)
+#endif
+
 	/*
 	 * To avoid locking overhead, we use the following protocol: a backend
 	 * increments st_changecount before modifying its entry, and again after
