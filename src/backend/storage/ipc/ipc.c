@@ -105,7 +105,7 @@ void
 proc_exit(int code)
 {
 	if (TopMemoryContext)
-		MemoryContextStatsDetail(TopMemoryContext, 0, true);
+		MemoryContextStatsDetail(TopMemoryContext, 0, false);
 
 	/* Clean up everything that must be cleaned up */
 	proc_exit_prepare(code);
