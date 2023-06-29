@@ -21,6 +21,7 @@
 #include "storage/proc.h"
 #include "storage/procarray.h"
 #include "utils/builtins.h"
+#include "utils/memutils_internal.h"
 
 /* ----------
  * The max bytes for showing identifiers of MemoryContext.
@@ -35,9 +36,10 @@
 static void
 PutMemoryContextsStatsTupleStore(Tuplestorestate *tupstore,
 								 TupleDesc tupdesc, MemoryContext context,
-								 const char *parent, int level)
+								 const char *parent, int level, int *context_id,
+								 int parent_id)
 {
-#define PG_GET_BACKEND_MEMORY_CONTEXTS_COLS	9
+#define PG_GET_BACKEND_MEMORY_CONTEXTS_COLS	11
 
 	Datum		values[PG_GET_BACKEND_MEMORY_CONTEXTS_COLS];
 	bool		nulls[PG_GET_BACKEND_MEMORY_CONTEXTS_COLS];
@@ -45,6 +47,7 @@ PutMemoryContextsStatsTupleStore(Tuplestorestate *tupstore,
 	MemoryContext child;
 	const char *name;
 	const char *ident;
+	int  current_context_id = (*context_id)++;
 
 	Assert(MemoryContextIsValid(context));
 
@@ -103,12 +106,18 @@ PutMemoryContextsStatsTupleStore(Tuplestorestate *tupstore,
 	values[6] = Int64GetDatum(stat.freespace);
 	values[7] = Int64GetDatum(stat.freechunks);
 	values[8] = Int64GetDatum(stat.totalspace - stat.freespace);
+	values[9] = Int32GetDatum(current_context_id);
+	if(parent_id < 0)
+		/* TopMemoryContext has no parent context */
+		nulls[10] = true;
+	else
+		values[10] = Int32GetDatum(parent_id);
 	tuplestore_putvalues(tupstore, tupdesc, values, nulls);
 
 	for (child = context->firstchild; child != NULL; child = child->nextchild)
 	{
-		PutMemoryContextsStatsTupleStore(tupstore, tupdesc,
-										 child, name, level + 1);
+		PutMemoryContextsStatsTupleStore(tupstore, tupdesc, child,
+										 name, level + 1, context_id, current_context_id);
 	}
 }
 
@@ -120,10 +129,11 @@ Datum
 pg_get_backend_memory_contexts(PG_FUNCTION_ARGS)
 {
 	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
+	int context_id = 0;
 
 	InitMaterializedSRF(fcinfo, 0);
 	PutMemoryContextsStatsTupleStore(rsinfo->setResult, rsinfo->setDesc,
-									 TopMemoryContext, NULL, 0);
+									 TopMemoryContext, NULL, 0, &context_id, -1);
 
 	return (Datum) 0;
 }
