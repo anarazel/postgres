@@ -84,6 +84,7 @@ static int	on_proc_exit_index,
 			on_shmem_exit_index,
 			before_shmem_exit_index;
 
+#include "utils/memutils.h"
 
 /* ----------------------------------------------------------------
  *		proc_exit
@@ -103,6 +104,9 @@ static int	on_proc_exit_index,
 void
 proc_exit(int code)
 {
+	if (TopMemoryContext)
+		MemoryContextStatsDetail(TopMemoryContext, 0, true);
+
 	/* Clean up everything that must be cleaned up */
 	proc_exit_prepare(code);
 
