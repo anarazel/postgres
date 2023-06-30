@@ -5950,3 +5950,74 @@ ResOwnerPrintBufferPin(Datum res)
 {
 	return DebugPrintBufferRefcount(DatumGetInt32(res));
 }
+
+/*
+ * Try Invalidating a buffer using bufnum.
+ * If the buffer is invalid, the function returns false.
+ * The function checks for dirty buffer and flushes the dirty buffer before invalidating.
+ * If the buffer is still dirty it returns false.
+ */
+bool
+TryInvalidateBuffer(Buffer bufnum, bool force)
+{
+	BufferDesc *bufHdr = GetBufferDescriptor(bufnum - 1);
+	uint32		buf_state;
+	ReservePrivateRefCountEntry();
+
+	buf_state = LockBufHdr(bufHdr);
+	if ((buf_state & BM_VALID) == BM_VALID)
+	{
+		/*
+		 * The buffer is pinned therefore cannot invalidate.
+		 */
+		if (BUF_STATE_GET_REFCOUNT(buf_state) > 0)
+		{
+			UnlockBufHdr(bufHdr, buf_state);
+			return false;
+		}
+		if ((buf_state & BM_DIRTY) == BM_DIRTY)
+		{
+			/*
+			 * If the buffer is dirty and the user has not asked to clear the dirty buffer return false.
+			 * Otherwise clear the dirty buffer.
+			 */
+			if(!force){
+				return false;
+			}
+			/*
+			 * Try once to flush the dirty buffer.
+			 */
+			ResourceOwnerEnlarge(CurrentResourceOwner);
+			PinBuffer_Locked(bufHdr);
+			LWLockAcquire(BufferDescriptorGetContentLock(bufHdr), LW_SHARED);
+			FlushBuffer(bufHdr, NULL, IOOBJECT_RELATION, IOCONTEXT_NORMAL);
+			LWLockRelease(BufferDescriptorGetContentLock(bufHdr));
+			UnpinBuffer(bufHdr);
+			buf_state = LockBufHdr(bufHdr);
+			if (BUF_STATE_GET_REFCOUNT(buf_state) > 0)
+			{
+				UnlockBufHdr(bufHdr, buf_state);
+				return false;
+			}
+
+			/*
+			 * If its dirty again or not valid anymore give up.
+			 */
+
+			if ((buf_state & (BM_DIRTY | BM_VALID)) != (BM_VALID))
+			{
+				UnlockBufHdr(bufHdr, buf_state);
+				return false;
+			}
+
+		}
+
+		InvalidateBuffer(bufHdr);
+		return true;
+	}
+	else
+	{
+		UnlockBufHdr(bufHdr, buf_state);
+		return false;
+	}
+}

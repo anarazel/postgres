@@ -64,6 +64,40 @@ PG_FUNCTION_INFO_V1(pg_buffercache_pages);
 PG_FUNCTION_INFO_V1(pg_buffercache_summary);
 PG_FUNCTION_INFO_V1(pg_buffercache_usage_counts);
 
+PG_FUNCTION_INFO_V1(pg_buffercache_invalidate);
+Datum
+pg_buffercache_invalidate(PG_FUNCTION_ARGS)
+{
+	Buffer		bufnum;
+	bool		result;
+	bool		force;
+
+	if (PG_ARGISNULL(0))
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("buffernum cannot be NULL")));
+	}
+
+	bufnum = PG_GETARG_INT32(0);
+	if (bufnum <= 0 || bufnum > NBuffers)
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("buffernum is not valid")));
+
+	}
+
+	/*
+	 * Check whether to force invalidate the dirty buffer. The default value of force is true.
+	 */
+
+	force = PG_GETARG_BOOL(1);
+
+	result = TryInvalidateBuffer(bufnum, force);
+	PG_RETURN_BOOL(result);
+}
+
 Datum
 pg_buffercache_pages(PG_FUNCTION_ARGS)
 {
