@@ -133,4 +133,9 @@ extern void MemoryContextCreate(MemoryContext node,
 								MemoryContext parent,
 								const char *name);
 
+extern void MemoryContextStatsInvoke(MemoryContext context,
+						  MemoryStatsPrintFunc printfunc, void *passthru,
+						  MemoryContextCounters *totals,
+						  bool print_to_stderr);
+
 #endif							/* MEMUTILS_INTERNAL_H */

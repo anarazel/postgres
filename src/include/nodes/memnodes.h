@@ -57,6 +57,7 @@ typedef void (*MemoryStatsPrintFunc) (MemoryContext context, void *passthru,
 
 typedef struct MemoryContextMethods
 {
+	__attribute__((aligned(64)))
 	void	   *(*alloc) (MemoryContext context, Size size);
 	/* call this free_p in case someone #define's free() */
 	void		(*free_p) (void *pointer);
@@ -81,11 +82,13 @@ typedef struct MemoryContextData
 	pg_node_attr(abstract)		/* there are no nodes of this type */
 
 	NodeTag		type;			/* identifies exact kind of context */
+
+	uint8		method_id;
+
 	/* these two fields are placed here to minimize alignment wastage: */
 	bool		isReset;		/* T = no space alloced since last reset */
 	bool		allowInCritSection; /* allow palloc in critical section */
 	Size		mem_allocated;	/* track memory allocated for this context */
-	const MemoryContextMethods *methods;	/* virtual function table */
 	MemoryContext parent;		/* NULL if no parent (toplevel context) */
 	MemoryContext firstchild;	/* head of linked list of children */
 	MemoryContext prevchild;	/* previous child of same parent */

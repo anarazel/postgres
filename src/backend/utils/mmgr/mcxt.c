@@ -42,6 +42,14 @@ static Size BogusGetChunkSpace(void *pointer);
  *	  GLOBAL MEMORY															 *
  *****************************************************************************/
 
+typedef	void	   *(*AllocCB) (MemoryContext context, Size size);
+
+static const AllocCB allocs[] = {
+	[MCTX_ASET_ID] = AllocSetAlloc,
+	[MCTX_GENERATION_ID] = GenerationAlloc,
+	[MCTX_SLAB_ID] = SlabAlloc,
+};
+
 static const MemoryContextMethods mcxt_methods[] = {
 	/* aset.c */
 	[MCTX_ASET_ID].alloc = AllocSetAlloc,
@@ -362,8 +370,7 @@ MemoryContextResetOnly(MemoryContext context)
 		 * ident elsewhere, e.g. in a parent context.  So for now we assume
 		 * the programmer got it right.
 		 */
-
-		context->methods->reset(context);
+		mcxt_methods[context->method_id].reset(context);
 		context->isReset = true;
 		VALGRIND_DESTROY_MEMPOOL(context);
 		VALGRIND_CREATE_MEMPOOL(context, 0, false);
@@ -434,7 +441,7 @@ MemoryContextDelete(MemoryContext context)
 	 */
 	context->ident = NULL;
 
-	context->methods->delete_context(context);
+	mcxt_methods[context->method_id].delete_context(context);
 
 	VALGRIND_DESTROY_MEMPOOL(context);
 }
@@ -660,7 +667,7 @@ MemoryContextIsEmpty(MemoryContext context)
 	if (context->firstchild != NULL)
 		return false;
 	/* Otherwise use the type-specific inquiry */
-	return context->methods->is_empty(context);
+	return mcxt_methods[context->method_id].is_empty(context);
 }
 
 /*
@@ -767,10 +774,10 @@ MemoryContextStatsInternal(MemoryContext context, int level,
 	Assert(MemoryContextIsValid(context));
 
 	/* Examine the context itself */
-	context->methods->stats(context,
-							print ? MemoryContextStatsPrint : NULL,
-							(void *) &level,
-							totals, print_to_stderr);
+	mcxt_methods[context->method_id].stats(context,
+										   print ? MemoryContextStatsPrint : NULL,
+										   (void *) &level,
+										   totals, print_to_stderr);
 
 	/*
 	 * Examine children.  If there are more than max_children of them, we do
@@ -917,6 +924,16 @@ MemoryContextStatsPrint(MemoryContext context, void *passthru,
 								 level, name, stats_string, truncated_ident)));
 }
 
+
+void
+MemoryContextStatsInvoke(MemoryContext context,
+						 MemoryStatsPrintFunc printfunc, void *passthru,
+						 MemoryContextCounters *totals,
+						 bool print_to_stderr)
+{
+	mcxt_methods[context->method_id].stats(context, NULL, passthru, totals, true);
+}
+
 /*
  * MemoryContextCheck
  *		Check all chunks in the named context.
@@ -931,7 +948,7 @@ MemoryContextCheck(MemoryContext context)
 
 	Assert(MemoryContextIsValid(context));
 
-	context->methods->check(context);
+	mcxt_methods[context->method_id].check(context);
 	for (child = context->firstchild; child != NULL; child = child->nextchild)
 		MemoryContextCheck(child);
 }
@@ -982,7 +999,7 @@ MemoryContextCreate(MemoryContext node,
 	/* Initialize all standard fields of memory context header */
 	node->type = tag;
 	node->isReset = true;
-	node->methods = &mcxt_methods[method_id];
+	node->method_id = method_id;
 	node->parent = parent;
 	node->firstchild = NULL;
 	node->mem_allocated = 0;
@@ -1030,7 +1047,7 @@ MemoryContextAlloc(MemoryContext context, Size size)
 
 	context->isReset = false;
 
-	ret = context->methods->alloc(context, size);
+	ret = mcxt_methods[context->method_id].alloc(context, size);
 	if (unlikely(ret == NULL))
 	{
 		MemoryContextStats(TopMemoryContext);
@@ -1073,7 +1090,7 @@ MemoryContextAllocZero(MemoryContext context, Size size)
 
 	context->isReset = false;
 
-	ret = context->methods->alloc(context, size);
+	ret = mcxt_methods[context->method_id].alloc(context, size);
 	if (unlikely(ret == NULL))
 	{
 		MemoryContextStats(TopMemoryContext);
@@ -1111,7 +1128,7 @@ MemoryContextAllocZeroAligned(MemoryContext context, Size size)
 
 	context->isReset = false;
 
-	ret = context->methods->alloc(context, size);
+	ret = mcxt_methods[context->method_id].alloc(context, size);
 	if (unlikely(ret == NULL))
 	{
 		MemoryContextStats(TopMemoryContext);
@@ -1147,7 +1164,7 @@ MemoryContextAllocExtended(MemoryContext context, Size size, int flags)
 
 	context->isReset = false;
 
-	ret = context->methods->alloc(context, size);
+	ret = mcxt_methods[context->method_id].alloc(context, size);
 	if (unlikely(ret == NULL))
 	{
 		if ((flags & MCXT_ALLOC_NO_OOM) == 0)
@@ -1235,9 +1252,9 @@ palloc(Size size)
 	if (!AllocSizeIsValid(size))
 		elog(ERROR, "invalid memory alloc request size %zu", size);
 
+	//ret = mcxt_methods[context->method_id].alloc(context, size);
+	ret = allocs[context->method_id](context, size);
 	context->isReset = false;
-
-	ret = context->methods->alloc(context, size);
 	if (unlikely(ret == NULL))
 	{
 		MemoryContextStats(TopMemoryContext);
@@ -1268,7 +1285,7 @@ palloc0(Size size)
 
 	context->isReset = false;
 
-	ret = context->methods->alloc(context, size);
+	ret = mcxt_methods[context->method_id].alloc(context, size);
 	if (unlikely(ret == NULL))
 	{
 		MemoryContextStats(TopMemoryContext);
@@ -1302,7 +1319,7 @@ palloc_extended(Size size, int flags)
 
 	context->isReset = false;
 
-	ret = context->methods->alloc(context, size);
+	ret = mcxt_methods[context->method_id].alloc(context, size);
 	if (unlikely(ret == NULL))
 	{
 		if ((flags & MCXT_ALLOC_NO_OOM) == 0)
@@ -1595,7 +1612,7 @@ MemoryContextAllocHuge(MemoryContext context, Size size)
 
 	context->isReset = false;
 
-	ret = context->methods->alloc(context, size);
+	ret = mcxt_methods[context->method_id].alloc(context, size);
 	if (unlikely(ret == NULL))
 	{
 		MemoryContextStats(TopMemoryContext);
