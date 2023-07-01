@@ -140,7 +140,7 @@ int			max_parallel_workers = 8;
 int			MaxBackends = 0;
 
 /* GUC parameters for vacuum */
-int			VacuumBufferUsageLimit = 256;
+int			VacuumBufferUsageLimit = 16 * 1024;
 
 int			VacuumCostPageHit = 1;
 int			VacuumCostPageMiss = 2;

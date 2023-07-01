@@ -80,7 +80,7 @@ bool		trace_syncscan = false;
  * the buffer cache anyway, and on the other hand the page is most likely
  * still in the OS cache.
  */
-#define SYNC_SCAN_REPORT_INTERVAL (128 * 1024 / BLCKSZ)
+#define SYNC_SCAN_REPORT_INTERVAL ((4 * 1024 * 1024) / BLCKSZ)
 
 
 /*

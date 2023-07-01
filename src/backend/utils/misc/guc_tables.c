@@ -2237,7 +2237,7 @@ struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_KB
 		},
 		&VacuumBufferUsageLimit,
-		256, 0, MAX_BAS_VAC_RING_SIZE_KB,
+		16 * 1024, 0, MAX_BAS_VAC_RING_SIZE_KB,
 		check_vacuum_buffer_usage_limit, NULL, NULL
 	},
 
