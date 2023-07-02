@@ -57,6 +57,7 @@
 #include "access/xlogutils.h"
 #include "miscadmin.h"
 #include "pgstat.h"
+#include "storage/aio.h"
 #include "storage/fd.h"
 #include "storage/shmem.h"
 
@@ -1584,32 +1585,53 @@ SlruScanDirectory(SlruCtl ctl, SlruScanCallback callback, void *data)
 	return retval;
 }
 
+static void
+SlruSyncFileTagComplete(PgStreamingWrite *pgsw, void *pgsw_private, int result, void *write_private)
+{
+	InflightSyncEntry *entry = (InflightSyncEntry *) write_private;
+
+	CloseTransientFile((int) entry->handler_data);
+
+	SyncRequestCompleted(entry, result >= 0, result >= 0 ? 0 : -result);
+}
+
+static bool
+SlruSyncFileTagRetry(PgStreamingWrite *pgsw, void *pgsw_private, PgAioInProgress *aio, void *write_private)
+{
+	int result = pgaio_io_result(aio);
+
+	if (result == -EINTR || result == -EAGAIN)
+	{
+		pgaio_io_retry(aio);
+		return true;
+	}
+
+	return false;
+}
+
 /*
  * Individual SLRUs (clog, ...) have to provide a sync.c handler function so
  * that they can provide the correct "SlruCtl" (otherwise we don't know how to
  * build the path), but they just forward to this common implementation that
  * performs the fsync.
  */
-int
-SlruSyncFileTag(SlruCtl ctl, const FileTag *ftag, char *path)
+void
+SlruSyncFileTag(SlruCtl ctl, struct PgStreamingWrite *pgsw, InflightSyncEntry *entry)
 {
 	int			fd;
-	int			save_errno;
-	int			result;
+	PgAioInProgress *aio;
 
-	SlruFileName(ctl, path, ftag->segno);
+	SlruFileName(ctl, entry->path, entry->tag.segno);
 
-	fd = OpenTransientFile(path, O_RDWR | PG_BINARY);
+	fd = OpenTransientFile(entry->path, O_RDWR | PG_BINARY);
 	if (fd < 0)
-		return -1;
+	{
+		SyncRequestCompleted(entry, false, errno);
+		return;
+	}
 
-	pgstat_report_wait_start(WAIT_EVENT_SLRU_FLUSH_SYNC);
-	result = pg_fsync(fd);
-	pgstat_report_wait_end();
-	save_errno = errno;
-
-	CloseTransientFile(fd);
-
-	errno = save_errno;
-	return result;
+	entry->handler_data = fd;
+	aio = pg_streaming_write_get_io(pgsw);
+	pgaio_io_start_fsync_raw(aio, fd, false);
+	pg_streaming_write_write(pgsw, aio, SlruSyncFileTagComplete, SlruSyncFileTagRetry, entry);
 }

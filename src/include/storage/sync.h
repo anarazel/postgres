@@ -13,6 +13,7 @@
 #ifndef SYNC_H
 #define SYNC_H
 
+#include "lib/ilist.h"
 #include "storage/relfilelocator.h"
 
 /*
@@ -55,6 +56,33 @@ typedef struct FileTag
 	uint32		segno;
 } FileTag;
 
+struct PendingFsyncEntry;
+
+typedef struct InflightSyncEntry
+{
+	FileTag		tag;			/* identifies handler and file */
+
+	/* to be filled by handler, for error messages */
+	char		path[MAXPGPATH];
+
+	/* for use of handler, to pass data to completion */
+	uintptr_t	handler_data;
+
+	/* associated hash entry, so it can be deleted */
+	struct PendingFsyncEntry *hash_entry;
+
+	int			retry_count;
+
+	/* stats */
+	uint64		start_time;
+	uint64		end_time;
+
+	/* membership in inflightSyncs, retrySyncs */
+	dlist_node	node;
+} InflightSyncEntry;
+
+struct PgStreamingWrite;
+
 extern void InitSync(void);
 extern void SyncPreCheckpoint(void);
 extern void SyncPostCheckpoint(void);
@@ -62,5 +90,6 @@ extern void ProcessSyncRequests(void);
 extern void RememberSyncRequest(const FileTag *ftag, SyncRequestType type);
 extern bool RegisterSyncRequest(const FileTag *ftag, SyncRequestType type,
 								bool retryOnError);
+extern void SyncRequestCompleted(InflightSyncEntry *inflight_entry, bool success, int err);
 
 #endif							/* SYNC_H */

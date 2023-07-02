@@ -1675,57 +1675,84 @@ _mdnblocks(SMgrRelation reln, ForkNumber forknum, MdfdVec *seg)
 	return (BlockNumber) (len / BLCKSZ);
 }
 
+static void
+mdsyncfiletag_complete(PgStreamingWrite *pgsw, void *pgsw_private, int result, void *write_private)
+{
+	InflightSyncEntry *entry = (InflightSyncEntry *) write_private;
+	File file = (int) entry->handler_data;
+
+	if (file != -1)
+		FileClose(file);
+
+	SyncRequestCompleted(entry, result >= 0, result >= 0 ? 0 : -result);
+}
+
+static bool
+mdsyncfiletag_retry(PgStreamingWrite *pgsw, void *pgsw_private, PgAioInProgress *aio, void *write_private)
+{
+	int result = pgaio_io_result(aio);
+
+	if (result == -EINTR || result == -EAGAIN)
+	{
+		pgaio_io_retry(aio);
+		return true;
+	}
+
+	return false;
+}
+
 /*
  * Sync a file to disk, given a file tag.  Write the path into an output
  * buffer so the caller can use it in error messages.
  *
  * Return 0 on success, -1 on failure, with errno set.
  */
-int
-mdsyncfiletag(const FileTag *ftag, char *path)
+void
+mdsyncfiletag(PgStreamingWrite *pgsw, InflightSyncEntry *entry)
 {
+	FileTag	   *ftag = &entry->tag;
 	SMgrRelation reln = smgropen(ftag->rlocator, InvalidBackendId);
 	File		file;
-	instr_time	io_start;
-	bool		need_to_close;
-	int			result,
-				save_errno;
+	PgAioInProgress *aio;
 
 	/* See if we already have the file open, or need to open it. */
 	if (ftag->segno < reln->md_num_open_segs[ftag->forknum])
 	{
 		file = reln->md_seg_fds[ftag->forknum][ftag->segno].mdfd_vfd;
-		strlcpy(path, FilePathName(file), MAXPGPATH);
-		need_to_close = false;
+		strlcpy(entry->path, FilePathName(file), MAXPGPATH);
+		entry->handler_data = -1;
 	}
 	else
 	{
 		char	   *p;
 
 		p = _mdfd_segpath(reln, ftag->forknum, ftag->segno);
-		strlcpy(path, p, MAXPGPATH);
+		strlcpy(entry->path, p, MAXPGPATH);
 		pfree(p);
 
-		file = PathNameOpenFile(path, _mdfd_open_flags());
+		file = PathNameOpenFile(entry->path, _mdfd_open_flags());
 		if (file < 0)
-			return -1;
-		need_to_close = true;
+		{
+			SyncRequestCompleted(entry, false, errno);
+			return;
+		}
+		entry->handler_data = file;
 	}
 
-	io_start = pgstat_prepare_io_time();
-
 	/* Sync the file. */
-	result = FileSync(file, WAIT_EVENT_DATA_FILE_SYNC);
-	save_errno = errno;
+	aio = pg_streaming_write_get_io(pgsw);
+	if (FileStartSync(aio, file))
+	{
+		pg_streaming_write_write(pgsw, aio, mdsyncfiletag_complete, mdsyncfiletag_retry, entry);
+	}
+	else
+	{
+		pg_streaming_write_release_io(pgsw, aio);
+		SyncRequestCompleted(entry, false, errno);
+	}
 
-	if (need_to_close)
-		FileClose(file);
-
-	pgstat_count_io_op_time(IOOBJECT_RELATION, IOCONTEXT_NORMAL,
-							IOOP_FSYNC, io_start, 1);
-
-	errno = save_errno;
-	return result;
+	/* FIXME: reimplement io-time tracking */
+	pgstat_count_io_op(IOOBJECT_RELATION, IOCONTEXT_NORMAL, IOOP_FSYNC);
 }
 
 /*

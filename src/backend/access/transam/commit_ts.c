@@ -1007,8 +1007,8 @@ commit_ts_redo(XLogReaderState *record)
 /*
  * Entrypoint for sync.c to sync commit_ts files.
  */
-int
-committssyncfiletag(const FileTag *ftag, char *path)
+void
+committssyncfiletag(struct PgStreamingWrite *pgsw, InflightSyncEntry *entry)
 {
-	return SlruSyncFileTag(CommitTsCtl, ftag, path);
+	SlruSyncFileTag(CommitTsCtl, pgsw, entry);
 }

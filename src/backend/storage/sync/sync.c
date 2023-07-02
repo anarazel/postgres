@@ -28,6 +28,7 @@
 #include "pgstat.h"
 #include "portability/instr_time.h"
 #include "postmaster/bgwriter.h"
+#include "storage/aio.h"
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
@@ -58,7 +59,7 @@
  */
 typedef uint16 CycleCtr;		/* can be any convenient integer size */
 
-typedef struct
+typedef struct PendingFsyncEntry
 {
 	FileTag		tag;			/* identifies handler and file */
 	CycleCtr	cycle_ctr;		/* sync_cycle_ctr of oldest request */
@@ -74,6 +75,8 @@ typedef struct
 
 static HTAB *pendingOps = NULL;
 static List *pendingUnlinks = NIL;
+static dlist_head inflightSyncs = DLIST_STATIC_INIT(inflightSyncs);
+static dlist_head retrySyncs = DLIST_STATIC_INIT(retrySyncs);
 static MemoryContext pendingOpsCxt; /* context for the above  */
 
 static CycleCtr sync_cycle_ctr = 0;
@@ -88,7 +91,7 @@ static CycleCtr checkpoint_cycle_ctr = 0;
  */
 typedef struct SyncOps
 {
-	int			(*sync_syncfiletag) (const FileTag *ftag, char *path);
+	void		(*sync_syncfiletag) (PgStreamingWrite *pgsw, InflightSyncEntry *entry);
 	int			(*sync_unlinkfiletag) (const FileTag *ftag, char *path);
 	bool		(*sync_filetagmatches) (const FileTag *ftag,
 										const FileTag *candidate);
@@ -284,26 +287,156 @@ SyncPostCheckpoint(void)
 	}
 }
 
+typedef struct SyncState
+{
+	bool		sync_in_progress;
+	int			absorb_counter;
+	PgStreamingWrite *pgsw;
+
+	/* stats */
+	int			processed;
+	uint64		longest;
+	uint64		total_elapsed;
+} SyncState;
+static SyncState sync_state_global = {.sync_in_progress = false};
+
+void
+SyncRequestCompleted(InflightSyncEntry *inflight_entry, bool success, int err)
+{
+	/*
+	 * XXX: we could easily transport this as part of InflightSyncEntry, or
+	 * specify it in the callers. But right now that's not really needed.
+	 */
+	SyncState *sync_state = &sync_state_global;
+
+	dlist_delete_from(&inflightSyncs, &inflight_entry->node);
+
+	if (success)
+	{
+		instr_time now;
+		uint64 elapsed;
+
+		/* Success; update statistics about sync timing */
+
+		/*
+		 * XXX: These stats are pretty useless right now, with AIO many IOs
+		 * may be in process at the same time, and but we'll measure from IO
+		 * submission to IO completion reception.
+		 */
+		INSTR_TIME_SET_CURRENT(now);
+		elapsed = INSTR_TIME_GET_MICROSEC(now) - inflight_entry->start_time;
+
+		if (elapsed > sync_state->longest)
+			sync_state->longest = elapsed;
+		sync_state->total_elapsed += elapsed;
+		sync_state->processed++;
+
+		if (log_checkpoints)
+			elog(DEBUG1, "checkpoint sync: number=%d file=%s time=%.3f ms",
+				 sync_state->processed,
+				 inflight_entry->path,
+				 (double) elapsed / 1000);
+
+		/*
+		 * We are done with this entry, remove it.
+		 *
+		 * Normally it is not safe to HASH_REMOVE entries other than the
+		 * current element while iterating, but it ought to be safe because it
+		 * is guaranteed to be an element from earlier in the iteration.
+		 */
+		if (hash_search(pendingOps, &inflight_entry->hash_entry->tag, HASH_REMOVE, NULL) == NULL)
+			elog(ERROR, "pendingOps corrupted");
+
+		pfree(inflight_entry);
+	}
+	else
+	{
+		/*
+		 * It is possible that the relation has been dropped or truncated
+		 * since the fsync request was entered. Therefore, allow ENOENT, but
+		 * only if we didn't fail already on this file.
+		 */
+		errno = err;
+		if (!FILE_POSSIBLY_DELETED(errno) || inflight_entry->retry_count > 0)
+			ereport(data_sync_elevel(ERROR),
+					(errcode_for_file_access(),
+					 errmsg("could not fsync file \"%s\": %m",
+							inflight_entry->path)));
+		else
+			ereport(DEBUG1,
+					(errcode_for_file_access(),
+					 errmsg_internal("could not fsync file \"%s\" but retrying: %m",
+									 inflight_entry->path)));
+
+		/* schedule request to be retried */
+		inflight_entry->retry_count++;
+		dlist_push_tail(&retrySyncs, &inflight_entry->node);
+	}
+}
+
+static void
+call_syncfiletag(SyncState *sync_state, InflightSyncEntry *inflight_entry)
+{
+	instr_time now;
+
+	dlist_push_tail(&inflightSyncs, &inflight_entry->node);
+
+	INSTR_TIME_SET_CURRENT(now);
+	inflight_entry->start_time = INSTR_TIME_GET_MICROSEC(now);
+	syncsw[inflight_entry->tag.handler].sync_syncfiletag(sync_state->pgsw, inflight_entry);
+}
+
+/*
+ * The fsync table could contain requests to fsync segments that
+ * have been deleted (unlinked) by the time we get to them. Rather
+ * than just hoping an ENOENT (or EACCES on Windows) error can be
+ * ignored, what we do on error is absorb pending requests and
+ * then retry. Since mdunlink() queues a "cancel" message before
+ * actually unlinking, the fsync request is guaranteed to be
+ * marked canceled after the absorb if it really was this case.
+ * DROP DATABASE likewise has to tell us to forget fsync requests
+ * before it starts deletions.
+ */
+static void
+RetrySyncRequests(SyncState *sync_state)
+{
+	if (likely(dlist_is_empty(&retrySyncs)))
+		return;
+
+	/*
+	 * Absorb incoming requests and check to see if a cancel
+	 * arrived for this relation fork.
+	 */
+	AbsorbSyncRequests();
+	sync_state->absorb_counter = FSYNCS_PER_ABSORB; /* might as well... */
+
+	while (!dlist_is_empty(&retrySyncs))
+	{
+		dlist_node *node = dlist_pop_head_node(&retrySyncs);
+		InflightSyncEntry *inflight_entry = dlist_container(InflightSyncEntry, node, node);
+
+		if (inflight_entry->hash_entry->canceled)
+		{
+			if (hash_search(pendingOps, &inflight_entry->hash_entry->tag, HASH_REMOVE, NULL) == NULL)
+				elog(ERROR, "pendingOps corrupted");
+			continue;
+		}
+
+		Assert(inflight_entry->retry_count <= 5);
+
+		call_syncfiletag(sync_state, inflight_entry);
+	}
+}
+
 /*
  *	ProcessSyncRequests() -- Process queued fsync requests.
  */
 void
 ProcessSyncRequests(void)
 {
-	static bool sync_in_progress = false;
-
 	HASH_SEQ_STATUS hstat;
 	PendingFsyncEntry *entry;
-	int			absorb_counter;
-
-	/* Statistics on sync times */
-	int			processed = 0;
-	instr_time	sync_start,
-				sync_end,
-				sync_diff;
-	uint64		elapsed;
-	uint64		longest = 0;
-	uint64		total_elapsed = 0;
+	SyncState *sync_state = &sync_state_global;
 
 	/*
 	 * This is only called during checkpoints, and checkpoints should only
@@ -347,8 +480,15 @@ ProcessSyncRequests(void)
 	 * From a performance point of view it doesn't matter anyway, as this path
 	 * will never be taken in a system that's functioning normally.
 	 */
-	if (sync_in_progress)
+	if (sync_state->sync_in_progress)
 	{
+		/*
+		 * FIXME: SyncState, referenced by potential in-flight requests will
+		 * be referenced. Nor are we correctly dealing with retrySyncs,
+		 * inflightSyncs.
+		 */
+		elog(PANIC, "not implemented right now");
+
 		/* prior try failed, so update any stale cycle_ctr values */
 		hash_seq_init(&hstat, pendingOps);
 		while ((entry = (PendingFsyncEntry *) hash_seq_search(&hstat)) != NULL)
@@ -357,19 +497,30 @@ ProcessSyncRequests(void)
 		}
 	}
 
+	sync_state->processed = 0;
+	sync_state->longest = 0;
+	sync_state->total_elapsed = 0;
+
+	if (!sync_state->pgsw)
+	{
+		MemoryContext old_context = MemoryContextSwitchTo(pendingOpsCxt);
+
+		sync_state->pgsw = pg_streaming_write_alloc(128, &sync_state);
+
+		MemoryContextSwitchTo(old_context);
+	}
+
 	/* Advance counter so that new hashtable entries are distinguishable */
 	sync_cycle_ctr++;
 
 	/* Set flag to detect failure if we don't reach the end of the loop */
-	sync_in_progress = true;
+	sync_state->sync_in_progress = true;
 
 	/* Now scan the hashtable for fsync requests to process */
-	absorb_counter = FSYNCS_PER_ABSORB;
+	sync_state->absorb_counter = FSYNCS_PER_ABSORB;
 	hash_seq_init(&hstat, pendingOps);
 	while ((entry = (PendingFsyncEntry *) hash_seq_search(&hstat)) != NULL)
 	{
-		int			failures;
-
 		/*
 		 * If the entry is new then don't process it this time; it is new.
 		 * Note "continue" bypasses the hash-remove call at the bottom of the
@@ -382,101 +533,66 @@ ProcessSyncRequests(void)
 		Assert((CycleCtr) (entry->cycle_ctr + 1) == sync_cycle_ctr);
 
 		/*
+		 * If in checkpointer, we want to absorb pending requests every so
+		 * often to prevent overflow of the fsync request queue.  It is
+		 * unspecified whether newly-added entries will be visited by
+		 * hash_seq_search, but we don't care since we don't need to
+		 * process them anyway.
+		 */
+		if (--sync_state->absorb_counter <= 0)
+		{
+			AbsorbSyncRequests();
+			sync_state->absorb_counter = FSYNCS_PER_ABSORB;
+		}
+
+		/*
 		 * If fsync is off then we don't have to bother opening the file at
 		 * all.  (We delay checking until this point so that changing fsync on
 		 * the fly behaves sensibly.)
 		 */
-		if (enableFsync)
+		if (!enableFsync || entry->canceled)
 		{
-			/*
-			 * If in checkpointer, we want to absorb pending requests every so
-			 * often to prevent overflow of the fsync request queue.  It is
-			 * unspecified whether newly-added entries will be visited by
-			 * hash_seq_search, but we don't care since we don't need to
-			 * process them anyway.
-			 */
-			if (--absorb_counter <= 0)
-			{
-				AbsorbSyncRequests();
-				absorb_counter = FSYNCS_PER_ABSORB;
-			}
-
-			/*
-			 * The fsync table could contain requests to fsync segments that
-			 * have been deleted (unlinked) by the time we get to them. Rather
-			 * than just hoping an ENOENT (or EACCES on Windows) error can be
-			 * ignored, what we do on error is absorb pending requests and
-			 * then retry. Since mdunlink() queues a "cancel" message before
-			 * actually unlinking, the fsync request is guaranteed to be
-			 * marked canceled after the absorb if it really was this case.
-			 * DROP DATABASE likewise has to tell us to forget fsync requests
-			 * before it starts deletions.
-			 */
-			for (failures = 0; !entry->canceled; failures++)
-			{
-				char		path[MAXPGPATH];
-
-				INSTR_TIME_SET_CURRENT(sync_start);
-				if (syncsw[entry->tag.handler].sync_syncfiletag(&entry->tag,
-																path) == 0)
-				{
-					/* Success; update statistics about sync timing */
-					INSTR_TIME_SET_CURRENT(sync_end);
-					sync_diff = sync_end;
-					INSTR_TIME_SUBTRACT(sync_diff, sync_start);
-					elapsed = INSTR_TIME_GET_MICROSEC(sync_diff);
-					if (elapsed > longest)
-						longest = elapsed;
-					total_elapsed += elapsed;
-					processed++;
-
-					if (log_checkpoints)
-						elog(DEBUG1, "checkpoint sync: number=%d file=%s time=%.3f ms",
-							 processed,
-							 path,
-							 (double) elapsed / 1000);
-
-					break;		/* out of retry loop */
-				}
-
-				/*
-				 * It is possible that the relation has been dropped or
-				 * truncated since the fsync request was entered. Therefore,
-				 * allow ENOENT, but only if we didn't fail already on this
-				 * file.
-				 */
-				if (!FILE_POSSIBLY_DELETED(errno) || failures > 0)
-					ereport(data_sync_elevel(ERROR),
-							(errcode_for_file_access(),
-							 errmsg("could not fsync file \"%s\": %m",
-									path)));
-				else
-					ereport(DEBUG1,
-							(errcode_for_file_access(),
-							 errmsg_internal("could not fsync file \"%s\" but retrying: %m",
-											 path)));
-
-				/*
-				 * Absorb incoming requests and check to see if a cancel
-				 * arrived for this relation fork.
-				 */
-				AbsorbSyncRequests();
-				absorb_counter = FSYNCS_PER_ABSORB; /* might as well... */
-			}					/* end retry loop */
+			/* We are done with this entry, remove it */
+			if (hash_search(pendingOps, &entry->tag, HASH_REMOVE, NULL) == NULL)
+				elog(ERROR, "pendingOps corrupted");
 		}
+		else
+		{
+			InflightSyncEntry *inflight_entry;
 
-		/* We are done with this entry, remove it */
-		if (hash_search(pendingOps, &entry->tag, HASH_REMOVE, NULL) == NULL)
-			elog(ERROR, "pendingOps corrupted");
+			inflight_entry = MemoryContextAlloc(pendingOpsCxt,
+												sizeof(InflightSyncEntry));
+			inflight_entry->tag = entry->tag;
+			inflight_entry->handler_data = 0;
+			inflight_entry->path[0] = 0;
+			inflight_entry->retry_count = 0;
+			inflight_entry->hash_entry = entry;
+
+			call_syncfiletag(sync_state, inflight_entry);
+		}
 	}							/* end loop over hashtable entries */
 
+	pg_streaming_write_wait_all(sync_state->pgsw);
+
+	for (int failures = 0; failures < 5; failures++)
+	{
+		RetrySyncRequests(sync_state);
+	}
+
+	if (!dlist_is_empty(&inflightSyncs))
+		elog(PANIC, "inflight sync requests corrupted");
+	if (!dlist_is_empty(&retrySyncs))
+		elog(PANIC, "inflight sync requests corrupted");
+	pg_streaming_write_free(sync_state->pgsw);
+	sync_state->pgsw = NULL;
+
 	/* Return sync performance metrics for report at checkpoint end */
-	CheckpointStats.ckpt_sync_rels = processed;
-	CheckpointStats.ckpt_longest_sync = longest;
-	CheckpointStats.ckpt_agg_sync_time = total_elapsed;
+	CheckpointStats.ckpt_sync_rels = sync_state->processed;
+	CheckpointStats.ckpt_longest_sync = sync_state->longest;
+	CheckpointStats.ckpt_agg_sync_time = sync_state->total_elapsed;
 
 	/* Flag successful completion of ProcessSyncRequests */
-	sync_in_progress = false;
+	sync_state->sync_in_progress = false;
 }
 
 /*

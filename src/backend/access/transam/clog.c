@@ -1021,8 +1021,8 @@ clog_redo(XLogReaderState *record)
 /*
  * Entrypoint for sync.c to sync clog files.
  */
-int
-clogsyncfiletag(const FileTag *ftag, char *path)
+void
+clogsyncfiletag(struct PgStreamingWrite *pgsw, InflightSyncEntry *entry)
 {
-	return SlruSyncFileTag(XactCtl, ftag, path);
+	SlruSyncFileTag(XactCtl, pgsw, entry);
 }
