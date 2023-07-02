@@ -27,8 +27,8 @@
 #include "nodes/memnodes.h"
 #include "pgstat.h"
 #include "storage/aio_internal.h"
-#include "storage/bufmgr.h"			/* XXX for io_data_direct */
 #include "storage/condition_variable.h"
+#include "storage/fd.h"			/* XXX for io_direct */
 #include "storage/ipc.h"
 #include "storage/lwlock.h"
 #include "storage/proc.h"
