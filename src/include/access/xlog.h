@@ -53,6 +53,7 @@ extern PGDLLIMPORT bool track_wal_io_timing;
 extern PGDLLIMPORT int wal_decode_buffer_size;
 extern PGDLLIMPORT int io_wal_concurrency;
 extern PGDLLIMPORT int io_wal_target_blocks;
+extern PGDLLIMPORT bool	io_wal_pad_partial;
 
 extern PGDLLIMPORT int CheckPointSegments;
 

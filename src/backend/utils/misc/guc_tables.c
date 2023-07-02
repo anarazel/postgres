@@ -2008,6 +2008,15 @@ struct config_bool ConfigureNamesBool[] =
         NULL, NULL, NULL
     },
 
+    {
+        {"io_wal_pad_partial", PGC_SUSET, RESOURCES_DISK,
+            gettext_noop("pad WAL files upon flash"),
+        },
+        &io_wal_pad_partial,
+        false,
+        NULL, NULL, NULL
+    },
+
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, false, NULL, NULL, NULL

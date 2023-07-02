@@ -148,6 +148,10 @@ xlog_desc(StringInfo buf, XLogReaderState *record)
 						 LSN_FORMAT_ARGS(xlrec.overwritten_lsn),
 						 timestamptz_to_str(xlrec.overwrite_time));
 	}
+	else if (info == XLOG_WASTE)
+	{
+		appendStringInfo(buf, "waste");
+	}
 }
 
 const char *
