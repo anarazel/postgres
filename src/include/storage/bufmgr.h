@@ -264,7 +264,8 @@ extern bool HoldingBufferPinThatDelaysRecovery(void);
 
 extern void AbortBufferIO(Buffer buffer);
 
-extern bool BgBufferSync(struct WritebackContext *wb_context);
+struct PgStreamingWrite;
+extern bool BgBufferSync(struct PgStreamingWrite *pgsw, struct WritebackContext *wb_context);
 
 extern void TestForOldSnapshot_impl(Snapshot snapshot, Relation relation);
 

@@ -392,9 +392,10 @@ extern PGDLLIMPORT CkptSortItem *CkptBufferIds;
  */
 /* bufmgr.c */
 extern void WritebackContextInit(WritebackContext *context, int *max_pending);
-extern void IssuePendingWritebacks(WritebackContext *wb_context, IOContext io_context);
-extern void ScheduleBufferTagForWriteback(WritebackContext *wb_context,
-										  IOContext io_context, BufferTag *tag);
+extern void IssuePendingWritebacks(WritebackContext *wb_context, IOContext io_context,
+								   PgStreamingWrite *pgsw);
+extern void ScheduleBufferTagForWriteback(WritebackContext *wb_context, IOContext io_context,
+										  PgStreamingWrite *pgsw, BufferTag *tag);
 
 extern void ReadBufferPrepRead(PgAioInProgress *aio, Buffer buffer);
 extern void ReadBufferPrepWrite(PgAioInProgress *aio, Buffer buffer, bool release_lock);

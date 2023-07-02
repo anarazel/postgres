@@ -45,6 +45,7 @@
 #include "postmaster/bgwriter.h"
 #include "postmaster/interrupt.h"
 #include "replication/syncrep.h"
+#include "storage/aio.h"
 #include "storage/bufmgr.h"
 #include "storage/condition_variable.h"
 #include "storage/fd.h"
@@ -684,7 +685,7 @@ ImmediateCheckpointRequested(void)
  * fraction between 0.0 meaning none, and 1.0 meaning all done.
  */
 void
-CheckpointWriteDelay(int flags, double progress)
+CheckpointWriteDelay(int flags, PgStreamingWrite *pgsw, double progress)
 {
 	static int	absorb_counter = WRITES_PER_ABSORB;
 
@@ -716,6 +717,13 @@ CheckpointWriteDelay(int flags, double progress)
 
 		/* Report interim statistics to the cumulative stats system */
 		pgstat_report_checkpointer();
+
+		/*
+		 * Ensure all pending IO is submitted to avoid unnecessary delays
+		 * for other processes.
+		 */
+		pgaio_submit_pending(true);
+		pg_streaming_write_wait_all(pgsw);
 
 		/*
 		 * This sleep used to be connected to bgwriter_delay, typically 200ms.
