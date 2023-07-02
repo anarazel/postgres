@@ -3004,6 +3004,28 @@ struct config_int ConfigureNamesInt[] =
 		NULL
 	},
 
+    {
+        {"io_wal_concurrency", PGC_POSTMASTER, RESOURCES_ASYNCHRONOUS,
+            gettext_noop("How many concurrent IOs for WAL writes."),
+            NULL,
+            0
+        },
+        &io_wal_concurrency,
+        32, 0, INT_MAX,
+        NULL, NULL, NULL
+    },
+
+    {
+        {"io_wal_target_blocks", PGC_POSTMASTER, RESOURCES_ASYNCHRONOUS,
+            gettext_noop("Maximum size for WAL IO."),
+            NULL,
+            GUC_UNIT_XBLOCKS
+        },
+        &io_wal_target_blocks,
+        8, 0, INT_MAX,
+        NULL, NULL, NULL
+    },
+
 	{
 		{"backend_flush_after", PGC_USERSET, RESOURCES_ASYNCHRONOUS,
 			gettext_noop("Number of pages after which previously performed writes are flushed to disk."),

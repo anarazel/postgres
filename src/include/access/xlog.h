@@ -51,6 +51,8 @@ extern PGDLLIMPORT char *wal_consistency_checking_string;
 extern PGDLLIMPORT bool log_checkpoints;
 extern PGDLLIMPORT bool track_wal_io_timing;
 extern PGDLLIMPORT int wal_decode_buffer_size;
+extern PGDLLIMPORT int io_wal_concurrency;
+extern PGDLLIMPORT int io_wal_target_blocks;
 
 extern PGDLLIMPORT int CheckPointSegments;
 
@@ -199,6 +201,7 @@ extern XLogRecPtr XLogInsertRecord(struct XLogRecData *rdata,
 								   int num_fpi,
 								   bool topxid_included);
 extern void XLogFlush(XLogRecPtr record);
+extern bool XLogAsyncFlush(XLogRecPtr record);
 extern bool XLogBackgroundFlush(void);
 extern bool XLogNeedsFlush(XLogRecPtr record);
 extern int	XLogFileInit(XLogSegNo logsegno, TimeLineID logtli);

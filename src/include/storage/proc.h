@@ -225,6 +225,14 @@ struct PGPROC
 	/* Support for condition variables. */
 	proclist_node cvWaitLink;	/* position in CV wait list */
 
+	/*
+	 * Support for waiting until a specific WAL location has been written /
+	 * flushed (or WALwriteLock is released).
+	*/
+	XLogRecPtr xlog_write_wait;
+	XLogRecPtr xlog_flush_wait;
+	proclist_node xlogFlushLink;	/* position in xlog flush wait list */
+
 	/* Info about lock the process is currently waiting for, if any. */
 	/* waitLock and waitProcLock are NULL if not currently waiting. */
 	LOCK	   *waitLock;		/* Lock object we're sleeping on ... */
