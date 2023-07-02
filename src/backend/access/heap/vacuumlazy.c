@@ -73,7 +73,7 @@
  * REL_TRUNCATE_MINIMUM or (relsize / REL_TRUNCATE_FRACTION) (whichever
  * is less) potentially-freeable pages.
  */
-#define REL_TRUNCATE_MINIMUM	1000
+#define REL_TRUNCATE_MINIMUM	2000
 #define REL_TRUNCATE_FRACTION	16
 
 /*

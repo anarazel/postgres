@@ -2410,11 +2410,21 @@ ExtendBufferedRelShared(ExtendBufferedWhat eb,
 	 */
 	for (uint32 i = 0; i < extend_by; i++)
 	{
+		BufferDesc *buf_hdr;
 		Block		buf_block;
 
 		// MERGEFIXME: Need to unify calls to [Async]GetVictimBuffer
-		buffers[i] = GetVictimBuffer(strategy, io_context);
-		buf_block = BufHdrGetBlock(GetBufferDescriptor(buffers[i] - 1));
+		buf_hdr = BufReserveGetFree(strategy, i == 0, io_context);
+
+		if (!buf_hdr)
+		{
+			Assert(i > 0);
+			extend_by = i;
+			break;
+		}
+
+		buffers[i] = BufferDescriptorGetBuffer(buf_hdr);
+		buf_block = BufHdrGetBlock(buf_hdr);
 
 		/* new buffers are zero-filled */
 		MemSet((char *) buf_block, 0, BLCKSZ);

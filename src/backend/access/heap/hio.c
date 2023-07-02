@@ -239,7 +239,11 @@ static Buffer
 RelationAddBlocks(Relation relation, BulkInsertState bistate,
 				  int num_pages, bool use_fsm, bool *did_unlock)
 {
-#define MAX_BUFFERS_TO_EXTEND_BY 64
+	/*
+	 * 4MB chunks isn't crazy (nor great). Needs to be smaller
+	 * REL_TRUNCATE_MINIMUM, see also REL_TRUNCATE_FRACTION.
+	 */
+#define MAX_BUFFERS_TO_EXTEND_BY ((4 * 1024 * 1024) / 8192)
 	Buffer		victim_buffers[MAX_BUFFERS_TO_EXTEND_BY];
 	BlockNumber first_block = InvalidBlockNumber;
 	BlockNumber last_block = InvalidBlockNumber;
@@ -282,6 +286,27 @@ RelationAddBlocks(Relation relation, BulkInsertState bistate,
 		 * bistate->next_free.
 		 */
 		extend_by_pages += extend_by_pages * waitcount;
+
+		/*
+		 * WIP: FIXME: Forward port of "older" AIO logic. Extend based on
+		 * relation size.
+		 *
+		 * FIXME: The sizes here don't make a whole lot of sense.
+		 */
+		if (extend_by_pages < MAX_BUFFERS_TO_EXTEND_BY)
+		{
+			BlockNumber current_size;
+			uint32 extend_by_size;
+
+			current_size = smgrnblocks(RelationGetSmgr(relation), MAIN_FORKNUM);
+
+			extend_by_size = Max(Min(current_size / 16 * BLCKSZ,
+									 (16 * 1024 * 1024)) / BLCKSZ,
+								 1);
+			extend_by_size = Max(Min(extend_by_size, NBuffers / 128), 1);
+
+			extend_by_pages = Max(extend_by_pages, extend_by_size);
+		}
 
 		/*
 		 * Can't extend by more than MAX_BUFFERS_TO_EXTEND_BY, we need to pin
@@ -677,7 +702,7 @@ loop:
 		 */
 		if (PageIsNew(page))
 		{
-			PageInit(page, BufferGetPageSize(buffer), 0);
+			PageInitZeroed(page, BufferGetPageSize(buffer), 0);
 			MarkBufferDirty(buffer);
 		}
 
