@@ -4539,7 +4539,7 @@ struct config_string ConfigureNamesString[] =
 	},
 
 	{
-		{"debug_io_direct", PGC_POSTMASTER, DEVELOPER_OPTIONS,
+		{"io_direct", PGC_POSTMASTER, DEVELOPER_OPTIONS,
 			gettext_noop("Use direct I/O for file access."),
 			NULL,
 			GUC_LIST_INPUT | GUC_NOT_IN_SAMPLE
