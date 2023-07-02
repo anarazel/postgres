@@ -26,11 +26,15 @@ struct PGPROC;
 /* what state of the wait process is a backend in */
 typedef enum LWLockWaitState
 {
-	LW_WS_NOT_WAITING,			/* not currently waiting / woken up */
-	LW_WS_WAITING,				/* currently waiting */
-	LW_WS_PENDING_WAKEUP,		/* removed from waitlist, but not yet
-								 * signalled */
+	LW_WS_NOT_WAITING = 0,		/* not currently waiting / woken up */
+	LW_WS_WAITING = (1 << 0),	/* currently waiting */
+	LW_WS_RELEASED_ACQUIRE = (1 << 1), /* woken up, should try to acquire lock */
+	LW_WS_RELEASED_DONE = (1 << 2), /* woken up, no need to acquire lock */
+	LW_WS_PENDING_WAKEUP = (1 << 3), /* removed from waitlist, but not yet
+									  * signalled */
 }			LWLockWaitState;
+
+#define LW_WS_DONE (LW_WS_NOT_WAITING | LW_WS_RELEASED_ACQUIRE | LW_WS_RELEASED_DONE)
 
 /*
  * Code outside of lwlock.c should not manipulate the contents of this
@@ -145,6 +149,18 @@ extern void CreateLWLocks(void);
 extern void InitLWLockAccess(void);
 
 extern const char *GetLWLockIdentifier(uint32 classId, uint16 eventId);
+
+typedef enum LWLockWaitCheckRes
+{
+	LW_WAIT_NEEDS_LOCK, /* still needs lock */
+	LW_WAIT_DONE /* doesn't need to acquire lock */
+} LWLockWaitCheckRes;
+
+typedef LWLockWaitCheckRes (*LWLockAcquireWaitCB)(LWLock *lock, LWLockMode mode, uint64_t cb_data);
+typedef LWLockWaitCheckRes (*LWLockReleaseCheckCB)(LWLock *lock, LWLockMode mode, struct PGPROC *waked, uint64_t cb_data);
+
+extern bool LWLockAcquireEx(LWLock *lock, LWLockMode mode, LWLockAcquireWaitCB wait_cb, uint64_t cb_data);
+extern void LWLockReleaseEx(LWLock *lock, LWLockReleaseCheckCB wake_cb, uint64 cb_data);
 
 /*
  * Extensions (or core code) can obtain an LWLocks by calling
