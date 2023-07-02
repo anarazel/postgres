@@ -65,6 +65,7 @@
 #include "replication/logicallauncher.h"
 #include "replication/slot.h"
 #include "replication/syncrep.h"
+#include "storage/aio.h"
 #include "storage/bufmgr.h"
 #include "storage/large_object.h"
 #include "storage/pg_shmem.h"
@@ -478,6 +479,7 @@ extern const struct config_enum_entry archive_mode_options[];
 extern const struct config_enum_entry recovery_target_action_options[];
 extern const struct config_enum_entry sync_method_options[];
 extern const struct config_enum_entry dynamic_shared_memory_options[];
+extern const struct config_enum_entry io_method_options[];
 
 /*
  * GUC option variables that are exported from this module
@@ -1997,6 +1999,15 @@ struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 
+    {
+        {"io_data_force_async", PGC_SUSET, RESOURCES_DISK,
+            gettext_noop("force synchronous data file to use async IO."),
+        },
+        &io_data_force_async,
+        true, // helpful for development
+        NULL, NULL, NULL
+    },
+
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, false, NULL, NULL, NULL
@@ -3039,6 +3050,31 @@ struct config_int ConfigureNamesInt[] =
 		2, 0, MAX_BACKENDS,
 		NULL, NULL, NULL
 	},
+
+    {
+        {"io_workers",
+            PGC_SIGHUP,
+            RESOURCES_ASYNCHRONOUS,
+            gettext_noop("Number of IO worker processes, for io_method=worker."),
+            NULL,
+        },
+        &io_workers,
+        8, 1, MAX_IO_WORKERS,
+        NULL, assign_io_workers, NULL
+    },
+
+    {
+        {"io_worker_queue_size",
+            PGC_POSTMASTER,
+            RESOURCES_ASYNCHRONOUS,
+            gettext_noop("Size of the submission queue, for io_method=worker."),
+            NULL,
+        },
+        &io_worker_queue_size,
+        64, 1, 4096,
+        NULL, NULL, NULL
+    },
+
 
 	{
 		{"max_parallel_apply_workers_per_subscription",
@@ -4967,6 +5003,16 @@ struct config_enum ConfigureNamesEnum[] =
 		LOGICAL_REP_MODE_BUFFERED, logical_replication_mode_options,
 		NULL, NULL, NULL
 	},
+
+    {
+        {"io_method", PGC_POSTMASTER, RESOURCES_MEM,
+            gettext_noop("Selects the method of asynchronous I/O to use."),
+            NULL
+        },
+        &io_method,
+        DEFAULT_IO_METHOD, io_method_options,
+        NULL, assign_io_method, NULL
+    },
 
 	/* End-of-list marker */
 	{

@@ -196,6 +196,8 @@ pgxs_empty = [
   'PTHREAD_CFLAGS', 'PTHREAD_LIBS',
 
   'ICU_LIBS',
+
+  'LIBURING_CFLAGS', 'LIBURING_LIBS',
 ]
 
 if host_system == 'windows' and cc.get_argument_syntax() != 'msvc'
@@ -226,6 +228,7 @@ pgxs_deps = {
   'gssapi': gssapi,
   'icu': icu,
   'ldap': ldap,
+  'liburing': liburing,
   'libxml': libxml,
   'libxslt': libxslt,
   'llvm': llvm,
@@ -233,6 +236,7 @@ pgxs_deps = {
   'nls': libintl,
   'pam': pam,
   'perl': perl_dep,
+  'posix_aio': posix_aio,
   'python': python3_dep,
   'readline': readline,
   'selinux': selinux,

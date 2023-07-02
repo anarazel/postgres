@@ -16,6 +16,7 @@
 #ifndef RESOWNER_PRIVATE_H
 #define RESOWNER_PRIVATE_H
 
+#include "lib/ilist.h"
 #include "storage/dsm.h"
 #include "storage/fd.h"
 #include "storage/lock.h"
@@ -113,5 +114,19 @@ extern void ResourceOwnerRememberHMAC(ResourceOwner owner,
 									  Datum handle);
 extern void ResourceOwnerForgetHMAC(ResourceOwner owner,
 									Datum handle);
+
+/* support for AIO management */
+extern void ResourceOwnerRememberAioIP(ResourceOwner owner,
+									   dlist_node *aio_node);
+extern void ResourceOwnerForgetAioIP(ResourceOwner owner,
+									 dlist_node *aio_node);
+
+/* support for AIO bounce buffer management */
+struct PgAioBounceBuffer;
+extern void ResourceOwnerEnlargeAioBB(ResourceOwner owner);
+extern void ResourceOwnerRememberAioBB(ResourceOwner owner,
+									   struct PgAioBounceBuffer *bb);
+extern void ResourceOwnerForgetAioBB(ResourceOwner owner,
+									 struct PgAioBounceBuffer *bb);
 
 #endif							/* RESOWNER_PRIVATE_H */

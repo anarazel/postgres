@@ -202,6 +202,16 @@
 #endif
 
 /*
+ * In cases packed is not strictly necessary, but useful,
+ * pg_attribute_packed_desired() can be used.
+ */
+#ifdef pg_attribute_packed
+#define pg_attribute_packed_desired() pg_attribute_packed()
+#else
+#define pg_attribute_packed_desired()
+#endif
+
+/*
  * Use "pg_attribute_always_inline" in place of "inline" for functions that
  * we wish to force inlining of, even when the compiler's heuristics would
  * choose not to.  But, if possible, don't force inlining in unoptimized

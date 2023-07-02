@@ -84,6 +84,7 @@
 #include "replication/snapbuild.h"
 #include "replication/walreceiver.h"
 #include "replication/walsender.h"
+#include "storage/aio.h"
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
@@ -2053,6 +2054,29 @@ XLogCheckpointNeeded(XLogSegNo new_segno)
 	return false;
 }
 
+
+void
+XLogWriteComplete(PgAioInProgress *aio, uint32 write_no)
+{
+}
+
+void
+XLogFlushComplete(struct PgAioInProgress *aio, uint32 flush_no)
+{
+}
+
+int
+XLogFileForWriteNo(uint32 write_no)
+{
+	return -1;
+}
+
+int
+XLogFileForFlushNo(uint32 flush_no)
+{
+	return -1;
+}
+
 /*
  * Write and/or fsync the log at least as far as WriteRqst indicates.
  *
@@ -3364,6 +3388,8 @@ XLogFileClose(void)
 	if (!XLogIsNeeded() && (io_direct_flags & IO_DIRECT_WAL) == 0)
 		(void) posix_fadvise(openLogFile, 0, 0, POSIX_FADV_DONTNEED);
 #endif
+
+	pgaio_closing_fd(openLogFile);
 
 	if (close(openLogFile) != 0)
 	{

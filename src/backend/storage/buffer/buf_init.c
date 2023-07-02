@@ -126,6 +126,8 @@ InitBufferPool(void)
 
 			buf->buf_id = i;
 
+			pgaio_io_ref_clear(&buf->io_in_progress);
+
 			/*
 			 * Initially link all the buffers together as unused. Subsequent
 			 * management of this list is done by freelist.c.

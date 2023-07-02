@@ -190,6 +190,10 @@ static const char *const BuiltinTrancheNames[] = {
 	"LogicalRepLauncherDSA",
 	/* LWTRANCHE_LAUNCHER_HASH: */
 	"LogicalRepLauncherHash",
+	/* LWTRANCHE_AIO_CONTEXT_SUBMISSION: */
+	"AioContextSubmission",
+	/* LWTRANCHE_AIO_CONTEXT_COMPLETION: */
+	"AioContextCompletion"
 };
 
 StaticAssertDecl(lengthof(BuiltinTrancheNames) ==

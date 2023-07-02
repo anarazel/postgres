@@ -24,6 +24,7 @@
 #include "common/hashfn.h"
 #include "common/hmac.h"
 #include "jit/jit.h"
+#include "storage/aio.h"
 #include "storage/bufmgr.h"
 #include "storage/ipc.h"
 #include "storage/predicate.h"
@@ -133,6 +134,8 @@ typedef struct ResourceOwnerData
 	ResourceArray jitarr;		/* JIT contexts */
 	ResourceArray cryptohasharr;	/* cryptohash contexts */
 	ResourceArray hmacarr;		/* HMAC contexts */
+	dlist_head aios;
+	ResourceArray aiobbarr;		/* AIO BB references */
 
 	/* We can remember up to MAX_RESOWNER_LOCKS references to local locks. */
 	int			nlocks;			/* number of owned locks */
@@ -182,6 +185,8 @@ static void PrintFileLeakWarning(File file);
 static void PrintDSMLeakWarning(dsm_segment *seg);
 static void PrintCryptoHashLeakWarning(Datum handle);
 static void PrintHMACLeakWarning(Datum handle);
+static void PrintAioIPLeakWarning(dlist_node *aio_node);
+static void PrintAioBBLeakWarning(Datum handle);
 
 
 /*****************************************************************************
@@ -603,6 +608,30 @@ ResourceOwnerReleaseInternal(ResourceOwner owner,
 				PrintHMACLeakWarning(foundres);
 			pg_hmac_free(context);
 		}
+
+		/* Ditto for AIOs */
+		/* XXX: reconsider phase? */
+		while (!dlist_is_empty(&owner->aios))
+		{
+			dlist_node *aio_node = dlist_head_node(&owner->aios);
+
+			if (isCommit)
+				PrintAioIPLeakWarning(aio_node);
+
+			pgaio_io_release_resowner(aio_node);
+		}
+
+		/* Ditto for AIO BBs */
+		/* XXX: reconsider phase? */
+		while (ResourceArrayGetAny(&(owner->aiobbarr), &foundres))
+		{
+			PgAioBounceBuffer *bb = (PgAioBounceBuffer *) DatumGetPointer(foundres);
+
+			if (isCommit)
+				PrintAioBBLeakWarning(foundres);
+
+			pgaio_bounce_buffer_release(bb);
+		}
 	}
 	else if (phase == RESOURCE_RELEASE_LOCKS)
 	{
@@ -919,10 +948,10 @@ CreateAuxProcessResourceOwner(void)
 	CurrentResourceOwner = AuxProcessResourceOwner;
 
 	/*
-	 * Register a shmem-exit callback for cleanup of aux-process resource
+	 * Register a before-shmem-exit callback for cleanup of aux-process resource
 	 * owner.  (This needs to run after, e.g., ShutdownXLOG.)
 	 */
-	on_shmem_exit(ReleaseAuxProcessResourcesCallback, 0);
+	before_shmem_exit(ReleaseAuxProcessResourcesCallback, 0);
 }
 
 /*
@@ -1552,4 +1581,55 @@ PrintHMACLeakWarning(Datum handle)
 {
 	elog(WARNING, "HMAC context reference leak: context %p still referenced",
 		 DatumGetPointer(handle));
+}
+
+void
+ResourceOwnerRememberAioIP(ResourceOwner owner, dlist_node *aio_node)
+{
+	Assert(owner != NULL);
+	Assert(aio_node != NULL);
+
+	dlist_push_tail(&owner->aios, aio_node);
+}
+
+void
+ResourceOwnerForgetAioIP(ResourceOwner owner, dlist_node *aio_node)
+{
+	Assert(owner != NULL);
+	Assert(aio_node != NULL);
+
+	dlist_delete_from(&owner->aios, aio_node);
+}
+
+static void
+PrintAioIPLeakWarning(dlist_node *aio_node)
+{
+	pgaio_io_resowner_leak(aio_node);
+}
+
+void
+ResourceOwnerEnlargeAioBB(ResourceOwner owner)
+{
+	ResourceArrayEnlarge(&(owner->aiobbarr));
+}
+
+void
+ResourceOwnerRememberAioBB(ResourceOwner owner, PgAioBounceBuffer *bb)
+{
+	ResourceArrayAdd(&(owner->aiobbarr), PointerGetDatum(bb));
+}
+
+void
+ResourceOwnerForgetAioBB(ResourceOwner owner, PgAioBounceBuffer *bb)
+{
+	if (!ResourceArrayRemove(&(owner->aiobbarr), PointerGetDatum(bb)))
+		elog(ERROR, "aio BB %p is not owned by resource owner %s",
+			 bb, owner->name);
+}
+
+static void
+PrintAioBBLeakWarning(Datum handle)
+{
+	elog(WARNING, "aio BB reference leak: bb %zu still referenced",
+		 handle);
 }

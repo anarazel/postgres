@@ -18,6 +18,7 @@
 #include "access/itup.h"
 #include "access/xlog.h"
 #include "pgstat.h"
+#include "storage/aio.h"
 #include "storage/checksum.h"
 #include "utils/memdebug.h"
 #include "utils/memutils.h"
@@ -31,6 +32,23 @@ bool		ignore_checksum_failure = false;
  *						Page support functions
  * ----------------------------------------------------------------
  */
+
+static bool
+PageIsZeroes(Page page)
+{
+	size_t	   *pagebytes;
+
+	pagebytes = (size_t *) page;
+	for (int i = 0; i < (BLCKSZ / sizeof(size_t)); i++)
+	{
+		if (pagebytes[i] != 0)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
 
 /*
  * PageInit
@@ -57,6 +75,29 @@ PageInit(Page page, Size pageSize, Size specialSize)
 	p->pd_special = pageSize - specialSize;
 	PageSetPageSizeAndVersion(page, pageSize, PG_PAGE_LAYOUT_VERSION);
 	/* p->pd_prune_xid = InvalidTransactionId;		done by above MemSet */
+}
+
+/*
+ * Like PageInit(), but assumes the page is already zeroes.
+ */
+void
+PageInitZeroed(Page page, Size pageSize, Size specialSize)
+{
+	PageHeader	p = (PageHeader) page;
+
+	specialSize = MAXALIGN(specialSize);
+
+	Assert(pageSize == BLCKSZ);
+	Assert(pageSize > specialSize + SizeOfPageHeaderData);
+
+	Assert(PageIsZeroes(page));
+
+	p->pd_flags = 0;
+	p->pd_lower = SizeOfPageHeaderData;
+	p->pd_upper = pageSize - specialSize;
+	p->pd_special = pageSize - specialSize;
+	PageSetPageSizeAndVersion(page, pageSize, PG_PAGE_LAYOUT_VERSION);
+	/* p->pd_prune_xid = InvalidTransactionId;		page was zeroes */
 }
 
 
@@ -88,11 +129,8 @@ bool
 PageIsVerifiedExtended(Page page, BlockNumber blkno, int flags)
 {
 	PageHeader	p = (PageHeader) page;
-	size_t	   *pagebytes;
-	int			i;
 	bool		checksum_failure = false;
 	bool		header_sane = false;
-	bool		all_zeroes = false;
 	uint16		checksum = 0;
 
 	/*
@@ -125,19 +163,7 @@ PageIsVerifiedExtended(Page page, BlockNumber blkno, int flags)
 			return true;
 	}
 
-	/* Check all-zeroes case */
-	all_zeroes = true;
-	pagebytes = (size_t *) page;
-	for (i = 0; i < (BLCKSZ / sizeof(size_t)); i++)
-	{
-		if (pagebytes[i] != 0)
-		{
-			all_zeroes = false;
-			break;
-		}
-	}
-
-	if (all_zeroes)
+	if (PageIsZeroes(page))
 		return true;
 
 	/*
@@ -1507,25 +1533,39 @@ PageIndexTupleOverwrite(Page page, OffsetNumber offnum,
  * returned page and not refer to it again.
  */
 char *
-PageSetChecksumCopy(Page page, BlockNumber blkno)
+PageSetChecksumCopy(Page page, BlockNumber blkno, PgAioBounceBuffer **bb)
 {
-	static char *pageCopy = NULL;
+	static char *pageCopySync = NULL;
+	char *pageCopy;
+
+	if (bb)
+		*bb = NULL;
 
 	/* If we don't need a checksum, just return the passed-in data */
 	if (PageIsNew(page) || !DataChecksumsEnabled())
 		return (char *) page;
 
-	/*
-	 * We allocate the copy space once and use it over on each subsequent
-	 * call.  The point of palloc'ing here, rather than having a static char
-	 * array, is first to ensure adequate alignment for the checksumming code
-	 * and second to avoid wasting space in processes that never call this.
-	 */
-	if (pageCopy == NULL)
-		pageCopy = MemoryContextAllocAligned(TopMemoryContext,
-											 BLCKSZ,
-											 PG_IO_ALIGN_SIZE,
-											 0);
+	if (bb)
+	{
+		*bb = pgaio_bounce_buffer_get();
+		pageCopy = pgaio_bounce_buffer_buffer(*bb);
+	}
+	else if (!pageCopySync)
+	{
+		/*
+		 * We allocate the copy space once and use it over on each subsequent
+		 * call.  The point of palloc'ing here, rather than having a static char
+		 * array, is first to ensure adequate alignment for the checksumming code
+		 * and second to avoid wasting space in processes that never call this.
+		 */
+		pageCopySync = MemoryContextAllocAligned(TopMemoryContext,
+												 BLCKSZ,
+												 PG_IO_ALIGN_SIZE,
+												 0);
+		pageCopy = pageCopySync;
+	}
+	else
+		pageCopy = pageCopySync;
 
 	memcpy(pageCopy, (char *) page, BLCKSZ);
 	((PageHeader) pageCopy)->pd_checksum = pg_checksum_page(pageCopy, blkno);

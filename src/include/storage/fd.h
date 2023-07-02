@@ -65,6 +65,8 @@ extern PGDLLIMPORT int max_files_per_process;
 extern PGDLLIMPORT bool data_sync_retry;
 extern PGDLLIMPORT int recovery_init_sync_method;
 extern PGDLLIMPORT int io_direct_flags;
+extern PGDLLIMPORT bool io_data_force_async;
+
 
 /*
  * This is private to fd.c, but exported for save/restore_backend_variables()
@@ -112,14 +114,19 @@ extern File OpenTemporaryFile(bool interXact);
 extern void FileClose(File file);
 extern int	FilePrefetch(File file, off_t offset, off_t amount, uint32 wait_event_info);
 extern int	FileRead(File file, void *buffer, size_t amount, off_t offset, uint32 wait_event_info);
+struct PgAioInProgress;
+extern bool FileStartRead(struct PgAioInProgress *io, File file, void *buffer, size_t amount, off_t offset);
 extern int	FileWrite(File file, const void *buffer, size_t amount, off_t offset, uint32 wait_event_info);
+extern bool FileStartWrite(struct PgAioInProgress *io, File file, const void *buffer, size_t amount, off_t offset);
 extern int	FileSync(File file, uint32 wait_event_info);
+extern bool FileStartSync(struct PgAioInProgress *io, File file);
 extern int	FileZero(File file, off_t offset, off_t amount, uint32 wait_event_info);
 extern int	FileFallocate(File file, off_t offset, off_t amount, uint32 wait_event_info);
 
 extern off_t FileSize(File file);
 extern int	FileTruncate(File file, off_t offset, uint32 wait_event_info);
 extern void FileWriteback(File file, off_t offset, off_t nbytes, uint32 wait_event_info);
+extern bool FileStartWriteback(struct PgAioInProgress *io, File file, off_t offset, off_t nbytes);
 extern char *FilePathName(File file);
 extern int	FileGetRawDesc(File file);
 extern int	FileGetRawFlags(File file);

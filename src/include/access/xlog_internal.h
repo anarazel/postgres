@@ -391,6 +391,11 @@ extern void GetOldestRestartPoint(XLogRecPtr *oldrecptr, TimeLineID *oldtli);
 extern void XLogRecGetBlockRefInfo(XLogReaderState *record, bool pretty,
 								   bool detailed_format, StringInfo buf,
 								   uint32 *fpi_len);
+struct PgAioInProgress;
+extern void XLogWriteComplete(struct PgAioInProgress *aio, uint32 write_no);
+extern void XLogFlushComplete(struct PgAioInProgress *aio, uint32 flush_no);
+extern int XLogFileForWriteNo(uint32 write_no);
+extern int XLogFileForFlushNo(uint32 flush_no);
 
 /*
  * Exported for the functions in timeline.c and xlogarchive.c.  Only valid

@@ -17,6 +17,7 @@
 #include "pg_trace.h"
 #include "pgstat.h"
 #include "port/atomics.h"		/* for memory barriers */
+#include "storage/aio.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"		/* for MyProc */
 #include "storage/sinvaladt.h"
@@ -29,13 +30,14 @@
 /* ----------
  * Total number of backends including auxiliary
  *
- * We reserve a slot for each possible BackendId, plus one for each
- * possible auxiliary process type.  (This scheme assumes there is not
- * more than one of any auxiliary process type at a time.) MaxBackends
- * includes autovacuum workers and background workers as well.
+ * We reserve a slot for each possible BackendId, plus one for each possible
+ * auxiliary process type, except for AIO workers that get a plurality.
+ * (This scheme assumes there is not more than one of any auxiliary process
+ * type at a time.) MaxBackends includes autovacuum workers and background
+ * workers as well.
  * ----------
  */
-#define NumBackendStatSlots (MaxBackends + NUM_AUXPROCTYPES)
+#define NumBackendStatSlots (MaxBackends + MAX_IO_WORKERS + NUM_AUXPROCTYPES)
 
 
 /* ----------
@@ -263,11 +265,13 @@ pgstat_beinit(void)
 		 * Assign the MyBEEntry for an auxiliary process.  Since it doesn't
 		 * have a BackendId, the slot is statically allocated based on the
 		 * auxiliary process type (MyAuxProcType).  Backends use slots indexed
-		 * in the range from 1 to MaxBackends (inclusive), so we use
-		 * MaxBackends + AuxBackendType + 1 as the index of the slot for an
-		 * auxiliary process.
+		 * in the range from 1 to MaxBackends (inclusive), so we use slots
+		 * beyond that.
 		 */
-		MyBEEntry = &BackendStatusArray[MaxBackends + MyAuxProcType];
+		if (AmIoWorkerProcess())
+			MyBEEntry = &BackendStatusArray[MaxBackends + MyIoWorkerId];
+		else
+			MyBEEntry = &BackendStatusArray[MaxBackends + MAX_IO_WORKERS + MyAuxProcType];
 	}
 
 	/* Set up a process-exit hook to clean up */

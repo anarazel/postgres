@@ -23,6 +23,7 @@
 #include "postmaster/startup.h"
 #include "postmaster/walwriter.h"
 #include "replication/walreceiver.h"
+#include "storage/aio.h"
 #include "storage/bufmgr.h"
 #include "storage/bufpage.h"
 #include "storage/condition_variable.h"
@@ -80,6 +81,9 @@ AuxiliaryProcessMain(AuxProcType auxtype)
 		case WalReceiverProcess:
 			MyBackendType = B_WAL_RECEIVER;
 			break;
+		case IoWorkerProcess:
+			MyBackendType = B_IO_WORKER;
+			break;
 		default:
 			elog(PANIC, "unrecognized process type: %d", (int) MyAuxProcType);
 			MyBackendType = B_INVALID;
@@ -110,13 +114,22 @@ AuxiliaryProcessMain(AuxProcType auxtype)
 	 * Assign the ProcSignalSlot for an auxiliary process.  Since it doesn't
 	 * have a BackendId, the slot is statically allocated based on the
 	 * auxiliary process type (MyAuxProcType).  Backends use slots indexed in
-	 * the range from 1 to MaxBackends (inclusive), so we use MaxBackends +
-	 * AuxProcType + 1 as the index of the slot for an auxiliary process.
-	 *
-	 * This will need rethinking if we ever want more than one of a particular
-	 * auxiliary process type.
+	 * the range from 1 to MaxBackends (inclusive), so we use slots above
+	 * MaxBackends for auxiliary processes.
 	 */
-	ProcSignalInit(MaxBackends + MyAuxProcType + 1);
+	if (MyAuxProcType == IoWorkerProcess)
+	{
+		/* Use the IO worker ID to choose a slot. */
+		if (MyIoWorkerId < 0 || MyIoWorkerId > MAX_IO_WORKERS)
+			elog(ERROR, "unexpected or missing io worker ID: %d",
+				 MyIoWorkerId);
+		ProcSignalInit(MaxBackends + MyIoWorkerId + 1);
+	}
+	else
+	{
+		/* The other auxiliary process types have only one process each. */
+		ProcSignalInit(MaxBackends + MAX_IO_WORKERS + MyAuxProcType + 1);
+	}
 
 	/*
 	 * Auxiliary processes don't run transactions, but they may need a
@@ -159,6 +172,11 @@ AuxiliaryProcessMain(AuxProcType auxtype)
 
 		case WalReceiverProcess:
 			WalReceiverMain();
+			proc_exit(1);
+
+		case IoWorkerProcess:
+			/* don't set signals, io worker has its own agenda */
+			IoWorkerMain();
 			proc_exit(1);
 
 		default:

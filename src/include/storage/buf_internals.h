@@ -18,6 +18,7 @@
 #include "pgstat.h"
 #include "port/atomics.h"
 #include "storage/buf.h"
+#include "storage/aio.h"
 #include "storage/bufmgr.h"
 #include "storage/condition_variable.h"
 #include "storage/latch.h"
@@ -251,6 +252,9 @@ typedef struct BufferDesc
 
 	int			wait_backend_pgprocno;	/* backend of pin-count waiter */
 	int			freeNext;		/* link in freelist chain */
+
+	PgAioIoRef	io_in_progress;
+
 	LWLock		content_lock;	/* to lock access to buffer contents */
 } BufferDesc;
 
@@ -392,6 +396,20 @@ extern void IssuePendingWritebacks(WritebackContext *wb_context, IOContext io_co
 extern void ScheduleBufferTagForWriteback(WritebackContext *wb_context,
 										  IOContext io_context, BufferTag *tag);
 
+extern void ReadBufferPrepRead(PgAioInProgress *aio, Buffer buffer);
+extern void ReadBufferPrepWrite(PgAioInProgress *aio, Buffer buffer, bool release_lock);
+extern void ReadBufferCompleteRead(Buffer buffer, char *bufdata, int mode, bool failed);
+extern void ReadBufferCompleteRawRead(const AioBufferTag *tag, char *bufdata, bool failed);
+extern void ReadBufferCompleteWrite(Buffer buffer, bool release_lock, bool failed);
+
+extern Buffer AsyncGetVictimBuffer(BufferAccessStrategy strategy, XLogRecPtr *lsn,
+								   PgAioIoRef *aio_ref, bool *from_ring,
+								   IOContext io_context);
+extern bool AsyncFlushVictim(Buffer buffer, XLogRecPtr *lsn, PgAioIoRef *aio_ref,
+							 IOContext io_context);
+extern bool TryReuseBuffer(Buffer buffer, IOContext io_context);
+extern void OwnUnusedBuffer(Buffer buffer);
+
 /* freelist.c */
 extern IOContext IOContextForStrategy(BufferAccessStrategy strategy);
 extern BufferDesc *StrategyGetBuffer(BufferAccessStrategy strategy,
@@ -414,6 +432,12 @@ extern uint32 BufTableHashCode(BufferTag *tagPtr);
 extern int	BufTableLookup(BufferTag *tagPtr, uint32 hashcode);
 extern int	BufTableInsert(BufferTag *tagPtr, uint32 hashcode, int buf_id);
 extern void BufTableDelete(BufferTag *tagPtr, uint32 hashcode);
+
+/* in buf_reserve.c */
+
+extern BufferDesc *BufReserveGetFree(BufferAccessStrategy strategy, bool block,
+									 IOContext io_context);
+extern void BufReserveInit(void);
 
 /* localbuf.c */
 extern bool PinLocalBuffer(BufferDesc *buf_hdr, bool adjust_usagecount);

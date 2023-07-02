@@ -226,6 +226,8 @@ sub mkvcbuild
 		$postgres->RemoveFile('src/backend/libpq/be-gssapi-common.c');
 		$postgres->RemoveFile('src/backend/libpq/be-secure-gssapi.c');
 	}
+	$postgres->RemoveFile('src/backend/storage/aio/aio_uring.c');
+	$postgres->RemoveFile('src/backend/storage/aio/aio_posix.c');
 
 	my $snowball = $solution->AddProject('dict_snowball', 'dll', '',
 		'src/backend/snowball');

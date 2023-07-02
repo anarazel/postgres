@@ -12043,4 +12043,15 @@
   proname => 'any_value_transfn', prorettype => 'anyelement',
   proargtypes => 'anyelement anyelement', prosrc => 'any_value_transfn' },
 
+{ oid => '811', descr => 'AIO backend stats',
+  proname => 'pg_stat_get_aio_backends', procost => '1000', prorows => '20', proretset => 't',
+  provolatile => 'v', prorettype => 'record', proargtypes => '',
+  proallargtypes => '{int4,int8,int8,int8,int8,int8,int4,int4,int4,int4,int4,int4,int4}', proargmodes => '{o,o,o,o,o,o,o,o,o,o,o,o,o}',
+  proargnames => '{pid, executed_total_count, issued_total_count, submissions_total_count, foreign_completed_total_count, retry_total_count, inflight_count, unused_count, outstanding_count, pending_count, local_completed_count, foreign_completed_count,last_context}', prosrc => 'pg_stat_get_aio_backends' },
+
+{ oid => '812', descr => 'AIO stats',
+  proname => 'pg_stat_get_aios', procost => '1000', prorows => '20', proretset => 't',
+  provolatile => 'v', prorettype => 'record', proargtypes => '',
+  proallargtypes => '{int4,int8,text,text,text,int4,int4,int4,int4,text}', proargmodes => '{o,o,o,o,o,o,o,o,o,o}',
+  proargnames => '{id,gen,op,scb,flags,ring,owner_pid,merge_with,result,desc}', prosrc => 'pg_stat_get_aios' },
 ]

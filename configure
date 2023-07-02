@@ -651,6 +651,8 @@ LIBOBJS
 OPENSSL
 ZSTD
 LZ4
+LIBURING_LIBS
+LIBURING_CFLAGS
 UUID_LIBS
 LDAP_LIBS_BE
 LDAP_LIBS_FE
@@ -709,6 +711,8 @@ XML2_CFLAGS
 XML2_CONFIG
 with_libxml
 with_uuid
+with_posix_aio
+with_liburing
 with_readline
 with_systemd
 with_selinux
@@ -864,6 +868,8 @@ with_selinux
 with_systemd
 with_readline
 with_libedit_preferred
+with_liburing
+with_posix_aio
 with_uuid
 with_ossp_uuid
 with_libxml
@@ -906,6 +912,8 @@ LDFLAGS_EX
 LDFLAGS_SL
 PERL
 PYTHON
+LIBURING_CFLAGS
+LIBURING_LIBS
 MSGFMT
 TCLSH'
 
@@ -1575,6 +1583,8 @@ Optional Packages:
   --without-readline      do not use GNU Readline nor BSD Libedit for editing
   --with-libedit-preferred
                           prefer BSD Libedit over GNU Readline
+  --with-liburing         use liburing for async io
+  --with-posix-aio        use POSIX AIO for async io
   --with-uuid=LIB         build contrib/uuid-ossp using LIB (bsd,e2fs,ossp)
   --with-ossp-uuid        obsolete spelling of --with-uuid=ossp
   --with-libxml           build with XML support
@@ -1618,6 +1628,10 @@ Some influential environment variables:
   LDFLAGS_SL  extra linker flags for linking shared libraries only
   PERL        Perl program
   PYTHON      Python program
+  LIBURING_CFLAGS
+              C compiler flags for LIBURING, overriding pkg-config
+  LIBURING_LIBS
+              linker flags for LIBURING, overriding pkg-config
   MSGFMT      msgfmt program for NLS
   TCLSH       Tcl interpreter program (tclsh)
 
@@ -8969,6 +8983,75 @@ fi
 
 
 
+#
+# liburing
+#
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking whether to build with liburing support" >&5
+$as_echo_n "checking whether to build with liburing support... " >&6; }
+
+
+
+# Check whether --with-liburing was given.
+if test "${with_liburing+set}" = set; then :
+  withval=$with_liburing;
+  case $withval in
+    yes)
+
+$as_echo "#define USE_LIBURING 1" >>confdefs.h
+
+      ;;
+    no)
+      :
+      ;;
+    *)
+      as_fn_error $? "no argument expected for --with-liburing option" "$LINENO" 5
+      ;;
+  esac
+
+else
+  with_liburing=no
+
+fi
+
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $with_liburing" >&5
+$as_echo "$with_liburing" >&6; }
+
+
+#
+# POSIX AIO
+#
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking whether to build with POSIX AIO support" >&5
+$as_echo_n "checking whether to build with POSIX AIO support... " >&6; }
+
+
+
+# Check whether --with-posix-aio was given.
+if test "${with_posix_aio+set}" = set; then :
+  withval=$with_posix_aio;
+  case $withval in
+    yes)
+
+$as_echo "#define USE_POSIX_AIO 1" >>confdefs.h
+
+      ;;
+    no)
+      :
+      ;;
+    *)
+      as_fn_error $? "no argument expected for --with-posix-aio option" "$LINENO" 5
+      ;;
+  esac
+
+else
+  with_posix_aio=no
+
+fi
+
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $with_posix_aio" >&5
+$as_echo "$with_posix_aio" >&6; }
+
 
 #
 # UUID library
@@ -13655,6 +13738,99 @@ fi
 fi
 
 
+if test "$with_liburing" = yes; then
+
+pkg_failed=no
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for liburing" >&5
+$as_echo_n "checking for liburing... " >&6; }
+
+if test -n "$LIBURING_CFLAGS"; then
+    pkg_cv_LIBURING_CFLAGS="$LIBURING_CFLAGS"
+ elif test -n "$PKG_CONFIG"; then
+    if test -n "$PKG_CONFIG" && \
+    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"liburing\""; } >&5
+  ($PKG_CONFIG --exists --print-errors "liburing") 2>&5
+  ac_status=$?
+  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
+  test $ac_status = 0; }; then
+  pkg_cv_LIBURING_CFLAGS=`$PKG_CONFIG --cflags "liburing" 2>/dev/null`
+		      test "x$?" != "x0" && pkg_failed=yes
+else
+  pkg_failed=yes
+fi
+ else
+    pkg_failed=untried
+fi
+if test -n "$LIBURING_LIBS"; then
+    pkg_cv_LIBURING_LIBS="$LIBURING_LIBS"
+ elif test -n "$PKG_CONFIG"; then
+    if test -n "$PKG_CONFIG" && \
+    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"liburing\""; } >&5
+  ($PKG_CONFIG --exists --print-errors "liburing") 2>&5
+  ac_status=$?
+  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
+  test $ac_status = 0; }; then
+  pkg_cv_LIBURING_LIBS=`$PKG_CONFIG --libs "liburing" 2>/dev/null`
+		      test "x$?" != "x0" && pkg_failed=yes
+else
+  pkg_failed=yes
+fi
+ else
+    pkg_failed=untried
+fi
+
+
+
+if test $pkg_failed = yes; then
+        { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+
+if $PKG_CONFIG --atleast-pkgconfig-version 0.20; then
+        _pkg_short_errors_supported=yes
+else
+        _pkg_short_errors_supported=no
+fi
+        if test $_pkg_short_errors_supported = yes; then
+	        LIBURING_PKG_ERRORS=`$PKG_CONFIG --short-errors --print-errors --cflags --libs "liburing" 2>&1`
+        else
+	        LIBURING_PKG_ERRORS=`$PKG_CONFIG --print-errors --cflags --libs "liburing" 2>&1`
+        fi
+	# Put the nasty error message in config.log where it belongs
+	echo "$LIBURING_PKG_ERRORS" >&5
+
+	as_fn_error $? "Package requirements (liburing) were not met:
+
+$LIBURING_PKG_ERRORS
+
+Consider adjusting the PKG_CONFIG_PATH environment variable if you
+installed software in a non-standard prefix.
+
+Alternatively, you may set the environment variables LIBURING_CFLAGS
+and LIBURING_LIBS to avoid the need to call pkg-config.
+See the pkg-config man page for more details." "$LINENO" 5
+elif test $pkg_failed = untried; then
+        { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+	{ { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
+$as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
+as_fn_error $? "The pkg-config script could not be found or is too old.  Make sure it
+is in your PATH or set the PKG_CONFIG environment variable to the full
+path to pkg-config.
+
+Alternatively, you may set the environment variables LIBURING_CFLAGS
+and LIBURING_LIBS to avoid the need to call pkg-config.
+See the pkg-config man page for more details.
+
+To get pkg-config, see <http://pkg-config.freedesktop.org/>.
+See \`config.log' for more details" "$LINENO" 5; }
+else
+	LIBURING_CFLAGS=$pkg_cv_LIBURING_CFLAGS
+	LIBURING_LIBS=$pkg_cv_LIBURING_LIBS
+        { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+$as_echo "yes" >&6; }
+
+fi
+fi
 
 ##
 ## Header files
@@ -15700,7 +15876,7 @@ fi
 LIBS_including_readline="$LIBS"
 LIBS=`echo "$LIBS" | sed -e 's/-ledit//g' -e 's/-lreadline//g'`
 
-for ac_func in backtrace_symbols copyfile getifaddrs getpeerucred inet_pton kqueue mbstowcs_l memset_s posix_fallocate ppoll pthread_is_threaded_np setproctitle setproctitle_fast strchrnul strsignal syncfs sync_file_range uselocale wcstombs_l
+for ac_func in aio_waitcomplete aio_waitn backtrace_symbols copyfile getifaddrs getpeerucred inet_pton kqueue mbstowcs_l memset_s posix_fallocate ppoll pthread_is_threaded_np setproctitle setproctitle_fast strchrnul strsignal syncfs sync_file_range uselocale wcstombs_l
 do :
   as_ac_var=`$as_echo "ac_cv_func_$ac_func" | $as_tr_sh`
 ac_fn_c_check_func "$LINENO" "$ac_func" "$as_ac_var"

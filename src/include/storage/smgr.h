@@ -98,15 +98,26 @@ extern bool smgrprefetch(SMgrRelation reln, ForkNumber forknum,
 						 BlockNumber blocknum);
 extern void smgrread(SMgrRelation reln, ForkNumber forknum,
 					 BlockNumber blocknum, void *buffer);
+struct PgAioInProgress;
+extern void smgrstartread(struct PgAioInProgress* io,
+						  SMgrRelation reln, ForkNumber forknum,
+						  BlockNumber blocknum, void *buffer);
+extern void smgrstartwrite(struct PgAioInProgress* io,
+						   SMgrRelation reln, ForkNumber forknum,
+						   BlockNumber blocknum, void *buffer, bool skipFsync);
 extern void smgrwrite(SMgrRelation reln, ForkNumber forknum,
 					  BlockNumber blocknum, const void *buffer, bool skipFsync);
 extern void smgrwriteback(SMgrRelation reln, ForkNumber forknum,
 						  BlockNumber blocknum, BlockNumber nblocks);
+extern BlockNumber smgrstartwriteback(struct PgAioInProgress* io, SMgrRelation reln,
+									  ForkNumber forknum, BlockNumber blocknum,
+									  BlockNumber nblocks);
 extern BlockNumber smgrnblocks(SMgrRelation reln, ForkNumber forknum);
 extern BlockNumber smgrnblocks_cached(SMgrRelation reln, ForkNumber forknum);
 extern void smgrtruncate(SMgrRelation reln, ForkNumber *forknum,
 						 int nforks, BlockNumber *nblocks);
 extern void smgrimmedsync(SMgrRelation reln, ForkNumber forknum);
+extern int smgrfd(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum, uint32 *off);
 extern void AtEOXact_SMgr(void);
 extern bool ProcessBarrierSmgrRelease(void);
 

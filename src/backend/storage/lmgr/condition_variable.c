@@ -186,10 +186,7 @@ ConditionVariableTimedSleep(ConditionVariable *cv, long timeout,
 		 */
 		SpinLockAcquire(&cv->mutex);
 		if (!proclist_contains(&cv->wakeup, MyProc->pgprocno, cvWaitLink))
-		{
-			done = true;
 			proclist_push_tail(&cv->wakeup, MyProc->pgprocno, cvWaitLink);
-		}
 		SpinLockRelease(&cv->mutex);
 
 		/*

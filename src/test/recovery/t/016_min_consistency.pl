@@ -53,6 +53,10 @@ $primary->init(allows_streaming => 1);
 # processes than the checkpointer doing page flushes.
 $primary->append_conf("postgresql.conf", <<EOF);
 shared_buffers = 128kB
+max_connections=2
+superuser_reserved_connections=0
+max_wal_senders=2
+max_worker_processes=0
 autovacuum = off
 EOF
 
