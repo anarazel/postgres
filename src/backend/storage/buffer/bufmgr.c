@@ -1274,6 +1274,8 @@ ReadBuffer_common(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 	Buffer		buf;
 	IOContext	io_context;
 
+	*hit = false;
+
 	/*
 	 * Backward compatibility path, most code should use ExtendBufferedRel()
 	 * instead, as acquiring the extension lock inside ExtendBufferedRel()
