@@ -86,12 +86,16 @@ pg_strdup(const char *in)
 {
 	char	   *tmp;
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnonnull-compare"
 	if (!in)
 	{
 		fprintf(stderr,
 				_("cannot duplicate null pointer (internal error)\n"));
 		exit(EXIT_FAILURE);
 	}
+#pragma GCC diagnostic pop
+
 	tmp = strdup(in);
 	if (!tmp)
 	{
@@ -147,12 +151,15 @@ pnstrdup(const char *in, Size size)
 	char	   *tmp;
 	int			len;
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnonnull-compare"
 	if (!in)
 	{
 		fprintf(stderr,
 				_("cannot duplicate null pointer (internal error)\n"));
 		exit(EXIT_FAILURE);
 	}
+#pragma GCC diagnostic pop
 
 	len = strnlen(in, size);
 	tmp = malloc(len + 1);

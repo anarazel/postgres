@@ -37,6 +37,7 @@ struct sqlda_struct
 	short		sqln;
 	short		sqld;
 	struct sqlda_struct *desc_next;
+	__attribute__((strict_flex_array(0)))
 	struct sqlvar_struct sqlvar[1];
 };
 

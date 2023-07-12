@@ -537,7 +537,7 @@ rewriteRuleAction(Query *parsetree,
 						 errmsg("conditional UNION/INTERSECT/EXCEPT statements are not implemented")));
 
 			sub_action->jointree->fromlist =
-				list_concat(newjointree, sub_action->jointree->fromlist);
+				list_concat(sub_action->jointree->fromlist, newjointree);
 
 			/*
 			 * There could have been some SubLinks in newjointree, in which

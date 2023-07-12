@@ -187,7 +187,7 @@ extern int	appendStringInfoVA(StringInfo str, const char *fmt, va_list args) pg_
  * Append a null-terminated string to str.
  * Like appendStringInfo(str, "%s", s) but faster.
  */
-extern void appendStringInfoString(StringInfo str, const char *s);
+extern void appendStringInfoString(StringInfo str, const char *s) __attribute__((access (read_only, 2)));
 
 /*------------------------
  * appendStringInfoChar
@@ -218,7 +218,7 @@ extern void appendStringInfoSpaces(StringInfo str, int count);
  * if necessary.
  */
 extern void appendBinaryStringInfo(StringInfo str,
-								   const void *data, int datalen);
+								   const void *data, int datalen) __attribute__((access (read_only, 2, 3)));
 
 /*------------------------
  * appendBinaryStringInfoNT
@@ -226,7 +226,7 @@ extern void appendBinaryStringInfo(StringInfo str,
  * if necessary. Does not ensure a trailing null-byte exists.
  */
 extern void appendBinaryStringInfoNT(StringInfo str,
-									 const void *data, int datalen);
+									 const void *data, int datalen) __attribute__((access (read_only, 2, 3)));
 
 /*------------------------
  * enlargeStringInfo

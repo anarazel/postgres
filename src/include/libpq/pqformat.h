@@ -191,7 +191,7 @@ pq_sendint(StringInfo buf, uint32 i, int b)
 extern void pq_begintypsend(StringInfo buf);
 extern bytea *pq_endtypsend(StringInfo buf);
 
-extern void pq_puttextmessage(char msgtype, const char *str);
+extern void pq_puttextmessage(char msgtype, const char *str) __attribute__((access (read_only, 2)));
 extern void pq_putemptymessage(char msgtype);
 
 extern int	pq_getmsgbyte(StringInfo msg);
@@ -200,8 +200,8 @@ extern int64 pq_getmsgint64(StringInfo msg);
 extern float4 pq_getmsgfloat4(StringInfo msg);
 extern float8 pq_getmsgfloat8(StringInfo msg);
 extern const char *pq_getmsgbytes(StringInfo msg, int datalen);
-extern void pq_copymsgbytes(StringInfo msg, char *buf, int datalen);
-extern char *pq_getmsgtext(StringInfo msg, int rawbytes, int *nbytes);
+extern void pq_copymsgbytes(StringInfo msg, char *buf, int datalen) __attribute__((access (write_only, 2, 3)));
+extern char *pq_getmsgtext(StringInfo msg, int rawbytes, int *nbytes) __attribute__((access (write_only, 3)));
 extern const char *pq_getmsgstring(StringInfo msg);
 extern const char *pq_getmsgrawstring(StringInfo msg);
 extern void pq_getmsgend(StringInfo msg);

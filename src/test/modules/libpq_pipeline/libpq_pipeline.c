@@ -1892,7 +1892,7 @@ test_transaction(PGconn *conn)
 		if (num_syncs <= 0)
 			break;
 	}
-	if (PQgetResult(conn) != NULL)
+	if ((res = PQgetResult(conn)) != NULL)
 		pg_fatal("returned something extra after all the syncs: %s",
 				 PQresStatus(PQresultStatus(res)));
 
