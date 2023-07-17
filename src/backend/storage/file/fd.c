@@ -188,7 +188,6 @@ bool		io_data_force_async = 1;
 #define FileIsValid(file) \
 	((file) > 0 && (file) < (int) SizeVfdCache && VfdCache[file].fileName != NULL)
 
-#define FileIsNotOpen(file) (VfdCache[file].fd == VFD_CLOSED)
 
 /* these are the assigned bits in fdstate below: */
 #define FD_DELETE_AT_CLOSE	(1 << 0)	/* T = delete when closed */
@@ -350,6 +349,7 @@ static void ReleaseLruFiles(void);
 static File AllocateVfd(void);
 static void FreeVfd(File file);
 
+static bool	FileIsNotOpen(File file, bool can_be_invalid);
 static int	FileAccess(File file);
 static File OpenTemporaryFileInTablespace(Oid tblspcOid, bool rejectError);
 static bool reserveAllocatedDesc(void);
@@ -1321,7 +1321,7 @@ LruInsert(File file)
 
 	vfdP = &VfdCache[file];
 
-	if (FileIsNotOpen(file))
+	if (FileIsNotOpen(file, false))
 	{
 		/* Close excess kernel FDs. */
 		ReleaseLruFiles();
@@ -1465,6 +1465,39 @@ FreeVfd(File file)
 	VfdCache[0].nextFree = file;
 }
 
+static bool
+FileIsNotOpen(File file, bool may_be_invalid)
+{
+	bool is_closed = VfdCache[file].fd == VFD_CLOSED;
+
+	if (!is_closed && !may_be_invalid)
+	{
+		struct stat statbuf_fd;
+		struct stat statbuf_fname;
+		int ret;
+
+		ret = fstat(VfdCache[file].fd, &statbuf_fd);
+		if (ret != 0)
+			elog(PANIC, "fstat() failed: %m");
+
+		ret = stat(VfdCache[file].fileName, &statbuf_fname);
+		if (ret != 0)
+			elog(PANIC, "stat(%s) failed: %m", VfdCache[file].fileName);
+
+		if (statbuf_fd.st_ino != statbuf_fname.st_ino)
+		{
+			elog(PANIC, "operating on unlinked file \"%s\": inode fd: %llu inode fname: %llu, size: %llu vs %llu",
+				 VfdCache[file].fileName,
+				 (long long unsigned) statbuf_fd.st_ino,
+				 (long long unsigned) statbuf_fname.st_ino,
+				 (long long unsigned) statbuf_fd.st_size,
+				 (long long unsigned) statbuf_fname.st_size);
+		}
+	}
+
+	return is_closed;
+}
+
 /* returns 0 on success, -1 on re-open failure (with errno set) */
 static int
 FileAccess(File file)
@@ -1479,7 +1512,7 @@ FileAccess(File file)
 	 * ring (possibly closing the least recently used file to get an FD).
 	 */
 
-	if (FileIsNotOpen(file))
+	if (FileIsNotOpen(file, false))
 	{
 		returnValue = LruInsert(file);
 		if (returnValue != 0)
@@ -1540,7 +1573,7 @@ void
 FileInvalidate(File file)
 {
 	Assert(FileIsValid(file));
-	if (!FileIsNotOpen(file))
+	if (!FileIsNotOpen(file, true))
 		LruDelete(file);
 }
 #endif
@@ -1964,7 +1997,7 @@ FileClose(File file)
 
 	vfdP = &VfdCache[file];
 
-	if (!FileIsNotOpen(file))
+	if (!FileIsNotOpen(file, true))
 	{
 		pgaio_closing_possibly_referenced();
 		pgaio_closing_fd(vfdP->fd);
@@ -2483,7 +2516,7 @@ FileSize(File file)
 	DO_DB(elog(LOG, "FileSize %d (%s)",
 			   file, VfdCache[file].fileName));
 
-	if (FileIsNotOpen(file))
+	if (FileIsNotOpen(file, false))
 	{
 		if (FileAccess(file) < 0)
 			return (off_t) -1;
@@ -3102,10 +3135,10 @@ closeAllVfds(void)
 
 	if (SizeVfdCache > 0)
 	{
-		Assert(FileIsNotOpen(0));	/* Make sure ring not corrupted */
+		Assert(FileIsNotOpen(0, true));	/* Make sure ring not corrupted */
 		for (i = 1; i < SizeVfdCache; i++)
 		{
-			if (!FileIsNotOpen(i))
+			if (!FileIsNotOpen(i, true))
 				LruDelete(i);
 		}
 	}
@@ -3288,7 +3321,7 @@ CleanupTempFiles(bool isCommit, bool isProcExit)
 	 */
 	if (isProcExit || have_xact_temporary_files)
 	{
-		Assert(FileIsNotOpen(0));	/* Make sure ring not corrupted */
+		Assert(FileIsNotOpen(0, true));	/* Make sure ring not corrupted */
 		for (i = 1; i < SizeVfdCache; i++)
 		{
 			unsigned short fdstate = VfdCache[i].fdstate;
