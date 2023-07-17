@@ -1478,11 +1478,17 @@ FileIsNotOpen(File file, bool may_be_invalid)
 
 		ret = fstat(VfdCache[file].fd, &statbuf_fd);
 		if (ret != 0)
-			elog(PANIC, "fstat() failed: %m");
+		{
+			elog(WARNING, "fstat() failed: %m");
+			goto out;
+		}
 
 		ret = stat(VfdCache[file].fileName, &statbuf_fname);
 		if (ret != 0)
-			elog(PANIC, "stat(%s) failed: %m", VfdCache[file].fileName);
+		{
+			elog(WARNING, "stat(%s) failed: %m", VfdCache[file].fileName);
+			goto out;
+		}
 
 		if (statbuf_fd.st_ino != statbuf_fname.st_ino)
 		{
@@ -1495,6 +1501,7 @@ FileIsNotOpen(File file, bool may_be_invalid)
 		}
 	}
 
+out:
 	return is_closed;
 }
 
