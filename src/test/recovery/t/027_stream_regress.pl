@@ -13,7 +13,11 @@ $node_primary->init(allows_streaming => 1);
 # Increase some settings that Cluster->new makes too low by default.
 $node_primary->adjust_conf('postgresql.conf', 'max_connections', '25');
 $node_primary->append_conf('postgresql.conf',
-	'max_prepared_transactions = 10');
+						   qq{
+max_prepared_transactions = 10
+send_abort_for_crash = true
+send_abort_for_kill = true
+});
 
 # Enable pg_stat_statements to force tests to do query jumbling.
 # pg_stat_statements.max should be large enough to hold all the entries

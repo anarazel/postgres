@@ -385,7 +385,7 @@ task:
       test_world_script: |
         su postgres <<-EOF
           ulimit -c unlimited # default is 0
-          make -s ${CHECK} ${CHECKFLAGS} -j${TEST_JOBS}
+          timeout -v --kill-after=1m 20m make -s ${CHECK} ${CHECKFLAGS} -j${TEST_JOBS}
         EOF
 
       on_failure:

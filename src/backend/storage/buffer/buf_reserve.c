@@ -401,10 +401,13 @@ BufferDesc *
 BufReserveGetFree(BufferAccessStrategy strategy, bool block, IOContext io_context)
 {
 	BufferDesc *ret = NULL;
-	static int recursion = 0;
+	volatile static int recursion = 0;
 
 	Assert(recursion == 0);
 	recursion++;
+
+	PG_TRY();
+	{
 
 	while (true)
 	{
@@ -458,7 +461,13 @@ BufReserveGetFree(BufferAccessStrategy strategy, bool block, IOContext io_contex
 		CheckBufferIsPinnedOnce(BufferDescriptorGetBuffer(ret));
 	}
 
-	recursion--;
+	}
+	PG_FINALLY();
+	{
+		recursion--;
+	}
+	PG_END_TRY();
+
 	return ret;
 }
 
