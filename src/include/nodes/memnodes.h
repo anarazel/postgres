@@ -57,10 +57,10 @@ typedef void (*MemoryStatsPrintFunc) (MemoryContext context, void *passthru,
 
 typedef struct MemoryContextMethods
 {
-	void	   *(*alloc) (MemoryContext context, Size size);
+	void	   *(*alloc) (MemoryContext context, Size size, int flags);
 	/* call this free_p in case someone #define's free() */
 	void		(*free_p) (void *pointer);
-	void	   *(*realloc) (void *pointer, Size size);
+	void	   *(*realloc) (void *pointer, Size size, int flags);
 	void		(*reset) (MemoryContext context);
 	void		(*delete_context) (MemoryContext context);
 	MemoryContext (*get_chunk_context) (void *pointer);

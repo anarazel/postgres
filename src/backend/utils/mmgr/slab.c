@@ -496,13 +496,19 @@ SlabDelete(MemoryContext context)
  *		request could not be completed; memory is added to the slab.
  */
 void *
-SlabAlloc(MemoryContext context, Size size)
+SlabAlloc(MemoryContext context, Size size, int flags)
 {
 	SlabContext *slab = (SlabContext *) context;
 	SlabBlock  *block;
 	MemoryChunk *chunk;
 
 	Assert(SlabIsValid(slab));
+
+	/*
+	 * XXX: Probably no need to check for huge allocations, we only support
+	 * one size? Which could theoretically be huge, but that'd not make
+	 * sense...
+	 */
 
 	/* sanity check that this is pointing to a valid blocklist */
 	Assert(slab->curBlocklistIndex >= 0);
@@ -546,7 +552,7 @@ SlabAlloc(MemoryContext context, Size size)
 			block = (SlabBlock *) malloc(slab->blockSize);
 
 			if (unlikely(block == NULL))
-				return NULL;
+				return MemoryContextAllocationFailure(context, size, flags);
 
 			block->slab = slab;
 			context->mem_allocated += slab->blockSize;
@@ -770,7 +776,7 @@ SlabFree(void *pointer)
  * realloc is usually used to enlarge the chunk.
  */
 void *
-SlabRealloc(void *pointer, Size size)
+SlabRealloc(void *pointer, Size size, int flags)
 {
 	MemoryChunk *chunk = PointerGetMemoryChunk(pointer);
 	SlabBlock  *block;

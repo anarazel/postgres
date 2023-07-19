@@ -342,7 +342,7 @@ GenerationDelete(MemoryContext context)
  * return space that is marked NOACCESS - GenerationRealloc has to beware!
  */
 void *
-GenerationAlloc(MemoryContext context, Size size)
+GenerationAlloc(MemoryContext context, Size size, int flags)
 {
 	GenerationContext *set = (GenerationContext *) context;
 	GenerationBlock *block;
@@ -365,9 +365,11 @@ GenerationAlloc(MemoryContext context, Size size)
 	{
 		Size		blksize = required_size + Generation_BLOCKHDRSZ;
 
+		MemoryContextCheckSize((MemoryContext) set, size, flags);
+
 		block = (GenerationBlock *) malloc(blksize);
 		if (block == NULL)
-			return NULL;
+			return MemoryContextAllocationFailure(context, size, flags);
 
 		context->mem_allocated += blksize;
 
@@ -470,7 +472,7 @@ GenerationAlloc(MemoryContext context, Size size)
 			block = (GenerationBlock *) malloc(blksize);
 
 			if (block == NULL)
-				return NULL;
+				return MemoryContextAllocationFailure(context, size, flags);
 
 			context->mem_allocated += blksize;
 
@@ -735,7 +737,7 @@ GenerationFree(void *pointer)
  *		into the old chunk - in that case we just update chunk header.
  */
 void *
-GenerationRealloc(void *pointer, Size size)
+GenerationRealloc(void *pointer, Size size, int flags)
 {
 	MemoryChunk *chunk = PointerGetMemoryChunk(pointer);
 	GenerationContext *set;
@@ -838,14 +840,14 @@ GenerationRealloc(void *pointer, Size size)
 	}
 
 	/* allocate new chunk */
-	newPointer = GenerationAlloc((MemoryContext) set, size);
+	newPointer = GenerationAlloc((MemoryContext) set, size, flags);
 
 	/* leave immediately if request was not completed */
 	if (newPointer == NULL)
 	{
 		/* Disallow access to the chunk header. */
 		VALGRIND_MAKE_MEM_NOACCESS(chunk, Generation_CHUNKHDRSZ);
-		return NULL;
+		return MemoryContextAllocationFailure((MemoryContext) set, size, flags);
 	}
 
 	/*
