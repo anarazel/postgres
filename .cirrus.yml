@@ -27,6 +27,10 @@ env:
   TEMP_CONFIG: ${CIRRUS_WORKING_DIR}/src/tools/ci/pg_ci_base.conf
   PG_TEST_EXTRA: kerberos ldap ssl load_balance
 
+  # default variables to use in local meson installations
+  MESON_REPO: https://github.com/mesonbuild/meson.git
+  MESON_BRANCH: master
+
 
 # What files to preserve in case tests fail
 on_failure_ac: &on_failure_ac
@@ -94,6 +98,9 @@ task:
     # to / normally. Change that.
     chown root:postgres /
     chmod g+rwx /
+
+  install_meson_and_rebase_script: |
+    bash src/tools/ci/install_meson_and_rebase.sh
 
   configure_script: |
     su postgres <<-EOF
@@ -173,6 +180,9 @@ task:
     sysctl kern.corefile='/tmp/cores/%N.%P.core'
   setup_additional_packages_script: |
     #pkg install -y ...
+
+  install_meson_and_rebase_script: |
+    bash src/tools/ci/install_meson_and_rebase.sh
 
   # NB: Intentionally build without -Dllvm. The freebsd image size is already
   # large enough to make VM startup slow, and even without llvm freebsd
@@ -360,6 +370,9 @@ task:
         CCACHE_MAXSIZE: "400M" # tests two different builds
         SANITIZER_FLAGS: -fsanitize=alignment,undefined
 
+      install_meson_and_rebase_script: |
+        bash src/tools/ci/install_meson_and_rebase.sh
+
       configure_script: |
         su postgres <<-EOF
           meson setup \
@@ -485,6 +498,9 @@ task:
     brew cleanup -s # to reduce cache size
   upload_caches: homebrew
 
+  install_meson_and_rebase_script: |
+    bash src/tools/ci/install_meson_and_rebase.sh
+
   ccache_cache:
     folder: $CCACHE_DIR
   configure_script: |
@@ -578,6 +594,9 @@ task:
     echo 127.0.0.3 pg-loadbalancetest >> c:\Windows\System32\Drivers\etc\hosts
     type c:\Windows\System32\Drivers\etc\hosts
 
+  install_meson_and_rebase_script: |
+    bash src/tools/ci/install_meson_and_rebase.sh
+
   # Use /DEBUG:FASTLINK to avoid high memory usage during linking
   configure_script: |
     vcvarsall x64
@@ -642,6 +661,9 @@ task:
     %BASH% -c "gcc --version"
     %BASH% -c "where perl"
     %BASH% -c "perl --version"
+
+  install_meson_and_rebase_script: |
+    %BASH% src/tools/ci/install_meson_and_rebase.sh
 
   # disable -Dnls as the number of files it creates cause a noticable slowdown
   configure_script: |
