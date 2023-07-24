@@ -1,0 +1,58 @@
+#!/bin/bash
+
+#DATADIR_MASTER=/mnt/raid-nvme/data-master/
+#DATADIR_PATCHED=/mnt/raid-nvme/data-patched/
+
+DATADIR_MASTER=/home/user/tmp/data-master/
+DATADIR_PATCHED=/home/user/tmp/data-patched/
+
+PORT_MASTER=6001
+PORT_PATCHED=6002
+
+OUTDIR=$(date +%Y%m%d-%H%M%S)
+
+for iom in sync worker io_uring; do
+
+	mkdir -p $OUTDIR/validate/$iom
+
+	echo "io_method = $iom" >> $DATADIR_MASTER/postgresql.conf
+	echo "io_method = $iom" >> $DATADIR_PATCHED/postgresql.conf
+
+	pg_ctl -D $DATADIR_MASTER -l $OUTDIR/validate/$iom/pg-master.log restart
+	pg_ctl -D $DATADIR_PATCHED -l $OUTDIR/validate/$iom/pg-patched.log restart
+
+	psql -p $PORT_MASTER postgres -c "select * from pg_settings" > $OUTDIR/validate/$iom/settings-master.log 2>&1
+	psql -p $PORT_PATCHED postgres -c "select * from pg_settings" > $OUTDIR/validate/$iom/settings-patched.log 2>&1
+
+	for s in int_int int_numeric numeric_int numeric_numeric improvements fat_skinny fat_skinny_backwards; do
+		./run_perf_validation $OUTDIR/validate/$iom $s $iom > $OUTDIR/validate/$iom/$s.log 2>&1
+	done
+
+	./run_multirange_perf_validation $OUTDIR/validate/$iom $iom > $OUTDIR/validate/$iom/run_multirange_perf_validation.txt 2>&1
+
+done
+
+for rows in 100000 1000000 10000000; do
+
+	for iom in sync worker io_uring; do
+
+		mkdir -p $OUTDIR/perf/$iom
+
+		echo "io_method = $iom" >> $DATADIR_MASTER/postgresql.conf
+		echo "io_method = $iom" >> $DATADIR_PATCHED/postgresql.conf
+
+		pg_ctl -D $DATADIR_MASTER -l $OUTDIR/perf/$iom/pg-master.$rows.log restart
+		pg_ctl -D $DATADIR_PATCHED -l $OUTDIR/perf/$iom/pg-patched.$rows.log restart
+
+		psql -p $PORT_MASTER postgres -c "select * from pg_settings" > $OUTDIR/perf/$iom/settings-master.$rows.log 2>&1
+		psql -p $PORT_PATCHED postgres -c "select * from pg_settings" > $OUTDIR/perf/$iom/settings-patched.$rows.log 2>&1
+
+		export PGPORT=$PORT_MASTER
+		./run-perf.sh $OUTDIR/perf/$iom master $rows $iom > $OUTDIR/master.$rows.log 2>&1
+
+		export PGPORT=$PORT_PATCHED
+		./run-perf.sh $OUTDIR/perf/$iom patched $rows $iom > $OUTDIR/patched.$rows.log 2>&1
+
+	done
+
+done

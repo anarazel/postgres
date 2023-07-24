@@ -1,0 +1,926 @@
+set enable_seqscan = off;
+set max_parallel_workers_per_gather=0;
+set vacuum_freeze_min_age = 0;
+set cursor_tuple_fraction=1.000;
+set client_min_messages=error;
+-- set skipscan_skipsupport_enabled=false;
+set vacuum_freeze_min_age = 0;
+set cursor_tuple_fraction=1.000;
+create extension if not exists pageinspect; -- just to have it
+create extension if not exists pg_buffercache; -- to evict data when needed
+-- set statement_timeout='4s';
+reset client_min_messages;
+
+-- Set log_btree_verbosity to 1 without depending on having that patch
+-- applied (HACK, just sets commit_siblings instead when we don't have that
+-- patch available):
+select set_config((select coalesce((select name from pg_settings where name = 'log_btree_verbosity'), 'commit_siblings')), '1', false);
+set client_min_messages=debug1;
+
+--
+-- HASH_INDEX
+--
+
+-- directory paths are passed to us in environment variables
+\getenv abs_srcdir PG_ABS_SRCDIR
+
+set client_min_messages=error;
+drop table if exists hash_i4_heap;
+drop table if exists hash_name_heap;
+drop table if exists hash_txt_heap;
+drop table if exists hash_f8_heap;
+drop table if exists hash_split_heap;
+reset client_min_messages;
+
+CREATE TABLE hash_i4_heap (
+	seqno 		int4,
+	random 		int4
+);
+
+CREATE TABLE hash_name_heap (
+	seqno 		int4,
+	random 		name
+);
+
+CREATE TABLE hash_txt_heap (
+	seqno 		int4,
+	random 		text
+);
+
+CREATE TABLE hash_f8_heap (
+	seqno		int4,
+	random 		float8
+);
+
+\set filename :abs_srcdir '/data/hash.data'
+COPY hash_i4_heap FROM :'filename';
+COPY hash_name_heap FROM :'filename';
+COPY hash_txt_heap FROM :'filename';
+COPY hash_f8_heap FROM :'filename';
+
+-- the data in this file has a lot of duplicates in the index key
+-- fields, leading to long bucket chains and lots of table expansion.
+-- this is therefore a stress test of the bucket overflow code (unlike
+-- the data in hash.data, which has unique index keys).
+--
+-- \set filename :abs_srcdir '/data/hashovfl.data'
+-- COPY hash_ovfl_heap FROM :'filename';
+
+ANALYZE hash_i4_heap;
+ANALYZE hash_name_heap;
+ANALYZE hash_txt_heap;
+ANALYZE hash_f8_heap;
+
+CREATE INDEX hash_i4_index ON hash_i4_heap USING hash (random int4_ops);
+
+CREATE INDEX hash_name_index ON hash_name_heap USING hash (random name_ops);
+
+CREATE INDEX hash_txt_index ON hash_txt_heap USING hash (random text_ops);
+
+CREATE INDEX hash_f8_index ON hash_f8_heap USING hash (random float8_ops)
+  WITH (fillfactor=60);
+
+CREATE INDEX hash_i4_partial_index ON hash_i4_heap USING hash (seqno)
+  WHERE seqno = 9999;
+
+--
+-- Also try building functional, expressional, and partial indexes on
+-- tables that already contain data.
+--
+create unique index hash_f8_index_1 on hash_f8_heap(abs(random));
+create unique index hash_f8_index_2 on hash_f8_heap((seqno + 1), random);
+create unique index hash_f8_index_3 on hash_f8_heap(random) where seqno > 1000;
+
+--
+-- hash index
+-- grep 843938989 hash.data
+--
+SELECT * FROM hash_i4_heap
+   WHERE hash_i4_heap.random = 843938989;
+
+--
+-- hash index
+-- grep 66766766 hash.data
+--
+SELECT * FROM hash_i4_heap
+   WHERE hash_i4_heap.random = 66766766;
+
+--
+-- hash index
+-- grep 1505703298 hash.data
+--
+SELECT * FROM hash_name_heap
+   WHERE hash_name_heap.random = '1505703298'::name;
+
+--
+-- hash index
+-- grep 7777777 hash.data
+--
+SELECT * FROM hash_name_heap
+   WHERE hash_name_heap.random = '7777777'::name;
+
+--
+-- hash index
+-- grep 1351610853 hash.data
+--
+SELECT * FROM hash_txt_heap
+   WHERE hash_txt_heap.random = '1351610853'::text;
+
+--
+-- hash index
+-- grep 111111112222222233333333 hash.data
+--
+SELECT * FROM hash_txt_heap
+   WHERE hash_txt_heap.random = '111111112222222233333333'::text;
+
+--
+-- hash index
+-- grep 444705537 hash.data
+--
+SELECT * FROM hash_f8_heap
+   WHERE hash_f8_heap.random = '444705537'::float8;
+
+--
+-- hash index
+-- grep 88888888 hash.data
+--
+SELECT * FROM hash_f8_heap
+   WHERE hash_f8_heap.random = '88888888'::float8;
+
+--
+-- partial hash index
+--
+EXPLAIN (COSTS OFF)
+SELECT * FROM hash_i4_heap
+   WHERE seqno = 9999;
+
+SELECT * FROM hash_i4_heap
+   WHERE seqno = 9999;
+
+--
+-- hash index
+-- grep '^90[^0-9]' hashovfl.data
+--
+-- SELECT count(*) AS i988 FROM hash_ovfl_heap
+--    WHERE x = 90;
+
+--
+-- hash index
+-- grep '^1000[^0-9]' hashovfl.data
+--
+-- SELECT count(*) AS i0 FROM hash_ovfl_heap
+--    WHERE x = 1000;
+
+--
+-- HASH
+--
+UPDATE hash_i4_heap
+   SET random = 1
+   WHERE hash_i4_heap.seqno = 1492;
+
+SELECT h.seqno AS i1492, h.random AS i1
+   FROM hash_i4_heap h
+   WHERE h.random = 1;
+
+UPDATE hash_i4_heap
+   SET seqno = 20000
+   WHERE hash_i4_heap.random = 1492795354;
+
+SELECT h.seqno AS i20000
+   FROM hash_i4_heap h
+   WHERE h.random = 1492795354;
+
+UPDATE hash_name_heap
+   SET random = '0123456789abcdef'::name
+   WHERE hash_name_heap.seqno = 6543;
+
+SELECT h.seqno AS i6543, h.random AS c0_to_f
+   FROM hash_name_heap h
+   WHERE h.random = '0123456789abcdef'::name;
+
+UPDATE hash_name_heap
+   SET seqno = 20000
+   WHERE hash_name_heap.random = '76652222'::name;
+
+--
+-- this is the row we just replaced; index scan should return zero rows
+--
+SELECT h.seqno AS emptyset
+   FROM hash_name_heap h
+   WHERE h.random = '76652222'::name;
+
+UPDATE hash_txt_heap
+   SET random = '0123456789abcdefghijklmnop'::text
+   WHERE hash_txt_heap.seqno = 4002;
+
+SELECT h.seqno AS i4002, h.random AS c0_to_p
+   FROM hash_txt_heap h
+   WHERE h.random = '0123456789abcdefghijklmnop'::text;
+
+UPDATE hash_txt_heap
+   SET seqno = 20000
+   WHERE hash_txt_heap.random = '959363399'::text;
+
+SELECT h.seqno AS t20000
+   FROM hash_txt_heap h
+   WHERE h.random = '959363399'::text;
+
+UPDATE hash_f8_heap
+   SET random = '-1234.1234'::float8
+   WHERE hash_f8_heap.seqno = 8906;
+
+SELECT h.seqno AS i8096, h.random AS f1234_1234
+   FROM hash_f8_heap h
+   WHERE h.random = '-1234.1234'::float8;
+
+UPDATE hash_f8_heap
+   SET seqno = 20000
+   WHERE hash_f8_heap.random = '488912369'::float8;
+
+SELECT h.seqno AS f20000
+   FROM hash_f8_heap h
+   WHERE h.random = '488912369'::float8;
+
+-- UPDATE hash_ovfl_heap
+--    SET x = 1000
+--   WHERE x = 90;
+
+-- this vacuums the index as well
+-- VACUUM hash_ovfl_heap;
+
+-- SELECT count(*) AS i0 FROM hash_ovfl_heap
+--   WHERE x = 90;
+
+-- SELECT count(*) AS i988 FROM hash_ovfl_heap
+--  WHERE x = 1000;
+
+--
+-- Cause some overflow insert and splits.
+--
+CREATE TABLE hash_split_heap (keycol INT);
+INSERT INTO hash_split_heap SELECT 1 FROM generate_series(1, 500) a;
+CREATE INDEX hash_split_index on hash_split_heap USING HASH (keycol);
+INSERT INTO hash_split_heap SELECT 1 FROM generate_series(1, 5000) a;
+
+-- Let's do a backward scan.
+BEGIN;
+SET enable_seqscan = OFF;
+SET enable_bitmapscan = OFF;
+
+DECLARE c CURSOR FOR SELECT * from hash_split_heap WHERE keycol = 1;
+MOVE FORWARD ALL FROM c;
+MOVE BACKWARD 10000 FROM c;
+MOVE BACKWARD ALL FROM c;
+CLOSE c;
+END;
+
+-- DELETE, INSERT, VACUUM.
+DELETE FROM hash_split_heap WHERE keycol = 1;
+INSERT INTO hash_split_heap SELECT a/2 FROM generate_series(1, 25000) a;
+
+VACUUM hash_split_heap;
+
+-- Rebuild the index using a different fillfactor
+ALTER INDEX hash_split_index SET (fillfactor = 10);
+REINDEX INDEX hash_split_index;
+
+-- Clean up.
+DROP TABLE hash_split_heap;
+
+-- Testcases for removing overflow pages.
+CREATE TABLE hash_cleanup_heap(keycol INT);
+CREATE INDEX hash_cleanup_index on hash_cleanup_heap USING HASH (keycol);
+
+-- Insert tuples to both the primary bucket page and overflow pages.
+INSERT INTO hash_cleanup_heap SELECT 1 FROM generate_series(1, 500) as i;
+
+-- Fill overflow pages by "dead" tuples.
+BEGIN;
+INSERT INTO hash_cleanup_heap SELECT 1 FROM generate_series(1, 1000) as i;
+ROLLBACK;
+
+-- Checkpoint will ensure that all hash buffers are cleaned before we try
+-- to remove overflow pages.
+CHECKPOINT;
+
+-- This will squeeze the bucket and remove overflow pages.
+VACUUM hash_cleanup_heap;
+
+TRUNCATE hash_cleanup_heap;
+
+-- Insert a few tuples so that the primary bucket page doesn't get full and
+-- tuples can be moved to it.
+INSERT INTO hash_cleanup_heap SELECT 1 FROM generate_series(1, 50) as i;
+
+-- Fill overflow pages by "dead" tuples.
+BEGIN;
+INSERT INTO hash_cleanup_heap SELECT 1 FROM generate_series(1, 1500) as i;
+ROLLBACK;
+
+-- And insert some tuples again. During squeeze operation, these will be moved
+-- to the primary bucket allowing to test freeing intermediate overflow pages.
+INSERT INTO hash_cleanup_heap SELECT 1 FROM generate_series(1, 500) as i;
+
+CHECKPOINT;
+VACUUM hash_cleanup_heap;
+
+TRUNCATE hash_cleanup_heap;
+
+-- Insert tuples to both the primary bucket page and overflow pages.
+INSERT INTO hash_cleanup_heap SELECT 1 FROM generate_series(1, 500) as i;
+-- Fill overflow pages by "dead" tuples.
+BEGIN;
+INSERT INTO hash_cleanup_heap SELECT 1 FROM generate_series(1, 1500) as i;
+ROLLBACK;
+-- And insert some tuples again. During squeeze operation, these will be moved
+-- to other overflow pages and also allow overflow pages filled by dead tuples
+-- to be freed. Note the main purpose of this test is to test the case where
+-- we don't need to move any tuple from the overflow page being freed.
+INSERT INTO hash_cleanup_heap SELECT 1 FROM generate_series(1, 50) as i;
+
+CHECKPOINT;
+VACUUM hash_cleanup_heap;
+
+-- Clean up.
+DROP TABLE hash_cleanup_heap;
+
+-- Index on temp table.
+CREATE TEMP TABLE hash_temp_heap (x int, y int);
+INSERT INTO hash_temp_heap VALUES (1,1);
+CREATE INDEX hash_idx ON hash_temp_heap USING hash (x);
+DROP TABLE hash_temp_heap CASCADE;
+
+-- Float4 type.
+CREATE TABLE hash_heap_float4 (x float4, y int);
+INSERT INTO hash_heap_float4 VALUES (1.1,1);
+CREATE INDEX hash_idx ON hash_heap_float4 USING hash (x);
+DROP TABLE hash_heap_float4 CASCADE;
+
+-- Test out-of-range fillfactor values
+CREATE INDEX hash_f8_index2 ON hash_f8_heap USING hash (random float8_ops)
+	WITH (fillfactor=9);
+CREATE INDEX hash_f8_index2 ON hash_f8_heap USING hash (random float8_ops)
+	WITH (fillfactor=101);
+
+-- reproducer for a crash, triggered by incorrect currentPrefetchBlock when
+-- initializing the stream on the second batch
+set client_min_messages=error;
+drop table if exists t_6;
+reset client_min_messages;
+create table t_6 (a bigint) with (fillfactor = 56);
+create index on t_6 (a) with (fillfactor = 56, deduplicate_items = off);
+insert into t_6 select (i / 103) from generate_series(1, 1000) s(i) order by i + mod(i::bigint * 35543, 553), md5(i::text);
+begin;
+declare c_6 scroll cursor for select * from t_6 where a in (0,1,2,3,4,5,6,7,8,9) order by a;
+fetch backward 29 from c_6;
+fetch backward 44 from c_6;
+fetch backward 18 from c_6;
+fetch forward 13 from c_6;
+fetch forward 86 from c_6;
+fetch backward 73 from c_6;
+fetch forward 69 from c_6;
+fetch forward 30 from c_6;
+fetch forward 6 from c_6;
+fetch forward 75 from c_6;
+rollback;
+
+-- dataset that fill the batch queue, forcing stream reset before loading
+-- more batches
+set client_min_messages=error;
+drop table if exists test_stream_reset;
+reset client_min_messages;
+create table test_stream_reset (a bigint, b bigint);
+insert into test_stream_reset select 1, i from generate_series(1,1000000) s(i);
+create index on test_stream_reset (a) with (deduplicate_items=off, fillfactor=10);
+analyze test_stream_reset;
+-- evict data, to force look-ahead
+select 1 from pg_buffercache_evict_relation('test_stream_reset');
+select * from (select * from test_stream_reset order by a offset 1000000);
+
+-- 2026-01-11 12:33
+--
+-- Hash index hang bug
+--
+set client_min_messages=error;
+drop table if exists t_0;
+reset client_min_messages;
+
+create table t_0 (a bigint) with (fillfactor = 54);
+create index on t_0 using hash (a) with (fillfactor = 43);
+insert into t_0 select (i / 199) from generate_series(1, 100000) s(i) order by i + mod(i::bigint * 142821, 284), md5(i::text);
+vacuum freeze t_0;
+analyze t_0;
+begin;
+set enable_seqscan = off;
+set enable_bitmapscan = off;
+set cursor_tuple_fraction = 1.0;
+
+declare c_0 scroll cursor for select * from t_0 where a = 383;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch forward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;
+select 1 from pg_buffercache_evict_all();
+fetch backward from c_0;

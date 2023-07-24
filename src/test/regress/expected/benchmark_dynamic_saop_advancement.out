@@ -1,0 +1,344 @@
+set work_mem='100MB';
+set effective_io_concurrency=100;
+set effective_cache_size='24GB';
+set maintenance_io_concurrency=100;
+set random_page_cost=2.0;
+set track_io_timing to off;
+set enable_seqscan to off;
+set client_min_messages=error;
+set vacuum_freeze_min_age = 0;
+create extension if not exists pageinspect; -- just to have it
+reset client_min_messages;
+-- Set log_btree_verbosity to 1 without depending on having that patch
+-- applied (HACK, just sets commit_siblings instead when we don't have that
+-- patch available):
+select set_config((select coalesce((select name from pg_settings where name = 'log_btree_verbosity'), 'commit_siblings')), '1', false);
+ set_config 
+------------
+ 1
+(1 row)
+
+---------------------------------------------------
+-- ORDER BY column comes first, SAOPs after that --
+---------------------------------------------------
+set client_min_messages=error;
+drop table if exists docs_testcase;
+reset client_min_messages;
+select setseed(0.12345); -- Need deterministic test case
+ setseed 
+---------
+ 
+(1 row)
+
+create unlogged table docs_testcase
+(
+  id serial,
+  type text default 'pdf' not null,
+  status text not null,
+  sender_reference text not null,
+  sent_at timestamptz,
+  created_at timestamptz default '2000-01-01' not null
+);
+create index mini_idx on docs_testcase using btree(sent_at desc NULLS last, sender_reference, status);
+insert into docs_testcase(type, status, sender_reference, sent_at)
+select
+  ('{pdf,doc,raw}'::text[]) [ceil(random() * 3)],
+  ('{sent,draft,suspended}'::text[]) [ceil(random() * 3)],
+  ('{Custom,Client}'::text[]) [ceil(random() * 2)] || '/' || floor(random() * 2000),
+  ('2000-01-01'::timestamptz - interval '2 years' * random())::timestamptz
+from
+  generate_series(1, 100000) g;
+vacuum analyze docs_testcase;
+-- Index scan:
+set enable_bitmapscan to off;
+set enable_indexonlyscan to off;
+set enable_indexscan to on;
+set enable_sort to off;
+select * from docs_testcase
+where
+  status in ('draft', 'sent') and
+  sender_reference in ('Custom/1175', 'Client/362', 'Custom/280')
+order by
+  sent_at desc NULLS last
+limit 20;
+  id   | type | status | sender_reference |              sent_at              |          created_at          
+-------+------+--------+------------------+-----------------------------------+------------------------------
+ 45274 | pdf  | draft  | Custom/1175      | Tue Dec 14 05:08:36.2976 1999 PST | Sat Jan 01 00:00:00 2000 PST
+ 78376 | doc  | draft  | Custom/280       | Fri Dec 10 14:32:53.1744 1999 PST | Sat Jan 01 00:00:00 2000 PST
+ 71132 | raw  | sent   | Custom/280       | Tue Nov 30 15:15:26.1216 1999 PST | Sat Jan 01 00:00:00 2000 PST
+  1169 | doc  | sent   | Client/362       | Sat Nov 06 12:37:00.912 1999 PST  | Sat Jan 01 00:00:00 2000 PST
+ 30989 | raw  | draft  | Custom/1175      | Fri Nov 05 22:13:37.8912 1999 PST | Sat Jan 01 00:00:00 2000 PST
+ 60560 | pdf  | sent   | Client/362       | Wed Oct 20 02:43:51.5424 1999 PDT | Sat Jan 01 00:00:00 2000 PST
+ 17880 | raw  | draft  | Custom/280       | Mon Oct 18 19:34:46.9344 1999 PDT | Sat Jan 01 00:00:00 2000 PST
+ 28432 | raw  | draft  | Custom/1175      | Sat Oct 09 01:40:28.4736 1999 PDT | Sat Jan 01 00:00:00 2000 PST
+ 64704 | doc  | draft  | Custom/1175      | Sat Oct 02 22:00:53.424 1999 PDT  | Sat Jan 01 00:00:00 2000 PST
+ 42981 | raw  | sent   | Client/362       | Sun Sep 19 13:52:16.3488 1999 PDT | Sat Jan 01 00:00:00 2000 PST
+ 80576 | doc  | sent   | Client/362       | Sat Sep 11 08:07:20.0064 1999 PDT | Sat Jan 01 00:00:00 2000 PST
+ 98082 | raw  | sent   | Client/362       | Tue Aug 03 19:55:01.0272 1999 PDT | Sat Jan 01 00:00:00 2000 PST
+ 69574 | pdf  | sent   | Client/362       | Fri Jul 02 02:42:07.9488 1999 PDT | Sat Jan 01 00:00:00 2000 PST
+ 56977 | pdf  | draft  | Custom/1175      | Tue Jun 29 11:49:05.952 1999 PDT  | Sat Jan 01 00:00:00 2000 PST
+ 16531 | doc  | sent   | Custom/1175      | Wed Jun 02 10:17:59.0784 1999 PDT | Sat Jan 01 00:00:00 2000 PST
+ 98135 | doc  | sent   | Custom/280       | Tue Jun 01 10:18:29.664 1999 PDT  | Sat Jan 01 00:00:00 2000 PST
+ 33864 | raw  | sent   | Custom/280       | Mon May 17 08:14:59.6544 1999 PDT | Sat Jan 01 00:00:00 2000 PST
+ 16260 | pdf  | draft  | Custom/280       | Tue May 11 05:21:10.0512 1999 PDT | Sat Jan 01 00:00:00 2000 PST
+ 33186 | raw  | sent   | Custom/280       | Sat Apr 17 23:56:21.1488 1999 PDT | Sat Jan 01 00:00:00 2000 PST
+ 94130 | raw  | sent   | Client/362       | Fri Apr 09 17:23:23.0208 1999 PDT | Sat Jan 01 00:00:00 2000 PST
+(20 rows)
+
+EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, SUMMARY OFF, COSTS OFF) -- need "costs off" here
+select * from docs_testcase
+where
+  status in ('draft', 'sent') and
+  sender_reference in ('Custom/1175', 'Client/362', 'Custom/280')
+order by
+  sent_at desc NULLS last
+limit 20;
+                                                                 QUERY PLAN                                                                 
+--------------------------------------------------------------------------------------------------------------------------------------------
+ Limit (actual rows=20.00 loops=1)
+   Buffers: shared hit=293
+   ->  Index Scan using mini_idx on docs_testcase (actual rows=20.00 loops=1)
+         Index Cond: ((sender_reference = ANY ('{Custom/1175,Client/362,Custom/280}'::text[])) AND (status = ANY ('{draft,sent}'::text[])))
+         Index Searches: 1
+         Buffers: shared hit=293
+(6 rows)
+
+-- Index-only scan:
+set enable_bitmapscan to off;
+set enable_indexonlyscan to on;
+set enable_indexscan to off;
+select sent_at, status, sender_reference from docs_testcase
+where
+  status in ('draft', 'sent') and
+  sender_reference in ('Custom/1175', 'Client/362', 'Custom/280')
+order by
+  sent_at desc NULLS last
+limit 20;
+              sent_at              | status | sender_reference 
+-----------------------------------+--------+------------------
+ Tue Dec 14 05:08:36.2976 1999 PST | draft  | Custom/1175
+ Fri Dec 10 14:32:53.1744 1999 PST | draft  | Custom/280
+ Tue Nov 30 15:15:26.1216 1999 PST | sent   | Custom/280
+ Sat Nov 06 12:37:00.912 1999 PST  | sent   | Client/362
+ Fri Nov 05 22:13:37.8912 1999 PST | draft  | Custom/1175
+ Wed Oct 20 02:43:51.5424 1999 PDT | sent   | Client/362
+ Mon Oct 18 19:34:46.9344 1999 PDT | draft  | Custom/280
+ Sat Oct 09 01:40:28.4736 1999 PDT | draft  | Custom/1175
+ Sat Oct 02 22:00:53.424 1999 PDT  | draft  | Custom/1175
+ Sun Sep 19 13:52:16.3488 1999 PDT | sent   | Client/362
+ Sat Sep 11 08:07:20.0064 1999 PDT | sent   | Client/362
+ Tue Aug 03 19:55:01.0272 1999 PDT | sent   | Client/362
+ Fri Jul 02 02:42:07.9488 1999 PDT | sent   | Client/362
+ Tue Jun 29 11:49:05.952 1999 PDT  | draft  | Custom/1175
+ Wed Jun 02 10:17:59.0784 1999 PDT | sent   | Custom/1175
+ Tue Jun 01 10:18:29.664 1999 PDT  | sent   | Custom/280
+ Mon May 17 08:14:59.6544 1999 PDT | sent   | Custom/280
+ Tue May 11 05:21:10.0512 1999 PDT | draft  | Custom/280
+ Sat Apr 17 23:56:21.1488 1999 PDT | sent   | Custom/280
+ Fri Apr 09 17:23:23.0208 1999 PDT | sent   | Client/362
+(20 rows)
+
+EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, SUMMARY OFF, COSTS OFF) -- need "costs off" here
+select sent_at, status, sender_reference from docs_testcase
+where
+  status in ('draft', 'sent') and
+  sender_reference in ('Custom/1175', 'Client/362', 'Custom/280')
+order by
+  sent_at desc NULLS last
+limit 20;
+                                                                 QUERY PLAN                                                                 
+--------------------------------------------------------------------------------------------------------------------------------------------
+ Limit (actual rows=20.00 loops=1)
+   Buffers: shared hit=274
+   ->  Index Only Scan using mini_idx on docs_testcase (actual rows=20.00 loops=1)
+         Disabled: true
+         Index Cond: ((sender_reference = ANY ('{Custom/1175,Client/362,Custom/280}'::text[])) AND (status = ANY ('{draft,sent}'::text[])))
+         Heap Fetches: 0
+         Index Searches: 1
+         Buffers: shared hit=274
+(8 rows)
+
+-------------------------------
+-- James Coleman's test case --
+-------------------------------
+-- Per https://www.postgresql.org/message-id/flat/CAAaqYe-SsHgXKXPpjn7WCTUnB_RQSxXjpSaJd32aA%3DRquv0AgQ%40mail.gmail.com,
+-- though I'm going to use my own index definition for this
+set client_min_messages=error;
+drop table if exists coleman;
+reset client_min_messages;
+select setseed(0.12345); -- Need deterministic test case
+ setseed 
+---------
+ 
+(1 row)
+
+create unlogged table coleman(
+  bar_fk integer,
+  created_at timestamptz
+);
+-- Original index (commented out):
+-- create index index_coleman_on_bar_fk_and_created_at on coleman(bar_fk, created_at);
+-- my preferred index:
+create index index_coleman_on_created_and_at_bar_fk on coleman(created_at, bar_fk);
+insert into coleman(bar_fk, created_at)
+select i % 1000, '2000-01-01'::timestamptz -(random() * '5 years'::interval)
+from generate_series(1, 500000) t(i);
+VACUUM (freeze,analyze) coleman;
+-- Index-only scan:
+select *
+from coleman
+where bar_fk in (1, 2, 3)
+order by created_at
+limit 50;
+ bar_fk |            created_at             
+--------+-----------------------------------
+      1 | Wed Jan 04 15:38:31.4592 1995 PST
+      2 | Fri Jan 06 18:28:15.9456 1995 PST
+      3 | Sun Jan 08 09:06:27.8496 1995 PST
+      1 | Sun Jan 08 20:26:58.7616 1995 PST
+      3 | Mon Jan 09 15:07:25.1328 1995 PST
+      3 | Mon Jan 09 21:07:17.3568 1995 PST
+      1 | Tue Jan 10 15:17:59.136 1995 PST
+      3 | Wed Jan 11 12:07:41.8944 1995 PST
+      1 | Thu Jan 12 17:31:03.8784 1995 PST
+      3 | Sat Jan 14 02:17:05.6256 1995 PST
+      3 | Sat Jan 14 20:26:57.552 1995 PST
+      1 | Thu Jan 19 02:48:00.5472 1995 PST
+      1 | Fri Jan 20 00:58:32.592 1995 PST
+      1 | Sat Jan 21 07:22:49.6416 1995 PST
+      3 | Sun Jan 22 07:42:59.9328 1995 PST
+      3 | Sun Jan 22 18:39:03.168 1995 PST
+      2 | Wed Jan 25 06:04:53.8464 1995 PST
+      1 | Wed Jan 25 17:15:11.9232 1995 PST
+      3 | Fri Jan 27 16:32:48.9984 1995 PST
+      2 | Sat Jan 28 10:05:32.496 1995 PST
+      1 | Sat Jan 28 11:33:58.6656 1995 PST
+      3 | Sat Jan 28 22:29:59.8272 1995 PST
+      3 | Sun Jan 29 01:44:30.2208 1995 PST
+      3 | Mon Jan 30 08:10:22.224 1995 PST
+      3 | Tue Jan 31 10:25:15.6576 1995 PST
+      3 | Thu Feb 02 15:07:34.2912 1995 PST
+      2 | Thu Feb 02 21:44:04.6176 1995 PST
+      3 | Sat Feb 04 11:36:36.3456 1995 PST
+      3 | Sun Feb 05 02:13:48.4608 1995 PST
+      3 | Sun Feb 05 15:29:52.7136 1995 PST
+      2 | Mon Feb 06 13:54:01.4112 1995 PST
+      3 | Fri Feb 10 15:09:38.5344 1995 PST
+      1 | Sat Feb 11 12:26:43.7568 1995 PST
+      1 | Sun Feb 12 18:59:15.2736 1995 PST
+      3 | Tue Feb 14 06:56:52.1088 1995 PST
+      2 | Sun Feb 19 11:52:44.8896 1995 PST
+      3 | Sun Feb 19 22:52:40.5408 1995 PST
+      1 | Tue Feb 21 05:01:27.2352 1995 PST
+      2 | Wed Feb 22 00:12:02.8224 1995 PST
+      3 | Wed Feb 22 21:44:54.2112 1995 PST
+      1 | Wed Feb 22 23:27:39.3696 1995 PST
+      2 | Thu Feb 23 03:20:10.2048 1995 PST
+      1 | Thu Feb 23 08:41:58.8768 1995 PST
+      2 | Thu Feb 23 18:51:52.9056 1995 PST
+      2 | Fri Feb 24 05:17:42.864 1995 PST
+      1 | Fri Feb 24 23:15:51.2352 1995 PST
+      3 | Sat Feb 25 01:49:57.504 1995 PST
+      2 | Mon Feb 27 04:20:08.16 1995 PST
+      3 | Mon Feb 27 15:10:04.4544 1995 PST
+      2 | Tue Feb 28 22:13:55.1712 1995 PST
+(50 rows)
+
+-- 76 buffer hits total for parity with master:
+EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, SUMMARY OFF, COSTS OFF) -- need "costs off" here
+select *
+from coleman
+where bar_fk in (1, 2, 3)
+order by created_at
+limit 50;
+                                                QUERY PLAN                                                 
+-----------------------------------------------------------------------------------------------------------
+ Limit (actual rows=50.00 loops=1)
+   Buffers: shared hit=76
+   ->  Index Only Scan using index_coleman_on_created_and_at_bar_fk on coleman (actual rows=50.00 loops=1)
+         Disabled: true
+         Index Cond: (bar_fk = ANY ('{1,2,3}'::integer[]))
+         Heap Fetches: 0
+         Index Searches: 1
+         Buffers: shared hit=76
+(8 rows)
+
+alter table coleman add column noise int4; -- no more index only scans
+-- Index scan:
+select *
+from coleman
+where bar_fk in (1, 2, 3)
+order by created_at
+limit 50;
+ bar_fk |            created_at             | noise 
+--------+-----------------------------------+-------
+      1 | Wed Jan 04 15:38:31.4592 1995 PST |      
+      2 | Fri Jan 06 18:28:15.9456 1995 PST |      
+      3 | Sun Jan 08 09:06:27.8496 1995 PST |      
+      1 | Sun Jan 08 20:26:58.7616 1995 PST |      
+      3 | Mon Jan 09 15:07:25.1328 1995 PST |      
+      3 | Mon Jan 09 21:07:17.3568 1995 PST |      
+      1 | Tue Jan 10 15:17:59.136 1995 PST  |      
+      3 | Wed Jan 11 12:07:41.8944 1995 PST |      
+      1 | Thu Jan 12 17:31:03.8784 1995 PST |      
+      3 | Sat Jan 14 02:17:05.6256 1995 PST |      
+      3 | Sat Jan 14 20:26:57.552 1995 PST  |      
+      1 | Thu Jan 19 02:48:00.5472 1995 PST |      
+      1 | Fri Jan 20 00:58:32.592 1995 PST  |      
+      1 | Sat Jan 21 07:22:49.6416 1995 PST |      
+      3 | Sun Jan 22 07:42:59.9328 1995 PST |      
+      3 | Sun Jan 22 18:39:03.168 1995 PST  |      
+      2 | Wed Jan 25 06:04:53.8464 1995 PST |      
+      1 | Wed Jan 25 17:15:11.9232 1995 PST |      
+      3 | Fri Jan 27 16:32:48.9984 1995 PST |      
+      2 | Sat Jan 28 10:05:32.496 1995 PST  |      
+      1 | Sat Jan 28 11:33:58.6656 1995 PST |      
+      3 | Sat Jan 28 22:29:59.8272 1995 PST |      
+      3 | Sun Jan 29 01:44:30.2208 1995 PST |      
+      3 | Mon Jan 30 08:10:22.224 1995 PST  |      
+      3 | Tue Jan 31 10:25:15.6576 1995 PST |      
+      3 | Thu Feb 02 15:07:34.2912 1995 PST |      
+      2 | Thu Feb 02 21:44:04.6176 1995 PST |      
+      3 | Sat Feb 04 11:36:36.3456 1995 PST |      
+      3 | Sun Feb 05 02:13:48.4608 1995 PST |      
+      3 | Sun Feb 05 15:29:52.7136 1995 PST |      
+      2 | Mon Feb 06 13:54:01.4112 1995 PST |      
+      3 | Fri Feb 10 15:09:38.5344 1995 PST |      
+      1 | Sat Feb 11 12:26:43.7568 1995 PST |      
+      1 | Sun Feb 12 18:59:15.2736 1995 PST |      
+      3 | Tue Feb 14 06:56:52.1088 1995 PST |      
+      2 | Sun Feb 19 11:52:44.8896 1995 PST |      
+      3 | Sun Feb 19 22:52:40.5408 1995 PST |      
+      1 | Tue Feb 21 05:01:27.2352 1995 PST |      
+      2 | Wed Feb 22 00:12:02.8224 1995 PST |      
+      3 | Wed Feb 22 21:44:54.2112 1995 PST |      
+      1 | Wed Feb 22 23:27:39.3696 1995 PST |      
+      2 | Thu Feb 23 03:20:10.2048 1995 PST |      
+      1 | Thu Feb 23 08:41:58.8768 1995 PST |      
+      2 | Thu Feb 23 18:51:52.9056 1995 PST |      
+      2 | Fri Feb 24 05:17:42.864 1995 PST  |      
+      1 | Fri Feb 24 23:15:51.2352 1995 PST |      
+      3 | Sat Feb 25 01:49:57.504 1995 PST  |      
+      2 | Mon Feb 27 04:20:08.16 1995 PST   |      
+      3 | Mon Feb 27 15:10:04.4544 1995 PST |      
+      2 | Tue Feb 28 22:13:55.1712 1995 PST |      
+(50 rows)
+
+-- 125 buffer hits for patch, master does 16713 hits!:
+EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, SUMMARY OFF, COSTS OFF) -- need "costs off" here
+select *
+from coleman
+where bar_fk in (1, 2, 3)
+order by created_at
+limit 50;
+                                              QUERY PLAN                                              
+------------------------------------------------------------------------------------------------------
+ Limit (actual rows=50.00 loops=1)
+   Buffers: shared hit=125
+   ->  Index Scan using index_coleman_on_created_and_at_bar_fk on coleman (actual rows=50.00 loops=1)
+         Disabled: true
+         Index Cond: (bar_fk = ANY ('{1,2,3}'::integer[]))
+         Index Searches: 1
+         Buffers: shared hit=125
+(7 rows)
+
