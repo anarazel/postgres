@@ -1,0 +1,1 @@
+mdam_paper_table.sql
