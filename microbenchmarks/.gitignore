@@ -1,0 +1,5 @@
+/output_perf_flamegraph
+/prefetch_results
+/write_regression_results
+/fillfactor_results
+*.pyc

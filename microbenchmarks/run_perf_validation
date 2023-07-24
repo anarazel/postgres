@@ -1,0 +1,79 @@
+#!/bin/bash
+
+RESULTDIR=$1
+SCRIPT=$2
+IOMETHOD=$3
+
+PORT_MASTER=6001
+PORT_PATCHED=6002
+
+DBNAME="test"
+
+# SCRIPT="perf_validate_int_int.sql"
+# SCRIPT="perf_validate_int_numeric.sql"
+# ...
+
+# expected to run from the script directory
+DIR=$(pwd)/validate
+
+if pg_isready -p $PORT_MASTER; then
+  dropdb -p $PORT_MASTER --if-exists $DBNAME
+  createdb -p $PORT_MASTER $DBNAME
+  psql $DBNAME -p $PORT_MASTER -f "$DIR/${SCRIPT}.sql" > "$RESULTDIR/output_patch_$SCRIPT.txt"
+fi
+
+if pg_isready -p $PORT_PATCHED; then
+  dropdb -p $PORT_PATCHED --if-exists $DBNAME
+  createdb -p $PORT_PATCHED $DBNAME
+  psql $DBNAME -p $PORT_PATCHED -f "$DIR/${SCRIPT}.sql" > "$RESULTDIR/output_master_$SCRIPT.txt"
+fi
+
+index_pattern="t_one_.*_idx|t_one_sequential_.*_idx|t_five_.*_idx|t_ten_.*_idx|t_fifteen_.*_idx|t_seventeen_.*_idx|t_twenty_.*_idx|t_twentyfive_.*_idx|t_fifty_.*_idx|t_five_hundred_.*_idx|t_idx"
+grep -E "$index_pattern"  -A 9 "$RESULTDIR/output_patch_$SCRIPT.txt" | grep -E "Execution|Index [O]|Index Searches" > "/tmp/diff_results_patch_$SCRIPT.txt"
+grep -E "$index_pattern"  -A 9 "$RESULTDIR/output_master_$SCRIPT.txt" | grep -E "Execution|Index [O]" > "/tmp/diff_results_master_$SCRIPT.txt"
+
+# Extract execution times from both files
+patch_times=$(grep -oP 'Execution Time: \K[0-9\.]+(?= ms)' "/tmp/diff_results_patch_$SCRIPT.txt")
+master_times=$(grep -oP 'Execution Time: \K[0-9\.]+(?= ms)' "/tmp/diff_results_master_$SCRIPT.txt")
+patch_indexes=$(grep -oP 'Index Only Scan using \K[^ ]+(?= on)' "/tmp/diff_results_patch_$SCRIPT.txt")
+patch_nsearches=$(grep -oP 'Index Searches: \K[0-9]+' "/tmp/diff_results_patch_$SCRIPT.txt")
+
+# Convert to arrays for processing
+patch_array=($patch_times)
+master_array=($master_times)
+index_array=($patch_indexes)
+index_searches=($patch_nsearches)
+
+# Ensure the files have the same number of execution times
+if [ "${#patch_array[@]}" -ne "${#master_array[@]}" ]; then
+  echo "Error: Mismatch in the number of execution times between files."
+  exit 1
+fi
+
+if [ "${#patch_array[@]}" -ne "${#index_array[@]}" ]; then
+  echo "Error: Mismatch in the number of index names ${#index_array[@]} and patch result times ${#patch_array[@]}."
+  exit 1
+fi
+
+rm "$RESULTDIR/ratio_$SCRIPT.txt"
+printf "\nResults with ratios for most recent \"$SCRIPT\" run:\n\n" >> "$RESULTDIR/ratio_$SCRIPT.txt"
+
+# Calculate and print the ratio of execution times
+for i in "${!patch_array[@]}"; do
+  patch_time="${patch_array[$i]}"
+  master_time="${master_array[$i]}"
+  index_name="${index_array[$i]}"
+  index_searches="${index_searches[$i]}"
+
+  # Avoid division by zero
+  if (( $(echo "$master_time == 0" | bc -l) )); then
+    echo "Error: Division by zero encountered in master file at line $((i + 1))." >> "$RESULTDIR/ratio_$SCRIPT.txt"
+    continue
+  fi
+
+  ratio=$(echo "scale=4; $patch_time / $master_time" | bc)
+  echo "Result $((i + 1)): index = $index_name, nsearches = $index_searches, patch = $patch_time ms, master = $master_time ms, ratio = $ratio" >> "$RESULTDIR/ratio_$SCRIPT.txt"
+  echo $IOMETHOD $SCRIPT $((i+1)) $index_name $index_searches $master_time $patch_time $ratio >> $RESULTDIR/ratio_$SCRIPT.csv
+  echo "" >> "$RESULTDIR/ratio_$SCRIPT.txt"
+done
+cat "$RESULTDIR/ratio_$SCRIPT.txt"
