@@ -1001,8 +1001,12 @@ sub command_checks_all
 
 	# See http://perldoc.perl.org/perlvar.html#%24CHILD_ERROR
 	my $ret = $?;
-	die "command exited with signal " . ($ret & 127)
-	  if $ret & 127;
+	if ($ret & 127)
+	{
+		diag "stdout", $stdout;
+		diag "stderr", $stderr;
+		die "command exited with signal " . ($ret & 127)
+	}
 	$ret = $ret >> 8;
 
 	# check status
