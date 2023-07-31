@@ -242,7 +242,7 @@ task:
     - name: OpenBSD - 7 - Meson
       only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*openbsd.*'
       env:
-        IMAGE_NAME: pg-ci-openbsd-postgres-7-2
+        IMAGE_NAME: pg-ci-openbsd-postgres-7-3
         PLATFORM: openbsd
         INCLUDE_DIRS: -Dextra_include_dirs=/usr/local/include -Dextra_lib_dirs=/usr/local/lib
         UUID: -Duuid=e2fs
