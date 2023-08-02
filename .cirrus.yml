@@ -417,15 +417,12 @@ task:
 
 
 task:
-  name: macOS - Ventura - Meson
+  name: macOS - Ventura - Meson - $TEST_JOBS
 
   env:
     CPUS: 4 # always get that much for cirrusci macOS instances
     BUILD_JOBS: $CPUS
-    # Test performance regresses noticably when using all cores. 8 seems to
-    # work OK. See
-    # https://postgr.es/m/20220927040208.l3shfcidovpzqxfh%40awork3.anarazel.de
-    TEST_JOBS: 8
+    TEST_JOBS: 6
 
     CIRRUS_WORKING_DIR: ${HOME}/pgsql/
     CCACHE_DIR: ${HOME}/ccache
@@ -434,9 +431,9 @@ task:
 
     CC: ccache cc
     CXX: ccache c++
-    CPPFLAGS: -DRANDOMIZE_ALLOCATED_MEMORY
-    CFLAGS: -Og -ggdb
-    CXXFLAGS: -Og -ggdb
+    #CPPFLAGS: -DRANDOMIZE_ALLOCATED_MEMORY
+    #CFLAGS: -Og -ggdb
+    #CXXFLAGS: -Og -ggdb
 
   depends_on: SanityCheck
   only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*(macos|darwin|osx).*'
@@ -500,7 +497,7 @@ task:
     export PKG_CONFIG_PATH PATH
 
     meson setup \
-      --buildtype=debug \
+      --buildtype=debugoptimized \
       -Dextra_include_dirs=${brewpath}/include \
       -Dextra_lib_dirs=${brewpath}/lib \
       -Dcassert=true \
