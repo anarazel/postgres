@@ -3,6 +3,14 @@
 # For instructions on how to enable the CI integration in a repository and
 # further details, see src/tools/ci/README
 
+gcp_credentials: ENCRYPTED[c58bdd078aa244b1f542235ef6f60a24b327bed20e7884809e0a752df1db02053eb89c5d4c4265aa1036b25e38ec54f9]
+
+gce_instance:
+  type: t2d-standard-4
+  spot: true
+  zone: us-west1-a
+  disk: 25
+  use_ssd: true
 
 env:
   # Source of images / containers
@@ -144,13 +152,19 @@ task:
   depends_on: SanityCheck
   only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*freebsd.*'
 
-  compute_engine_instance:
+  gce_instance:
     image_project: $IMAGE_PROJECT
-    image: family/pg-ci-freebsd-13
+    image_family: pg-ci-freebsd-13
     platform: freebsd
-    cpu: $CPUS
-    memory: 4G
     disk: 50
+
+  #compute_engine_instance:
+  #  image_project: $IMAGE_PROJECT
+  #  image: family/pg-ci-freebsd-13
+  #  platform: freebsd
+  #  cpu: $CPUS
+  #  memory: 4G
+  #  disk: 50
 
   sysinfo_script: |
     id
@@ -245,7 +259,6 @@ LINUX_MESON_FEATURES: &LINUX_MESON_FEATURES >-
   -Dllvm=enabled
   -Duuid=e2fs
 
-
 task:
   env:
     CPUS: 4
@@ -286,12 +299,16 @@ task:
   depends_on: SanityCheck
   only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*linux.*'
 
-  compute_engine_instance:
+  #compute_engine_instance:
+  #  image_project: $IMAGE_PROJECT
+  #  image: family/pg-ci-bullseye
+  #  platform: linux
+  #  cpu: $CPUS
+  #  memory: 4G
+
+  gce_instance:
     image_project: $IMAGE_PROJECT
-    image: family/pg-ci-bullseye
-    platform: linux
-    cpu: $CPUS
-    memory: 4G
+    image_family: pg-ci-bullseye
 
   ccache_cache:
     folder: ${CCACHE_DIR}
@@ -559,12 +576,11 @@ task:
   depends_on: SanityCheck
   only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*windows.*'
 
-  compute_engine_instance:
+  gce_instance:
     image_project: $IMAGE_PROJECT
-    image: family/pg-ci-windows-ci-vs-2019
+    image_family: pg-ci-windows-ci-vs-2019
     platform: windows
-    cpu: $CPUS
-    memory: 4G
+    disk: 50
 
   setup_additional_packages_script: |
     REM choco install -y --no-progress ...
@@ -607,12 +623,11 @@ task:
   # otherwise it'll be sorted before other tasks
   depends_on: SanityCheck
 
-  compute_engine_instance:
+  gce_instance:
     image_project: $IMAGE_PROJECT
-    image: family/pg-ci-windows-ci-mingw64
+    image_family: pg-ci-windows-ci-mingw64
     platform: windows
-    cpu: $CPUS
-    memory: 4G
+    disk: 50
 
   env:
     TEST_JOBS: 4 # higher concurrency causes occasional failures
