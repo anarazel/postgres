@@ -144,7 +144,7 @@ task:
     # jobs. Using one more job than cpus seems to work best.
     CPUS: 2
     BUILD_JOBS: 3
-    TEST_JOBS: 3
+    TEST_JOBS: 5
 
     CCACHE_DIR: /tmp/ccache_dir
     CPPFLAGS: -DRELCACHE_FORCE_RELEASE -DCOPY_PARSE_PLAN_TREES -DWRITE_READ_PARSE_PLAN_TREES -DRAW_EXPRESSION_COVERAGE_TEST -DENFORCE_REGRESSION_TEST_NAME_RESTRICTIONS
@@ -440,7 +440,7 @@ task:
   env:
     CPUS: 4 # always get that much for cirrusci macOS instances
     BUILD_JOBS: $CPUS
-    TEST_JOBS: 6
+    TEST_JOBS: 8
 
     CIRRUS_WORKING_DIR: ${HOME}/pgsql/
     CCACHE_DIR: ${HOME}/ccache
@@ -631,7 +631,7 @@ task:
     disk: 50
 
   env:
-    TEST_JOBS: 4 # higher concurrency causes occasional failures
+    TEST_JOBS: 6 # higher concurrency causes occasional failures
     CCACHE_DIR: C:/msys64/ccache
     CCACHE_MAXSIZE: "500M"
     CCACHE_SLOPPINESS: pch_defines,time_macros
