@@ -572,6 +572,11 @@ task:
   setup_additional_packages_script: |
     REM choco install -y --no-progress ...
 
+  matrix:
+    - name: Windows - Server 2019, VS 2019 - Meson & ninja - cache flush disabled
+      change_write_caching_script: powershell src/tools/ci/windows_write_cache.ps1
+    - name: Windows - Server 2019, VS 2019 - Meson & ninja - cache flush enabled
+
   setup_hosts_file_script: |
     echo 127.0.0.1 pg-loadbalancetest >> c:\Windows\System32\Drivers\etc\hosts
     echo 127.0.0.2 pg-loadbalancetest >> c:\Windows\System32\Drivers\etc\hosts
@@ -603,7 +608,7 @@ task:
   name: Windows - Server 2019, MinGW64 - Meson
 
   # due to resource constraints we don't run this task by default for now
-  trigger_type: manual
+  #trigger_type: manual
   # worth using only_if despite being manual, otherwise this task will show up
   # when e.g. ci-os-only: linux is used.
   only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*mingw.*'
@@ -630,6 +635,11 @@ task:
     # Start bash in current working directory
     CHERE_INVOKING: 1
     BASH: C:\msys64\usr\bin\bash.exe -l
+
+  matrix:
+    - name: Windows - Server 2019, MinGW64 - Meson - cache flush disabled
+      change_write_caching_script: powershell src/tools/ci/windows_write_cache.ps1
+    - name: Windows - Server 2019, MinGW64 - Meson - cache flush enabled
 
   ccache_cache:
     folder: ${CCACHE_DIR}
