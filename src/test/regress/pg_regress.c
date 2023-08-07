@@ -75,6 +75,9 @@ const char *pretty_diff_opts = "-w -U3";
  */
 #define TESTNAME_WIDTH 36
 
+/* how often to recheck if postgres startup completed */
+#define WAITS_PER_SEC	10
+
 typedef enum TAPtype
 {
 	DIAG = 0,
@@ -2499,7 +2502,7 @@ regression_main(int argc, char *argv[],
 		else
 			wait_seconds = 60;
 
-		for (i = 0; i < wait_seconds; i++)
+		for (i = 0; i < wait_seconds * WAITS_PER_SEC; i++)
 		{
 			/* Done if psql succeeds */
 			fflush(NULL);
@@ -2519,7 +2522,7 @@ regression_main(int argc, char *argv[],
 					 outputdir);
 			}
 
-			pg_usleep(1000000L);
+			pg_usleep(1000000L / WAITS_PER_SEC);
 		}
 		if (i >= wait_seconds)
 		{
