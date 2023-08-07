@@ -547,6 +547,12 @@ task:
   setup_additional_packages_script: |
     REM choco install -y --no-progress ...
 
+  # Define the write cache to be power protected. This reduces the rate of
+  # cache flushes, which seems to help metadata heavy workloads on NTFS. We're
+  # just testing here anyway, so ...
+  change_write_caching_script:
+    - powershell src/tools/ci/windows_write_cache.ps1 2>&1
+
   setup_hosts_file_script: |
     echo 127.0.0.1 pg-loadbalancetest >> c:\Windows\System32\Drivers\etc\hosts
     echo 127.0.0.2 pg-loadbalancetest >> c:\Windows\System32\Drivers\etc\hosts
