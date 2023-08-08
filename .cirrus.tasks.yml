@@ -136,7 +136,7 @@ task:
 
     CCACHE_DIR: /tmp/ccache_dir
     CPPFLAGS: -DRELCACHE_FORCE_RELEASE -DCOPY_PARSE_PLAN_TREES -DWRITE_READ_PARSE_PLAN_TREES -DRAW_EXPRESSION_COVERAGE_TEST -DENFORCE_REGRESSION_TEST_NAME_RESTRICTIONS
-    CFLAGS: -Og -ggdb
+    CFLAGS: -ggdb
 
   <<: *freebsd_task_template
 
@@ -171,7 +171,7 @@ task:
   configure_script: |
     su postgres <<-EOF
       meson setup \
-        --buildtype=debug \
+        --buildtype=debugoptimized \
         -Dcassert=true -Duuid=bsd -Dtcl_version=tcl86 -Ddtrace=auto \
         -DPG_TEST_EXTRA="$PG_TEST_EXTRA" \
         -Dextra_lib_dirs=/usr/local/lib -Dextra_include_dirs=/usr/local/include/ \
@@ -266,7 +266,7 @@ task:
     ASAN_OPTIONS: print_stacktrace=1:disable_coredump=0:abort_on_error=1:detect_leaks=0
 
     # SANITIZER_FLAGS is set in the tasks below
-    CFLAGS: -Og -ggdb -fno-sanitize-recover=all $SANITIZER_FLAGS
+    CFLAGS: -ggdb -fno-sanitize-recover=all $SANITIZER_FLAGS
     CXXFLAGS: $CFLAGS
     LDFLAGS: $SANITIZER_FLAGS
     CC: ccache gcc
@@ -356,7 +356,7 @@ task:
       configure_script: |
         su postgres <<-EOF
           meson setup \
-            --buildtype=debug \
+            --buildtype=debugoptimized \
             -Dcassert=true \
             ${LINUX_MESON_FEATURES} \
             -DPG_TEST_EXTRA="$PG_TEST_EXTRA" \
@@ -369,7 +369,7 @@ task:
         su postgres <<-EOF
           export CC='ccache gcc -m32'
           meson setup \
-            --buildtype=debug \
+            --buildtype=debugoptimized \
             -Dcassert=true \
             ${LINUX_MESON_FEATURES} \
             -Dllvm=disabled \
@@ -427,8 +427,8 @@ task:
 
     CC: ccache cc
     CXX: ccache c++
-    CFLAGS: -Og -ggdb
-    CXXFLAGS: -Og -ggdb
+    CFLAGS: -ggdb
+    CXXFLAGS: -ggdb
 
   <<: *macos_task_template
 
@@ -479,7 +479,7 @@ task:
   configure_script: |
     export PKG_CONFIG_PATH="/opt/local/lib/pkgconfig/"
     meson setup \
-      --buildtype=debug \
+      --buildtype=debugoptimized \
       -Dextra_include_dirs=/opt/local/include \
       -Dextra_lib_dirs=/opt/local/lib \
       -Dcassert=true \
