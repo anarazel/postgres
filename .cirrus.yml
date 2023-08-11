@@ -10,6 +10,18 @@ env:
   IMAGE_PROJECT: $GCP_PROJECT
   CONTAINER_REPO: us-docker.pkg.dev/${GCP_PROJECT}/ci
 
+  # Can be overridden in repository settings to "ours". This requires
+  # a) a workload identity provider to be configured (via the
+  #    GCP_WORKLOAD_IDENTITY_PROVIDER and GCP_SERVICE_ACCOUNT variables) that
+  #    allow to run tasks in the relevant repository.
+  #
+  # b) macos peristent runners for macos CI to be configured in the cirrus-ci
+  #    account/organization level interface
+  CI_RESOURCES: cirrus
+
+  DISK_SIZE: 25
+  ONLY_IF_MATCHES:
+
   # The lower depth accelerates git clone. Use a bit of depth so that
   # concurrent tasks and retrying older jobs have a chance of working.
   CIRRUS_CLONE_DEPTH: 500
@@ -27,6 +39,59 @@ env:
   TEMP_CONFIG: ${CIRRUS_WORKING_DIR}/src/tools/ci/pg_ci_base.conf
   PG_TEST_EXTRA: kerberos ldap ssl load_balance
 
+
+#
+# Abstraction over the infrastructure used to run CI instances on
+#
+
+# Credentials for using custom GCP infrastructure are configured in
+# .cirrus.star (they can't reference environment variables at the moment, so
+# .cirrus.star just "inlines" the environment variables.
+
+# Default configuration when using a custom GCP instance
+gce_instance:
+  type: t2d-standard-4
+  spot: true
+  zone: us-west1-a
+  image_project: $IMAGE_PROJECT
+  disk: $DISK_SIZE
+  use_ssd: true
+
+# Default configuration when using cirrus' community resources
+compute_engine_instance:
+  image_project: $IMAGE_PROJECT
+  disk: $DISK_SIZE
+
+# How to run macos instances
+macos_instance_kind: &macos_instance_kind
+  - persistent_worker:
+      isolation:
+        tart:
+          image: $IMAGE
+          user: admin
+          password: admin
+    env:
+      CURRENT_CI_RESOURCES: ours
+
+  - macos_instance:
+      image: $IMAGE
+    env:
+      CURRENT_CI_RESOURCES: cirrus
+
+# How to run the various VM instances (freebsd, linux, windows right now)
+vm_instance_kind: &vm_instance_kind
+  - gce_instance:
+      image_family: $IMAGE_FAMILY
+      platform: $PLATFORM
+    env:
+      CURRENT_CI_RESOURCES: ours
+
+  - compute_engine_instance:
+      image: family/$IMAGE_FAMILY
+      platform: $PLATFORM
+      cpu: $CPUS
+    env:
+      CURRENT_CI_RESOURCES: cirrus
 
 # What files to preserve in case tests fail
 on_failure_ac: &on_failure_ac
@@ -55,6 +120,22 @@ on_failure_meson: &on_failure_meson
     type: text/plain
 
 
+# Skip a task if:
+# - the CI resources don't match (we configure all CI resources via a
+#   matrix and then exclude ones not configured)
+# - the OS was excluded via ci-os-only: in the commit message. Note: $OS_LIST
+#   is populated via .cirrus.star.
+only_if: >
+  (
+    $CURRENT_CI_RESOURCES == '' ||
+    $CI_RESOURCES == $CURRENT_CI_RESOURCES
+  )
+  && (
+    $OS_LIST == ''
+    || ($ONLY_IF_MATCHES != '' && $ONLY_IF_MATCHES in $OS_LIST)
+  )
+
+
 # To avoid unnecessarily spinning up a lot of VMs / containers for entirely
 # broken commits, have a minimal task that all others depend on.
 task:
@@ -65,6 +146,7 @@ task:
   # failures. Uses skip instead of only_if, as cirrus otherwise warns about
   # only_if conditions not matching.
   skip: $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:.*'
+  only_if:
 
   env:
     CPUS: 4
@@ -134,23 +216,21 @@ task:
   env:
     # FreeBSD on GCP is slow when running with larger number of CPUS /
     # jobs. Using one more job than cpus seems to work best.
+    PLATFORM: freebsd
+    ONLY_IF_MATCHES: freebsd
     CPUS: 2
     BUILD_JOBS: 3
     TEST_JOBS: 3
+    IMAGE_FAMILY: pg-ci-freebsd-13
+    DISK_SIZE: 50
 
     CCACHE_DIR: /tmp/ccache_dir
     CPPFLAGS: -DRELCACHE_FORCE_RELEASE -DCOPY_PARSE_PLAN_TREES -DWRITE_READ_PARSE_PLAN_TREES -DRAW_EXPRESSION_COVERAGE_TEST -DENFORCE_REGRESSION_TEST_NAME_RESTRICTIONS
     CFLAGS: -ggdb
 
   depends_on: SanityCheck
-  only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*freebsd.*'
 
-  compute_engine_instance:
-    image_project: $IMAGE_PROJECT
-    image: family/pg-ci-freebsd-13
-    platform: freebsd
-    cpu: $CPUS
-    disk: 50
+  matrix: *vm_instance_kind
 
   sysinfo_script: |
     id
@@ -248,9 +328,12 @@ LINUX_MESON_FEATURES: &LINUX_MESON_FEATURES >-
 
 task:
   env:
+    PLATFORM: linux
+    ONLY_IF_MATCHES: linux
     CPUS: 4
     BUILD_JOBS: 4
     TEST_JOBS: 8 # experimentally derived to be a decent choice
+    IMAGE_FAMILY: pg-ci-bullseye
 
     CCACHE_DIR: /tmp/ccache_dir
     DEBUGINFOD_URLS: "https://debuginfod.debian.net"
@@ -284,13 +367,8 @@ task:
     LINUX_MESON_FEATURES: *LINUX_MESON_FEATURES
 
   depends_on: SanityCheck
-  only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*linux.*'
 
-  compute_engine_instance:
-    image_project: $IMAGE_PROJECT
-    image: family/pg-ci-bullseye
-    platform: linux
-    cpu: $CPUS
+  matrix: *vm_instance_kind
 
   ccache_cache:
     folder: ${CCACHE_DIR}
@@ -425,12 +503,16 @@ task:
   name: macOS - Ventura - Meson
 
   env:
+    PLATFORM: macos
+    ONLY_IF_MATCHES: macos
+
     CPUS: 4 # always get that much for cirrusci macOS instances
     BUILD_JOBS: $CPUS
     # Test performance regresses noticably when using all cores. 8 seems to
     # work OK. See
     # https://postgr.es/m/20220927040208.l3shfcidovpzqxfh%40awork3.anarazel.de
     TEST_JOBS: 8
+    IMAGE: ghcr.io/cirruslabs/macos-ventura-base:latest
 
     CIRRUS_WORKING_DIR: ${HOME}/pgsql/
     CCACHE_DIR: ${HOME}/ccache
@@ -442,10 +524,8 @@ task:
     CXXFLAGS: -ggdb
 
   depends_on: SanityCheck
-  only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*(macos|darwin|osx).*'
 
-  macos_instance:
-    image: ghcr.io/cirruslabs/macos-ventura-base:latest
+  matrix: *macos_instance_kind
 
   sysinfo_script: |
     id
@@ -514,6 +594,8 @@ task:
 
 WINDOWS_ENVIRONMENT_BASE: &WINDOWS_ENVIRONMENT_BASE
   env:
+    PLATFORM: windows
+    ONLY_IF_MATCHES: windows
     # Half the allowed per-user CPU cores
     CPUS: 4
 
@@ -525,6 +607,7 @@ WINDOWS_ENVIRONMENT_BASE: &WINDOWS_ENVIRONMENT_BASE
     # Avoids port conflicts between concurrent tap test runs
     PG_TEST_USE_UNIX_SOCKETS: 1
     PG_REGRESS_SOCK_DIR: "c:/cirrus/"
+    DISK_SIZE: 50
 
   sysinfo_script: |
     chcp
@@ -548,15 +631,11 @@ task:
     # given that it explicitly prevents crash dumps from working...
     # 0x8001 is SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX
     CIRRUS_WINDOWS_ERROR_MODE: 0x8001
+    IMAGE_FAMILY: pg-ci-windows-ci-vs-2019
 
   depends_on: SanityCheck
-  only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*windows.*'
 
-  compute_engine_instance:
-    image_project: $IMAGE_PROJECT
-    image: family/pg-ci-windows-ci-vs-2019
-    platform: windows
-    cpu: $CPUS
+  matrix: *vm_instance_kind
 
   setup_additional_packages_script: |
     REM choco install -y --no-progress ...
@@ -599,17 +678,8 @@ task:
 
   # due to resource constraints we don't run this task by default for now
   trigger_type: manual
-  # worth using only_if despite being manual, otherwise this task will show up
-  # when e.g. ci-os-only: linux is used.
-  only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*mingw.*'
   # otherwise it'll be sorted before other tasks
   depends_on: SanityCheck
-
-  compute_engine_instance:
-    image_project: $IMAGE_PROJECT
-    image: family/pg-ci-windows-ci-mingw64
-    platform: windows
-    cpu: $CPUS
 
   env:
     TEST_JOBS: 4 # higher concurrency causes occasional failures
@@ -624,6 +694,10 @@ task:
     # Start bash in current working directory
     CHERE_INVOKING: 1
     BASH: C:\msys64\usr\bin\bash.exe -l
+    ONLY_IF_MATCHES: mingw
+    IMAGE_FAMILY: pg-ci-windows-ci-mingw64
+
+  matrix: *vm_instance_kind
 
   ccache_cache:
     folder: ${CCACHE_DIR}
@@ -664,7 +738,6 @@ task:
   # use always: to continue after failures. Task that did not run count as a
   # success, so we need to recheck SanityChecks's condition here ...
   depends_on: SanityCheck
-  only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*'
 
   env:
     CPUS: 4
