@@ -724,6 +724,13 @@ WINDOWS_ENVIRONMENT_BASE: &WINDOWS_ENVIRONMENT_BASE
     # "suites".
     T_C: "\"C:/Program Files/Git/usr/bin/timeout.exe\" -v -k60s 15m"
 
+  compute_engine_instance:
+    image_project: $IMAGE_PROJECT
+    image: family/pg-ci-windows-ci
+    platform: windows
+    cpu: $CPUS
+    memory: 4G
+
   sysinfo_script: |
     chcp
     systeminfo
@@ -748,13 +755,6 @@ task:
 
   depends_on: SanityCheck
   only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*windows.*'
-
-  compute_engine_instance:
-    image_project: $IMAGE_PROJECT
-    image: family/pg-ci-windows-ci-vs-2019
-    platform: windows
-    cpu: $CPUS
-    memory: 4G
 
   setup_additional_packages_script: |
     REM choco install -y --no-progress ...
@@ -801,13 +801,6 @@ task:
   depends_on: SanityCheck
   only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*windows.*'
 
-  compute_engine_instance:
-    image_project: $IMAGE_PROJECT
-    image: family/pg-ci-windows-ci-vs-2019
-    platform: windows
-    cpu: $CPUS
-    memory: 4G
-
   # 1.0.1 is borked with msbuild
   meson_downgrade_script: |
     pip install meson!=1.0.1
@@ -847,13 +840,6 @@ task:
   only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*mingw.*'
   # otherwise it'll be sorted before other tasks
   depends_on: SanityCheck
-
-  compute_engine_instance:
-    image_project: $IMAGE_PROJECT
-    image: family/pg-ci-windows-ci-mingw64
-    platform: windows
-    cpu: $CPUS
-    memory: 4G
 
   env:
     TEST_JOBS: 4 # higher concurrency causes occasional failures
@@ -923,13 +909,6 @@ task:
     # permissions b) need to wait for startup to have finished, and we don't
     # currently have a tool for that...
     CIRRUS_ESCAPING_PROCESSES: 1
-
-  compute_engine_instance:
-    image_project: $IMAGE_PROJECT
-    image: family/pg-ci-windows-ci-vs-2019
-    platform: windows
-    cpu: $CPUS
-    memory: 4G
 
   configure_script:
     # copy errors out when using forward slashes
