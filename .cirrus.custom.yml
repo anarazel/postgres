@@ -1,0 +1,49 @@
+gcp_credentials:
+  workload_identity_provider: projects/1072892761768/locations/global/workloadIdentityPools/cirrus-ci-pool/providers/cirrus-oidc
+  service_account: cirrus-ci@pg-ci-runs.iam.gserviceaccount.com
+
+
+# Defaults
+gce_instance:
+  type: t2d-standard-4
+  spot: true
+  zone: us-west1-a
+  use_ssd: true
+
+
+gce_instance_template: &gce_instance_template
+  gce_instance:
+    image_project: $IMAGE_PROJECT
+    image_family: $IMAGE_FAMILY
+    platform: $PLATFORM
+    disk: $DISK_SIZE
+    platform: $PLATFORM
+
+
+gce_linux_task_template: &linux_task_template
+  env:
+    PLATFORM: linux
+  <<: *gce_instance_template
+
+
+gce_freebsd_task_template: &freebsd_task_template
+  env:
+    PLATFORM: freebsd
+  <<: *gce_instance_template
+
+
+gce_windows_task_template: &windows_task_template
+  env:
+    PLATFORM: windows
+  <<: *gce_instance_template
+
+
+persistent_worker_macos_task_template: &macos_task_template
+  env:
+    PLATFORM: macos
+  persistent_worker:
+    isolation:
+      tart:
+        image: $IMAGE
+        user: admin
+        password: admin
