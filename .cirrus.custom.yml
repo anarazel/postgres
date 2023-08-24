@@ -42,6 +42,8 @@ persistent_worker_macos_task_template: &macos_task_template
   env:
     PLATFORM: macos
   persistent_worker:
+    resources:
+      vms: 1
     isolation:
       tart:
         image: $IMAGE

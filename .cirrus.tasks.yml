@@ -410,7 +410,10 @@ task:
 
 
 task:
-  name: macOS - Ventura - Meson
+  matrix:
+    - name: macOS - Ventura - Meson - 1
+    - name: macOS - Ventura - Meson - 2
+    - name: macOS - Ventura - Meson - 3
 
   env:
     CPUS: 4 # always get that much for cirrusci macOS instances
