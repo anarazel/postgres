@@ -762,13 +762,12 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 		{
 			FunctionCallInfo fcinfo =
 				RELPTR_RESOLVE(data, op->d.func.fcinfo_data);
-			FmgrInfo *finfo = RELPTR_RESOLVE(data, op->d.func.finfo);
 			NullableDatum *opres =
 				RELPTR_RESOLVE(data, op->result);
 			Datum		d;
 
 			fcinfo->isnull = false;
-			d = finfo->fn_addr(fcinfo);
+			d = op->d.func.fn_addr(fcinfo);
 			opres->value = d;
 			opres->isnull = fcinfo->isnull;
 
@@ -780,7 +779,6 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 		{
 			FunctionCallInfo fcinfo =
 				RELPTR_RESOLVE(data, op->d.func.fcinfo_data);
-			FmgrInfo *finfo = RELPTR_RESOLVE(data, op->d.func.finfo);
 			NullableDatum *opres =
 				RELPTR_RESOLVE(data, op->result);
 			NullableDatum *args = fcinfo->args;
@@ -799,7 +797,7 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 				}
 			}
 			fcinfo->isnull = false;
-			d = finfo->fn_addr(fcinfo);
+			d = op->d.func.fn_addr(fcinfo);
 			opres->value = d;
 			opres->isnull = fcinfo->isnull;
 
@@ -812,7 +810,6 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 		{
 			FunctionCallInfo fcinfo =
 				RELPTR_RESOLVE(data, op->d.func.fcinfo_data);
-			FmgrInfo *finfo = RELPTR_RESOLVE(data, op->d.func.finfo);
 			NullableDatum *opres =
 				RELPTR_RESOLVE(data, op->result);
 			NullableDatum *args = fcinfo->args;
@@ -827,7 +824,7 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 				Datum		d;
 
 				fcinfo->isnull = false;
-				d = finfo->fn_addr(fcinfo);
+				d = op->d.func.fn_addr(fcinfo);
 				opres->value = d;
 				opres->isnull = fcinfo->isnull;
 			}
@@ -840,7 +837,6 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 		{
 			FunctionCallInfo fcinfo =
 				RELPTR_RESOLVE(data, op->d.func.fcinfo_data);
-			FmgrInfo *finfo = RELPTR_RESOLVE(data, op->d.func.finfo);
 			NullableDatum *opres =
 				RELPTR_RESOLVE(data, op->result);
 			NullableDatum *args = fcinfo->args;
@@ -855,7 +851,7 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 				Datum		d;
 
 				fcinfo->isnull = false;
-				d = finfo->fn_addr(fcinfo);
+				d = op->d.func.fn_addr(fcinfo);
 				opres->value = d;
 				opres->isnull = fcinfo->isnull;
 			}
@@ -868,8 +864,7 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 			/* not common enough to inline */
 			ExecEvalFuncExprFusage(state, op,
 								   RELPTR_RESOLVE(data, op->result),
-								   RELPTR_RESOLVE(data, op->d.func.fcinfo_data),
-								   RELPTR_RESOLVE(data, op->d.func.finfo));
+								   RELPTR_RESOLVE(data, op->d.func.fcinfo_data));
 
 			EEO_NEXT();
 		}
@@ -879,8 +874,7 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 			/* not common enough to inline */
 			ExecEvalFuncExprStrictFusage(state, op,
 										 RELPTR_RESOLVE(data, op->result),
-										 RELPTR_RESOLVE(data, op->d.func.fcinfo_data),
-										 RELPTR_RESOLVE(data, op->d.func.finfo));
+										 RELPTR_RESOLVE(data, op->d.func.fcinfo_data));
 
 			EEO_NEXT();
 		}
@@ -1347,8 +1341,7 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 			{
 				FunctionCallInfo fcinfo_out =
 					RELPTR_RESOLVE(data, op->d.iocoerce.fcinfo_data_out);
-				FmgrInfo *finfo_out = RELPTR_RESOLVE(data, op->d.iocoerce.finfo_out);
-				PGFunction fn_addr_out = finfo_out->fn_addr;
+				PGFunction fn_addr_out = op->d.iocoerce.fn_addr_out;
 
 				fcinfo_out->args[0] = *opres;
 
@@ -1364,8 +1357,7 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 			{
 				FunctionCallInfo fcinfo_in =
 					RELPTR_RESOLVE(data, op->d.iocoerce.fcinfo_data_in);
-				FmgrInfo *finfo_in = RELPTR_RESOLVE(data, op->d.iocoerce.finfo_in);
-				PGFunction fn_addr_in = finfo_in->fn_addr;
+				PGFunction fn_addr_in = op->d.iocoerce.fn_addr_in;
 				Datum		d;
 
 				fcinfo_in->args[0].value = PointerGetDatum(str);
@@ -1407,7 +1399,6 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 				RELPTR_RESOLVE(data, op->result);
 			FunctionCallInfo fcinfo =
 				RELPTR_RESOLVE(data, op->d.func.fcinfo_data);
-			FmgrInfo *finfo = RELPTR_RESOLVE(data, op->d.func.finfo);
 
 			/* check function arguments for NULLness */
 			if (fcinfo->args[0].isnull && fcinfo->args[1].isnull)
@@ -1428,7 +1419,7 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 				Datum		eqresult;
 
 				fcinfo->isnull = false;
-				eqresult = finfo->fn_addr(fcinfo);
+				eqresult = op->d.func.fn_addr(fcinfo);
 				/* Must invert result of "="; safe to do even if null */
 				opres->value = BoolGetDatum(!DatumGetBool(eqresult));
 				opres->isnull = fcinfo->isnull;
@@ -1444,7 +1435,6 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 				RELPTR_RESOLVE(data, op->result);
 			FunctionCallInfo fcinfo =
 				RELPTR_RESOLVE(data, op->d.func.fcinfo_data);
-			FmgrInfo *finfo = RELPTR_RESOLVE(data, op->d.func.finfo);
 
 			if (fcinfo->args[0].isnull && fcinfo->args[1].isnull)
 			{
@@ -1461,7 +1451,7 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 				Datum		eqresult;
 
 				fcinfo->isnull = false;
-				eqresult = finfo->fn_addr(fcinfo);
+				eqresult = op->d.func.fn_addr(fcinfo);
 				opres->value = eqresult;
 				opres->isnull = fcinfo->isnull;
 			}
@@ -1478,7 +1468,6 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 				RELPTR_RESOLVE(data, op->result);
 			FunctionCallInfo fcinfo =
 				RELPTR_RESOLVE(data, op->d.func.fcinfo_data);
-			FmgrInfo *finfo = RELPTR_RESOLVE(data, op->d.func.finfo);
 
 			/* if either argument is NULL they can't be equal */
 			if (!fcinfo->args[0].isnull && !fcinfo->args[1].isnull)
@@ -1486,7 +1475,7 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 				Datum		result;
 
 				fcinfo->isnull = false;
-				result = finfo->fn_addr(fcinfo);
+				result = op->d.func.fn_addr(fcinfo);
 
 				/* if the arguments are equal return null */
 				if (!fcinfo->isnull && DatumGetBool(result))
@@ -1588,11 +1577,10 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 				RELPTR_RESOLVE(data, op->result);
 			FunctionCallInfo fcinfo =
 				RELPTR_RESOLVE(data, op->d.rowcompare_step.fcinfo_data);
-			FmgrInfo *finfo = RELPTR_RESOLVE(data, op->d.rowcompare_step.finfo);
 			Datum		d;
 
 			/* force NULL result if strict fn and NULL input */
-			if (finfo->fn_strict &&
+			if (op->d.rowcompare_step.fn_strict &&
 				(fcinfo->args[0].isnull || fcinfo->args[1].isnull))
 			{
 				opres->isnull = true;
@@ -1601,7 +1589,7 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 
 			/* Apply comparison function */
 			fcinfo->isnull = false;
-			d = finfo->fn_addr(fcinfo);
+			d = op->d.rowcompare_step.fn_addr(fcinfo);
 			opres->value = d;
 			opres->isnull = fcinfo->isnull;
 
@@ -1653,8 +1641,7 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 			ExecEvalMinMax(state, op,
 						   RELPTR_RESOLVE(data, op->result),
 						   RELPTR_RESOLVE(data, op->d.minmax.arguments),
-						   RELPTR_RESOLVE(data, op->d.minmax.fcinfo_data),
-						   RELPTR_RESOLVE(data, op->d.minmax.finfo));
+						   RELPTR_RESOLVE(data, op->d.minmax.fcinfo_data));
 			EEO_NEXT();
 		}
 
@@ -1738,8 +1725,7 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 			/* too complex for an inline implementation */
 			ExecEvalScalarArrayOp(state, nonconst_op,
 								  RELPTR_RESOLVE(data, op->result),
-								  RELPTR_RESOLVE(data, op->d.scalararrayop.fcinfo_data),
-								  RELPTR_RESOLVE(data, op->d.scalararrayop.finfo));
+								  RELPTR_RESOLVE(data, op->d.scalararrayop.fcinfo_data));
 
 			EEO_NEXT();
 		}
@@ -1749,8 +1735,7 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 			/* too complex for an inline implementation */
 			ExecEvalHashedScalarArrayOp(state, nonconst_op, econtext,
 										RELPTR_RESOLVE(data, op->result),
-										RELPTR_RESOLVE(data, op->d.hashedscalararrayop.fcinfo_data),
-										RELPTR_RESOLVE(data, op->d.hashedscalararrayop.finfo));
+										RELPTR_RESOLVE(data, op->d.hashedscalararrayop.fcinfo_data));
 
 			EEO_NEXT();
 		}
@@ -2645,8 +2630,7 @@ ExecEvalStepOp(ExprState *state, const ExprEvalStep *op)
  */
 void
 ExecEvalFuncExprFusage(ExprState *state, const ExprEvalStep *op,
-					   NullableDatum *opres, FunctionCallInfo fcinfo,
-					   FmgrInfo *finfo)
+					   NullableDatum *opres, FunctionCallInfo fcinfo)
 {
 	PgStat_FunctionCallUsage fcusage;
 	Datum		d;
@@ -2654,7 +2638,7 @@ ExecEvalFuncExprFusage(ExprState *state, const ExprEvalStep *op,
 	pgstat_init_function_usage(fcinfo, &fcusage);
 
 	fcinfo->isnull = false;
-	d = finfo->fn_addr(fcinfo);
+	d = op->d.func.fn_addr(fcinfo);
 	opres->value = d;
 	opres->isnull = fcinfo->isnull;
 
@@ -2666,8 +2650,7 @@ ExecEvalFuncExprFusage(ExprState *state, const ExprEvalStep *op,
  */
 void
 ExecEvalFuncExprStrictFusage(ExprState *state, const ExprEvalStep *op,
-							 NullableDatum *opres, FunctionCallInfo fcinfo,
-							 FmgrInfo *finfo)
+							 NullableDatum *opres, FunctionCallInfo fcinfo)
 {
 	PgStat_FunctionCallUsage fcusage;
 	NullableDatum *args = fcinfo->args;
@@ -2687,7 +2670,7 @@ ExecEvalFuncExprStrictFusage(ExprState *state, const ExprEvalStep *op,
 	pgstat_init_function_usage(fcinfo, &fcusage);
 
 	fcinfo->isnull = false;
-	d = finfo->fn_addr(fcinfo);
+	d = op->d.func.fn_addr(fcinfo);
 	opres->value = d;
 	opres->isnull = fcinfo->isnull;
 
@@ -3276,10 +3259,9 @@ ExecEvalRow(ExprState *state, const ExprEvalStep *op,
 void
 ExecEvalMinMax(ExprState *state, const ExprEvalStep *op,
 			   NullableDatum *opres, NullableDatum *args,
-			   FunctionCallInfo fcinfo, FmgrInfo *finfo)
+			   FunctionCallInfo fcinfo)
 {
 	MinMaxOp	operator = op->d.minmax.op;
-	PGFunction	fn_addr = finfo->fn_addr;
 
 	/* set at initialization */
 	Assert(fcinfo->args[0].isnull == false);
@@ -3308,7 +3290,7 @@ ExecEvalMinMax(ExprState *state, const ExprEvalStep *op,
 			fcinfo->args[1].value = args[off].value;
 
 			fcinfo->isnull = false;
-			cmpresult = DatumGetInt32(fn_addr(fcinfo));
+			cmpresult = DatumGetInt32(op->d.minmax.fn_addr(fcinfo));
 			if (fcinfo->isnull) /* probably should not happen */
 				continue;
 
@@ -3614,10 +3596,10 @@ ExecEvalConvertRowtype(ExprState *state, ExprEvalStep *op, ExprContext *econtext
  */
 void
 ExecEvalScalarArrayOp(ExprState *state, ExprEvalStep *op,
-					  NullableDatum *opres, FunctionCallInfo fcinfo, FmgrInfo *finfo)
+					  NullableDatum *opres, FunctionCallInfo fcinfo)
 {
 	bool		useOr = op->d.scalararrayop.useOr;
-	bool		strictfunc = finfo->fn_strict;
+	bool		strictfunc = op->d.scalararrayop.finfo->fn_strict;
 	ArrayType  *arr;
 	int			nitems;
 	Datum		result;
@@ -3718,7 +3700,7 @@ ExecEvalScalarArrayOp(ExprState *state, ExprEvalStep *op,
 		else
 		{
 			fcinfo->isnull = false;
-			thisresult = finfo->fn_addr(fcinfo);
+			thisresult = op->d.scalararrayop.finfo->fn_addr(fcinfo);
 		}
 
 		/* Combine results per OR or AND semantics */
@@ -3818,11 +3800,11 @@ saop_hash_element_match(struct saophash_hash *tb, Datum key1, Datum key2)
  */
 void
 ExecEvalHashedScalarArrayOp(ExprState *state, ExprEvalStep *op, ExprContext *econtext,
-							NullableDatum *opres, FunctionCallInfo fcinfo, FmgrInfo *finfo)
+							NullableDatum *opres, FunctionCallInfo fcinfo)
 {
 	ScalarArrayOpExprHashTable *elements_tab = op->d.hashedscalararrayop.elements_tab;
 	bool		inclause = op->d.hashedscalararrayop.inclause;
-	bool		strictfunc = finfo->fn_strict;
+	bool		strictfunc = op->d.hashedscalararrayop.finfo->fn_strict;
 	Datum		scalar = fcinfo->args[0].value;
 	bool		scalar_isnull = fcinfo->args[0].isnull;
 	Datum		result;
@@ -3874,7 +3856,7 @@ ExecEvalHashedScalarArrayOp(ExprState *state, ExprEvalStep *op, ExprContext *eco
 					SizeForFunctionCallInfo(1));
 		op->d.hashedscalararrayop.elements_tab = elements_tab;
 
-		elements_tab->match_fn_addr = finfo->fn_addr;
+		elements_tab->match_fn_addr = op->d.hashedscalararrayop.finfo->fn_addr;
 		elements_tab->match_fcinfo = fcinfo;
 
 		fmgr_info(saop->hashfuncid, &elements_tab->hash_finfo);
@@ -3992,7 +3974,7 @@ ExecEvalHashedScalarArrayOp(ExprState *state, ExprEvalStep *op, ExprContext *eco
 			fcinfo->args[1].value = (Datum) 0;
 			fcinfo->args[1].isnull = true;
 
-			result = finfo->fn_addr(fcinfo);
+			result = op->d.hashedscalararrayop.finfo->fn_addr(fcinfo);
 			resultnull = fcinfo->isnull;
 
 			/*

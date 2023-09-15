@@ -294,11 +294,6 @@ typedef struct RelFunctionCallInfo
 	ExprRelPtr ptr;
 } RelFunctionCallInfo;
 
-typedef struct RelFmgrInfo
-{
-	ExprRelPtr ptr;
-} RelFmgrInfo;
-
 typedef struct ExprEvalStep
 {
 	/*
@@ -378,9 +373,10 @@ typedef struct ExprEvalStep
 		/* for EEOP_FUNCEXPR_* / NULLIF / DISTINCT */
 		struct
 		{
+			bool		fn_strict;	/* function is strict */
 			RelFunctionCallInfo fcinfo_data;	/* arguments etc */
 			/* faster to access without additional indirection: */
-			RelFmgrInfo finfo;
+			PGFunction	fn_addr;	/* actual call address */
 			int			nargs;	/* number of arguments */
 		}			func;
 
@@ -445,11 +441,11 @@ typedef struct ExprEvalStep
 		{
 			/* lookup and call info for source type's output function */
 			RelFunctionCallInfo fcinfo_data_out;
-			RelFmgrInfo finfo_out;
+			PGFunction  fn_addr_out;    /* actual call address */
 			/* lookup and call info for result type's input function */
 			bool		fn_strict_in; /* in function is strict */
+			PGFunction  fn_addr_in; /* actual call address */
 			RelFunctionCallInfo fcinfo_data_in;
-			RelFmgrInfo finfo_in;
 		}			iocoerce;
 
 		/* for EEOP_SQLVALUEFUNCTION */
@@ -497,8 +493,9 @@ typedef struct ExprEvalStep
 		struct
 		{
 			/* lookup and call data for column comparison function */
+			bool		fn_strict; /* function is strict */
 			RelFunctionCallInfo fcinfo_data;
-			RelFmgrInfo	finfo;
+			PGFunction  fn_addr;
 			/* target for comparison resulting in NULL */
 			int			jumpnull;
 			/* target for comparison yielding inequality */
@@ -521,7 +518,7 @@ typedef struct ExprEvalStep
 			MinMaxOp	op;
 			/* lookup and call data for comparison function */
 			RelFunctionCallInfo fcinfo_data;
-			RelFmgrInfo finfo;
+			PGFunction	fn_addr;
 		}			minmax;
 
 		/* for EEOP_FIELDSELECT */
@@ -602,7 +599,7 @@ typedef struct ExprEvalStep
 			char		typalign;
 			RelFunctionCallInfo fcinfo_data;	/* arguments etc */
 			/* faster to access without additional indirection: */
-			RelFmgrInfo	finfo;
+			FmgrInfo   *finfo;
 		}			scalararrayop;
 
 		/* for EEOP_HASHED_SCALARARRAYOP */
@@ -611,7 +608,7 @@ typedef struct ExprEvalStep
 			bool		has_nulls;
 			bool		inclause;	/* true for IN and false for NOT IN */
 			struct ScalarArrayOpExprHashTable *elements_tab;
-			RelFmgrInfo   finfo;	/* function's lookup data */
+			FmgrInfo   *finfo;	/* function's lookup data */
 			RelFunctionCallInfo fcinfo_data;	/* arguments etc */
 			ScalarArrayOpExpr *saop;
 		}			hashedscalararrayop;
@@ -741,7 +738,7 @@ typedef enum ExprRelPtrKind
 	ERP_NULLABLE_DATUM,
 	ERP_NULLABLE_DATUM_ARRAY,
 	ERP_FUNCTIONCALLINFO,
-	ERP_FMGRINFO
+	//ERP_FMGRINFO
 } ExprRelPtrKind;
 
 typedef struct ExprStateAllocation
@@ -916,10 +913,10 @@ extern void CheckExprStillValid(ExprState *state, ExprContext *econtext);
  */
 extern void ExecEvalFuncExprFusage(ExprState *state, const ExprEvalStep *op,
 								   NullableDatum *opres,
-								   FunctionCallInfo fcinfo, FmgrInfo *finfo);
+								   FunctionCallInfo fcinfo);
 extern void ExecEvalFuncExprStrictFusage(ExprState *state, const ExprEvalStep *op,
 										 NullableDatum *opres,
-										 FunctionCallInfo fcinfo, FmgrInfo *finfo);
+										 FunctionCallInfo fcinfo);
 extern void ExecEvalParamExec(ExprState *state, const ExprEvalStep *op,
 							  ExprContext *econtext,
 							  NullableDatum *opres);
@@ -947,7 +944,7 @@ extern void ExecEvalRow(ExprState *state, const ExprEvalStep *op,
 						NullableDatum *opres, NullableDatum *elements);
 extern void ExecEvalMinMax(ExprState *state, const ExprEvalStep *op,
 						   NullableDatum *opres, NullableDatum *args,
-						   FunctionCallInfo fcinfo, FmgrInfo *finfo);
+						   FunctionCallInfo fcinfo);
 extern void ExecEvalFieldSelect(ExprState *state, ExprEvalStep *op,
 								ExprContext *econtext, NullableDatum *opres);
 extern void ExecEvalFieldStoreDeForm(ExprState *state, const ExprEvalStep *op,
@@ -959,12 +956,10 @@ extern void ExecEvalConvertRowtype(ExprState *state, ExprEvalStep *op,
 								   ExprContext *econtext,
 								   NullableDatum *opres);
 extern void ExecEvalScalarArrayOp(ExprState *state, ExprEvalStep *op,
-								  NullableDatum *opres, FunctionCallInfo fcinfo,
-								  FmgrInfo *finfo);
+								  NullableDatum *opres, FunctionCallInfo fcinfo);
 extern void ExecEvalHashedScalarArrayOp(ExprState *state, ExprEvalStep *op,
 										ExprContext *econtext,
-										NullableDatum *opres, FunctionCallInfo fcinfo,
-										FmgrInfo *finfo);
+										NullableDatum *opres, FunctionCallInfo fcinfo);
 extern void ExecEvalConstraintNotNull(ExprState *state, const ExprEvalStep *op,
 								   NullableDatum *opres);
 extern void ExecEvalConstraintCheck(ExprState *state, const ExprEvalStep *op,

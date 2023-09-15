@@ -174,6 +174,7 @@ ExprBuilderAllocFunctionCallInfo(ExprStateBuilder *esb, int nargs, FunctionCallI
 	return (RelFunctionCallInfo){alloc->ptr};
 }
 
+#if 0
 static RelFmgrInfo
 ExprBuilderAllocFmgrInfoInit(ExprStateBuilder *esb, FmgrInfo **ptr)
 {
@@ -188,6 +189,7 @@ ExprBuilderAllocFmgrInfoInit(ExprStateBuilder *esb, FmgrInfo **ptr)
 
 	return (RelFmgrInfo){alloc->ptr};
 }
+#endif
 
 static RelNullableDatum
 RelArrayIdx(RelNullableDatumArray arr, int idx)
@@ -1419,7 +1421,6 @@ ExecInitExprRec(ExprStateBuilder *esb, Expr *node, RelNullableDatum result)
 				ScalarArrayOpExpr *opexpr = (ScalarArrayOpExpr *) node;
 				Expr	   *scalararg;
 				Expr	   *arrayarg;
-				RelFmgrInfo	finfo_rel;
 				FmgrInfo   *finfo;
 				RelFunctionCallInfo fcinfo_rel;
 				FunctionCallInfo fcinfo;
@@ -1465,7 +1466,7 @@ ExecInitExprRec(ExprStateBuilder *esb, Expr *node, RelNullableDatum result)
 				}
 
 				/* Set up the primary fmgr lookup information */
-				finfo_rel = ExprBuilderAllocFmgrInfoInit(esb, &finfo);
+				finfo = palloc0(sizeof(FmgrInfo));
 				fcinfo_rel = ExprBuilderAllocFunctionCallInfo(esb, 2, &fcinfo);
 				fmgr_info(cmpfuncid, finfo);
 				fmgr_info_set_expr((Node *) node, finfo);
@@ -1496,7 +1497,7 @@ ExecInitExprRec(ExprStateBuilder *esb, Expr *node, RelNullableDatum result)
 					/* And perform the operation */
 					scratch.opcode = EEOP_HASHED_SCALARARRAYOP;
 					scratch.d.hashedscalararrayop.inclause = opexpr->useOr;
-					scratch.d.hashedscalararrayop.finfo = finfo_rel;
+					scratch.d.hashedscalararrayop.finfo = finfo;
 					scratch.d.hashedscalararrayop.fcinfo_data = fcinfo_rel;
 					scratch.d.hashedscalararrayop.saop = opexpr;
 
@@ -1519,7 +1520,7 @@ ExecInitExprRec(ExprStateBuilder *esb, Expr *node, RelNullableDatum result)
 					scratch.opcode = EEOP_SCALARARRAYOP;
 					scratch.d.scalararrayop.element_type = InvalidOid;
 					scratch.d.scalararrayop.useOr = opexpr->useOr;
-					scratch.d.scalararrayop.finfo = finfo_rel;
+					scratch.d.scalararrayop.finfo = finfo;
 					scratch.d.scalararrayop.fcinfo_data = fcinfo_rel;
 					ExprEvalPushStep(esb, &scratch);
 				}
@@ -1768,8 +1769,8 @@ ExecInitExprRec(ExprStateBuilder *esb, Expr *node, RelNullableDatum result)
 				Oid			typioparam;
 				FunctionCallInfo fcinfo_in;
 				FunctionCallInfo fcinfo_out;
-				FmgrInfo   *finfo_in;
-				FmgrInfo   *finfo_out;
+				FmgrInfo   *finfo_in = palloc0(sizeof(FmgrInfo));
+				FmgrInfo   *finfo_out = palloc0(sizeof(FmgrInfo));
 
 				/* evaluate argument into step's result area */
 				ExecInitExprRec(esb, iocoerce->arg, result);
@@ -1788,22 +1789,17 @@ ExecInitExprRec(ExprStateBuilder *esb, Expr *node, RelNullableDatum result)
 				scratch.d.iocoerce.fcinfo_data_out =
 					ExprBuilderAllocFunctionCallInfo(esb, 1, &fcinfo_out);
 
-				scratch.d.iocoerce.finfo_out =
-					ExprBuilderAllocFmgrInfoInit(esb, &finfo_out);
-
 				getTypeOutputInfo(exprType((Node *) iocoerce->arg),
 								  &iofunc, &typisvarlena);
 				fmgr_info(iofunc, finfo_out);
 				fmgr_info_set_expr((Node *) node, finfo_out);
 				InitFunctionCallInfoData(*fcinfo_out, finfo_out, 1,
 										 InvalidOid, NULL, NULL);
+				scratch.d.iocoerce.fn_addr_out = finfo_out->fn_addr;
 
 				/* lookup the result type's input function */
 				scratch.d.iocoerce.fcinfo_data_in =
 					ExprBuilderAllocFunctionCallInfo(esb, 3, &fcinfo_in);
-
-				scratch.d.iocoerce.finfo_in =
-					ExprBuilderAllocFmgrInfoInit(esb, &finfo_in);
 
 				getTypeInputInfo(iocoerce->resulttype,
 								 &iofunc, &typioparam);
@@ -1812,6 +1808,7 @@ ExecInitExprRec(ExprStateBuilder *esb, Expr *node, RelNullableDatum result)
 				InitFunctionCallInfoData(*fcinfo_in, finfo_in, 3,
 										 InvalidOid, NULL, NULL);
 				scratch.d.iocoerce.fn_strict_in = finfo_in->fn_strict;
+				scratch.d.iocoerce.fn_addr_in = finfo_in->fn_addr;
 
 				/*
 				 * We can preload the second and third arguments for the input
@@ -2226,7 +2223,6 @@ ExecInitExprRec(ExprStateBuilder *esb, Expr *node, RelNullableDatum result)
 					Oid			lefttype;
 					Oid			righttype;
 					Oid			proc;
-					RelFmgrInfo	finfo_rel;
 					FmgrInfo   *finfo;
 					RelFunctionCallInfo fcinfo_rel;
 					FunctionCallInfo fcinfo;
@@ -2244,7 +2240,7 @@ ExecInitExprRec(ExprStateBuilder *esb, Expr *node, RelNullableDatum result)
 							 BTORDER_PROC, lefttype, righttype, opfamily);
 
 					/* Set up the primary fmgr lookup information */
-					finfo_rel = ExprBuilderAllocFmgrInfoInit(esb, &finfo);
+					finfo = palloc0(sizeof(FmgrInfo));
 					fcinfo_rel =
 						ExprBuilderAllocFunctionCallInfo(esb, 3, &fcinfo);
 
@@ -2265,8 +2261,9 @@ ExecInitExprRec(ExprStateBuilder *esb, Expr *node, RelNullableDatum result)
 					ExecInitExprRec(esb, right_expr, RelFCIIdx(fcinfo_rel, 1));
 
 					scratch.opcode = EEOP_ROWCOMPARE_STEP;
+					scratch.d.rowcompare_step.fn_strict = finfo->fn_strict;
 					scratch.d.rowcompare_step.fcinfo_data = fcinfo_rel;
-					scratch.d.rowcompare_step.finfo = finfo_rel;
+					scratch.d.rowcompare_step.fn_addr = finfo->fn_addr;
 					/* jump targets filled below */
 					scratch.d.rowcompare_step.jumpnull = -1;
 					scratch.d.rowcompare_step.jumpdone = -1;
@@ -2364,7 +2361,6 @@ ExecInitExprRec(ExprStateBuilder *esb, Expr *node, RelNullableDatum result)
 				MinMaxExpr *minmaxexpr = (MinMaxExpr *) node;
 				int			nelems = list_length(minmaxexpr->args);
 				TypeCacheEntry *typentry;
-				RelFmgrInfo		finfo_rel;
 				FmgrInfo	   *finfo;
 				RelFunctionCallInfo fcinfo_rel;
 				FunctionCallInfo fcinfo;
@@ -2388,7 +2384,7 @@ ExecInitExprRec(ExprStateBuilder *esb, Expr *node, RelNullableDatum result)
 				 */
 
 				/* Perform function lookup */
-				finfo_rel = ExprBuilderAllocFmgrInfoInit(esb, &finfo);
+				finfo = palloc0(sizeof(FmgrInfo));
 				fcinfo_rel =
 					ExprBuilderAllocFunctionCallInfo(esb, 2, &fcinfo);
 				fmgr_info(typentry->cmp_proc, finfo);
@@ -2405,7 +2401,7 @@ ExecInitExprRec(ExprStateBuilder *esb, Expr *node, RelNullableDatum result)
 
 				scratch.d.minmax.op = minmaxexpr->op;
 				scratch.d.minmax.fcinfo_data = fcinfo_rel;
-				scratch.d.minmax.finfo = finfo_rel;
+				scratch.d.minmax.fn_addr = finfo->fn_addr;
 
 				/* evaluate expressions into minmax->values/nulls */
 				off = 0;
@@ -2775,8 +2771,7 @@ ExecInitFunc(ExprEvalStep *scratch, Expr *node, List *args, Oid funcid,
 {
 	int			nargs = list_length(args);
 	AclResult	aclresult;
-	RelFmgrInfo	finfo_rel;
-	FmgrInfo   *finfo;
+	FmgrInfo   *flinfo;
 	RelFunctionCallInfo fcinfo_rel;
 	FunctionCallInfo fcinfo;
 	int			argno;
@@ -2803,23 +2798,26 @@ ExecInitFunc(ExprEvalStep *scratch, Expr *node, List *args, Oid funcid,
 							   FUNC_MAX_ARGS)));
 
 	/* Allocate function lookup data and parameter workspace for this call */
-	finfo_rel = ExprBuilderAllocFmgrInfoInit(esb, &finfo);
+	flinfo = palloc0(sizeof(FmgrInfo));
 	fcinfo_rel = ExprBuilderAllocFunctionCallInfo(esb, nargs, &fcinfo);
 	scratch->d.func.fcinfo_data = fcinfo_rel;
 
 	/* Set up the primary fmgr lookup information */
-	fmgr_info(funcid, finfo);
-	fmgr_info_set_expr((Node *) node, finfo);
+	flinfo = palloc0(sizeof(FmgrInfo));
+	fmgr_info(funcid, flinfo);
+	fmgr_info_set_expr((Node *) node, flinfo);
 
 	/* Initialize function call parameter structure too */
-	InitFunctionCallInfoData(*fcinfo, finfo,
+	InitFunctionCallInfoData(*fcinfo, flinfo,
 							 nargs, inputcollid, NULL, NULL);
 
-	scratch->d.func.finfo = finfo_rel;
+	/* Keep extra copies of this info to save an indirection at runtime */
 	scratch->d.func.nargs = nargs;
+	scratch->d.func.fn_strict = flinfo->fn_strict;
+	scratch->d.func.fn_addr = flinfo->fn_addr;
 
 	/* We only support non-set functions here */
-	if (finfo->fn_retset)
+	if (flinfo->fn_retset)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("set-valued function called in context that cannot accept a set"),
@@ -2852,9 +2850,9 @@ ExecInitFunc(ExprEvalStep *scratch, Expr *node, List *args, Oid funcid,
 	}
 
 	/* Insert appropriate opcode depending on strictness and stats level */
-	if (pgstat_track_functions <= finfo->fn_stats)
+	if (pgstat_track_functions <= flinfo->fn_stats)
 	{
-		if (finfo->fn_strict && nargs > 0)
+		if (flinfo->fn_strict && nargs > 0)
 		{
 			/* Choose nargs optimized implementation if available. */
 			if (nargs == 1)
@@ -2869,7 +2867,7 @@ ExecInitFunc(ExprEvalStep *scratch, Expr *node, List *args, Oid funcid,
 	}
 	else
 	{
-		if (finfo->fn_strict && nargs > 0)
+		if (flinfo->fn_strict && nargs > 0)
 			scratch->opcode = EEOP_FUNCEXPR_STRICT_FUSAGE;
 		else
 			scratch->opcode = EEOP_FUNCEXPR_FUSAGE;
@@ -4205,7 +4203,6 @@ ExecBuildGroupingEqual(TupleDesc ldesc, TupleDesc rdesc,
 		Form_pg_attribute ratt = TupleDescAttr(rdesc, attno - 1);
 		Oid			foid = eqfunctions[natt];
 		Oid			collid = collations[natt];
-		RelFmgrInfo	finfo_rel;
 		FmgrInfo   *finfo;
 		RelFunctionCallInfo fcinfo_rel;
 		FunctionCallInfo fcinfo;
@@ -4219,7 +4216,7 @@ ExecBuildGroupingEqual(TupleDesc ldesc, TupleDesc rdesc,
 		InvokeFunctionExecuteHook(foid);
 
 		/* Set up the primary fmgr lookup information */
-		finfo_rel = ExprBuilderAllocFmgrInfoInit(&esb, &finfo);
+		finfo = palloc0(sizeof(FmgrInfo));
 		fcinfo_rel = ExprBuilderAllocFunctionCallInfo(&esb, 2, &fcinfo);
 		fmgr_info(foid, finfo);
 		fmgr_info_set_expr(NULL, finfo);
@@ -4242,7 +4239,8 @@ ExecBuildGroupingEqual(TupleDesc ldesc, TupleDesc rdesc,
 
 		/* evaluate distinctness */
 		scratch.opcode = EEOP_NOT_DISTINCT;
-		scratch.d.func.finfo = finfo_rel;
+		scratch.d.func.fn_strict = finfo->fn_strict;
+		scratch.d.func.fn_addr = finfo->fn_addr;
 		scratch.d.func.fcinfo_data = fcinfo_rel;
 		scratch.d.func.nargs = 2;
 		scratch.result = esb.result;
@@ -4333,7 +4331,6 @@ ExecBuildParamSetEqual(TupleDesc desc,
 		Form_pg_attribute att = TupleDescAttr(desc, attno);
 		Oid			foid = eqfunctions[attno];
 		Oid			collid = collations[attno];
-		RelFmgrInfo	finfo_rel;
 		FmgrInfo   *finfo;
 		FunctionCallInfo fcinfo;
 		RelFunctionCallInfo fcinfo_rel;
@@ -4347,7 +4344,7 @@ ExecBuildParamSetEqual(TupleDesc desc,
 		InvokeFunctionExecuteHook(foid);
 
 		/* Set up the primary fmgr lookup information */
-		finfo_rel = ExprBuilderAllocFmgrInfoInit(&esb, &finfo);
+		finfo = palloc0(sizeof(FmgrInfo));
 		fcinfo_rel = ExprBuilderAllocFunctionCallInfo(&esb, 2, &fcinfo);
 		fmgr_info(foid, finfo);
 		fmgr_info_set_expr(NULL, finfo);
@@ -4370,7 +4367,8 @@ ExecBuildParamSetEqual(TupleDesc desc,
 
 		/* evaluate distinctness */
 		scratch.opcode = EEOP_NOT_DISTINCT;
-		scratch.d.func.finfo = finfo_rel;
+		scratch.d.func.fn_strict = finfo->fn_strict;
+		scratch.d.func.fn_addr = finfo->fn_addr;
 		scratch.d.func.fcinfo_data = fcinfo_rel;
 		scratch.d.func.nargs = 2;
 		scratch.result = esb.result;

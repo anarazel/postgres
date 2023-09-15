@@ -13,6 +13,8 @@
  *-------------------------------------------------------------------------
  */
 
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 #include "postgres.h"
 
 #include <llvm-c/Core.h>
@@ -113,7 +115,7 @@ static void expr_init_nullable_datums(ExprCompileState *ecs, int nelems, Nullabl
 
 static LLVMValueRef expr_allocation_ref(ExprCompileState *ecs, ExprRelPtr rel);
 static LLVMValueRef expr_fcinfo_ref(ExprCompileState *ecs, RelFunctionCallInfo relfc, FunctionCallInfo *fcinfo);
-static LLVMValueRef expr_fmgrinfo_ref(ExprCompileState *ecs, RelFmgrInfo relfinfo, FmgrInfo **finfo);
+//static LLVMValueRef expr_fmgrinfo_ref(ExprCompileState *ecs, RelFmgrInfo relfinfo, FmgrInfo **finfo);
 static LLVMValueRef expr_nullable_datum_array_ref(ExprCompileState *ecs, RelNullableDatumArray relfc);
 static LLVMValueRef expr_nullable_datum_ref(ExprCompileState *ecs, RelNullableDatum relfc);
 
@@ -324,9 +326,9 @@ llvm_compile_expr(ExprState *state, ExprStateBuilder *esb)
 		LLVMSetCurrentDebugLocation2(b, l2);
 	}
 
-	ecs.v_steps = LLVMBuildLoad(b, LLVMBuildStructGEP(b, ecs.v_state,
+	ecs.v_steps = LLVMBuildStructGEP(b, ecs.v_state,
 									 FIELDNO_EXPRSTATE_STEPS,
-													  "v.state.steps"), "");
+									 "v.state.steps");
 
 	/* allocate blocks for each op upfront, so we can do jumps easily */
 	opblocks = palloc(sizeof(LLVMBasicBlockRef) * state->steps_final_len);
@@ -696,14 +698,12 @@ llvm_compile_expr(ExprState *state, ExprStateBuilder *esb)
 			case EEOP_FUNCEXPR_STRICT_2:
 				{
 					FunctionCallInfo fcinfo;
-					FmgrInfo *finfo;
 					LLVMValueRef v_fcinfo;
-					LLVMValueRef v_finfo;
 					LLVMValueRef v_fcinfo_isnull;
 					LLVMValueRef v_retval;
 
 					v_fcinfo = expr_fcinfo_ref(&ecs, op->d.func.fcinfo_data, &fcinfo);
-					v_finfo = expr_fmgrinfo_ref(&ecs, op->d.func.finfo, &finfo);
+
 
 					/*
 					 * set resnull to true, if the function is actually
@@ -773,7 +773,7 @@ llvm_compile_expr(ExprState *state, ExprStateBuilder *esb)
 						LLVMPositionBuilderAtEnd(b, b_nonull);
 					}
 
-					v_retval = BuildV1CallFC(&ecs, finfo, v_fcinfo,
+					v_retval = BuildV1CallFC(&ecs, fcinfo, v_fcinfo,
 											 &v_fcinfo_isnull);
 					LLVMBuildStore(b, v_retval, v_resvaluep);
 					LLVMBuildStore(b, v_fcinfo_isnull, v_resnullp);
@@ -1472,8 +1472,6 @@ llvm_compile_expr(ExprState *state, ExprStateBuilder *esb)
 				{
 					FunctionCallInfo fcinfo_out,
 								fcinfo_in;
-					FmgrInfo finfo_out;
-					FmgrInfo finfo_in;
 					LLVMValueRef v_fn_out,
 								v_fn_in;
 					LLVMValueRef v_fcinfo_out,
@@ -1606,9 +1604,7 @@ llvm_compile_expr(ExprState *state, ExprStateBuilder *esb)
 			case EEOP_NOT_DISTINCT:
 				{
 					FunctionCallInfo fcinfo;
-					FmgrInfo *finfo;
 
-					LLVMValueRef v_finfo;
 					LLVMValueRef v_fcinfo;
 					LLVMValueRef v_fcinfo_isnull;
 
@@ -1628,7 +1624,6 @@ llvm_compile_expr(ExprState *state, ExprStateBuilder *esb)
 					LLVMBasicBlockRef b_anyargnull;
 
 					v_fcinfo = expr_fcinfo_ref(&ecs, op->d.func.fcinfo_data, &fcinfo);
-					v_finfo = expr_fmgrinfo_ref(&ecs, op->d.func.finfo, &finfo);
 
 					b_noargnull =
 						l_bb_before_v(opblocks[opno + 1],
@@ -1696,7 +1691,7 @@ llvm_compile_expr(ExprState *state, ExprStateBuilder *esb)
 					/* neither argument is null: compare */
 					LLVMPositionBuilderAtEnd(b, b_noargnull);
 
-					v_result = BuildV1CallFC(&ecs, finfo, v_fcinfo,
+					v_result = BuildV1CallFC(&ecs, fcinfo, v_fcinfo,
 											 &v_fcinfo_isnull);
 
 					if (opcode == EEOP_DISTINCT)
@@ -1720,9 +1715,7 @@ llvm_compile_expr(ExprState *state, ExprStateBuilder *esb)
 			case EEOP_NULLIF:
 				{
 					FunctionCallInfo fcinfo;
-					FmgrInfo *finfo;
 
-					LLVMValueRef v_finfo;
 					LLVMValueRef v_fcinfo;
 					LLVMValueRef v_fcinfo_isnull;
 					LLVMValueRef v_argnull0;
@@ -1736,7 +1729,6 @@ llvm_compile_expr(ExprState *state, ExprStateBuilder *esb)
 					LLVMValueRef v_argsequal;
 
 					v_fcinfo = expr_fcinfo_ref(&ecs, op->d.func.fcinfo_data, &fcinfo);
-					v_finfo = expr_fmgrinfo_ref(&ecs, op->d.func.finfo, &finfo);
 
 					b_hasnull =
 						l_bb_before_v(opblocks[opno + 1],
@@ -1775,7 +1767,7 @@ llvm_compile_expr(ExprState *state, ExprStateBuilder *esb)
 					/* build block to invoke function and check result */
 					LLVMPositionBuilderAtEnd(b, b_nonull);
 
-					v_retval = BuildV1CallFC(&ecs, finfo, v_fcinfo,
+					v_retval = BuildV1CallFC(&ecs, fcinfo, v_fcinfo,
 											 &v_fcinfo_isnull);
 
 					/*
@@ -1885,8 +1877,6 @@ llvm_compile_expr(ExprState *state, ExprStateBuilder *esb)
 			case EEOP_ROWCOMPARE_STEP:
 				{
 					FunctionCallInfo fcinfo;
-					FmgrInfo *finfo;
-					LLVMValueRef v_finfo;
 					LLVMValueRef v_fcinfo;
 					LLVMValueRef v_fcinfo_isnull;
 					LLVMBasicBlockRef b_null;
@@ -1898,9 +1888,6 @@ llvm_compile_expr(ExprState *state, ExprStateBuilder *esb)
 					v_fcinfo = expr_fcinfo_ref(&ecs,
 											   op->d.rowcompare_step.fcinfo_data,
 											   &fcinfo);
-					v_finfo = expr_fmgrinfo_ref(&ecs,
-												op->d.rowcompare_step.finfo,
-												&finfo);
 
 					b_null =
 						l_bb_before_v(opblocks[opno + 1],
@@ -1919,7 +1906,7 @@ llvm_compile_expr(ExprState *state, ExprStateBuilder *esb)
 					 * If function is strict, and either arg is null, we're
 					 * done.
 					 */
-					if (finfo->fn_strict)
+					if (op->d.rowcompare_step.fn_strict)
 					{
 						LLVMValueRef v_argnull0;
 						LLVMValueRef v_argnull1;
@@ -1951,7 +1938,7 @@ llvm_compile_expr(ExprState *state, ExprStateBuilder *esb)
 					LLVMPositionBuilderAtEnd(b, b_compare);
 
 					/* call function */
-					v_retval = BuildV1CallFC(&ecs, finfo, v_fcinfo,
+					v_retval = BuildV1CallFC(&ecs, fcinfo, v_fcinfo,
 											 &v_fcinfo_isnull);
 					LLVMBuildStore(b, v_retval, v_resvaluep);
 
@@ -2245,9 +2232,7 @@ llvm_compile_expr(ExprState *state, ExprStateBuilder *esb)
 			case EEOP_AGG_DESERIALIZE:
 				{
 					FunctionCallInfo fcinfo;
-					FmgrInfo finfo;
 
-					LLVMValueRef v_finfo;
 					LLVMValueRef v_fcinfo;
 					LLVMValueRef v_retval;
 					LLVMValueRef v_fcinfo_isnull;
@@ -2282,7 +2267,7 @@ llvm_compile_expr(ExprState *state, ExprStateBuilder *esb)
 					expr_set_aggtmpcontextp(&ecs);
 
 					v_oldcontext = l_mcxt_switch(ecs.mod, b, ecs.d.agg.tmpcontext_pertup);
-					v_retval = BuildV1CallFC(&ecs, &finfo, v_fcinfo, &v_fcinfo_isnull);
+					v_retval = BuildV1CallFC(&ecs, fcinfo, v_fcinfo, &v_fcinfo_isnull);
 					l_mcxt_switch(ecs.mod, b, v_oldcontext);
 
 					LLVMBuildStore(b, v_retval, v_resvaluep);
@@ -2395,9 +2380,7 @@ llvm_compile_expr(ExprState *state, ExprStateBuilder *esb)
 			case EEOP_AGG_PLAIN_TRANS_BYREF:
 				{
 					FunctionCallInfo fcinfo;
-					FmgrInfo finfo;
 
-					LLVMValueRef v_finfo;
 					LLVMValueRef v_fcinfo;
 					LLVMValueRef v_fcinfo_isnull;
 					LLVMValueRef v_fcinfo_context;
@@ -2547,7 +2530,7 @@ llvm_compile_expr(ExprState *state, ExprStateBuilder *esb)
 					LLVMBuildStore(b, v_transvalue, l_funcargp(b, v_fcinfo, 0));
 
 					/* and invoke transition function */
-					v_retval = BuildV1CallFC(&ecs, &finfo,
+					v_retval = BuildV1CallFC(&ecs, fcinfo,
 											 v_fcinfo, &v_fcinfo_isnull);
 
 					/*
@@ -2834,13 +2817,14 @@ expr_emit_allocations(ExprCompileState *ecs)
 							  (FunctionCallInfo) allocation->initial_content,
 							  v_allocation);
 				break;
-
+#if 0
 			case ERP_FMGRINFO:
 				Assert(allocation->initial_content != NULL);
 
 				allocname = psprintf("alloc.%u.fmgr_info", i + 1);
 				v_allocation = LLVMBuildAlloca(ecs->b, StructFmgrInfo, allocname);
 				break;
+#endif
 		}
 
 		// FIXME: initial allocation
@@ -3066,6 +3050,7 @@ expr_fcinfo_ref(ExprCompileState *ecs, RelFunctionCallInfo relfc, FunctionCallIn
    return expr_allocation_ref(ecs, relfc.ptr);
 }
 
+#if 0
 static LLVMValueRef
 expr_fmgrinfo_ref(ExprCompileState *ecs, RelFmgrInfo relfinfo, FmgrInfo **finfo)
 {
@@ -3075,8 +3060,10 @@ expr_fmgrinfo_ref(ExprCompileState *ecs, RelFmgrInfo relfinfo, FmgrInfo **finfo)
 	if (finfo)
 		*finfo = (FmgrInfo *) alloc->initial_content;
 
+	return l_ptr_const(alloc->initial_content, l_ptr(StructFmgrInfo));
 	return expr_allocation_ref(ecs, relfinfo.ptr);
 }
+#endif
 
 static LLVMValueRef
 expr_nullable_datum_array_ref(ExprCompileState *ecs, RelNullableDatumArray relfc)
@@ -3247,7 +3234,8 @@ expr_opp(ExprCompileState *ecs, int opno)
 {
 	LLVMValueRef v_opno = l_int32_const(opno);
 
-	return LLVMBuildGEP(ecs->b, ecs->v_steps, &v_opno, 1, "");
+	return LLVMBuildGEP(ecs->b, LLVMBuildBitCast(ecs->b, ecs->v_steps, l_ptr(StructExprEvalStep), ""),
+						&v_opno, 1, "");
 }
 
 static LLVMValueRef
