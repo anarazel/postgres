@@ -413,8 +413,6 @@ task:
 
 
 task:
-  name: macOS - Ventura - Meson
-
   env:
     CPUS: 4 # always get that much for cirrusci macOS instances
     BUILD_JOBS: $CPUS
@@ -422,7 +420,6 @@ task:
     # work OK. See
     # https://postgr.es/m/20220927040208.l3shfcidovpzqxfh%40awork3.anarazel.de
     TEST_JOBS: 8
-    IMAGE: ghcr.io/cirruslabs/macos-ventura-base:latest
 
     CIRRUS_WORKING_DIR: ${HOME}/pgsql/
     CCACHE_DIR: ${HOME}/ccache
@@ -434,6 +431,16 @@ task:
     CXXFLAGS: -Og -ggdb
 
     PG_TEST_PG_UPGRADE_MODE: --clone
+
+
+  matrix:
+    - name: macOS - Sonoma - Meson
+      env:
+        IMAGE: ghcr.io/cirruslabs/macos-sonoma-base:latest
+
+    - name: macOS - Sonoma - Ventura
+      env:
+        IMAGE: ghcr.io/cirruslabs/macos-ventura-base:latest
 
   <<: *macos_task_template
 

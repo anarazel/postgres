@@ -9,11 +9,21 @@
 # This currently expects to be run in a macos cirrus-ci environment.
 
 set -e
-# set -x
+set -x
 
 packages="$@"
 
-macports_url="https://github.com/macports/macports-base/releases/download/v2.8.1/MacPorts-2.8.1-13-Ventura.pkg"
+macos_ver=$(sw_vers -productVersion | sed 's/\..*//g')
+
+echo sw_vers: $(sw_vers -productVersion)
+echo parsed: ${macos_ver}
+
+if [ $macos_ver -ge 14 ]; then
+    macports_url="https://github.com/macports/macports-base/releases/download/v2.9.1/MacPorts-2.9.1-14-Sonoma.pkg"
+else
+    macports_url="https://github.com/macports/macports-base/releases/download/v2.9.1/MacPorts-2.9.1-13-Ventura.pkg"
+fi
+
 cache_dmg="macports.hfs.dmg"
 
 if [ "$CIRRUS_CI" != "true" ]; then
