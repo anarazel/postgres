@@ -235,25 +235,19 @@ task:
     - name: NetBSD - 9 - Meson
       only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*netbsd.*'
       env:
-        IMAGE_NAME: pg-ci-netbsd-postgres-9-3
+        IMAGE_FAMILY: pg-ci-netbsd-postgres-9-3
         PLATFORM: netbsd
         INCLUDE_DIRS: -Dextra_lib_dirs=/usr/pkg/lib -Dextra_include_dirs=/usr/pkg/include
 
     - name: OpenBSD - 7 - Meson
       only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*openbsd.*'
       env:
-        IMAGE_NAME: pg-ci-openbsd-postgres-7-3
+        IMAGE_FAMILY: pg-ci-openbsd-postgres-7-3
         PLATFORM: openbsd
         INCLUDE_DIRS: -Dextra_include_dirs=/usr/local/include -Dextra_lib_dirs=/usr/local/lib
         UUID: -Duuid=e2fs
 
-  compute_engine_instance:
-    image_project: $IMAGE_PROJECT
-    image: family/${IMAGE_NAME}
-    platform: ${PLATFORM}
-    cpu: $CPUS
-    memory: 4G
-    disk: 25
+  <<: *freebsd_task_template
 
   sysinfo_script: |
     locale
@@ -444,8 +438,8 @@ task:
         - name: Linux - Debian Sid - Meson
           trigger_type: manual
 
-          compute_engine_instance:
-            image: family/pg-ci-sid
+          env:
+            IMAGE_FAMILY: pg-ci-sid
 
       env:
         CCACHE_MAXSIZE: "400M" # tests two different builds
@@ -772,16 +766,12 @@ task:
   env:
     TEST_JOBS: 8 # wild guess, data based value welcome
     CIRRUS_WINDOWS_ERROR_MODE: 0x8001
+    IMAGE_FAMILY: pg-ci-windows-ci-vs-2019
+
+  <<: *windows_task_template
 
   depends_on: SanityCheck
   only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*windows.*'
-
-  compute_engine_instance:
-    image_project: $IMAGE_PROJECT
-    image: family/pg-ci-windows-ci-vs-2019
-    platform: windows
-    cpu: $CPUS
-    memory: 4G
 
   # 1.0.1 is borked with msbuild
   meson_downgrade_script: |
@@ -895,12 +885,9 @@ task:
     # currently have a tool for that...
     CIRRUS_ESCAPING_PROCESSES: 1
 
-  compute_engine_instance:
-    image_project: $IMAGE_PROJECT
-    image: family/pg-ci-windows-ci-vs-2019
-    platform: windows
-    cpu: $CPUS
-    memory: 4G
+    IMAGE_FAMILY: pg-ci-windows-ci-vs-2019
+
+  <<: *windows_task_template
 
   configure_script:
     # copy errors out when using forward slashes
