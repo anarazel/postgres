@@ -50,7 +50,7 @@ if get_option('system_tzdata') == ''
     install_dir: dir_data,
   )
 
-  bin_targets += tzdata
+  data_targets += tzdata
 endif
 
 subdir('tznames')

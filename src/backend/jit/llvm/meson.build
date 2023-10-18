@@ -82,4 +82,4 @@ llvmjit_types = custom_target('llvmjit_types.bc',
   install_dir: dir_lib_pkg,
   depfile: '@BASENAME@.c.bc.d',
 )
-backend_targets += llvmjit_types
+data_targets += llvmjit_types

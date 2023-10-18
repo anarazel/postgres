@@ -2579,6 +2579,7 @@ add_project_link_arguments(ldflags, language: ['c', 'cpp'])
 
 # list of targets for various alias targets
 backend_targets = []
+data_targets = []
 bin_targets = []
 pl_targets = []
 contrib_targets = []
@@ -2894,6 +2895,8 @@ subdir('src/interfaces/ecpg/test')
 
 subdir('doc/src/sgml')
 
+subdir('src/tools/pgindent')
+
 generated_sources_ac += {'': ['GNUmakefile']}
 
 # After processing src/test, add test_install_libs to the testprep_targets
@@ -2982,6 +2985,7 @@ endif
 all_built = [
   backend_targets,
   bin_targets,
+  data_targets,
   libpq_st,
   pl_targets,
   contrib_targets,
@@ -3017,12 +3021,20 @@ run_target('install-test-files',
 # Indentation and similar targets
 ###############################################################
 
+# If the dependencies for generating a local typedefs.list are fulfilled, we
+# use a combination of a locally built and the source tree's typededefs.list
+# file (see src/tools/pgindent/meson.build) for reindenting. That ensures
+# newly added typedefs are indented correctly.
 indent_base_cmd = [perl, files('src/tools/pgindent/pgindent'),
     '--indent', pg_bsd_indent.full_path(),
     '--sourcetree=@SOURCE_ROOT@']
 indent_depend = [pg_bsd_indent]
 
-# reindent the entire tree
+if typedefs_supported
+  indent_base_cmd += ['--typedefs', typedefs_merged.full_path()]
+  indent_depend += typedefs
+endif
+
 # Reindent the entire tree
 run_target('indent-tree',
   command: indent_base_cmd + ['.'],

@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+
+# Tool to build a new typedefs.list file from
+# a) the current typedefs.list file in the source tree
+# b) newly generated typedefs.list fragments for build products
+# c) the source code
+#
+# To avoid littering the typedefs file with typedefs that are not in our source
+# code, the list of typedefs found is filtered with tokens found in source
+# files.
+#
+# If the local build references a typedef that's not present in the source
+# typedefs.list, we can discover such typedefs.
+#
+# If the source typedefs.list references a typedef that is not used anymore, it
+# will not appear in the source tree anymore and thus can be filtered out.
+#
+# However, typedefs in newly written code for a different platform (or a
+# disabled build option), will not be discovered.
+
+import argparse
+import os
+import subprocess
+import sys
+import re
+
+parser = argparse.ArgumentParser(
+    description='build new typedefs files from multiple inputs')
+
+parser.add_argument('--output-local', type=argparse.FileType('w'), required=True)
+parser.add_argument('--output-merged', type=argparse.FileType('w'), required=True)
+parser.add_argument('--current-typedefs', type=argparse.FileType('r'), required=True)
+parser.add_argument('--filter-source', type=str, required=False)
+parser.add_argument('input', type=argparse.FileType('r'), nargs='*')
+
+
+def merge_typedefs(files):
+    typedefs = set()
+    for input in files:
+        for typedef in input.readlines():
+            typedefs.add(typedef.strip())
+    return typedefs
+
+def source_list(srcdir):
+    filelist = []
+    os.chdir(srcdir)
+    accepted_files = re.compile(r'\.(c|h|l|y|.cpp)$')
+    for root, dirs, files in os.walk('.', topdown=True):
+        # don't go into hidden dirs or docs
+        for d in dirs:
+            if d.startswith('.') or d == 'doc':
+                dirs.remove(d)
+        for f in files:
+            if accepted_files.search(f):
+                filelist.append((os.path.join(root, f)))
+    return filelist
+
+def tokenize_sources(files):
+    comment_sub_re = re.compile(r'/\*.*?\*/', flags=re.MULTILINE|re.DOTALL)
+    token_find_re = re.compile(r'\b\w+\b')
+
+    tokens = set()
+    for file in files:
+        with open(file, 'r') as fh:
+            content = fh.read()
+            content = comment_sub_re.sub('', content)
+            tokens.update(token_find_re.findall(content))
+    return tokens
+
+def main(args):
+    local_typedefs = merge_typedefs(args.input)
+    current_typedefs = merge_typedefs([args.current_typedefs])
+
+    if args.filter_source:
+        filelist = source_list(args.filter_source)
+        tokens = tokenize_sources(filelist)
+        local_typedefs.intersection_update(tokens)
+        current_typedefs.intersection_update(tokens)
+
+    current_typedefs.update(local_typedefs)
+    print('\n'.join(sorted(local_typedefs)), file=args.output_local)
+    print('\n'.join(sorted(current_typedefs)), file=args.output_merged)
+
+if __name__ == '__main__':
+    main(parser.parse_args())
+    sys.exit(0)
