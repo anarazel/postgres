@@ -52,6 +52,9 @@ option('atomics', type: 'boolean', value: true,
 option('spinlocks', type: 'boolean', value: true,
   description: 'Use spinlocks')
 
+option('nitpick', type: 'boolean', value: false,
+  description: 'annoy the hell out of you, committers ought to enable this')
+
 
 # Compilation options
 

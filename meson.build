@@ -44,6 +44,7 @@ cc = meson.get_compiler('c')
 not_found_dep = dependency('', required: false)
 thread_dep = dependency('threads')
 auto_features = get_option('auto_features')
+nitpick_mode = get_option('nitpick')
 
 
 
@@ -3025,15 +3026,17 @@ run_target('install-test-files',
 # use a combination of a locally built and the source tree's typededefs.list
 # file (see src/tools/pgindent/meson.build) for reindenting. That ensures
 # newly added typedefs are indented correctly.
-indent_base_cmd = [perl, files('src/tools/pgindent/pgindent'),
+indent_base_args = [files('src/tools/pgindent/pgindent'),
     '--indent', pg_bsd_indent.full_path(),
-    '--sourcetree=@SOURCE_ROOT@']
+    '--sourcetree=@0@'.format(meson.current_source_dir())]
 indent_depend = [pg_bsd_indent]
 
 if typedefs_supported
-  indent_base_cmd += ['--typedefs', typedefs_merged.full_path()]
+  indent_base_args += ['--typedefs', typedefs_merged.full_path()]
   indent_depend += typedefs
 endif
+
+indent_base_cmd = [perl, indent_base_args]
 
 # Reindent the entire tree
 run_target('indent-tree',
@@ -3361,6 +3364,17 @@ if meson.version().version_compare('>=0.57')
     exclude_suites: running_suites)
   add_test_setup('running',
     exclude_suites: ['setup'] + install_suites)
+endif
+
+
+# If we were asked to be nitpicky, add a test that fails if sources aren't
+# properly indented
+if nitpick_mode
+  test('indent-check',
+    perl, args: [indent_base_args, '--silent-diff', '.'],
+    depends: indent_depend,
+    suite: 'source',
+    priority: 10)
 endif
 
 
