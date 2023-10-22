@@ -14,7 +14,11 @@ foreach bitcode_module : bitcode_modules
   endif
 
   foreach srcfile : bitcode_module['srcfiles']
-    srcfilename = '@0@'.format(srcfile)
+    if meson.version().version_compare('>=0.59')
+      srcfilename = fs.parent(srcfile) / fs.name(srcfile)
+    else
+      srcfilename = '@0@'.format(srcfile)
+    endif
     targetname = '@0@_@1@_@2@.bc'.format(
       bitcode_name,
       fs.parent(srcfilename).underscorify(), fs.name(srcfilename))
