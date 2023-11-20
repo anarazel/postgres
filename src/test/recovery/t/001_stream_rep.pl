@@ -15,6 +15,8 @@ my $node_primary = PostgreSQL::Test::Cluster->new('primary');
 $node_primary->init(
 	allows_streaming => 1,
 	auth_extra => [ '--create-role', 'repl_role' ]);
+# WAL summarization can postpone WAL recycling, leading to test failures
+$node_primary->append_conf('postgresql.conf', "summarize_wal = off");
 $node_primary->start;
 my $backup_name = 'my_backup';
 

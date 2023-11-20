@@ -19,6 +19,7 @@ SUBDIRS = \
 	pg_archivecleanup \
 	pg_basebackup \
 	pg_checksums \
+	pg_combinebackup \
 	pg_config \
 	pg_controldata \
 	pg_ctl \
@@ -30,6 +31,7 @@ SUBDIRS = \
 	pg_upgrade \
 	pg_verifybackup \
 	pg_waldump \
+	pg_walsummary \
 	pgbench \
 	psql \
 	scripts

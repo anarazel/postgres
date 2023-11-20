@@ -49,6 +49,7 @@ OBJS_COMMON = \
 	archive.o \
 	base64.o \
 	binaryheap.o \
+	blkreftable.o \
 	checksum_helper.o \
 	compression.o \
 	config_info.o \
@@ -66,6 +67,7 @@ OBJS_COMMON = \
 	kwlookup.o \
 	link-canary.o \
 	md5_common.o \
+	parse_manifest.o \
 	percentrepl.o \
 	pg_get_line.o \
 	pg_lzcompress.o \

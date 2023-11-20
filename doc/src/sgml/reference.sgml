@@ -250,6 +250,7 @@
    &pgamcheck;
    &pgBasebackup;
    &pgbench;
+   &pgCombinebackup;
    &pgConfig;
    &pgDump;
    &pgDumpall;
@@ -288,6 +289,7 @@
    &pgtesttiming;
    &pgupgrade;
    &pgwaldump;
+   &pgwalsummary;
    &postgres;
 
  </reference>

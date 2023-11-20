@@ -250,6 +250,7 @@ $node_primary->append_conf(
 wal_level = 'logical'
 max_replication_slots = 4
 max_wal_senders = 4
+summarize_wal = off
 });
 $node_primary->dump_info;
 $node_primary->start;

@@ -15,6 +15,7 @@ $primary->init(
 	has_archiving => 1,
 	allows_streaming => 1);
 $primary->append_conf('postgresql.conf', 'autovacuum = off');
+$primary->append_conf('postgresql.conf', 'summarize_wal = off');
 $primary->start;
 my $primary_data = $primary->data_dir;
 
