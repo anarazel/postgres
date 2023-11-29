@@ -139,7 +139,7 @@ endif
 
 # Use a custom target, as run targets serialize the output, making this harder
 # to debug, and don't deal well with targets with multiple outputs.
-update_unicode = custom_target('update-unicode',
+update_unicode = custom_target('tgt-update-unicode',
   depends: update_unicode_dep,
   output: ['dont-exist'],
   input: update_unicode_targets,
