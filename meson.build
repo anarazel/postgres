@@ -3331,6 +3331,20 @@ test('meson-check',
   suite: 'source',
   priority: 10)
 
+# Tests verifing that source code follows certain rules
+if meson.backend() == 'ninja'
+  ninja = find_program('ninja', required: false, native: true)
+  if ninja.found()
+    ninja_version = run_command(ninja, '--version', check: true).stdout()
+    if ninja_version.version_compare('>=1.11')
+      test('missing-dependencies',
+        ninja,
+        args: ['-C', meson.build_root(), '-t', 'missingdeps'],
+        suite: 'source',
+        priority: 10)
+    endif
+  endif
+endif
 
 
 ###############################################################
