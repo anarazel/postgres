@@ -3320,6 +3320,14 @@ if meson.version().version_compare('>=0.57')
 endif
 
 
+# Tests verifing that source code follows certain rules
+test('meson-check',
+  files('src/tools/check_meson'),
+  args: ['--srcdir', meson.source_root(), '--builddir', meson.build_root()],
+  suite: 'source',
+  priority: 10)
+
+
 
 ###############################################################
 # Pseudo targets

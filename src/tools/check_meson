@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+
+# Script to perform some consistency checks on the meson build.
+
+from collections import defaultdict
+import argparse
+import json
+import os
+import sys
+
+
+def check_target_names(args):
+    """
+    Check that the target names for run_target() and alias_target() do
+    not conflict with other target types like
+    custom_target(). alias_target()/run_target() targets are intended to
+    be invoked at the top-level, but "meson compile $target" complains
+    about conflicts if another name of the same target exists.
+    """
+    targets_info_path = os.path.join(
+        args.builddir, 'meson-info/intro-targets.json')
+    targets_info = json.load(open(targets_info_path))
+
+    targets_info_byname = defaultdict(list)
+
+    for r in targets_info:
+        targets_info_byname[r['name']].append(r)
+
+    have_conflicts = False
+
+    for name, v in targets_info_byname.items():
+        if len(targets_info_byname[name]) > 1:
+            dirs = set()
+            types = set()
+            have_target_conflict = False
+            for t in v:
+                dirs.add(t['defined_in'])
+                types.add(t['type'])
+            if len(dirs) < len(v) and ('alias' in types or 'run' in types):
+                have_target_conflict = True
+
+            if have_target_conflict:
+                have_conflicts = True
+                print(f'Global target "{name}" has conflicting target names:',
+                      file=sys.stderr)
+                for t in v:
+                    fname = os.path.relpath(t['defined_in'], args.srcdir)
+                    print(f'\t"{t["name"]}:{t["type"]}", defined in "{fname}"',
+                          file=sys.stderr)
+                print(file=sys.stderr)
+
+    if have_conflicts:
+        print("Please rename conflicting targets",
+              file=sys.stderr)
+        return False
+    return True
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--builddir', type=str, required=True)
+    parser.add_argument('--srcdir', type=str, required=True)
+    args = parser.parse_args()
+
+    all_ok = True
+    all_ok &= check_target_names(args)
+    sys.exit(not all_ok)
