@@ -213,6 +213,48 @@ $node->connect_fails(
 	? qr/server accepted connection without a valid SSL certificate/
 	: qr/sslcertmode value "require" is not supported/);
 
+
+# Check log message makes sense when initiating SSL connection establishment
+# but then closing the socket immediately. In the past that sometimes was
+# logged as "could not accept SSL connection: Success", which is misleading.
+# Such disconnects happens regularly in real workloads, but can't easily be
+# tested with psql. Therefore just establish the connection the hard way -
+# it's easy enough here, because we just need to send a startup packet asking
+# for SSL to be initiated.
+{
+	use IO::Socket::INET;
+
+	my $sock = IO::Socket::INET->new(
+		PeerAddr => $SERVERHOSTADDR,
+		PeerPort => $node->port,
+		Proto => 'tcp');
+
+	my $log_location = -s $node->logfile;
+
+	# ssl request is message length as 32 bit big endian, 4 byte magic "ssl"
+	# protocol version, terminated by a 0  byte.
+	my $message = pack "NNx", 4 + 4 + 1, (1234 << 16) | 5679;
+
+	$sock->send($message);
+	$sock->close();
+
+	# On at least macos and windows closing the socket leads to a ECONNRESET
+	# on the server side. Therefore we don't check if the right message is
+	# logged, but that the "Success" message isn't.
+	#
+	# First wait for the connection attempt to be logged, so we can test for
+	# the absence of the "Success" message without a race.
+	ok( $node->wait_for_log(
+			qr/could not accept SSL connection:/,
+			$log_location),
+		'aborted connection attempt is logged');
+
+	$node->log_check("aborted connection attempt is logged as failure",
+		$log_location,
+		(log_unlike => [qr/could not accept SSL connection: Success/]));
+}
+
+
 # CRL tests
 
 # Invalid CRL filename is the same as no CRL, succeeds

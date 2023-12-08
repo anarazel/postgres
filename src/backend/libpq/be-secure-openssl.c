@@ -496,7 +496,12 @@ aloop:
 										 WAIT_EVENT_SSL_OPEN_SERVER);
 				goto aloop;
 			case SSL_ERROR_SYSCALL:
-				if (r < 0)
+				/*
+				 * If errno is 0, the client closed the socket without
+				 * shutting down the SSL connection, e.g. because the client
+				 * terminated.
+				 */
+				if (r < 0 && errno != 0)
 					ereport(COMMERROR,
 							(errcode_for_socket_access(),
 							 errmsg("could not accept SSL connection: %m")));
