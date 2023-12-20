@@ -742,6 +742,9 @@ task:
 
   ###
   # Verify docs can be built
+  #
+  # Build the normal docs as well as INSTALL, as the latter is easy to break
+  # via links that cannot be resolved.
   ###
   # XXX: Only do this if there have been changes in doc/ since last build
   always:
@@ -752,7 +755,8 @@ task:
         CXX="ccache g++" \
         CLANG="ccache clang"
       make -s -j${BUILD_JOBS} clean
-      time make -s -j${BUILD_JOBS} -C doc
+      time make -s -j${BUILD_JOBS} -C doc/src/sgml all INSTALL
+
 
   ###
   # Verify headerscheck / cpluspluscheck succeed
