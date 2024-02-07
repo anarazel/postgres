@@ -45,14 +45,14 @@ appendCSVLiteral(StringInfo buf, const char *data)
 	if (p == NULL)
 		return;
 
-	appendStringInfoCharMacro(buf, '"');
+	appendStringInfoChar(buf, '"');
 	while ((c = *p++) != '\0')
 	{
 		if (c == '"')
-			appendStringInfoCharMacro(buf, '"');
-		appendStringInfoCharMacro(buf, c);
+			appendStringInfoChar(buf, '"');
+		appendStringInfoChar(buf, c);
 	}
-	appendStringInfoCharMacro(buf, '"');
+	appendStringInfoChar(buf, '"');
 }
 
 /*

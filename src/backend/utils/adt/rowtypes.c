@@ -452,17 +452,17 @@ record_out(PG_FUNCTION_ARGS)
 
 		/* And emit the string */
 		if (nq)
-			appendStringInfoCharMacro(&buf, '"');
+			appendStringInfoChar(&buf, '"');
 		for (tmp = value; *tmp; tmp++)
 		{
 			char		ch = *tmp;
 
 			if (ch == '"' || ch == '\\')
-				appendStringInfoCharMacro(&buf, ch);
-			appendStringInfoCharMacro(&buf, ch);
+				appendStringInfoChar(&buf, ch);
+			appendStringInfoChar(&buf, ch);
 		}
 		if (nq)
-			appendStringInfoCharMacro(&buf, '"');
+			appendStringInfoChar(&buf, '"');
 	}
 
 	appendStringInfoChar(&buf, ')');

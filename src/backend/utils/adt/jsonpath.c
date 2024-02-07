@@ -484,13 +484,13 @@ alignStringInfoInt(StringInfo buf)
 	switch (INTALIGN(buf->len) - buf->len)
 	{
 		case 3:
-			appendStringInfoCharMacro(buf, 0);
+			appendStringInfoChar(buf, 0);
 			/* FALLTHROUGH */
 		case 2:
-			appendStringInfoCharMacro(buf, 0);
+			appendStringInfoChar(buf, 0);
 			/* FALLTHROUGH */
 		case 1:
-			appendStringInfoCharMacro(buf, 0);
+			appendStringInfoChar(buf, 0);
 			/* FALLTHROUGH */
 		default:
 			break;

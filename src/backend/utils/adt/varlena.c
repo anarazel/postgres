@@ -5689,7 +5689,7 @@ text_format(PG_FUNCTION_ARGS)
 		 */
 		if (*cp != '%')
 		{
-			appendStringInfoCharMacro(&str, *cp);
+			appendStringInfoChar(&str, *cp);
 			continue;
 		}
 
@@ -5698,7 +5698,7 @@ text_format(PG_FUNCTION_ARGS)
 		/* Easy case: %% outputs a single % */
 		if (*cp == '%')
 		{
-			appendStringInfoCharMacro(&str, *cp);
+			appendStringInfoChar(&str, *cp);
 			continue;
 		}
 

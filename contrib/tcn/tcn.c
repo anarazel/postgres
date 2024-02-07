@@ -32,15 +32,15 @@ PG_MODULE_MAGIC;
 static void
 strcpy_quoted(StringInfo r, const char *s, const char q)
 {
-	appendStringInfoCharMacro(r, q);
+	appendStringInfoChar(r, q);
 	while (*s)
 	{
 		if (*s == q)
-			appendStringInfoCharMacro(r, q);
-		appendStringInfoCharMacro(r, *s);
+			appendStringInfoChar(r, q);
+		appendStringInfoChar(r, *s);
 		s++;
 	}
-	appendStringInfoCharMacro(r, q);
+	appendStringInfoChar(r, q);
 }
 
 /*
@@ -147,17 +147,17 @@ triggered_change_notification(PG_FUNCTION_ARGS)
 				foundPK = true;
 
 				strcpy_quoted(payload, RelationGetRelationName(rel), '"');
-				appendStringInfoCharMacro(payload, ',');
-				appendStringInfoCharMacro(payload, operation);
+				appendStringInfoChar(payload, ',');
+				appendStringInfoChar(payload, operation);
 
 				for (i = 0; i < indnkeyatts; i++)
 				{
 					int			colno = index->indkey.values[i];
 					Form_pg_attribute attr = TupleDescAttr(tupdesc, colno - 1);
 
-					appendStringInfoCharMacro(payload, ',');
+					appendStringInfoChar(payload, ',');
 					strcpy_quoted(payload, NameStr(attr->attname), '"');
-					appendStringInfoCharMacro(payload, '=');
+					appendStringInfoChar(payload, '=');
 					strcpy_quoted(payload, SPI_getvalue(trigtuple, tupdesc, colno), '\'');
 				}
 
