@@ -33,59 +33,6 @@
 
 
 /*
- * makeStringInfo
- *
- * Create an empty 'StringInfoData' & return a pointer to it.
- */
-StringInfo
-makeStringInfo(void)
-{
-	StringInfo	res;
-
-	res = (StringInfo) palloc(sizeof(StringInfoData));
-
-	initStringInfo(res);
-
-	return res;
-}
-
-/*
- * initStringInfo
- *
- * Initialize a StringInfoData struct (with previously undefined contents)
- * to describe an empty string.
- */
-void
-initStringInfo(StringInfo str)
-{
-	int			size = 1024;	/* initial default buffer size */
-
-	str->data = (char *) palloc(size);
-	str->maxlen = size;
-	resetStringInfo(str);
-}
-
-/*
- * resetStringInfo
- *
- * Reset the StringInfo: the data buffer remains valid, but its
- * previous content, if any, is cleared.
- *
- * Read-only StringInfos as initialized by initReadOnlyStringInfo cannot be
- * reset.
- */
-void
-resetStringInfo(StringInfo str)
-{
-	/* don't allow resets of read-only StringInfos */
-	Assert(str->maxlen != 0);
-
-	str->data[0] = '\0';
-	str->len = 0;
-	str->cursor = 0;
-}
-
-/*
  * appendStringInfo
  *
  * Format text data under the control of fmt (an sprintf-style format string)
@@ -173,120 +120,18 @@ appendStringInfoVA(StringInfo str, const char *fmt, va_list args)
 }
 
 /*
- * appendStringInfoString
+ * enlargeStringInfoImpl
  *
- * Append a null-terminated string to str.
- * Like appendStringInfo(str, "%s", s) but faster.
+ * Make enough space for 'needed' more bytes ('needed' does not include the
+ * terminating null). This is not for external consumption, it's only to be
+ * called by enlargeStringInfo() when more space is actually needed (including
+ * when we'd overflow the maximum size).
+ *
+ * As this normally shouldn't be the common case, mark as noinline, to avoid
+ * including the function into the fastpath.
  */
-void
-appendStringInfoString(StringInfo str, const char *s)
-{
-	appendBinaryStringInfo(str, s, strlen(s));
-}
-
-/*
- * appendStringInfoChar
- *
- * Append a single byte to str.
- * Like appendStringInfo(str, "%c", ch) but much faster.
- */
-void
-appendStringInfoChar(StringInfo str, char ch)
-{
-	/* Make more room if needed */
-	if (str->len + 1 >= str->maxlen)
-		enlargeStringInfo(str, 1);
-
-	/* OK, append the character */
-	str->data[str->len] = ch;
-	str->len++;
-	str->data[str->len] = '\0';
-}
-
-/*
- * appendStringInfoSpaces
- *
- * Append the specified number of spaces to a buffer.
- */
-void
-appendStringInfoSpaces(StringInfo str, int count)
-{
-	if (count > 0)
-	{
-		/* Make more room if needed */
-		enlargeStringInfo(str, count);
-
-		/* OK, append the spaces */
-		memset(&str->data[str->len], ' ', count);
-		str->len += count;
-		str->data[str->len] = '\0';
-	}
-}
-
-/*
- * appendBinaryStringInfo
- *
- * Append arbitrary binary data to a StringInfo, allocating more space
- * if necessary. Ensures that a trailing null byte is present.
- */
-void
-appendBinaryStringInfo(StringInfo str, const void *data, int datalen)
-{
-	Assert(str != NULL);
-
-	/* Make more room if needed */
-	enlargeStringInfo(str, datalen);
-
-	/* OK, append the data */
-	memcpy(str->data + str->len, data, datalen);
-	str->len += datalen;
-
-	/*
-	 * Keep a trailing null in place, even though it's probably useless for
-	 * binary data.  (Some callers are dealing with text but call this because
-	 * their input isn't null-terminated.)
-	 */
-	str->data[str->len] = '\0';
-}
-
-/*
- * appendBinaryStringInfoNT
- *
- * Append arbitrary binary data to a StringInfo, allocating more space
- * if necessary. Does not ensure a trailing null-byte exists.
- */
-void
-appendBinaryStringInfoNT(StringInfo str, const void *data, int datalen)
-{
-	Assert(str != NULL);
-
-	/* Make more room if needed */
-	enlargeStringInfo(str, datalen);
-
-	/* OK, append the data */
-	memcpy(str->data + str->len, data, datalen);
-	str->len += datalen;
-}
-
-/*
- * enlargeStringInfo
- *
- * Make sure there is enough space for 'needed' more bytes
- * ('needed' does not include the terminating null).
- *
- * External callers usually need not concern themselves with this, since
- * all stringinfo.c routines do it automatically.  However, if a caller
- * knows that a StringInfo will eventually become X bytes large, it
- * can save some palloc overhead by enlarging the buffer before starting
- * to store data in it.
- *
- * NB: In the backend, because we use repalloc() to enlarge the buffer, the
- * string buffer will remain allocated in the same memory context that was
- * current when initStringInfo was called, even if another context is now
- * current.  This is the desired and indeed critical behavior!
- */
-void
-enlargeStringInfo(StringInfo str, int needed)
+pg_noinline void
+enlargeStringInfoImpl(StringInfo str, int needed)
 {
 	int			newlen;
 
@@ -326,8 +171,8 @@ enlargeStringInfo(StringInfo str, int needed)
 
 	/* Because of the above test, we now have needed <= MaxAllocSize */
 
-	if (needed <= str->maxlen)
-		return;					/* got enough space already */
+	/* should only be called when needed */
+	Assert(needed > str->maxlen);
 
 	/*
 	 * We don't want to allocate just a little more space with each append;
