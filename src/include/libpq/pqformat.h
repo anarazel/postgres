@@ -16,6 +16,7 @@
 #include "lib/stringinfo.h"
 #include "mb/pg_wchar.h"
 #include "port/pg_bswap.h"
+#include "varatt.h"
 
 extern void pq_beginmessage(StringInfo buf, char msgtype);
 extern void pq_beginmessage_reuse(StringInfo buf, char msgtype);
@@ -30,6 +31,58 @@ extern void pq_sendstring(StringInfo buf, const char *str);
 extern void pq_send_ascii_string(StringInfo buf, const char *str);
 extern void pq_sendfloat4(StringInfo buf, float4 f);
 extern void pq_sendfloat8(StringInfo buf, float8 f);
+
+
+/* --------------------------------
+ *		pq_begintypsend		- initialize for constructing a bytea result
+ * --------------------------------
+ */
+static inline void
+pq_begintypsend(StringInfo buf)
+{
+	initStringInfo(buf);
+	/* Reserve four bytes for the bytea length word */
+	appendStringInfoSpaces(buf, 4);
+}
+
+/* --------------------------------
+ *		pq_begintypsend_with_size - like pq_begintypesend, but with length hint
+ *
+ * This can be used over pq_begintypesend if the caller can cheaply determine
+ * how much data will be sent, reducing the initial size of the
+ * StringInfo. The passed in size need not include the overhead of the length
+ * word.
+ * --------------------------------
+ */
+static inline void
+pq_begintypsend_with_size(StringInfo buf, int size)
+{
+	initStringInfoWithSize(buf, size + 4);
+	/* Reserve four bytes for the bytea length word */
+	appendStringInfoSpaces(buf, 4);
+}
+
+
+/* --------------------------------
+ *		pq_endtypsend	- finish constructing a bytea result
+ *
+ * The data buffer is returned as the palloc'd bytea value.  (We expect
+ * that it will be suitably aligned for this because it has been palloc'd.)
+ * We assume the StringInfoData is just a local variable in the caller and
+ * need not be pfree'd.
+ * --------------------------------
+ */
+static inline bytea *
+pq_endtypsend(StringInfo buf)
+{
+	bytea	   *result = (bytea *) buf->data;
+
+	/* Insert correct length into bytea length word */
+	Assert(buf->len >= VARHDRSZ);
+	SET_VARSIZE(result, buf->len);
+
+	return result;
+}
 
 /*
  * Append a [u]int8 to a StringInfo buffer, which already has enough space

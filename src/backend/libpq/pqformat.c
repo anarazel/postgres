@@ -322,43 +322,6 @@ pq_endmessage_reuse(StringInfo buf)
 
 
 /* --------------------------------
- *		pq_begintypsend		- initialize for constructing a bytea result
- * --------------------------------
- */
-void
-pq_begintypsend(StringInfo buf)
-{
-	initStringInfo(buf);
-	/* Reserve four bytes for the bytea length word */
-	appendStringInfoChar(buf, '\0');
-	appendStringInfoChar(buf, '\0');
-	appendStringInfoChar(buf, '\0');
-	appendStringInfoChar(buf, '\0');
-}
-
-/* --------------------------------
- *		pq_endtypsend	- finish constructing a bytea result
- *
- * The data buffer is returned as the palloc'd bytea value.  (We expect
- * that it will be suitably aligned for this because it has been palloc'd.)
- * We assume the StringInfoData is just a local variable in the caller and
- * need not be pfree'd.
- * --------------------------------
- */
-bytea *
-pq_endtypsend(StringInfo buf)
-{
-	bytea	   *result = (bytea *) buf->data;
-
-	/* Insert correct length into bytea length word */
-	Assert(buf->len >= VARHDRSZ);
-	SET_VARSIZE(result, buf->len);
-
-	return result;
-}
-
-
-/* --------------------------------
  *		pq_puttextmessage - generate a character set-converted message in one step
  *
  *		This is the same as the pqcomm.c routine pq_putmessage, except that
