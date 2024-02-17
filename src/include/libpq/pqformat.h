@@ -23,7 +23,6 @@ extern void pq_beginmessage_reuse(StringInfo buf, char msgtype);
 extern void pq_endmessage(StringInfo buf);
 extern void pq_endmessage_reuse(StringInfo buf);
 
-extern void pq_sendbytes(StringInfo buf, const void *data, int datalen);
 extern void pq_sendcountedtext(StringInfo buf, const char *str, int slen,
 							   bool countincludesself);
 extern void pq_sendtext(StringInfo buf, const char *str, int slen);
@@ -214,6 +213,17 @@ static inline void
 pq_sendbyte(StringInfo buf, uint8 byt)
 {
 	pq_sendint8(buf, byt);
+}
+
+static inline void
+pq_sendbytes(StringInfo buf, const void *data, int datalen)
+{
+	/*
+	 * FIXME: used to say: use variant that maintains a trailing null-byte,
+	 * out of caution but that doesn't make much sense to me, and proves to be
+	 * a performance issue.
+	 */
+	appendBinaryStringInfoNT(buf, data, datalen);
 }
 
 /*

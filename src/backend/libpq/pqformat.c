@@ -119,17 +119,6 @@ pq_beginmessage_reuse(StringInfo buf, char msgtype)
 }
 
 /* --------------------------------
- *		pq_sendbytes	- append raw data to a StringInfo buffer
- * --------------------------------
- */
-void
-pq_sendbytes(StringInfo buf, const void *data, int datalen)
-{
-	/* use variant that maintains a trailing null-byte, out of caution */
-	appendBinaryStringInfo(buf, data, datalen);
-}
-
-/* --------------------------------
  *		pq_sendcountedtext - append a counted text string (with character set conversion)
  *
  * The data sent to the frontend by this routine is a 4-byte count field
