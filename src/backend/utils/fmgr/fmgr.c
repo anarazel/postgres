@@ -1743,7 +1743,22 @@ ReceiveFunctionCall(FmgrInfo *flinfo, StringInfo buf,
 bytea *
 SendFunctionCall(FmgrInfo *flinfo, Datum val)
 {
-	return DatumGetByteaP(FunctionCall1(flinfo, val));
+	StringInfoData buf;
+	Datum		result;
+
+	LOCAL_FCINFO(fcinfo, 1);
+
+	initStringInfo(&buf);
+
+	InitFunctionCallInfoData(*fcinfo, flinfo, 1, InvalidOid, (Node *) &buf, NULL);
+	fcinfo->args[0].value = val;
+	fcinfo->args[0].isnull = false;
+	result = FunctionCallInvoke(fcinfo);
+
+	if (fcinfo->isnull)
+		elog(ERROR, "function %u returned NULL", flinfo->fn_oid);
+
+	return DatumGetByteaP(result);
 }
 
 /*

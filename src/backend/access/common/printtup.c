@@ -69,6 +69,7 @@ typedef struct
 	int			nattrs;
 	PrinttupAttrInfo *myinfo;	/* Cached info about each attr */
 	StringInfoData buf;			/* output buffer (*not* in tmpcontext) */
+	StringInfoData fieldbuf;	/* FIXME */
 	MemoryContext tmpcontext;	/* Memory context for per-row workspace */
 } DR_printtup;
 
@@ -127,6 +128,8 @@ printtup_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 	 * tmpcontext, since we want to re-use it across rows.
 	 */
 	initStringInfo(&myState->buf);
+
+	initStringInfo(&myState->fieldbuf);
 
 	/*
 	 * Create a temporary memory context that we can reset once per row to
@@ -289,7 +292,7 @@ printtup_prepare_info(DR_printtup *myState, TupleDesc typeinfo, int numAttrs)
 			fmgr_info(thisState->typoutput, &thisState->finfo);
 			InitFunctionCallInfoData(thisState->fcinfo_data.fcinfo,
 									 &thisState->finfo, 1, InvalidOid,
-									 NULL, NULL);
+									 (Node *) &myState->fieldbuf, NULL);
 		}
 		else if (format == 1)
 		{
@@ -299,7 +302,7 @@ printtup_prepare_info(DR_printtup *myState, TupleDesc typeinfo, int numAttrs)
 			fmgr_info(thisState->typsend, &thisState->finfo);
 			InitFunctionCallInfoData(thisState->fcinfo_data.fcinfo,
 									 &thisState->finfo, 1, InvalidOid,
-									 NULL, NULL);
+									 (Node *) &myState->fieldbuf, NULL);
 		}
 		else
 			ereport(ERROR,
@@ -319,6 +322,7 @@ printtup(TupleTableSlot *slot, DestReceiver *self)
 	DR_printtup *myState = (DR_printtup *) self;
 	MemoryContext oldcontext;
 	StringInfo	buf = &myState->buf;
+	StringInfo	fieldbuf = &myState->fieldbuf;
 	int			natts = typeinfo->natts;
 	int			i;
 
@@ -398,6 +402,7 @@ printtup(TupleTableSlot *slot, DestReceiver *self)
 
 			pq_sendint32(buf, outputlen);
 			pq_sendbytes(buf, VARDATA(outputbytes), outputlen);
+			resetStringInfo(fieldbuf);
 		}
 	}
 

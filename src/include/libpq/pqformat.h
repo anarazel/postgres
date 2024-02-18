@@ -40,8 +40,16 @@ static inline void
 pq_begintypsend(StringInfo buf)
 {
 	initStringInfo(buf);
-	/* Reserve four bytes for the bytea length word */
-	appendStringInfoSpaces(buf, 4);
+
+	/*
+	 * Reserve four bytes for the bytea length word.  We don't need to fill
+	 * them with anything (pq_endtypsend will do that), and this function is
+	 * enough of a hot spot that it's worth cheating to save some cycles. Note
+	 * in particular that we don't bother to guarantee that the buffer is
+	 * null-terminated.
+	 */
+	Assert(buf->maxlen > 4);
+	buf->len = 4;
 }
 
 /* --------------------------------
@@ -61,6 +69,13 @@ pq_begintypsend_with_size(StringInfo buf, int size)
 	appendStringInfoSpaces(buf, 4);
 }
 
+static inline void
+pq_begintypsend_res(StringInfo buf)
+{
+	Assert(buf && buf->data && buf->len == 0);
+
+	buf->len = 4;
+}
 
 /* --------------------------------
  *		pq_endtypsend	- finish constructing a bytea result

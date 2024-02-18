@@ -322,11 +322,13 @@ Datum
 int4send(PG_FUNCTION_ARGS)
 {
 	int32		arg1 = PG_GETARG_INT32(0);
-	StringInfoData buf;
+	StringInfo	buf;
 
-	pq_begintypsend_with_size(&buf, 4);
-	pq_sendint32(&buf, arg1);
-	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
+	buf = (StringInfo) fcinfo->context;
+
+	pq_begintypsend_res(buf);
+	pq_sendint32(buf, arg1);
+	PG_RETURN_BYTEA_P(pq_endtypsend(buf));
 }
 
 

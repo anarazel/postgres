@@ -110,6 +110,8 @@ typedef struct CopyToStateData
 	 */
 	MemoryContext copycontext;	/* per-copy execution context */
 
+	StringInfoData attribute_buf;
+
 	CopyOutAttributeInfo *out_attributes;
 
 	MemoryContext rowcontext;	/* per-row evaluation context */
@@ -782,6 +784,8 @@ DoCopyTo(CopyToState cstate)
 	/* We use fe_msgbuf as a per-row buffer regardless of copy_dest */
 	cstate->fe_msgbuf = makeStringInfo();
 
+	initStringInfo(&cstate->attribute_buf);
+
 	/* Get info about the columns we need to process. */
 	cstate->out_attributes =
 		(CopyOutAttributeInfo *) palloc(num_phys_attrs * sizeof(CopyOutAttributeInfo));
@@ -810,7 +814,7 @@ DoCopyTo(CopyToState cstate)
 		fmgr_info(out_func_oid, &attr->out_finfo);
 		InitFunctionCallInfoData(attr->out_fcinfo.fcinfo, &attr->out_finfo,
 								 1, InvalidOid,
-								 NULL, NULL);
+								 (Node *) &cstate->attribute_buf, NULL);
 	}
 
 	/*
@@ -938,6 +942,7 @@ CopyOneRowTo(CopyToState cstate, TupleTableSlot *slot)
 	MemoryContext oldcontext;
 	ListCell   *cur;
 	char	   *string;
+	StringInfo	attribute_buf = &cstate->attribute_buf;
 
 	MemoryContextReset(cstate->rowcontext);
 	oldcontext = MemoryContextSwitchTo(cstate->rowcontext);
@@ -1021,6 +1026,7 @@ CopyOneRowTo(CopyToState cstate, TupleTableSlot *slot)
 
 				CopySendInt32(cstate, outputlen);
 				CopySendData(cstate, VARDATA(outputbytes), outputlen);
+				resetStringInfo(attribute_buf);
 			}
 		}
 	}
