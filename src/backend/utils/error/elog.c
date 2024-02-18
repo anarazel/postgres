@@ -3689,9 +3689,9 @@ append_with_tabs(StringInfo buf, const char *str)
 
 	while ((ch = *str++) != '\0')
 	{
-		appendStringInfoCharMacro(buf, ch);
+		appendStringInfoChar(buf, ch);
 		if (ch == '\n')
-			appendStringInfoCharMacro(buf, '\t');
+			appendStringInfoChar(buf, '\t');
 	}
 }
 

@@ -613,19 +613,19 @@ process_queued_fetch_requests(libpq_source *src)
 static void
 appendArrayEscapedString(StringInfo buf, const char *str)
 {
-	appendStringInfoCharMacro(buf, '\"');
+	appendStringInfoChar(buf, '\"');
 	while (*str)
 	{
 		char		ch = *str;
 
 		if (ch == '"' || ch == '\\')
-			appendStringInfoCharMacro(buf, '\\');
+			appendStringInfoChar(buf, '\\');
 
-		appendStringInfoCharMacro(buf, ch);
+		appendStringInfoChar(buf, ch);
 
 		str++;
 	}
-	appendStringInfoCharMacro(buf, '\"');
+	appendStringInfoChar(buf, '\"');
 }
 
 /*

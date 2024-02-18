@@ -61,7 +61,7 @@ appendStringInfoStringQuoted(StringInfo str, const char *s, int maxlen)
 		ellipsis = false;
 	}
 
-	appendStringInfoCharMacro(str, '\'');
+	appendStringInfoChar(str, '\'');
 
 	while ((chunk_end = strchr(chunk_search_start, '\'')) != NULL)
 	{

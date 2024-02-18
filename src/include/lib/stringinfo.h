@@ -18,6 +18,15 @@
 #ifndef STRINGINFO_H
 #define STRINGINFO_H
 
+#include "common/int.h"
+#include "common/string.h"
+
+#ifdef FRONTEND
+#include "common/fe_memutils.h"
+#else
+#include "utils/palloc.h"
+#endif
+
 /*-------------------------
  * StringInfoData holds information about an extensible string.
  *		data	is the current buffer for the string.
@@ -99,18 +108,6 @@ typedef StringInfoData *StringInfo;
  *-------------------------
  */
 
-/*------------------------
- * makeStringInfo
- * Create an empty 'StringInfoData' & return a pointer to it.
- */
-extern StringInfo makeStringInfo(void);
-
-/*------------------------
- * initStringInfo
- * Initialize a StringInfoData struct (with previously undefined contents)
- * to describe an empty string.
- */
-extern void initStringInfo(StringInfo str);
 
 /*------------------------
  * initReadOnlyStringInfo
@@ -158,8 +155,141 @@ initStringInfoFromString(StringInfo str, char *data, int len)
  * resetStringInfo
  * Clears the current content of the StringInfo, if any. The
  * StringInfo remains valid.
+ *
+ * Read-only StringInfos as initialized by initReadOnlyStringInfo cannot be
+ * reset.
  */
-extern void resetStringInfo(StringInfo str);
+static inline void
+resetStringInfo(StringInfoData *pg_restrict str)
+{
+	/* don't allow resets of read-only StringInfos */
+	Assert(str->maxlen != 0);
+
+	*(char *pg_restrict) (str->data) = '\0';
+	str->len = 0;
+	str->cursor = 0;
+}
+
+/*------------------------
+ * initStringInfo
+ * Initialize a StringInfoData struct (with previously undefined contents)
+ * to describe an empty string.
+ */
+static inline void
+initStringInfo(StringInfoData *pg_restrict str)
+{
+	int			size = 1024;	/* initial default buffer size */
+
+	str->data = (char *) palloc(size);
+	str->maxlen = size;
+	resetStringInfo(str);
+}
+
+/*------------------------
+ * initStringInfoWithSize
+ *
+ * Like initStringInfo(), but allows to specify the size of the initial
+ * allocation.
+ */
+static inline void
+initStringInfoWithSize(StringInfoData *pg_restrict str, int size)
+{
+	/*
+	 * Note that maxlen is increased by 1 to account for the trailing \0 byte.
+	 * Otherwise creating a stringinfo of size N and appending N bytes of data
+	 * to it, would lead to a reallocation, to maintain the invariant that
+	 * there always is space for the trailing \0 byte.
+	 */
+	str->data = (char *) palloc(size + 1);
+	str->maxlen = size + 1;
+	resetStringInfo(str);
+}
+
+/*------------------------
+ * makeStringInfo
+ *
+ * Create an empty 'StringInfoData' & return a pointer to it.
+ */
+static inline StringInfo
+makeStringInfo(void)
+{
+	StringInfo	res;
+
+	res = (StringInfo) palloc(sizeof(StringInfoData));
+
+	initStringInfo(res);
+
+	return res;
+}
+
+/*------------------------
+ * enlargeStringInfoImpl
+ *
+ * Actually enlarge the string, only to be called by enlargeStringInfo().
+ */
+extern void enlargeStringInfoImpl(StringInfo str, int needed);
+
+/*------------------------
+ * enlargeStringInfo
+ * Make sure a StringInfo's buffer can hold at least 'needed' more bytes.
+ *
+ * External callers usually need not concern themselves with this, since
+ * all stringinfo.c routines do it automatically.  However, if a caller
+ * knows that a StringInfo will eventually become X bytes large, it
+ * can save some palloc overhead by enlarging the buffer before starting
+ * to store data in it.
+ *
+ * NB: In the backend, because we use repalloc() to enlarge the buffer, the
+ * string buffer will remain allocated in the same memory context that was
+ * current when initStringInfo was called, even if another context is now
+ * current.  This is the desired and indeed critical behavior!
+ */
+static inline void
+enlargeStringInfo(StringInfoData *pg_restrict str, int datalen)
+{
+	int			res;
+
+	if (unlikely(pg_add_s32_overflow(str->len, datalen, &res)) ||
+		unlikely(res >= str->maxlen))
+		enlargeStringInfoImpl(str, datalen);
+}
+
+/*------------------------
+ * appendBinaryStringInfoNT
+ * Append arbitrary binary data to a StringInfo, allocating more space
+ * if necessary. Does not ensure a trailing null-byte exists.
+ */
+static inline void
+appendBinaryStringInfoNT(StringInfoData *pg_restrict str, const void *pg_restrict data, int datalen)
+{
+	Assert(str != NULL);
+
+	/* Make more room if needed */
+	enlargeStringInfo(str, datalen);
+
+	/* OK, append the data */
+	memcpy((char *pg_restrict) (str->data + str->len), data, datalen);
+	str->len += datalen;
+}
+
+/*------------------------
+ * appendBinaryStringInfo
+ * Append arbitrary binary data to a StringInfo, allocating more space
+ * if necessary. Ensures that a trailing null byte is present.
+ */
+static inline void
+appendBinaryStringInfo(StringInfoData *pg_restrict str, const void *pg_restrict data, int datalen)
+{
+	appendBinaryStringInfoNT(str, data, datalen);
+
+	/*
+	 * Keep a trailing null in place, even though it's probably useless for
+	 * binary data.  (Some callers are dealing with text but call this because
+	 * their input isn't null-terminated.)
+	 */
+	*(char *pg_restrict) (str->data + str->len) = '\0';
+}
+
 
 /*------------------------
  * appendStringInfo
@@ -186,51 +316,55 @@ extern int	appendStringInfoVA(StringInfo str, const char *fmt, va_list args) pg_
  * Append a null-terminated string to str.
  * Like appendStringInfo(str, "%s", s) but faster.
  */
-extern void appendStringInfoString(StringInfo str, const char *s);
+static inline void
+appendStringInfoString(StringInfoData *pg_restrict str, const char *pg_restrict s)
+{
+	appendBinaryStringInfo(str, s, strlen(s));
+}
 
 /*------------------------
  * appendStringInfoChar
  * Append a single byte to str.
  * Like appendStringInfo(str, "%c", ch) but much faster.
  */
-extern void appendStringInfoChar(StringInfo str, char ch);
+static inline void
+appendStringInfoChar(StringInfoData *pg_restrict str, char ch)
+{
+	char	   *pg_restrict ep;
 
-/*------------------------
- * appendStringInfoCharMacro
- * As above, but a macro for even more speed where it matters.
- * Caution: str argument will be evaluated multiple times.
- */
-#define appendStringInfoCharMacro(str,ch) \
-	(((str)->len + 1 >= (str)->maxlen) ? \
-	 appendStringInfoChar(str, ch) : \
-	 (void)((str)->data[(str)->len] = (ch), (str)->data[++(str)->len] = '\0'))
+	/* Make more room if needed */
+	enlargeStringInfo(str, 1);
+
+	/* OK, append the character */
+	ep = str->data + str->len;
+	ep[0] = ch;
+	ep[1] = '\0';
+	str->len++;
+}
+
+/* backward compat for external code */
+#define appendStringInfoCharMacro appendStringInfoChar
 
 /*------------------------
  * appendStringInfoSpaces
  * Append a given number of spaces to str.
  */
-extern void appendStringInfoSpaces(StringInfo str, int count);
+static inline void
+appendStringInfoSpaces(StringInfoData *pg_restrict str, int count)
+{
+	if (count > 0)
+	{
+		char	   *pg_restrict ep;
 
-/*------------------------
- * appendBinaryStringInfo
- * Append arbitrary binary data to a StringInfo, allocating more space
- * if necessary.
- */
-extern void appendBinaryStringInfo(StringInfo str,
-								   const void *data, int datalen);
+		/* Make more room if needed */
+		enlargeStringInfo(str, count);
 
-/*------------------------
- * appendBinaryStringInfoNT
- * Append arbitrary binary data to a StringInfo, allocating more space
- * if necessary. Does not ensure a trailing null-byte exists.
- */
-extern void appendBinaryStringInfoNT(StringInfo str,
-									 const void *data, int datalen);
-
-/*------------------------
- * enlargeStringInfo
- * Make sure a StringInfo's buffer can hold at least 'needed' more bytes.
- */
-extern void enlargeStringInfo(StringInfo str, int needed);
+		/* OK, append the spaces */
+		ep = str->data + str->len;
+		memset(ep, ' ', count);
+		str->len += count;
+		ep[count] = '\0';
+	}
+}
 
 #endif							/* STRINGINFO_H */

@@ -5098,16 +5098,16 @@ ExplainXMLTag(const char *tagname, int flags, ExplainState *es)
 
 	if ((flags & X_NOWHITESPACE) == 0)
 		appendStringInfoSpaces(es->str, 2 * es->indent);
-	appendStringInfoCharMacro(es->str, '<');
+	appendStringInfoChar(es->str, '<');
 	if ((flags & X_CLOSING) != 0)
-		appendStringInfoCharMacro(es->str, '/');
+		appendStringInfoChar(es->str, '/');
 	for (s = tagname; *s; s++)
 		appendStringInfoChar(es->str, strchr(valid, *s) ? *s : '-');
 	if ((flags & X_CLOSE_IMMEDIATE) != 0)
 		appendStringInfoString(es->str, " /");
-	appendStringInfoCharMacro(es->str, '>');
+	appendStringInfoChar(es->str, '>');
 	if ((flags & X_NOWHITESPACE) == 0)
-		appendStringInfoCharMacro(es->str, '\n');
+		appendStringInfoChar(es->str, '\n');
 }
 
 /*

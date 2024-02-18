@@ -235,7 +235,7 @@ pq_send_ascii_string(StringInfo buf, const char *str)
 
 		if (IS_HIGHBIT_SET(ch))
 			ch = '?';
-		appendStringInfoCharMacro(buf, ch);
+		appendStringInfoChar(buf, ch);
 	}
 	appendStringInfoChar(buf, '\0');
 }
@@ -330,10 +330,10 @@ pq_begintypsend(StringInfo buf)
 {
 	initStringInfo(buf);
 	/* Reserve four bytes for the bytea length word */
-	appendStringInfoCharMacro(buf, '\0');
-	appendStringInfoCharMacro(buf, '\0');
-	appendStringInfoCharMacro(buf, '\0');
-	appendStringInfoCharMacro(buf, '\0');
+	appendStringInfoChar(buf, '\0');
+	appendStringInfoChar(buf, '\0');
+	appendStringInfoChar(buf, '\0');
+	appendStringInfoChar(buf, '\0');
 }
 
 /* --------------------------------

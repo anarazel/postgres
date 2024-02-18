@@ -2655,7 +2655,7 @@ escape_xml(const char *str)
 				appendStringInfoString(&buf, "&#x0d;");
 				break;
 			default:
-				appendStringInfoCharMacro(&buf, *p);
+				appendStringInfoChar(&buf, *p);
 				break;
 		}
 	}
