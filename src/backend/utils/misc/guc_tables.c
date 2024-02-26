@@ -3113,6 +3113,20 @@ struct config_int ConfigureNamesInt[] =
 	},
 
 	{
+		{"buffer_io_size",
+			PGC_USERSET,
+			RESOURCES_ASYNCHRONOUS,
+			gettext_noop("Target size for coalescing reads and writes of buffered data blocks."),
+			NULL,
+			GUC_UNIT_BLOCKS
+		},
+		&buffer_io_size,
+		DEFAULT_BUFFER_IO_SIZE,
+		1, MAX_BUFFER_IO_SIZE,
+		NULL, NULL, NULL
+	},
+
+	{
 		{"backend_flush_after", PGC_USERSET, RESOURCES_ASYNCHRONOUS,
 			gettext_noop("Number of pages after which previously performed writes are flushed to disk."),
 			NULL,

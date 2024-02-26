@@ -2719,6 +2719,20 @@ include_dir 'conf.d'
        </listitem>
       </varlistentry>
 
+      <varlistentry id="guc-buffer-io-size" xreflabel="buffer_io_size">
+       <term><varname>buffer_io_size</varname> (<type>integer</type>)
+       <indexterm>
+        <primary><varname>buffer_io_size</varname> configuration parameter</primary>
+       </indexterm>
+       </term>
+       <listitem>
+        <para>
+         Controls the target I/O size in operations that coalesce buffer I/O.
+         The default is 128kB.
+        </para>
+       </listitem>
+      </varlistentry>
+
       <varlistentry id="guc-max-worker-processes" xreflabel="max_worker_processes">
        <term><varname>max_worker_processes</varname> (<type>integer</type>)
        <indexterm>
