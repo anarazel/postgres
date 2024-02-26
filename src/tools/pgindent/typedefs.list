@@ -2694,6 +2694,7 @@ StopList
 StrategyNumber
 StreamCtl
 StreamStopReason
+StreamingRead
 String
 StringInfo
 StringInfoData
