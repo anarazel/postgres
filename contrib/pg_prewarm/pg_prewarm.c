@@ -215,24 +215,24 @@ pg_prewarm(PG_FUNCTION_ARGS)
 		p.last_block = last_block;
 
 		stream = streaming_read_buffer_begin(STREAMING_READ_FULL,
-											 &p,
-											 0,
 											 NULL,
 											 BMR_REL(rel),
 											 forkNumber,
-											 pg_prewarm_streaming_read_next);
+											 pg_prewarm_streaming_read_next,
+											 &p,
+											 0);
 
 		for (block = first_block; block <= last_block; ++block)
 		{
 			Buffer		buf;
 
 			CHECK_FOR_INTERRUPTS();
-			buf = streaming_read_buffer_get_next(stream, NULL);
+			buf = streaming_read_buffer_next(stream, NULL);
 			ReleaseBuffer(buf);
 			++blocks_done;
 		}
-		Assert(streaming_read_buffer_get_next(stream, NULL) == InvalidBuffer);
-		streaming_read_end(stream);
+		Assert(streaming_read_buffer_next(stream, NULL) == InvalidBuffer);
+		streaming_read_buffer_end(stream);
 	}
 
 	/* Close relation, release lock. */
