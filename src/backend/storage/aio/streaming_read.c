@@ -130,8 +130,9 @@ struct StreamingRead
 	bool		started;
 	bool		finished;
 	bool		advice_enabled;
-	void	   *user_data;
+
 	StreamingReadBufferCB callback;
+	void	   *callback_private;
 
 	BufferAccessStrategy strategy;
 	BufferManagerRelation bmr;
@@ -150,8 +151,8 @@ struct StreamingRead
 
 	/* Circular buffer of ranges. */
 	int			size;
-	int			head;
-	int			tail;
+	int			head;		/* Look-ahead pins buffers at this end */
+	int			tail;		/* Client consumes from this end */
 	StreamingReadRange ranges[FLEXIBLE_ARRAY_MEMBER];
 };
 
@@ -163,12 +164,12 @@ struct StreamingRead
  */
 StreamingRead *
 streaming_read_buffer_begin(int flags,
-							void *user_data,
-							size_t per_buffer_data_size,
 							BufferAccessStrategy strategy,
 							BufferManagerRelation bmr,
 							ForkNumber forknum,
-							StreamingReadBufferCB next_block_cb)
+							StreamingReadBufferCB callback,
+							void *callback_private,
+							size_t per_buffer_data_size)
 {
 	StreamingRead *stream;
 	int			size;
@@ -238,13 +239,13 @@ streaming_read_buffer_begin(int flags,
 	stream->max_ios = max_ios;
 	stream->per_buffer_data_size = per_buffer_data_size;
 	stream->max_pinned_buffers = max_pinned_buffers;
-	stream->user_data = user_data;
 	stream->strategy = strategy;
 	stream->size = size;
 
-	stream->callback = next_block_cb;
 	stream->bmr = bmr;
 	stream->forknum = forknum;
+	stream->callback = callback;
+	stream->callback_private = callback_private;
 
 	stream->unget_blocknum = InvalidBlockNumber;
 
@@ -465,7 +466,7 @@ streaming_get_block(StreamingRead *stream, void *per_buffer_data)
 	else
 	{
 		/* Use the installed callback directly. */
-		result = stream->callback(stream, stream->user_data, per_buffer_data);
+		result = stream->callback(stream, stream->callback_private, per_buffer_data);
 	}
 
 	return result;
@@ -594,7 +595,7 @@ streaming_read_look_ahead(StreamingRead *stream)
 }
 
 Buffer
-streaming_read_buffer_get_next(StreamingRead *stream, void **per_buffer_data)
+streaming_read_buffer_next(StreamingRead *stream, void **per_buffer_data)
 {
 	StreamingReadRange *tail_range;
 
@@ -731,7 +732,7 @@ streaming_read_buffer_get_next(StreamingRead *stream, void **per_buffer_data)
 }
 
 void
-streaming_read_end(StreamingRead *stream)
+streaming_read_buffer_end(StreamingRead *stream)
 {
 	Buffer		buffer;
 
@@ -739,7 +740,7 @@ streaming_read_end(StreamingRead *stream)
 	stream->finished = true;
 
 	/* Unpin anything that wasn't consumed. */
-	while ((buffer = streaming_read_buffer_get_next(stream, NULL)) != InvalidBuffer)
+	while ((buffer = streaming_read_buffer_next(stream, NULL)) != InvalidBuffer)
 		ReleaseBuffer(buffer);
 
 	Assert(stream->pinned_buffers == 0);

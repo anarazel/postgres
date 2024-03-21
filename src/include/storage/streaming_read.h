@@ -34,17 +34,17 @@ typedef struct StreamingRead StreamingRead;
 
 /* Callback that returns the next block number to read. */
 typedef BlockNumber (*StreamingReadBufferCB) (StreamingRead *stream,
-											  void *user_data,
-											  void *per_buffer_private);
+											  void *callback_private,
+											  void *per_buffer_data);
 
 extern StreamingRead *streaming_read_buffer_begin(int flags,
-												  void *user_data,
-												  size_t per_buffer_private_size,
 												  BufferAccessStrategy strategy,
 												  BufferManagerRelation bmr,
 												  ForkNumber forknum,
-												  StreamingReadBufferCB next_block_cb);
-extern Buffer streaming_read_buffer_get_next(StreamingRead *stream, void **per_buffer_private);
-extern void streaming_read_end(StreamingRead *stream);
+												  StreamingReadBufferCB callback,
+												  void *callback_private,
+												  size_t per_buffer_data_size);
+extern Buffer streaming_read_buffer_next(StreamingRead *stream, void **per_buffer_private);
+extern void streaming_read_buffer_end(StreamingRead *stream);
 
 #endif
