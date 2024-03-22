@@ -316,7 +316,7 @@ streaming_read_start_head_range(StreamingRead *stream)
 	StreamingReadRange *head_range;
 	StreamingReadRange *new_head_range;
 	int16		new_buffer_index;
-	int16		nblocks_pinned;
+	int			nblocks_pinned;
 	int			flags;
 
 	/* Caller should make sure we never exceed max_ios. */
@@ -705,6 +705,17 @@ streaming_read_buffer_next(StreamingRead *stream, void **per_buffer_data)
 			}
 			else
 			{
+				/*
+				 * Since we have no ranges, we might as well reset our queues
+				 * of ranges and buffers so that we repeatedly use the initial
+				 * elements when not looking ahead.
+				 */
+				Assert(stream->tail == stream->head);
+				Assert(stream->pinned_buffers == 0);
+				stream->head = stream->tail = 0;
+				stream->ranges[0].buffer_index = 0;
+				stream->ranges[0].nblocks = 0;
+
 				streaming_read_look_ahead(stream);
 
 				/* Finished? */
