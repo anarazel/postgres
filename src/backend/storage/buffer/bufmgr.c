@@ -1132,7 +1132,6 @@ PinBufferForBlock(BufferManagerRelation bmr,
 									   bmr.smgr->smgr_rlocator.locator.relNumber,
 									   bmr.smgr->smgr_rlocator.backend);
 
-	ResourceOwnerEnlarge(CurrentResourceOwner);
 	if (isLocalBuf)
 	{
 		bufHdr = LocalBufferAlloc(bmr.smgr, forkNum, blockNum, foundPtr);
