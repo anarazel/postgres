@@ -476,9 +476,9 @@ ForgetPrivateRefCountEntry(PrivateRefCountEntry *ref)
 )
 
 
-static Buffer ReadBuffer_common(BufferManagerRelation *bmr,
-								ForkNumber forkNum, BlockNumber blockNum,
-								ReadBufferMode mode, BufferAccessStrategy strategy);
+static inline Buffer ReadBuffer_common(BufferManagerRelation *bmr,
+									   ForkNumber forkNum, BlockNumber blockNum,
+									   ReadBufferMode mode, BufferAccessStrategy strategy);
 static BlockNumber ExtendBufferedRelCommon(BufferManagerRelation bmr,
 										   ForkNumber fork,
 										   BufferAccessStrategy strategy,
@@ -1041,7 +1041,7 @@ ZeroBuffer(Buffer buffer, ReadBufferMode mode)
 /*
  * ReadBuffer_common -- common logic for all ReadBuffer variants
  */
-static Buffer
+static inline Buffer
 ReadBuffer_common(BufferManagerRelation *bmr, ForkNumber forkNum,
 				  BlockNumber blockNum, ReadBufferMode mode,
 				  BufferAccessStrategy strategy)
