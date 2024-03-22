@@ -1113,7 +1113,7 @@ PinBufferForBlock(const BufferManagerRelation *bmr,
 
 	Assert(bmr->smgr);
 
-	isLocalBuf = SmgrIsTemp(bmr->smgr);
+	isLocalBuf = bmr->relpersistence == RELPERSISTENCE_TEMP;
 	if (isLocalBuf)
 	{
 		io_context = IOCONTEXT_NORMAL;
@@ -1320,7 +1320,7 @@ WaitReadBuffers(ReadBuffersOperation *operation)
 	forknum = operation->forknum;
 	bmr = operation->bmr;
 
-	isLocalBuf = SmgrIsTemp(bmr->smgr);
+	isLocalBuf = bmr->relpersistence == RELPERSISTENCE_TEMP;
 	if (isLocalBuf)
 	{
 		io_context = IOCONTEXT_NORMAL;
