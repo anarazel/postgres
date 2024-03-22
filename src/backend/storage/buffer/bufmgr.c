@@ -1201,17 +1201,13 @@ StartReadBuffers(BufferManagerRelation bmr,
 				 ReadBuffersOperation *operation)
 {
 	int			actual_nblocks = *nblocks;
+	int			io_buffers_len = 0;
 
 	if (bmr.rel)
 	{
 		bmr.smgr = RelationGetSmgr(bmr.rel);
 		bmr.relpersistence = bmr.rel->rd_rel->relpersistence;
 	}
-
-	operation->blocknum = blockNum;
-	operation->buffers = buffers;
-	operation->nblocks = actual_nblocks;
-	operation->io_buffers_len = 0;
 
 	for (int i = 0; i < actual_nblocks; ++i)
 	{
@@ -1237,13 +1233,17 @@ StartReadBuffers(BufferManagerRelation bmr,
 		else
 		{
 			/* Extend the readable range to cover this block. */
-			operation->io_buffers_len++;
+			io_buffers_len++;
 		}
 	}
 
-	if (operation->io_buffers_len > 0)
+	if (io_buffers_len > 0)
 	{
 		/* Populate extra information needed for I/O. */
+		operation->io_buffers_len = io_buffers_len;
+		operation->blocknum = blockNum;
+		operation->buffers = buffers;
+		operation->nblocks = actual_nblocks;
 		operation->bmr = bmr;
 		operation->forknum = forkNum;
 		operation->strategy = strategy;
