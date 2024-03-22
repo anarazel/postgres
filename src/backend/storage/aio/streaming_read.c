@@ -89,6 +89,9 @@
  * pinned buffers from, after calling WaitReadBuffers() to make sure the read
  * has finished (StartReadBuffers() indicated whether that is necessary).
  *
+ * Separately, there are also circular queues of buffers and per-buffer data,
+ * that the ranges point to.
+ *
  * IDENTIFICATION
  *	  src/backend/storage/buffer/aio/streaming_read.c
  *
@@ -516,8 +519,9 @@ streaming_read_look_ahead(StreamingRead *stream)
 		}
 
 		/* Find per-buffer data slot for the next block. */
-		per_buffer_data = get_per_buffer_data(stream,
-											  range->buffer_index + range->nblocks);
+		per_buffer_data =
+			get_per_buffer_data(stream,
+								range->buffer_index + range->nblocks);
 
 		/* Find out which block the callback wants to read next. */
 		blocknum = streaming_get_block(stream, per_buffer_data);
