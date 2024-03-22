@@ -1227,7 +1227,7 @@ StartReadBuffers(BufferManagerRelation *bmr,
 			 * range.  We don't want to create more than one readable range,
 			 * so we stop here.
 			 */
-			actual_nblocks = operation->nblocks = *nblocks = i + 1;
+			actual_nblocks = i + 1;
 			break;
 		}
 		else
@@ -1237,10 +1237,13 @@ StartReadBuffers(BufferManagerRelation *bmr,
 		}
 	}
 
+	*nblocks = actual_nblocks;
+
 	if (io_buffers_len > 0)
 	{
 		/* Populate extra information needed for I/O. */
 		operation->io_buffers_len = io_buffers_len;
+		operation->nblocks = actual_nblocks;
 		operation->blocknum = blockNum;
 		operation->buffers = buffers;
 		operation->nblocks = actual_nblocks;
