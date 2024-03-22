@@ -123,12 +123,12 @@ typedef struct StreamingReadRange
  */
 struct StreamingRead
 {
-	int			max_ios;
-	int			ios_in_progress;
-	int			max_pinned_buffers;
-	int			pinned_buffers;
-	int			next_tail_buffer;
-	int			distance;
+	int16		max_ios;
+	int16		ios_in_progress;
+	int16		max_pinned_buffers;
+	int16		pinned_buffers;
+	int16		next_tail_buffer;
+	int16		distance;
 	bool		started;
 	bool		finished;
 	bool		advice_enabled;
@@ -175,8 +175,8 @@ streaming_read_buffer_begin(int flags,
 							size_t per_buffer_data_size)
 {
 	StreamingRead *stream;
-	int			size;
-	int			max_ios;
+	int16		size;
+	int16		max_ios;
 	uint32		max_pinned_buffers;
 	Oid			tablespace_id;
 
@@ -298,7 +298,7 @@ streaming_read_buffer_begin(int flags,
  * Return a pointer to the per-buffer data by index.
  */
 static void *
-get_per_buffer_data(StreamingRead *stream, int buffer_index)
+get_per_buffer_data(StreamingRead *stream, int16 buffer_index)
 {
 	return (char *) stream->per_buffer_data +
 		stream->per_buffer_data_size * buffer_index;
@@ -315,8 +315,8 @@ streaming_read_start_head_range(StreamingRead *stream)
 {
 	StreamingReadRange *head_range;
 	StreamingReadRange *new_head_range;
-	int			new_buffer_index;
-	int			nblocks_pinned;
+	int16		new_buffer_index;
+	int16		nblocks_pinned;
 	int			flags;
 
 	/* Caller should make sure we never exceed max_ios. */
@@ -599,7 +599,7 @@ streaming_read_buffer_next(StreamingRead *stream, void **per_buffer_data)
 			 */
 			if (tail_range->need_wait)
 			{
-				int			distance;
+				int16			distance;
 
 				Assert(stream->next_tail_buffer == 0);
 				WaitReadBuffers(&tail_range->operation);
@@ -665,7 +665,7 @@ streaming_read_buffer_next(StreamingRead *stream, void **per_buffer_data)
 			if (stream->next_tail_buffer < tail_range->nblocks)
 			{
 				Buffer		buffer;
-				int			n;
+				int16		n;
 
 				n = stream->next_tail_buffer++;
 				buffer = stream->buffers[tail_range->buffer_index + n];
