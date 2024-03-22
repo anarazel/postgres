@@ -1098,7 +1098,7 @@ ReadBuffer_common(BufferManagerRelation bmr, ForkNumber forkNum,
  * already present, or false if more work is required to either read it in or
  * zero it.
  */
-static Buffer
+static inline Buffer
 PinBufferForBlock(BufferManagerRelation bmr,
 				  ForkNumber forkNum,
 				  BlockNumber blockNum,
@@ -1209,14 +1209,9 @@ StartReadBuffers(BufferManagerRelation bmr,
 		bmr.relpersistence = bmr.rel->rd_rel->relpersistence;
 	}
 
-	operation->bmr = bmr;
-	operation->forknum = forkNum;
 	operation->blocknum = blockNum;
 	operation->buffers = buffers;
 	operation->nblocks = actual_nblocks;
-	operation->strategy = strategy;
-	operation->flags = flags;
-
 	operation->io_buffers_len = 0;
 
 	for (int i = 0; i < actual_nblocks; ++i)
@@ -1249,6 +1244,12 @@ StartReadBuffers(BufferManagerRelation bmr,
 
 	if (operation->io_buffers_len > 0)
 	{
+		/* Populate extra information needed for I/O. */
+		operation->bmr = bmr;
+		operation->forknum = forkNum;
+		operation->strategy = strategy;
+		operation->flags = flags;
+
 		if (flags & READ_BUFFERS_ISSUE_ADVICE)
 		{
 			/*

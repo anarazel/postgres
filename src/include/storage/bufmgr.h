@@ -199,12 +199,12 @@ struct ReadBuffersOperation
 	Buffer	   *buffers;
 	ForkNumber	forknum;
 	BlockNumber blocknum;
-	int			nblocks;
+	int16		nblocks;
 	BufferAccessStrategy strategy;
 	int			flags;
 
 	/* Range of buffers, if we need to perform a read. */
-	int			io_buffers_len;
+	int16		io_buffers_len;
 };
 
 typedef struct ReadBuffersOperation ReadBuffersOperation;
