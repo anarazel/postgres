@@ -510,8 +510,7 @@ static void TerminateBufferIO(BufferDesc *buf, bool clear_dirty,
 static void AbortBufferIO(Buffer buffer);
 static void shared_buffer_write_error_callback(void *arg);
 static void local_buffer_write_error_callback(void *arg);
-static BufferDesc *BufferAlloc(SMgrRelation smgr,
-							   char relpersistence,
+static BufferDesc *BufferAlloc(const BufferManagerRelation *bmr,
 							   ForkNumber forkNum,
 							   BlockNumber blockNum,
 							   BufferAccessStrategy strategy,
@@ -1140,8 +1139,8 @@ PinBufferForBlock(const BufferManagerRelation *bmr,
 	}
 	else
 	{
-		bufHdr = BufferAlloc(bmr->smgr, bmr->relpersistence, forkNum, blockNum,
-							 strategy, foundPtr, io_context);
+		bufHdr = BufferAlloc(bmr, forkNum, blockNum, strategy, foundPtr,
+							 io_context);
 		if (*foundPtr)
 			pgBufferUsage.shared_blks_hit++;
 	}
@@ -1491,7 +1490,8 @@ WaitReadBuffers(ReadBuffersOperation *operation)
  * No locks are held either at entry or exit.
  */
 static BufferDesc *
-BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
+BufferAlloc(const BufferManagerRelation *bmr,
+			ForkNumber forkNum,
 			BlockNumber blockNum,
 			BufferAccessStrategy strategy,
 			bool *foundPtr, IOContext io_context)
@@ -1509,7 +1509,7 @@ BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 	ReservePrivateRefCountEntry();
 
 	/* create a tag so we can lookup the buffer */
-	InitBufferTag(&newTag, &smgr->smgr_rlocator.locator, forkNum, blockNum);
+	InitBufferTag(&newTag, &bmr->smgr->smgr_rlocator.locator, forkNum, blockNum);
 
 	/* determine its hash code and partition lock ID */
 	newHash = BufTableHashCode(&newTag);
@@ -1636,7 +1636,7 @@ BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 	 * just like permanent relations.
 	 */
 	victim_buf_state |= BM_TAG_VALID | BUF_USAGECOUNT_ONE;
-	if (relpersistence == RELPERSISTENCE_PERMANENT || forkNum == INIT_FORKNUM)
+	if (bmr->relpersistence == RELPERSISTENCE_PERMANENT || forkNum == INIT_FORKNUM)
 		victim_buf_state |= BM_PERMANENT;
 
 	UnlockBufHdr(victim_buf_hdr, victim_buf_state);
