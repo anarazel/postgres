@@ -349,7 +349,7 @@ streaming_read_start_head_range(StreamingRead *stream)
 	/* Start reading as many blocks as we can from the head range. */
 	nblocks_pinned = head_range->nblocks;
 	head_range->need_wait =
-		StartReadBuffers(stream->bmr,
+		StartReadBuffers(&stream->bmr,
 						 &stream->buffers[head_range->buffer_index],
 						 stream->forknum,
 						 head_range->blocknum,

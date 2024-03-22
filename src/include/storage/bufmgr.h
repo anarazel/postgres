@@ -195,7 +195,7 @@ extern Buffer ReadBufferWithoutRelcache(RelFileLocator rlocator,
 struct ReadBuffersOperation
 {
 	/* Parameters passed in to StartReadBuffers(). */
-	BufferManagerRelation bmr;
+	BufferManagerRelation *bmr;
 	Buffer	   *buffers;
 	ForkNumber	forknum;
 	BlockNumber blocknum;
@@ -209,7 +209,7 @@ struct ReadBuffersOperation
 
 typedef struct ReadBuffersOperation ReadBuffersOperation;
 
-extern bool StartReadBuffers(BufferManagerRelation bmr,
+extern bool StartReadBuffers(BufferManagerRelation *bmr,
 							 Buffer *buffers,
 							 ForkNumber forknum,
 							 BlockNumber blocknum,

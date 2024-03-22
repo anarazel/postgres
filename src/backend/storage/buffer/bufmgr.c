@@ -476,7 +476,7 @@ ForgetPrivateRefCountEntry(PrivateRefCountEntry *ref)
 )
 
 
-static Buffer ReadBuffer_common(BufferManagerRelation bmr,
+static Buffer ReadBuffer_common(BufferManagerRelation *bmr,
 								ForkNumber forkNum, BlockNumber blockNum,
 								ReadBufferMode mode, BufferAccessStrategy strategy);
 static BlockNumber ExtendBufferedRelCommon(BufferManagerRelation bmr,
@@ -797,7 +797,7 @@ ReadBufferExtended(Relation reln, ForkNumber forkNum, BlockNumber blockNum,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot access temporary tables of other sessions")));
 
-	buf = ReadBuffer_common(BMR_REL(reln),
+	buf = ReadBuffer_common(&BMR_REL(reln),
 							forkNum, blockNum, mode, strategy);
 
 	return buf;
@@ -821,8 +821,8 @@ ReadBufferWithoutRelcache(RelFileLocator rlocator, ForkNumber forkNum,
 {
 	SMgrRelation smgr = smgropen(rlocator, INVALID_PROC_NUMBER);
 
-	return ReadBuffer_common(BMR_SMGR(smgr, permanent ? RELPERSISTENCE_PERMANENT :
-									  RELPERSISTENCE_UNLOGGED),
+	return ReadBuffer_common(&BMR_SMGR(smgr, permanent ? RELPERSISTENCE_PERMANENT :
+									   RELPERSISTENCE_UNLOGGED),
 							 forkNum, blockNum,
 							 mode, strategy);
 }
@@ -991,7 +991,7 @@ ExtendBufferedRelTo(BufferManagerRelation bmr,
 	if (buffer == InvalidBuffer)
 	{
 		Assert(extended_by == 0);
-		buffer = ReadBuffer_common(bmr, fork, extend_to - 1, mode, strategy);
+		buffer = ReadBuffer_common(&bmr, fork, extend_to - 1, mode, strategy);
 	}
 
 	return buffer;
@@ -1042,7 +1042,7 @@ ZeroBuffer(Buffer buffer, ReadBufferMode mode)
  * ReadBuffer_common -- common logic for all ReadBuffer variants
  */
 static Buffer
-ReadBuffer_common(BufferManagerRelation bmr, ForkNumber forkNum,
+ReadBuffer_common(BufferManagerRelation *bmr, ForkNumber forkNum,
 				  BlockNumber blockNum, ReadBufferMode mode,
 				  BufferAccessStrategy strategy)
 {
@@ -1068,7 +1068,7 @@ ReadBuffer_common(BufferManagerRelation bmr, ForkNumber forkNum,
 		if (mode == RBM_ZERO_AND_LOCK || mode == RBM_ZERO_AND_CLEANUP_LOCK)
 			flags |= EB_LOCK_FIRST;
 
-		return ExtendBufferedRel(bmr, forkNum, strategy, flags);
+		return ExtendBufferedRel(*bmr, forkNum, strategy, flags);
 	}
 
 	nblocks = 1;
@@ -1099,7 +1099,7 @@ ReadBuffer_common(BufferManagerRelation bmr, ForkNumber forkNum,
  * zero it.
  */
 static inline Buffer
-PinBufferForBlock(BufferManagerRelation bmr,
+PinBufferForBlock(const BufferManagerRelation *bmr,
 				  ForkNumber forkNum,
 				  BlockNumber blockNum,
 				  BufferAccessStrategy strategy,
@@ -1112,9 +1112,9 @@ PinBufferForBlock(BufferManagerRelation bmr,
 
 	Assert(blockNum != P_NEW);
 
-	Assert(bmr.smgr);
+	Assert(bmr->smgr);
 
-	isLocalBuf = SmgrIsTemp(bmr.smgr);
+	isLocalBuf = SmgrIsTemp(bmr->smgr);
 	if (isLocalBuf)
 	{
 		io_context = IOCONTEXT_NORMAL;
@@ -1127,34 +1127,34 @@ PinBufferForBlock(BufferManagerRelation bmr,
 	}
 
 	TRACE_POSTGRESQL_BUFFER_READ_START(forkNum, blockNum,
-									   bmr.smgr->smgr_rlocator.locator.spcOid,
-									   bmr.smgr->smgr_rlocator.locator.dbOid,
-									   bmr.smgr->smgr_rlocator.locator.relNumber,
-									   bmr.smgr->smgr_rlocator.backend);
+									   bmr->smgr->smgr_rlocator.locator.spcOid,
+									   bmr->smgr->smgr_rlocator.locator.dbOid,
+									   bmr->smgr->smgr_rlocator.locator.relNumber,
+									   bmr->smgr->smgr_rlocator.backend);
 
 	if (isLocalBuf)
 	{
-		bufHdr = LocalBufferAlloc(bmr.smgr, forkNum, blockNum, foundPtr);
+		bufHdr = LocalBufferAlloc(bmr->smgr, forkNum, blockNum, foundPtr);
 		if (*foundPtr)
 			pgBufferUsage.local_blks_hit++;
 	}
 	else
 	{
-		bufHdr = BufferAlloc(bmr.smgr, bmr.relpersistence, forkNum, blockNum,
+		bufHdr = BufferAlloc(bmr->smgr, bmr->relpersistence, forkNum, blockNum,
 							 strategy, foundPtr, io_context);
 		if (*foundPtr)
 			pgBufferUsage.shared_blks_hit++;
 	}
-	if (bmr.rel)
+	if (bmr->rel)
 	{
 		/*
 		 * While pgBufferUsage's "read" counter isn't bumped unless we reach
 		 * WaitReadBuffers() (so, not for hits, and not for buffers that are
 		 * zeroed instead), the per-relation stats always count them.
 		 */
-		pgstat_count_buffer_read(bmr.rel);
+		pgstat_count_buffer_read(bmr->rel);
 		if (*foundPtr)
-			pgstat_count_buffer_hit(bmr.rel);
+			pgstat_count_buffer_hit(bmr->rel);
 	}
 	if (*foundPtr)
 	{
@@ -1164,10 +1164,10 @@ PinBufferForBlock(BufferManagerRelation bmr,
 			VacuumCostBalance += VacuumCostPageHit;
 
 		TRACE_POSTGRESQL_BUFFER_READ_DONE(forkNum, blockNum,
-										  bmr.smgr->smgr_rlocator.locator.spcOid,
-										  bmr.smgr->smgr_rlocator.locator.dbOid,
-										  bmr.smgr->smgr_rlocator.locator.relNumber,
-										  bmr.smgr->smgr_rlocator.backend,
+										  bmr->smgr->smgr_rlocator.locator.spcOid,
+										  bmr->smgr->smgr_rlocator.locator.dbOid,
+										  bmr->smgr->smgr_rlocator.locator.relNumber,
+										  bmr->smgr->smgr_rlocator.backend,
 										  true);
 	}
 
@@ -1191,7 +1191,7 @@ PinBufferForBlock(BufferManagerRelation bmr,
  * could be initiated here.
  */
 bool
-StartReadBuffers(BufferManagerRelation bmr,
+StartReadBuffers(BufferManagerRelation *bmr,
 				 Buffer *buffers,
 				 ForkNumber forkNum,
 				 BlockNumber blockNum,
@@ -1203,10 +1203,10 @@ StartReadBuffers(BufferManagerRelation bmr,
 	int			actual_nblocks = *nblocks;
 	int			io_buffers_len = 0;
 
-	if (bmr.rel)
+	if (bmr->rel)
 	{
-		bmr.smgr = RelationGetSmgr(bmr.rel);
-		bmr.relpersistence = bmr.rel->rd_rel->relpersistence;
+		bmr->smgr = RelationGetSmgr(bmr->rel);
+		bmr->relpersistence = bmr->rel->rd_rel->relpersistence;
 	}
 
 	for (int i = 0; i < actual_nblocks; ++i)
@@ -1263,7 +1263,7 @@ StartReadBuffers(BufferManagerRelation bmr,
 			 * true asynchronous version we might choose to process only one
 			 * real I/O at a time in that case.
 			 */
-			smgrprefetch(bmr.smgr, forkNum, blockNum, operation->io_buffers_len);
+			smgrprefetch(bmr->smgr, forkNum, blockNum, operation->io_buffers_len);
 		}
 
 		/* Indicate that WaitReadBuffers() should be called. */
@@ -1291,7 +1291,7 @@ WaitReadBuffersCanStartIO(Buffer buffer, bool nowait)
 void
 WaitReadBuffers(ReadBuffersOperation *operation)
 {
-	BufferManagerRelation bmr;
+	BufferManagerRelation *bmr;
 	Buffer	   *buffers;
 	int			nblocks;
 	BlockNumber blocknum;
@@ -1318,7 +1318,7 @@ WaitReadBuffers(ReadBuffersOperation *operation)
 	forknum = operation->forknum;
 	bmr = operation->bmr;
 
-	isLocalBuf = SmgrIsTemp(bmr.smgr);
+	isLocalBuf = SmgrIsTemp(bmr->smgr);
 	if (isLocalBuf)
 	{
 		io_context = IOCONTEXT_NORMAL;
@@ -1397,7 +1397,7 @@ WaitReadBuffers(ReadBuffersOperation *operation)
 		}
 
 		io_start = pgstat_prepare_io_time(track_io_timing);
-		smgrreadv(bmr.smgr, forknum, io_first_block, io_pages, io_buffers_len);
+		smgrreadv(bmr->smgr, forknum, io_first_block, io_pages, io_buffers_len);
 		pgstat_count_io_op_time(io_object, io_context, IOOP_READ, io_start,
 								io_buffers_len);
 
@@ -1428,7 +1428,7 @@ WaitReadBuffers(ReadBuffersOperation *operation)
 							(errcode(ERRCODE_DATA_CORRUPTED),
 							 errmsg("invalid page in block %u of relation %s; zeroing out page",
 									io_first_block + j,
-									relpath(bmr.smgr->smgr_rlocator, forknum))));
+									relpath(bmr->smgr->smgr_rlocator, forknum))));
 					memset(bufBlock, 0, BLCKSZ);
 				}
 				else
@@ -1436,7 +1436,7 @@ WaitReadBuffers(ReadBuffersOperation *operation)
 							(errcode(ERRCODE_DATA_CORRUPTED),
 							 errmsg("invalid page in block %u of relation %s",
 									io_first_block + j,
-									relpath(bmr.smgr->smgr_rlocator, forknum))));
+									relpath(bmr->smgr->smgr_rlocator, forknum))));
 			}
 
 			/* Terminate I/O and set BM_VALID. */
@@ -1455,10 +1455,10 @@ WaitReadBuffers(ReadBuffersOperation *operation)
 
 			/* Report I/Os as completing individually. */
 			TRACE_POSTGRESQL_BUFFER_READ_DONE(forknum, io_first_block + j,
-											  bmr.smgr->smgr_rlocator.locator.spcOid,
-											  bmr.smgr->smgr_rlocator.locator.dbOid,
-											  bmr.smgr->smgr_rlocator.locator.relNumber,
-											  bmr.smgr->smgr_rlocator.backend,
+											  bmr->smgr->smgr_rlocator.locator.spcOid,
+											  bmr->smgr->smgr_rlocator.locator.dbOid,
+											  bmr->smgr->smgr_rlocator.locator.relNumber,
+											  bmr->smgr->smgr_rlocator.backend,
 											  false);
 		}
 
