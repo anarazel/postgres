@@ -111,8 +111,7 @@ typedef struct StreamingReadRange
 	bool		advice_issued;
 	BlockNumber blocknum;
 	int			nblocks;
-	int			per_buffer_data_index;
-	Buffer		buffers[MAX_BUFFERS_PER_TRANSFER];
+	int			buffer_index;
 	ReadBuffersOperation operation;
 } StreamingReadRange;
 
@@ -145,7 +144,8 @@ struct StreamingRead
 	/* Next expected block, for detecting sequential access. */
 	BlockNumber seq_blocknum;
 
-	/* Space for optional per-buffer private data. */
+	/* Space for buffers and optional per-buffer private data. */
+	Buffer	   *buffers;
 	size_t		per_buffer_data_size;
 	void	   *per_buffer_data;
 
@@ -272,56 +272,33 @@ streaming_read_buffer_begin(int flags,
 		stream->distance = 1;
 
 	/*
-	 * Space for the callback to store extra data along with each block.  Note
-	 * that we need one more than max_pinned_buffers, so we can return a
-	 * pointer to a slot that can't be overwritten until the next call.
+	 * Space for the buffers we pin, and the optional per-buffer data that the
+	 * callback can communicate to the consumer.  These are pointed to by each
+	 * range's buffer_index, and are allocated in a circular fashion.  Though
+	 * we never pin more than max_pinned_buffers, we want to be able to assume
+	 * that all the buffers and per-buffer data for a single range are
+	 * contiguous (i.e. don't wrap around halfway through), so we let the
+	 * final one run past that position by allocating an extra
+	 * MAX_BUFFERS_PER_TRANSFER - 1 elements in both.
 	 */
+	stream->buffers = palloc(max_pinned_buffers +
+							 MAX_BUFFERS_PER_TRANSFER - 1);
 	if (per_buffer_data_size)
-		stream->per_buffer_data = palloc(per_buffer_data_size * size);
+		stream->per_buffer_data =
+			palloc(per_buffer_data_size * (max_pinned_buffers +
+										   MAX_BUFFERS_PER_TRANSFER - 1));
 
 	return stream;
-}
-
-/*
- * Find the per-buffer data index for the Nth block of a range.
- */
-static int
-get_per_buffer_data_index(StreamingRead *stream, StreamingReadRange *range, int n)
-{
-	int			result;
-
-	/*
-	 * Find slot in the circular buffer of per-buffer data, without using the
-	 * expensive % operator.
-	 */
-	result = range->per_buffer_data_index + n;
-	while (result >= stream->size)
-		result -= stream->size;
-	Assert(result == (range->per_buffer_data_index + n) % stream->size);
-
-	return result;
 }
 
 /*
  * Return a pointer to the per-buffer data by index.
  */
 static void *
-get_per_buffer_data_by_index(StreamingRead *stream, int per_buffer_data_index)
+get_per_buffer_data(StreamingRead *stream, int buffer_index)
 {
 	return (char *) stream->per_buffer_data +
-		stream->per_buffer_data_size * per_buffer_data_index;
-}
-
-/*
- * Return a pointer to the per-buffer data for the Nth block of a range.
- */
-static void *
-get_per_buffer_data(StreamingRead *stream, StreamingReadRange *range, int n)
-{
-	return get_per_buffer_data_by_index(stream,
-										get_per_buffer_data_index(stream,
-																  range,
-																  n));
+		stream->per_buffer_data_size * buffer_index;
 }
 
 /*
@@ -335,6 +312,7 @@ streaming_read_start_head_range(StreamingRead *stream)
 {
 	StreamingReadRange *head_range;
 	StreamingReadRange *new_head_range;
+	int			new_buffer_index;
 	int			nblocks_pinned;
 	int			flags;
 
@@ -369,7 +347,7 @@ streaming_read_start_head_range(StreamingRead *stream)
 	nblocks_pinned = head_range->nblocks;
 	head_range->need_wait =
 		StartReadBuffers(stream->bmr,
-						 head_range->buffers,
+						 &stream->buffers[head_range->buffer_index],
 						 stream->forknum,
 						 head_range->blocknum,
 						 &nblocks_pinned,
@@ -430,9 +408,14 @@ streaming_read_start_head_range(StreamingRead *stream)
 		new_head_range->nblocks = nblocks_remaining;
 	}
 
-	/* The new range has per-buffer data starting after the previous range. */
-	new_head_range->per_buffer_data_index =
-		get_per_buffer_data_index(stream, head_range, nblocks_pinned);
+	/*
+	 * The new range has per-buffer data starting after the previous range, or
+	 * at the start of buffers if we've wrapped around.
+	 */
+	new_buffer_index = head_range->buffer_index + nblocks_pinned;
+	if (new_buffer_index >= stream->max_pinned_buffers)
+		new_buffer_index = 0;
+	new_head_range->buffer_index = new_buffer_index;
 
 	return new_head_range;
 }
@@ -516,7 +499,7 @@ streaming_read_look_ahead(StreamingRead *stream)
 		void	   *per_buffer_data;
 
 		/* Do we have a full-sized range? */
-		if (range->nblocks == lengthof(range->buffers))
+		if (range->nblocks == MAX_BUFFERS_PER_TRANSFER)
 		{
 			/* Start as much of it as we can. */
 			range = streaming_read_start_head_range(stream);
@@ -529,11 +512,12 @@ streaming_read_look_ahead(StreamingRead *stream)
 			 * That might have only been partially started, but always
 			 * processes at least one so that'll do for now.
 			 */
-			Assert(range->nblocks < lengthof(range->buffers));
+			Assert(range->nblocks < MAX_BUFFERS_PER_TRANSFER);
 		}
 
 		/* Find per-buffer data slot for the next block. */
-		per_buffer_data = get_per_buffer_data(stream, range, range->nblocks);
+		per_buffer_data = get_per_buffer_data(stream,
+											  range->buffer_index + range->nblocks);
 
 		/* Find out which block the callback wants to read next. */
 		blocknum = streaming_get_block(stream, per_buffer_data);
@@ -676,11 +660,11 @@ streaming_read_buffer_next(StreamingRead *stream, void **per_buffer_data)
 			/* Are there more buffers available in this range? */
 			if (stream->next_tail_buffer < tail_range->nblocks)
 			{
-				int			buffer_index;
 				Buffer		buffer;
+				int			n;
 
-				buffer_index = stream->next_tail_buffer++;
-				buffer = tail_range->buffers[buffer_index];
+				n = stream->next_tail_buffer++;
+				buffer = stream->buffers[tail_range->buffer_index + n];
 
 				Assert(BufferIsValid(buffer));
 
@@ -689,7 +673,8 @@ streaming_read_buffer_next(StreamingRead *stream, void **per_buffer_data)
 				stream->pinned_buffers--;
 
 				if (per_buffer_data)
-					*per_buffer_data = get_per_buffer_data(stream, tail_range, buffer_index);
+					*per_buffer_data = get_per_buffer_data(stream,
+														   tail_range->buffer_index + n);
 
 				/* We may be able to get another I/O started. */
 				streaming_read_look_ahead(stream);
@@ -747,6 +732,7 @@ streaming_read_buffer_end(StreamingRead *stream)
 	Assert(stream->ios_in_progress == 0);
 
 	/* Release memory. */
+	pfree(stream->buffers);
 	if (stream->per_buffer_data)
 		pfree(stream->per_buffer_data);
 
