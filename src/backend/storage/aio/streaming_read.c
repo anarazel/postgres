@@ -536,10 +536,10 @@ streaming_read_buffer_next(StreamingRead *stream, void **per_buffer_data)
 	 * data, so we can skip all the queue management code and stay in the same
 	 * buffer slot.
 	 */
-	if (per_buffer_data == NULL &&
-		stream->ios_in_progress == 0 &&
-		stream->pinned_buffers == 1 &&
-		stream->distance == 1)
+	if (likely(per_buffer_data == NULL &&
+			   stream->ios_in_progress == 0 &&
+			   stream->pinned_buffers == 1 &&
+			   stream->distance == 1))
 	{
 		BlockNumber next_blocknum;
 
@@ -551,7 +551,7 @@ streaming_read_buffer_next(StreamingRead *stream, void **per_buffer_data)
 		oldest_buffer_index = stream->oldest_buffer_index;
 		buffer = stream->buffers[oldest_buffer_index];
 		next_blocknum = streaming_read_get_block(stream, NULL);
-		if (next_blocknum == InvalidBlockNumber)
+		if (unlikely(next_blocknum == InvalidBlockNumber))
 		{
 			/* End of stream. */
 			stream->distance = -1;
@@ -559,11 +559,11 @@ streaming_read_buffer_next(StreamingRead *stream, void **per_buffer_data)
 			stream->pinned_buffers = 0;
 			return buffer;
 		}
-		if (StartReadBuffer(&stream->ios[0],
-							&stream->buffers[oldest_buffer_index],
-							next_blocknum,
-							stream->advice_enabled ?
-							READ_BUFFERS_ISSUE_ADVICE : 0))
+		if (unlikely(StartReadBuffer(&stream->ios[0],
+									 &stream->buffers[oldest_buffer_index],
+									 next_blocknum,
+									 stream->advice_enabled ?
+									 READ_BUFFERS_ISSUE_ADVICE : 0)))
 		{
 			/* I/O needed, slow path next time. */
 			stream->buffer_io_indexes[oldest_buffer_index] = 0;
