@@ -103,18 +103,19 @@ struct StreamingRead
 	bool		advice_enabled;
 
 	/*
+	 * Sometimes we need to be able to 'unget' a block number to resolve a
+	 * flow control problem when I/Os are split.
+	 */
+	bool		have_unget_blocknum;
+	BlockNumber unget_blocknum;
+
+	/*
 	 * The callback that will tell us which block numbers to read, and an
 	 * opaque pointer that will be pass to it for its own purposes.
 	 */
 	StreamingReadBufferCB callback;
 	void	   *callback_private_data;
 
-	/*
-	 * Sometimes we need to be able to 'unget' a block number to resolve a
-	 * flow control problem when I/Os are split.
-	 */
-	BlockNumber unget_blocknum;
-	bool		have_unget_blocknum;
 
 	/* Next expected block, for detecting sequential access. */
 	BlockNumber seq_blocknum;
@@ -122,6 +123,11 @@ struct StreamingRead
 	/* The read operation we are currently preparing. */
 	BlockNumber pending_read_blocknum;
 	int16		pending_read_nblocks;
+
+	int16		next_io_index;
+	/* Head and tail of the circular queue of buffers. */
+	int16		oldest_buffer_index;	/* Next pinned buffer to return */
+	int16		next_buffer_index;	/* Index of next buffer to pin */
 
 	/* Space for buffers and optional per-buffer private data. */
 	Buffer	   *buffers;
@@ -131,11 +137,6 @@ struct StreamingRead
 
 	/* Read operations that have been started but not waited for yet. */
 	ReadBuffersOperation *ios;
-	int16		next_io_index;
-
-	/* Head and tail of the circular queue of buffers. */
-	int16		oldest_buffer_index;	/* Next pinned buffer to return */
-	int16		next_buffer_index;	/* Index of next buffer to pin */
 };
 
 /*
