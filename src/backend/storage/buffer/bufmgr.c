@@ -1054,7 +1054,6 @@ ReadBuffer_common(BufferManagerRelation bmr, ForkNumber forkNum,
 {
 	ReadBuffersOperation operation;
 	Buffer		buffer;
-	int			nblocks;
 	int			flags;
 
 	/*
@@ -1077,7 +1076,6 @@ ReadBuffer_common(BufferManagerRelation bmr, ForkNumber forkNum,
 		return ExtendBufferedRel(bmr, forkNum, strategy, flags);
 	}
 
-	nblocks = 1;
 	if (mode == RBM_ZERO_ON_ERROR)
 		flags = READ_BUFFERS_ZERO_ON_ERROR;
 	else
@@ -1085,13 +1083,11 @@ ReadBuffer_common(BufferManagerRelation bmr, ForkNumber forkNum,
 	operation.bmr = bmr;
 	operation.forknum = forkNum;
 	operation.strategy = strategy;
-	if (StartReadBuffers(&operation,
-						 &buffer,
-						 blockNum,
-						 &nblocks,
-						 flags))
+	if (StartReadBuffer(&operation,
+						&buffer,
+						blockNum,
+						flags))
 		WaitReadBuffers(&operation);
-	Assert(nblocks == 1);		/* single block can't be short */
 
 	if (mode == RBM_ZERO_AND_CLEANUP_LOCK || mode == RBM_ZERO_AND_LOCK)
 		ZeroBuffer(buffer, mode);
@@ -1180,6 +1176,21 @@ PinBufferForBlock(BufferManagerRelation bmr,
 	return BufferDescriptorGetBuffer(bufHdr);
 }
 
+bool
+StartReadBuffer(ReadBuffersOperation *operation,
+				Buffer *buffer,
+				BlockNumber blocknum,
+				int flags)
+{
+	int nblocks = 1;
+	bool done;
+
+	done = StartReadBuffers(operation, buffer, blocknum, &nblocks, flags);
+	Assert(nblocks == 1);		/* single block can't be short */
+
+	return done;
+}
+
 /*
  * Begin reading a range of blocks beginning at blockNum and extending for
  * *nblocks.  On return, up to *nblocks pinned buffers holding those blocks
@@ -1196,7 +1207,7 @@ PinBufferForBlock(BufferManagerRelation bmr,
  * and the real I/O happens in WaitReadBuffers().  In future work, true I/O
  * could be initiated here.
  */
-bool
+inline bool
 StartReadBuffers(ReadBuffersOperation *operation,
 				 Buffer *buffers,
 				 BlockNumber blockNum,

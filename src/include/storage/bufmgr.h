@@ -202,6 +202,10 @@ struct ReadBuffersOperation
 
 typedef struct ReadBuffersOperation ReadBuffersOperation;
 
+extern bool StartReadBuffer(ReadBuffersOperation *operation,
+							Buffer *buffer,
+							BlockNumber blocknum,
+							int flags);
 extern bool StartReadBuffers(ReadBuffersOperation *operation,
 							 Buffer *buffers,
 							 BlockNumber blocknum,

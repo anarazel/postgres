@@ -541,7 +541,6 @@ streaming_read_buffer_next(StreamingRead *stream, void **per_buffer_data)
 		stream->distance == 1)
 	{
 		BlockNumber next_blocknum;
-		int			nblocks = 1;
 
 		/*
 		 * We have a pinned buffer that we need to serve up, but we also want
@@ -559,12 +558,11 @@ streaming_read_buffer_next(StreamingRead *stream, void **per_buffer_data)
 			stream->pinned_buffers = 0;
 			return buffer;
 		}
-		if (StartReadBuffers(&stream->ios[0],
-							 &stream->buffers[oldest_buffer_index],
-							 next_blocknum,
-							 &nblocks,
-							 stream->advice_enabled ?
-							 READ_BUFFERS_ISSUE_ADVICE : 0))
+		if (StartReadBuffer(&stream->ios[0],
+							&stream->buffers[oldest_buffer_index],
+							next_blocknum,
+							stream->advice_enabled ?
+							READ_BUFFERS_ISSUE_ADVICE : 0))
 		{
 			/* I/O needed, slow path next time. */
 			stream->buffer_io_indexes[oldest_buffer_index] = 0;
@@ -576,7 +574,6 @@ streaming_read_buffer_next(StreamingRead *stream, void **per_buffer_data)
 		}
 		/* Pin transferred to caller, got another one, no net change. */
 		Assert(stream->pinned_buffers == 1);
-		Assert(nblocks == 1);
 		return buffer;
 	}
 
