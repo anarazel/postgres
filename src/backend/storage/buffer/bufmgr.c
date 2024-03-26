@@ -1503,7 +1503,7 @@ WaitReadBuffers(ReadBuffersOperation *operation)
  *
  * No locks are held either at entry or exit.
  */
-static BufferDesc *
+static inline BufferDesc *
 BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 			BlockNumber blockNum,
 			BufferAccessStrategy strategy,
