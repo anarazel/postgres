@@ -683,4 +683,106 @@ extern void list_sort(List *list, list_sort_comparator cmp);
 extern int	list_int_cmp(const ListCell *p1, const ListCell *p2);
 extern int	list_oid_cmp(const ListCell *p1, const ListCell *p2);
 
+
+#define PG_LIST_ALLOC_ATTR __attribute__(( \
+  pg_malloc_attr(lappend), \
+  pg_malloc_attr(lappend_int), \
+  pg_malloc_attr(lappend_oid), \
+  pg_malloc_attr(lappend_xid), \
+  pg_malloc_attr(list_insert_nth), \
+  pg_malloc_attr(list_insert_nth_int), \
+  pg_malloc_attr(list_insert_nth_oid), \
+  pg_malloc_attr_i(lcons, 2), \
+  pg_malloc_attr_i(lcons_int, 2), \
+  pg_malloc_attr_i(lcons_oid, 2), \
+  pg_malloc_attr(list_concat), \
+  pg_malloc_attr(list_truncate), \
+  pg_malloc_attr(list_delete), \
+  pg_malloc_attr(list_delete_ptr), \
+  pg_malloc_attr(list_delete_int), \
+  pg_malloc_attr(list_delete_oid), \
+  pg_malloc_attr(list_delete_first), \
+  pg_malloc_attr(list_delete_last), \
+  pg_malloc_attr(list_delete_first_n), \
+  pg_malloc_attr(list_delete_nth_cell), \
+  pg_malloc_attr(list_delete_cell), \
+  pg_malloc_attr(list_union), \
+  pg_malloc_attr(list_append_unique), \
+  pg_malloc_attr(list_append_unique_ptr), \
+  pg_malloc_attr(list_append_unique_int), \
+  pg_malloc_attr(list_append_unique_oid), \
+  pg_malloc_attr(list_concat_unique), \
+  pg_malloc_attr(list_concat_unique_ptr), \
+  pg_malloc_attr(list_concat_unique_int), \
+  pg_malloc_attr(list_concat_unique_oid), \
+  pg_malloc_attr(list_free), \
+  pg_malloc_attr(list_free_deep), \
+  warn_unused_result))
+
+extern PG_LIST_ALLOC_ATTR List *list_make1_impl(NodeTag t, ListCell datum1);
+extern PG_LIST_ALLOC_ATTR List *list_make2_impl(NodeTag t, ListCell datum1, ListCell datum2);
+extern PG_LIST_ALLOC_ATTR List *list_make3_impl(NodeTag t, ListCell datum1, ListCell datum2,
+							 ListCell datum3);
+extern PG_LIST_ALLOC_ATTR List *list_make4_impl(NodeTag t, ListCell datum1, ListCell datum2,
+							 ListCell datum3, ListCell datum4);
+extern PG_LIST_ALLOC_ATTR List *list_make5_impl(NodeTag t, ListCell datum1, ListCell datum2,
+							 ListCell datum3, ListCell datum4,
+							 ListCell datum5);
+
+extern PG_LIST_ALLOC_ATTR List *lappend(List *list, void *datum);
+extern PG_LIST_ALLOC_ATTR List *lappend_int(List *list, int datum);
+extern PG_LIST_ALLOC_ATTR List *lappend_oid(List *list, Oid datum);
+extern PG_LIST_ALLOC_ATTR List *lappend_xid(List *list, TransactionId datum);
+
+extern PG_LIST_ALLOC_ATTR List *list_insert_nth(List *list, int pos, void *datum);
+extern PG_LIST_ALLOC_ATTR List *list_insert_nth_int(List *list, int pos, int datum);
+extern PG_LIST_ALLOC_ATTR List *list_insert_nth_oid(List *list, int pos, Oid datum);
+
+extern PG_LIST_ALLOC_ATTR List *lcons(void *datum, List *list);
+extern PG_LIST_ALLOC_ATTR List *lcons_int(int datum, List *list);
+extern PG_LIST_ALLOC_ATTR List *lcons_oid(Oid datum, List *list);
+
+extern PG_LIST_ALLOC_ATTR List *list_concat(List *list1, const List *list2);
+extern PG_LIST_ALLOC_ATTR List *list_concat_copy(const List *list1, const List *list2);
+
+extern PG_LIST_ALLOC_ATTR List *list_truncate(List *list, int new_size);
+
+extern PG_LIST_ALLOC_ATTR List *list_delete(List *list, void *datum);
+extern PG_LIST_ALLOC_ATTR List *list_delete_ptr(List *list, void *datum);
+extern PG_LIST_ALLOC_ATTR List *list_delete_int(List *list, int datum);
+extern PG_LIST_ALLOC_ATTR List *list_delete_oid(List *list, Oid datum);
+extern PG_LIST_ALLOC_ATTR List *list_delete_first(List *list);
+extern PG_LIST_ALLOC_ATTR List *list_delete_last(List *list);
+extern PG_LIST_ALLOC_ATTR List *list_delete_first_n(List *list, int n);
+extern PG_LIST_ALLOC_ATTR List *list_delete_nth_cell(List *list, int n);
+extern PG_LIST_ALLOC_ATTR List *list_delete_cell(List *list, ListCell *cell);
+
+extern PG_LIST_ALLOC_ATTR List *list_union(const List *list1, const List *list2);
+extern PG_LIST_ALLOC_ATTR List *list_union_ptr(const List *list1, const List *list2);
+extern PG_LIST_ALLOC_ATTR List *list_union_int(const List *list1, const List *list2);
+extern PG_LIST_ALLOC_ATTR List *list_union_oid(const List *list1, const List *list2);
+
+extern PG_LIST_ALLOC_ATTR List *list_intersection(const List *list1, const List *list2);
+extern PG_LIST_ALLOC_ATTR List *list_intersection_int(const List *list1, const List *list2);
+
+extern PG_LIST_ALLOC_ATTR List *list_difference(const List *list1, const List *list2);
+extern PG_LIST_ALLOC_ATTR List *list_difference_ptr(const List *list1, const List *list2);
+extern PG_LIST_ALLOC_ATTR List *list_difference_int(const List *list1, const List *list2);
+extern PG_LIST_ALLOC_ATTR List *list_difference_oid(const List *list1, const List *list2);
+
+extern PG_LIST_ALLOC_ATTR List *list_append_unique(List *list, void *datum);
+extern PG_LIST_ALLOC_ATTR List *list_append_unique_ptr(List *list, void *datum);
+extern PG_LIST_ALLOC_ATTR List *list_append_unique_int(List *list, int datum);
+extern PG_LIST_ALLOC_ATTR List *list_append_unique_oid(List *list, Oid datum);
+
+extern PG_LIST_ALLOC_ATTR List *list_concat_unique(List *list1, const List *list2);
+extern PG_LIST_ALLOC_ATTR List *list_concat_unique_ptr(List *list1, const List *list2);
+extern PG_LIST_ALLOC_ATTR List *list_concat_unique_int(List *list1, const List *list2);
+extern PG_LIST_ALLOC_ATTR List *list_concat_unique_oid(List *list1, const List *list2);
+
+extern PG_LIST_ALLOC_ATTR List *list_copy(const List *oldlist);
+extern PG_LIST_ALLOC_ATTR List *list_copy_head(const List *oldlist, int len);
+extern PG_LIST_ALLOC_ATTR List *list_copy_tail(const List *oldlist, int nskip);
+extern PG_LIST_ALLOC_ATTR List *list_copy_deep(const List *oldlist);
+
 #endif							/* PG_LIST_H */

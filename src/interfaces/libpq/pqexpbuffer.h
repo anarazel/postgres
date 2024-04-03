@@ -121,6 +121,10 @@ extern void initPQExpBuffer(PQExpBuffer str);
 extern void destroyPQExpBuffer(PQExpBuffer str);
 extern void termPQExpBuffer(PQExpBuffer str);
 
+#define PG_EXPBUFFER_ALLOC_ATTR __attribute__((pg_malloc_attr(destroyPQExpBuffer), warn_unused_result))
+extern PG_EXPBUFFER_ALLOC_ATTR PQExpBuffer createPQExpBuffer(void);
+
+
 /*------------------------
  * resetPQExpBuffer
  *		Reset a PQExpBuffer to empty

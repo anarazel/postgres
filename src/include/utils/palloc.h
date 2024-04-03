@@ -65,24 +65,39 @@ extern PGDLLIMPORT MemoryContext CurrentMemoryContext;
 #define MCXT_ALLOC_NO_OOM		0x02	/* no failure if out-of-memory */
 #define MCXT_ALLOC_ZERO			0x04	/* zero allocated memory */
 
+#define pg_alloc_attributes(size_at) \
+	__attribute__((malloc, pg_malloc_attr_i(pfree, 1), alloc_size(size_at), assume_aligned(MAXIMUM_ALIGNOF), returns_nonnull, warn_unused_result))
+#define pg_alloc_noerr_attributes(size_at) \
+	__attribute__((malloc, pg_malloc_attr_i(pfree, 1), alloc_size(size_at), assume_aligned(MAXIMUM_ALIGNOF), warn_unused_result))
+#define pg_realloc_attributes(old_at, size_at) \
+	__attribute__((alloc_size(size_at), assume_aligned(MAXIMUM_ALIGNOF), \
+				   nonnull(old_at), returns_nonnull, warn_unused_result))
+#define pg_realloc_noerr_attributes(old_at, size_at) \
+	__attribute__((alloc_size(size_at), assume_aligned(MAXIMUM_ALIGNOF), \
+				   nonnull(old_at), warn_unused_result))
+#define pg_dup_attributes(source_at) \
+	__attribute__((malloc, pg_malloc_attr_i(pfree, 1), assume_aligned(MAXIMUM_ALIGNOF), returns_nonnull, nonnull(source_at), warn_unused_result))
+
+extern void pfree(void *pointer);
+
 /*
  * Fundamental memory-allocation operations (more are in utils/memutils.h)
  */
-extern void *MemoryContextAlloc(MemoryContext context, Size size);
-extern void *MemoryContextAllocZero(MemoryContext context, Size size);
+extern void *MemoryContextAlloc(MemoryContext context, Size size) pg_alloc_attributes(2);
+extern void *MemoryContextAllocZero(MemoryContext context, Size size) pg_alloc_attributes(2);
 extern void *MemoryContextAllocExtended(MemoryContext context,
-										Size size, int flags);
+										Size size, int flags) pg_alloc_noerr_attributes(2);
 extern void *MemoryContextAllocAligned(MemoryContext context,
-									   Size size, Size alignto, int flags);
+									   Size size, Size alignto, int flags) pg_alloc_noerr_attributes(2);
 
-extern void *palloc(Size size);
-extern void *palloc0(Size size);
-extern void *palloc_extended(Size size, int flags);
-extern void *palloc_aligned(Size size, Size alignto, int flags);
-extern pg_nodiscard void *repalloc(void *pointer, Size size);
+extern void *palloc(Size size) pg_alloc_attributes(1);
+extern void *palloc0(Size size) pg_alloc_attributes(1);
+extern void *palloc_extended(Size size, int flags) pg_alloc_noerr_attributes(1);
+extern void *palloc_aligned(Size size, Size alignto, int flags) pg_alloc_noerr_attributes(1);
+extern pg_nodiscard void *repalloc(void *pointer, Size size) pg_realloc_attributes(1, 2);
 extern pg_nodiscard void *repalloc_extended(void *pointer,
-											Size size, int flags);
-extern pg_nodiscard void *repalloc0(void *pointer, Size oldsize, Size size);
+											Size size, int flags) pg_realloc_noerr_attributes(1, 2);
+extern pg_nodiscard void *repalloc0(void *pointer, Size oldsize, Size size) pg_realloc_attributes(1, 2);
 extern void pfree(void *pointer);
 
 /*
@@ -109,8 +124,8 @@ extern void pfree(void *pointer);
 #define repalloc0_array(pointer, type, oldcount, count) ((type *) repalloc0(pointer, sizeof(type) * (oldcount), sizeof(type) * (count)))
 
 /* Higher-limit allocators. */
-extern void *MemoryContextAllocHuge(MemoryContext context, Size size);
-extern pg_nodiscard void *repalloc_huge(void *pointer, Size size);
+extern void *MemoryContextAllocHuge(MemoryContext context, Size size)  pg_alloc_attributes(2);
+extern pg_nodiscard void *repalloc_huge(void *pointer, Size size) pg_realloc_attributes(1, 2);
 
 /*
  * Although this header file is nominally backend-only, certain frontend
@@ -138,14 +153,14 @@ extern void MemoryContextRegisterResetCallback(MemoryContext context,
  * These are like standard strdup() except the copied string is
  * allocated in a context, not with malloc().
  */
-extern char *MemoryContextStrdup(MemoryContext context, const char *string);
-extern char *pstrdup(const char *in);
-extern char *pnstrdup(const char *in, Size len);
+extern char *MemoryContextStrdup(MemoryContext context, const char *string) pg_dup_attributes(2);
+extern char *pstrdup(const char *in) pg_dup_attributes(1);
+extern char *pnstrdup(const char *in, Size len) pg_dup_attributes(1);
 
-extern char *pchomp(const char *in);
+extern char *pchomp(const char *in) pg_dup_attributes(1);
 
 /* sprintf into a palloc'd buffer --- these are in psprintf.c */
-extern char *psprintf(const char *fmt,...) pg_attribute_printf(1, 2);
-extern size_t pvsnprintf(char *buf, size_t len, const char *fmt, va_list args) pg_attribute_printf(3, 0);
+extern char *psprintf(const char *fmt,...) pg_attribute_printf(1, 2) __attribute__((malloc, returns_nonnull, warn_unused_result));
+extern size_t pvsnprintf(char *buf, size_t len, const char *fmt, va_list args) pg_attribute_printf(3, 0) __attribute__((warn_unused_result));
 
 #endif							/* PALLOC_H */

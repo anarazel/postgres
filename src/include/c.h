@@ -311,6 +311,15 @@
 #define unlikely(x) ((x) != 0)
 #endif
 
+#if defined(__GNUC__) && !defined(__clang__)
+#define pg_malloc_attr(deallocator) malloc(deallocator)
+#define pg_malloc_attr_i(deallocator, ptr_at) malloc(deallocator, ptr_at)
+#else
+#define pg_malloc_attr(deallocator)
+#define pg_malloc_attr_i(deallocator, ptr_at)
+#endif
+
+
 /*
  * CppAsString
  *		Convert the argument to a string, using the C preprocessor.

@@ -91,15 +91,27 @@ typedef enum
  * function prototypes in nodes/bitmapset.c
  */
 
-extern Bitmapset *bms_copy(const Bitmapset *a);
-extern bool bms_equal(const Bitmapset *a, const Bitmapset *b);
-extern int	bms_compare(const Bitmapset *a, const Bitmapset *b);
-extern Bitmapset *bms_make_singleton(int x);
+extern Bitmapset *bms_add_member(Bitmapset *a, int x);
+extern Bitmapset *bms_del_member(Bitmapset *a, int x);
+extern Bitmapset *bms_add_members(Bitmapset *a, const Bitmapset *b);
+extern Bitmapset *bms_add_range(Bitmapset *a, int lower, int upper);
+extern Bitmapset *bms_int_members(Bitmapset *a, const Bitmapset *b);
+extern Bitmapset *bms_del_members(Bitmapset *a, const Bitmapset *b);
+extern Bitmapset *bms_join(Bitmapset *a, Bitmapset *b);
 extern void bms_free(Bitmapset *a);
 
-extern Bitmapset *bms_union(const Bitmapset *a, const Bitmapset *b);
-extern Bitmapset *bms_intersect(const Bitmapset *a, const Bitmapset *b);
-extern Bitmapset *bms_difference(const Bitmapset *a, const Bitmapset *b);
+#define BMS_ALLOC_ATTRIBUTES __attribute__((pg_malloc_attr(bms_free), pg_malloc_attr(bms_add_member), pg_malloc_attr(bms_del_member), pg_malloc_attr(bms_add_members), pg_malloc_attr(bms_add_range), pg_malloc_attr(bms_int_members), pg_malloc_attr(bms_del_members), pg_malloc_attr(bms_join), warn_unused_result))
+
+extern Bitmapset *bms_copy(const Bitmapset *a) BMS_ALLOC_ATTRIBUTES;
+extern bool bms_equal(const Bitmapset *a, const Bitmapset *b);
+extern int	bms_compare(const Bitmapset *a, const Bitmapset *b);
+extern Bitmapset *bms_make_singleton(int x) BMS_ALLOC_ATTRIBUTES;
+extern void bms_free(Bitmapset *a);
+
+extern Bitmapset *bms_union(const Bitmapset *a, const Bitmapset *b) BMS_ALLOC_ATTRIBUTES;
+extern Bitmapset *bms_intersect(const Bitmapset *a, const Bitmapset *b) BMS_ALLOC_ATTRIBUTES;
+extern Bitmapset *bms_difference(const Bitmapset *a, const Bitmapset *b) BMS_ALLOC_ATTRIBUTES;
+
 extern bool bms_is_subset(const Bitmapset *a, const Bitmapset *b);
 extern BMS_Comparison bms_subset_compare(const Bitmapset *a, const Bitmapset *b);
 extern bool bms_is_member(int x, const Bitmapset *a);
@@ -119,14 +131,14 @@ extern BMS_Membership bms_membership(const Bitmapset *a);
 
 /* these routines recycle (modify or free) their non-const inputs: */
 
-extern Bitmapset *bms_add_member(Bitmapset *a, int x);
-extern Bitmapset *bms_del_member(Bitmapset *a, int x);
-extern Bitmapset *bms_add_members(Bitmapset *a, const Bitmapset *b);
-extern Bitmapset *bms_replace_members(Bitmapset *a, const Bitmapset *b);
-extern Bitmapset *bms_add_range(Bitmapset *a, int lower, int upper);
-extern Bitmapset *bms_int_members(Bitmapset *a, const Bitmapset *b);
-extern Bitmapset *bms_del_members(Bitmapset *a, const Bitmapset *b);
-extern Bitmapset *bms_join(Bitmapset *a, Bitmapset *b);
+extern Bitmapset *bms_add_member(Bitmapset *a, int x) BMS_ALLOC_ATTRIBUTES;
+extern Bitmapset *bms_del_member(Bitmapset *a, int x) BMS_ALLOC_ATTRIBUTES;
+extern Bitmapset *bms_add_members(Bitmapset *a, const Bitmapset *b) BMS_ALLOC_ATTRIBUTES;
+extern Bitmapset *bms_replace_members(Bitmapset *a, const Bitmapset *b) BMS_ALLOC_ATTRIBUTES;
+extern Bitmapset *bms_add_range(Bitmapset *a, int lower, int upper) BMS_ALLOC_ATTRIBUTES;
+extern Bitmapset *bms_int_members(Bitmapset *a, const Bitmapset *b) BMS_ALLOC_ATTRIBUTES;
+extern Bitmapset *bms_del_members(Bitmapset *a, const Bitmapset *b) BMS_ALLOC_ATTRIBUTES;
+extern Bitmapset *bms_join(Bitmapset *a, Bitmapset *b) BMS_ALLOC_ATTRIBUTES;
 
 /* support for iterating through the integer elements of a set: */
 extern int	bms_next_member(const Bitmapset *a, int prevbit);
