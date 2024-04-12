@@ -36,6 +36,8 @@
  * might happen to run before the sleep begins, allowing the full delay.
  * Better practice is to use WaitLatch() with a timeout, so that backends
  * respond to latches and signals promptly.
+ *
+ * Some callers rely on errno being set to EINTR when interrupted.
  */
 void
 pg_usleep(long microsec)
@@ -49,6 +51,7 @@ pg_usleep(long microsec)
 		delay.tv_nsec = (microsec % 1000000L) * 1000;
 		(void) nanosleep(&delay, NULL);
 #else
+		/* will not be interrupted due to alertable = FALSE */
 		SleepEx((microsec < 500 ? 1 : (microsec + 500) / 1000), FALSE);
 #endif
 	}

@@ -137,7 +137,7 @@ perform_spin_delay(SpinDelayStatus *status)
 	/* Block the process every spins_per_delay tries */
 	if (++(status->spins) >= spins_per_delay)
 	{
-		if (++(status->delays) > NUM_DELAYS)
+		if (status->delays > NUM_DELAYS)
 			s_lock_stuck(status->file, status->line, status->func);
 
 		if (status->cur_delay == 0) /* first time to delay? */
@@ -152,8 +152,18 @@ perform_spin_delay(SpinDelayStatus *status)
 		 * this is better than nothing.
 		 */
 		pgstat_report_wait_start(WAIT_EVENT_SPIN_DELAY);
+		errno = 0;				/* see below */
 		pg_usleep(status->cur_delay);
 		pgstat_report_wait_end();
+
+		/*
+		 * Only count the sleep above as a delay, if not interrupted.
+		 * Otherwise a process getting signaled rapidly can trigger the stuck
+		 * spinlock logic in a fraction of the expected time. This isn't a
+		 * great fix for that problem, but doesn't require an API / ABI break.
+		 */
+		if (errno != EINTR)
+			status->delays++;
 
 #if defined(S_LOCK_TEST)
 		fprintf(stdout, "*");
