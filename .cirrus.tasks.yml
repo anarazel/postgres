@@ -583,13 +583,13 @@ task:
   << : *WINDOWS_ENVIRONMENT_BASE
   name: Windows - Server 2019, MinGW64 - Meson
 
-  # due to resource constraints we don't run this task by default for now
-  trigger_type: manual
-  # worth using only_if despite being manual, otherwise this task will show up
-  # when e.g. ci-os-only: linux is used.
-  only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*mingw.*'
-  # otherwise it'll be sorted before other tasks
+  # Due to resource constraints we don't run this task by default, unless the
+  # the environment variable REPO_MINGW_TRIGGER_BY_DEFAULT is true. This
+  # computation is done in .cirrus.star:compute_environment_vars()
+  trigger_type: $CI_MINGW_TRIGGER_TYPE
+
   depends_on: SanityCheck
+  only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*mingw.*'
 
   env:
     TEST_JOBS: 4 # higher concurrency causes occasional failures
