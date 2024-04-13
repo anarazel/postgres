@@ -7,7 +7,7 @@ https://github.com/bazelbuild/starlark/blob/master/spec.md
 See also .cirrus.yml and src/tools/ci/README
 """
 
-load("cirrus", "env", "fs", "yaml")
+load("cirrus", "env", "fs", "re", "yaml")
 
 
 def main():
@@ -65,6 +65,32 @@ def main():
 
 def compute_environment_vars():
     cenv = {}
+
+    # Parse "ci-os-only:" tag in commit message and set
+    # CI_{$OS}_ENABLED variable for each OS
+
+    # We want to disable SanityCheck if testing just a specific OS. This
+    # shortens push-wait-for-ci cycle time a bit when debugging operating
+    # system specific failures. Just treating it as an OS in that case
+    # suffices.
+
+    operating_systems = ['freebsd', 'linux', 'macos', 'windows', 'mingw',
+      'sanitycheck', 'compilerwarnings']
+    commit_message = env.get('CIRRUS_CHANGE_MESSAGE')
+    match_re = r"(^|.*\n)ci-os-only: ([^\n]+)($|\n.*)"
+
+    # re.match() returns an array with a tuple of (matched-string, match_1, ...)
+    m = re.match(match_re, commit_message)
+    if m and len(m) > 0:
+        os_only = m[0][2]
+        os_only_list = re.split(r'[, ]+', os_only)
+    else:
+        os_only_list = operating_systems
+
+    for os in operating_systems:
+        os_enabled = os in os_only_list
+        cenv['CI_{0}_ENABLED'.format(os.upper())] = os_enabled
+
 
     # See definition of mingw task in .cirrus.tasks.yml
     if env.get("REPO_MINGW_TRIGGER_BY_DEFAULT") in ['true', '1', 'yes']:
