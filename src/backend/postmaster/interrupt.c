@@ -79,14 +79,14 @@ SignalHandlerForCrashExit(SIGNAL_ARGS)
 	 * town.  The callbacks wouldn't be safe to run from a signal handler,
 	 * anyway.
 	 *
-	 * Note we do _exit(2) not _exit(0).  This is to force the postmaster into
+	 * Note we exit with code 2, not 0.  This is to force the postmaster into
 	 * a system reset cycle if someone sends a manual SIGQUIT to a random
 	 * backend.  This is necessary precisely because we don't clean up our
 	 * shared memory state.  (The "dead man switch" mechanism in pmsignal.c
 	 * should ensure the postmaster sees this as a crash, too, but no harm in
 	 * being doubly sure.)
 	 */
-	_exit(2);
+	immediate_exit(2);
 }
 
 /*

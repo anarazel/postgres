@@ -23,6 +23,10 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
+#if defined(ENABLE_COVERAGE) && defined(HAVE___GCOV_DUMP)
+#include <gcov.h>
+#endif
+
 #include "miscadmin.h"
 #ifdef PROFILE_PID_DIR
 #include "postmaster/autovacuum.h"
@@ -43,6 +47,14 @@ bool		proc_exit_inprogress = false;
  * Set when shmem_exit() is in progress.
  */
 bool		shmem_exit_inprogress = false;
+
+/*
+ * Has exit() or _exit() been reached? We want to trigger code coverage
+ * emission during abnormal process exit, but the abnormal process exit could
+ * be triggered while already in a normal process exit(), corrupting code
+ * coverage information.
+ */
+static bool system_exit_inprogress = false;
 
 /*
  * This flag tracks whether we've called atexit() in the current process
@@ -214,6 +226,12 @@ proc_exit_prepare(int code)
 													   on_proc_exit_list[on_proc_exit_index].arg);
 
 	on_proc_exit_index = 0;
+
+	/*
+	 * Postgres portion of process exit is done. Tell immediate_exit() to not
+	 * trigger code coverage emission going forward.
+	 */
+	system_exit_inprogress = true;
 }
 
 /* ------------------
@@ -436,4 +454,52 @@ check_on_shmem_exit_lists_are_empty(void)
 	if (on_shmem_exit_index)
 		elog(FATAL, "on_shmem_exit has been called prematurely");
 	/* Checking DSM detach state seems unnecessary given the above */
+}
+
+/*
+ * Wrapper around _exit() that deals with code coverage etc.
+ *
+ *  _exit() is used when running atexit handlers etc would risk a
+ * self-deadlock or such, e.g. because we're exiting from a signal
+ * handler. Therefore it is not correct to run any code that is not async
+ * signal safe.
+ *
+ * Unfortunately, gcc's code coverage implementation dumps its coverage
+ * information using atexit. As we shut down using _exit() in various
+ * situations, this leads to incomplete code coverage information being
+ * emitted.
+ */
+void
+immediate_exit(int code)
+{
+	/*
+	 * NOTE: In a production build, everything here needs to be async signal
+	 * safe!
+	 */
+	if (!system_exit_inprogress)
+	{
+		system_exit_inprogress = true;
+
+
+#if defined(ENABLE_COVERAGE) && defined(HAVE___GCOV_DUMP)
+		/*
+		 * Only dump coverage information if this process isn't already in the
+		 * process of exiting. Otherwise gcov's atexit handler could already
+		 * be inside __gcov_dump(), leading to corrupted coverage files (often
+		 * triggering "negative hit counts" warnings in lcov).
+		 *
+		 * This does *not* completely foreclose corruption due to abnormal
+		 * process termination, as __gcov_dump() can be interrupted by a
+		 * signal, leading to incompletely written files. It makes the window
+		 * for that a lot narrower though.
+		 *
+		 * We could possibly increase changs of success by ignoring
+		 * immedate_exit() while __gcov_dump() is in progress, but that seems
+		 * too gnarly.
+		 */
+		__gcov_dump();
+#endif /* defined(ENABLE_COVERAGE) && defined(HAVE___GCOV_DUMP) */
+	}
+
+	_exit(code);
 }

@@ -2670,6 +2670,28 @@ endif
 
 
 ###############################################################
+# Code Coverage
+###############################################################
+
+if get_option('b_coverage')
+  # Unfortunately gcc does not define a preprocessor symbol indicating code
+  # coverage being used, so we do so ourselves with ENABLE_COVERAGE.
+  cdata.set('ENABLE_COVERAGE', 1)
+
+  # In some situations we'd loose code coverage information if we don't
+  # trigger emission of code coverage information. The necessary function is
+  # not present in all compiler / library versions, so we need to do so
+  # conditionally.  Older gcc versions used used __gcov_flush(), but it
+  # doesn't seem worth supporting that.
+  if cc.has_header_symbol('gcov.h', '__gcov_dump',
+    args: test_c_args, include_directories: postgres_inc)
+    cdata.set('HAVE___GCOV_DUMP', 1)
+  endif
+endif
+
+
+
+###############################################################
 # Build
 ###############################################################
 

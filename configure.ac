@@ -673,6 +673,8 @@ if test "$enable_coverage" = yes; then
   if test "$GCC" = yes; then
     CFLAGS="$CFLAGS -fprofile-arcs -ftest-coverage"
     CXXFLAGS="$CXXFLAGS -fprofile-arcs -ftest-coverage"
+    AC_DEFINE(ENABLE_COVERAGE, 1,
+              ["Define to 1 if code coverage is enabled"])
   else
     AC_MSG_ERROR([--enable-coverage is supported only when using GCC])
   fi
@@ -1924,6 +1926,15 @@ if test "$with_readline" = yes; then
 	rl_reset_screen_size
 	rl_variable_bind
   ]))
+fi
+
+# Can't test this as part of the earlier enable_coverage tests, as otherwise
+# autconf hasn't yet set up enough infrastructure and then fails because EGREP
+# was set in a conditional branch. Yay.
+if test "$enable_coverage" = yes ; then
+    AC_CHECK_FUNC(__gcov_dump,
+                  [AC_CHECK_HEADER(gcov.h,
+                                   [AC_DEFINE(HAVE___GCOV_DUMP, 1, [Define to 1 if you have __gcov_dump.])])])
 fi
 
 

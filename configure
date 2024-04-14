@@ -7563,6 +7563,9 @@ if test "$enable_coverage" = yes; then
   if test "$GCC" = yes; then
     CFLAGS="$CFLAGS -fprofile-arcs -ftest-coverage"
     CXXFLAGS="$CXXFLAGS -fprofile-arcs -ftest-coverage"
+
+$as_echo "#define ENABLE_COVERAGE 1" >>confdefs.h
+
   else
     as_fn_error $? "--enable-coverage is supported only when using GCC" "$LINENO" 5
   fi
@@ -16401,6 +16404,24 @@ _ACEOF
 
 fi
 done
+
+fi
+
+# Can't test this as part of the earlier enable_coverage tests, as otherwise
+# autconf hasn't yet set up enough infrastructure and then fails because EGREP
+# was set in a conditional branch. Yay.
+if test "$enable_coverage" = yes ; then
+    ac_fn_c_check_func "$LINENO" "__gcov_dump" "ac_cv_func___gcov_dump"
+if test "x$ac_cv_func___gcov_dump" = xyes; then :
+  ac_fn_c_check_header_mongrel "$LINENO" "gcov.h" "ac_cv_header_gcov_h" "$ac_includes_default"
+if test "x$ac_cv_header_gcov_h" = xyes; then :
+
+$as_echo "#define HAVE___GCOV_DUMP 1" >>confdefs.h
+
+fi
+
+
+fi
 
 fi
 

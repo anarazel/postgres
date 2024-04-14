@@ -875,15 +875,15 @@ SendNegotiateProtocolVersion(List *unrecognized_protocol_options)
 static void
 process_startup_packet_die(SIGNAL_ARGS)
 {
-	_exit(1);
+	immediate_exit(1);
 }
 
 /*
  * Timeout while processing startup packet.
- * As for process_startup_packet_die(), we exit via _exit(1).
+ * As for process_startup_packet_die(), we exit via immediate_exit(1).
  */
 static void
 StartupPacketTimeoutHandler(void)
 {
-	_exit(1);
+	immediate_exit(1);
 }

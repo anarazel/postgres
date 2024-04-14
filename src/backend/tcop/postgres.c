@@ -2961,7 +2961,7 @@ quickdie(SIGNAL_ARGS)
 	 * should ensure the postmaster sees this as a crash, too, but no harm in
 	 * being doubly sure.)
 	 */
-	_exit(2);
+	immediate_exit(2);
 }
 
 /*
