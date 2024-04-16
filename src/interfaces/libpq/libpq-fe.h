@@ -448,8 +448,21 @@ extern void PQsetTraceFlags(PGconn *conn, int flags);
 
 /* === in fe-exec.c === */
 
+/* Delete a PGresult */
+extern void PQclear(PGresult *res);
+
+#if defined(__GNUC__) && !defined(__clang__)
+#define pg_malloc_attr(deallocator) malloc(deallocator)
+#define pg_malloc_attr_i(deallocator, ptr_at) malloc(deallocator, ptr_at)
+#else
+#define pg_malloc_attr(deallocator)
+#define pg_malloc_attr_i(deallocator, ptr_at)
+#endif
+
+#define PG_RESULT_ALLOC_ATTR __attribute__((pg_malloc_attr(PQclear)))
+
 /* Simple synchronous query */
-extern PGresult *PQexec(PGconn *conn, const char *query);
+extern PGresult *PQexec(PGconn *conn, const char *query) PG_RESULT_ALLOC_ATTR;
 extern PGresult *PQexecParams(PGconn *conn,
 							  const char *command,
 							  int nParams,
@@ -457,17 +470,17 @@ extern PGresult *PQexecParams(PGconn *conn,
 							  const char *const *paramValues,
 							  const int *paramLengths,
 							  const int *paramFormats,
-							  int resultFormat);
+							  int resultFormat) PG_RESULT_ALLOC_ATTR;
 extern PGresult *PQprepare(PGconn *conn, const char *stmtName,
 						   const char *query, int nParams,
-						   const Oid *paramTypes);
+						   const Oid *paramTypes) PG_RESULT_ALLOC_ATTR;
 extern PGresult *PQexecPrepared(PGconn *conn,
 								const char *stmtName,
 								int nParams,
 								const char *const *paramValues,
 								const int *paramLengths,
 								const int *paramFormats,
-								int resultFormat);
+								int resultFormat) PG_RESULT_ALLOC_ATTR;
 
 /* Interface for multiple-result or asynchronous queries */
 #define PQ_QUERY_PARAM_MAX_LIMIT 65535
@@ -493,7 +506,7 @@ extern int	PQsendQueryPrepared(PGconn *conn,
 								int resultFormat);
 extern int	PQsetSingleRowMode(PGconn *conn);
 extern int	PQsetChunkedRowsMode(PGconn *conn, int chunkSize);
-extern PGresult *PQgetResult(PGconn *conn);
+extern PGresult *PQgetResult(PGconn *conn) PG_RESULT_ALLOC_ATTR;;
 
 /* Routines for managing an asynchronous query */
 extern int	PQisBusy(PGconn *conn);
@@ -542,7 +555,7 @@ extern PGresult *PQfn(PGconn *conn,
 					  int *result_len,
 					  int result_is_int,
 					  const PQArgBlock *args,
-					  int nargs);
+					  int nargs) PG_RESULT_ALLOC_ATTR;
 
 /* Accessor functions for PGresult objects */
 extern ExecStatusType PQresultStatus(const PGresult *res);
@@ -574,19 +587,16 @@ extern int	PQnparams(const PGresult *res);
 extern Oid	PQparamtype(const PGresult *res, int param_num);
 
 /* Describe prepared statements and portals */
-extern PGresult *PQdescribePrepared(PGconn *conn, const char *stmt);
-extern PGresult *PQdescribePortal(PGconn *conn, const char *portal);
+extern PGresult *PQdescribePrepared(PGconn *conn, const char *stmt) PG_RESULT_ALLOC_ATTR;
+extern PGresult *PQdescribePortal(PGconn *conn, const char *portal) PG_RESULT_ALLOC_ATTR;
 extern int	PQsendDescribePrepared(PGconn *conn, const char *stmt);
 extern int	PQsendDescribePortal(PGconn *conn, const char *portal);
 
 /* Close prepared statements and portals */
-extern PGresult *PQclosePrepared(PGconn *conn, const char *stmt);
-extern PGresult *PQclosePortal(PGconn *conn, const char *portal);
+extern PGresult *PQclosePrepared(PGconn *conn, const char *stmt) PG_RESULT_ALLOC_ATTR;
+extern PGresult *PQclosePortal(PGconn *conn, const char *portal) PG_RESULT_ALLOC_ATTR;
 extern int	PQsendClosePrepared(PGconn *conn, const char *stmt);
 extern int	PQsendClosePortal(PGconn *conn, const char *portal);
-
-/* Delete a PGresult */
-extern void PQclear(PGresult *res);
 
 /* For freeing other alloc'd results, such as PGnotify structs */
 extern void PQfreemem(void *ptr);
@@ -599,8 +609,8 @@ extern void PQfreemem(void *ptr);
 #define PQnoPasswordSupplied	"fe_sendauth: no password supplied\n"
 
 /* Create and manipulate PGresults */
-extern PGresult *PQmakeEmptyPGresult(PGconn *conn, ExecStatusType status);
-extern PGresult *PQcopyResult(const PGresult *src, int flags);
+extern PGresult *PQmakeEmptyPGresult(PGconn *conn, ExecStatusType status) PG_RESULT_ALLOC_ATTR;
+extern PGresult *PQcopyResult(const PGresult *src, int flags) PG_RESULT_ALLOC_ATTR;
 extern int	PQsetResultAttrs(PGresult *res, int numAttributes, PGresAttDesc *attDescs);
 extern void *PQresultAlloc(PGresult *res, size_t nBytes);
 extern size_t PQresultMemorySize(const PGresult *res);

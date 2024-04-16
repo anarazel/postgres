@@ -68,6 +68,7 @@ postgres_lib = static_library('postgres_lib',
   dependencies: backend_build_deps,
   c_pch: pch_postgres_h,
   kwargs: internal_lib_args,
+  pic: false,
 )
 
 if cc.get_id() == 'msvc'

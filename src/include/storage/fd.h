@@ -138,11 +138,11 @@ extern FILE *OpenPipeStream(const char *command, const char *mode);
 extern int	ClosePipeStream(FILE *file);
 
 /* Operations to allow use of the <dirent.h> library routines */
-extern DIR *AllocateDir(const char *dirname);
+extern int	FreeDir(DIR *dir);
+extern  DIR *AllocateDir(const char *dirname) __attribute__((pg_malloc_attr(FreeDir)));
 extern struct dirent *ReadDir(DIR *dir, const char *dirname);
 extern struct dirent *ReadDirExtended(DIR *dir, const char *dirname,
 									  int elevel);
-extern int	FreeDir(DIR *dir);
 
 /* Operations to allow use of a plain kernel FD, with automatic cleanup */
 extern int	OpenTransientFile(const char *fileName, int fileFlags);

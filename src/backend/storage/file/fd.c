@@ -2839,6 +2839,7 @@ CloseTransientFile(int fd)
  *
  * Ideally this should be the *only* direct call of opendir() in the backend.
  */
+__attribute__((pg_malloc_attr(FreeDir)))
 DIR *
 AllocateDir(const char *dirname)
 {

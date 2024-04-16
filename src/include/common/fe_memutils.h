@@ -18,15 +18,21 @@
 #define MCXT_ALLOC_NO_OOM		0x02	/* no failure if out-of-memory */
 #define MCXT_ALLOC_ZERO			0x04	/* zero allocated memory */
 
+#define pg_fe_alloc_attributes \
+	__attribute__((pg_malloc_attr_i(pg_free, 1), pg_malloc_attr_i(free, 1), pg_malloc_attr_i(pfree, 1), pg_malloc_attr_i(pg_realloc, 1)))
+
 /*
  * "Safe" memory allocation functions --- these exit(1) on failure
  * (except pg_malloc_extended with MCXT_ALLOC_NO_OOM)
  */
-extern char *pg_strdup(const char *in);
-extern void *pg_malloc(size_t size);
-extern void *pg_malloc0(size_t size);
-extern void *pg_malloc_extended(size_t size, int flags);
+extern void pg_free(void *ptr);
+extern void pfree(void *pointer);
 extern void *pg_realloc(void *ptr, size_t size);
+extern char *pg_strdup(const char *in)  pg_fe_alloc_attributes;
+extern void *pg_malloc(size_t size) pg_fe_alloc_attributes;
+extern void *pg_malloc0(size_t size)  pg_fe_alloc_attributes;
+extern void *pg_malloc_extended(size_t size, int flags)  pg_fe_alloc_attributes;
+extern void *pg_realloc(void *ptr, size_t size) pg_fe_alloc_attributes;
 extern void pg_free(void *ptr);
 
 /*
@@ -51,14 +57,22 @@ extern void pg_free(void *ptr);
  */
 #define pg_realloc_array(pointer, type, count) ((type *) pg_realloc(pointer, sizeof(type) * (count)))
 
+/*
+ * pg_free(), free() should really not be part of this, but there are too many
+ * cases right now.
+ */
+#define pg_fe_palloc_attributes \
+	__attribute__((pg_malloc_attr_i(pfree, 1), pg_malloc_attr_i(free, 1), pg_malloc_attr_i(pg_free, 1), pg_malloc_attr_i(repalloc, 1)))
+
 /* Equivalent functions, deliberately named the same as backend functions */
-extern char *pstrdup(const char *in);
-extern char *pnstrdup(const char *in, Size size);
-extern void *palloc(Size size);
-extern void *palloc0(Size size);
-extern void *palloc_extended(Size size, int flags);
-extern void *repalloc(void *pointer, Size size);
 extern void pfree(void *pointer);
+extern void *repalloc(void *pointer, Size size);
+extern void *repalloc(void *pointer, Size size) pg_fe_palloc_attributes;
+extern char *pstrdup(const char *in) pg_fe_palloc_attributes;
+extern char *pnstrdup(const char *in, Size size) pg_fe_palloc_attributes;
+extern void *palloc(Size size) pg_fe_palloc_attributes;
+extern void *palloc0(Size size) pg_fe_palloc_attributes;
+extern void *palloc_extended(Size size, int flags) pg_fe_palloc_attributes;
 
 #define palloc_object(type) ((type *) palloc(sizeof(type)))
 #define palloc0_object(type) ((type *) palloc0(sizeof(type)))

@@ -217,6 +217,7 @@ PQmakeEmptyPGresult(PGconn *conn, ExecStatusType status)
 									   &result->memorySize);
 			if (!result->events)
 			{
+#pragma GCC diagnostic ignored "-Wmismatched-dealloc"
 				PQclear(result);
 				return NULL;
 			}
