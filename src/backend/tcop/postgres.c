@@ -4244,7 +4244,7 @@ PostgresSingleUserMain(int argc, char *argv[],
  * if reasonably possible.
  * ----------------------------------------------------------------
  */
-void
+void //__attribute__((aligned(0x200000)))
 PostgresMain(const char *dbname, const char *username)
 {
 	sigjmp_buf	local_sigjmp_buf;

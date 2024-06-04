@@ -130,7 +130,10 @@ BufferManagerShmemInit(void)
 			 * Initially link all the buffers together as unused. Subsequent
 			 * management of this list is done by freelist.c.
 			 */
-			buf->freeNext = i + 1;
+			if (numa_aware)
+				buf->freeNext = (i + (1024*1024*1024)/BLCKSZ) % NBuffers;
+			else
+				buf->freeNext = (i + 1) % NBuffers;
 
 			LWLockInitialize(BufferDescriptorGetContentLock(buf),
 							 LWTRANCHE_BUFFER_CONTENT);

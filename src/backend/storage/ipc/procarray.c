@@ -411,21 +411,23 @@ ProcArrayShmemSize(void)
 	return size;
 }
 
+#include <numa.h>
+
 /*
  * Initialize the shared PGPROC array during postmaster startup.
  */
 void
 ProcArrayShmemInit(void)
 {
+	size_t		sz;
 	bool		found;
 
 	/* Create or attach to the ProcArray shared structure */
+	sz = add_size(offsetof(ProcArrayStruct, pgprocnos),
+				  mul_size(sizeof(int),
+						   PROCARRAY_MAXPROCS));
 	procArray = (ProcArrayStruct *)
-		ShmemInitStruct("Proc Array",
-						add_size(offsetof(ProcArrayStruct, pgprocnos),
-								 mul_size(sizeof(int),
-										  PROCARRAY_MAXPROCS)),
-						&found);
+		ShmemInitStruct("Proc Array", sz, &found);
 
 	if (!found)
 	{
@@ -442,6 +444,9 @@ ProcArrayShmemInit(void)
 		procArray->replication_slot_xmin = InvalidTransactionId;
 		procArray->replication_slot_catalog_xmin = InvalidTransactionId;
 		TransamVariables->xactCompletionCount = 1;
+
+		if (numa_aware && false)
+			numa_interleave_memory(procArray, sz, numa_get_mems_allowed());
 	}
 
 	allProcs = ProcGlobal->allProcs;

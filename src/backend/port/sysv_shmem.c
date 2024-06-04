@@ -27,6 +27,10 @@
 #include <sys/shm.h>
 #include <sys/stat.h>
 
+#ifdef ENABLE_LIBNUMA
+#include <numa.h>
+#endif
+
 #include "miscadmin.h"
 #include "port/pg_bitutils.h"
 #include "portability/mem.h"
@@ -619,12 +623,37 @@ CreateAnonymousSegment(Size *size)
 		if (allocsize % hugepagesize != 0)
 			allocsize += hugepagesize - (allocsize % hugepagesize);
 
+		if (numa_aware)
+		{
+			numa_set_strict(false);
+			numa_exit_on_error = true;
+			elog(LOG, "task cpus: %u, task nodes: %u, conf: %u, home: %d, preferred: %d\n"
+				 "mem allowed: %lx, run mask: %lx, mem bind: %lx",
+				 numa_num_task_cpus(),
+				 numa_num_task_nodes(),
+				 numa_num_configured_nodes(),
+				 numa_has_home_node(),
+				 numa_preferred(),
+				 *numa_get_mems_allowed()->maskp,
+				 *numa_get_run_node_mask()->maskp,
+				 *numa_get_membind()->maskp
+				);
+			numa_set_interleave_mask(numa_get_membind());
+		}
+
 		ptr = mmap(NULL, allocsize, PROT_READ | PROT_WRITE,
-				   PG_MMAP_FLAGS | mmap_flags, -1, 0);
+				   PG_MMAP_FLAGS | MAP_POPULATE | mmap_flags , -1, 0);
 		mmap_errno = errno;
 		if (huge_pages == HUGE_PAGES_TRY && ptr == MAP_FAILED)
 			elog(DEBUG1, "mmap(%zu) with MAP_HUGETLB failed, huge pages disabled: %m",
 				 allocsize);
+
+		if (numa_aware)
+		{
+			//numa_interleave_memory(ptr, allocsize, numa_get_mems_allowed());
+			numa_set_interleave_mask(numa_no_nodes_ptr);
+		}
+
 	}
 #endif
 

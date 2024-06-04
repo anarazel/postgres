@@ -2773,6 +2773,25 @@ endif
 
 
 ###############################################################
+# libnuma
+###############################################################
+
+libnuma = not_found_dep
+
+if not false
+  # otherwise there'd be lots of
+  # "Gettext not found, all translation (po) targets will be ignored."
+  # warnings if not found.
+  libnuma = dependency('numa', required: true)
+
+  if libnuma.found()
+    cdata.set('ENABLE_LIBNUMA', 1)
+  endif
+endif
+
+
+
+###############################################################
 # Build
 ###############################################################
 
@@ -3065,6 +3084,7 @@ backend_both_deps += [
   icu_i18n,
   ldap,
   libintl,
+  libnuma,
   libxml,
   lz4,
   pam,
