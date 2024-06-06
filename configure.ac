@@ -967,6 +967,14 @@ AC_SUBST(with_readline)
 PGAC_ARG_BOOL(with, libedit-preferred, no,
               [prefer BSD Libedit over GNU Readline])
 
+#
+# liburing
+#
+AC_MSG_CHECKING([whether to build with liburing support])
+PGAC_ARG_BOOL(with, liburing, no, [use liburing for async io],
+              [AC_DEFINE([USE_LIBURING], 1, [Define to build with io-uring support. (--with-liburing)])])
+AC_MSG_RESULT([$with_liburing])
+AC_SUBST(with_liburing)
 
 #
 # UUID library
@@ -1423,6 +1431,9 @@ elif test "$with_uuid" = ossp ; then
 fi
 AC_SUBST(UUID_LIBS)
 
+if test "$with_liburing" = yes; then
+  PKG_CHECK_MODULES(LIBURING, liburing)
+fi
 
 ##
 ## Header files
