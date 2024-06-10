@@ -71,6 +71,7 @@
 #include "replication/slot.h"
 #include "replication/slotsync.h"
 #include "replication/syncrep.h"
+#include "storage/aio.h"
 #include "storage/bufmgr.h"
 #include "storage/bufpage.h"
 #include "storage/large_object.h"
@@ -5194,6 +5195,16 @@ struct config_enum ConfigureNamesEnum[] =
 		&debug_logical_replication_streaming,
 		DEBUG_LOGICAL_REP_STREAMING_BUFFERED, debug_logical_replication_streaming_options,
 		NULL, NULL, NULL
+	},
+
+	{
+		{"io_method", PGC_POSTMASTER, RESOURCES_MEM,
+			gettext_noop("Selects the method of asynchronous I/O to use."),
+			NULL
+		},
+		&io_method,
+		DEFAULT_IO_METHOD, io_method_options,
+		NULL, assign_io_method, NULL
 	},
 
 	/* End-of-list marker */

@@ -1259,6 +1259,7 @@ IntervalAggState
 IntoClause
 InvalMessageArray
 InvalidationMsgsGroup
+IoMethod
 IpcMemoryId
 IpcMemoryKey
 IpcMemoryState

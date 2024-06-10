@@ -111,6 +111,7 @@
 #include "replication/logicallauncher.h"
 #include "replication/slotsync.h"
 #include "replication/walsender.h"
+#include "storage/aio_init.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
 #include "storage/pmsignal.h"
@@ -945,6 +946,13 @@ PostmasterMain(int argc, char *argv[])
 		puts(config_val ? config_val : "");
 		ExitPostmaster(0);
 	}
+
+	/*
+	 * As AIO might create internal FDs, and will trigger shared memory
+	 * allocations, need to do this before reset_shared() and
+	 * set_max_safe_fds().
+	 */
+	pgaio_postmaster_init();
 
 	/*
 	 * Set up shared memory and semaphores.

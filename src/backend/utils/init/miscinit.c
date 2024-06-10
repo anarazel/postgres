@@ -40,6 +40,7 @@
 #include "postmaster/interrupt.h"
 #include "postmaster/postmaster.h"
 #include "replication/slotsync.h"
+#include "storage/aio_init.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
 #include "storage/latch.h"
@@ -136,6 +137,8 @@ InitPostmasterChild(void)
 	InitializeLatchSupport();
 	InitProcessLocalLatch();
 	InitializeLatchWaitSet();
+
+	pgaio_postmaster_child_init_local();
 
 	/*
 	 * If possible, make this process a group leader, so that the postmaster

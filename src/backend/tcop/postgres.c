@@ -61,6 +61,7 @@
 #include "replication/slot.h"
 #include "replication/walsender.h"
 #include "rewrite/rewriteHandler.h"
+#include "storage/aio_init.h"
 #include "storage/bufmgr.h"
 #include "storage/ipc.h"
 #include "storage/pmsignal.h"
@@ -4224,6 +4225,12 @@ PostgresSingleUserMain(int argc, char *argv[],
 	 * before we can use LWLocks.
 	 */
 	InitProcess();
+
+	/* AIO is needed during InitPostgres() */
+	pgaio_postmaster_init();
+	pgaio_postmaster_child_init_local();
+
+	set_max_safe_fds();
 
 	/*
 	 * Now that sufficient infrastructure has been initialized, PostgresMain()
