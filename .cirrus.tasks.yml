@@ -614,6 +614,7 @@ task:
     REM C:\msys64\usr\bin\pacman.exe -S --noconfirm ...
 
   mingw_info_script: |
+    %BASH% -c "where ccache"
     %BASH% -c "where gcc"
     %BASH% -c "gcc --version"
     %BASH% -c "where perl"
