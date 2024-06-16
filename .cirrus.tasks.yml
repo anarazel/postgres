@@ -89,6 +89,10 @@ task:
     chown root:postgres /
     chmod g+rwx /
 
+  setup_additional_packages_script: |
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get -y install libffi-platypus-perl libffi-checklib-perl
+
   configure_script: |
     su postgres <<-EOF
       meson setup \
@@ -163,7 +167,7 @@ task:
     chown root:postgres /tmp/cores
     sysctl kern.corefile='/tmp/cores/%N.%P.core'
   setup_additional_packages_script: |
-    #pkg install -y ...
+    pkg install -y p5-FFI-Platypus
 
   # NB: Intentionally build without -Dllvm. The freebsd image size is already
   # large enough to make VM startup slow, and even without llvm freebsd
@@ -310,8 +314,8 @@ task:
     EOF
 
   setup_additional_packages_script: |
-    #apt-get update
-    #DEBIAN_FRONTEND=noninteractive apt-get -y install ...
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get -y install libffi-platypus-perl libffi-checklib-perl
 
   matrix:
     - name: Linux - Debian Bullseye - Autoconf
@@ -551,6 +555,7 @@ task:
   only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*windows.*'
 
   setup_additional_packages_script: |
+    echo notest install FFI::Platypus | cpan
     REM choco install -y --no-progress ...
 
   setup_hosts_file_script: |
