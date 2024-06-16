@@ -555,7 +555,14 @@ task:
   only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*windows.*'
 
   setup_additional_packages_script: |
-    echo notest install FFI::Platypus | cpan
+    where ldd ||true
+    ldd C:/strawberry/5.38.2.2/perl/vendor/lib/auto/FFI/Platypus/Platypus.xs.dll || true
+    perl -MFFI::Platypus -e 1 || true
+    SET PATH=%PATH%;C:/strawberry/5.38.2.2/c/bin;
+    perl -MFFI::Platypus -e 1
+    ldd C:/strawberry/5.38.2.2/perl/vendor/lib/auto/FFI/Platypus/Platypus.xs.dll || true
+    set LANG=
+    perl -MFFI::Platypus -e 1
     REM choco install -y --no-progress ...
 
   setup_hosts_file_script: |
@@ -570,11 +577,15 @@ task:
     meson setup --backend ninja --buildtype debug -Dc_link_args=/DEBUG:FASTLINK -Dcassert=true -Dinjection_points=true -Db_pch=true -Dextra_lib_dirs=c:\openssl\1.1\lib -Dextra_include_dirs=c:\openssl\1.1\include -DTAR=%TAR% -DPG_TEST_EXTRA="%PG_TEST_EXTRA%" build
 
   build_script: |
+    set LANG=
     vcvarsall x64
     ninja -C build
 
   check_world_script: |
     vcvarsall x64
+    SET PATH=%PATH%;C:/strawberry/5.38.2.2/c/bin;
+    set LANG=
+    ldd src/interfaces/libpq/libpq.dll || true
     meson test %MTEST_ARGS% --num-processes %TEST_JOBS%
 
   on_failure:

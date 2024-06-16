@@ -474,7 +474,8 @@ sub setup
 	my $lib = find_lib_or_die(
 		lib => 'pq',
 		libpath => [$libdir],
-		systempath => [],);
+		#systempath => [],
+	  );
 	$ffi->lib($lib);
 
 	$ffi->attach('PQconnectdb' => ['string'] => 'PGconn');
