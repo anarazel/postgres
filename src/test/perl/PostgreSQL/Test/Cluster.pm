@@ -111,6 +111,7 @@ use Socket;
 use Test::More;
 use PostgreSQL::Test::Utils          ();
 use PostgreSQL::Test::BackgroundPsql ();
+use PostgreSQL::Test::Session;
 use Text::ParseWords                 qw(shellwords);
 use Time::HiRes                      qw(usleep);
 use Scalar::Util                     qw(blessed);
@@ -1990,6 +1991,8 @@ sub psql
 
 	local %ENV = $self->_get_env();
 
+	# note("counting psql"); 
+
 	my $stdout = $params{stdout};
 	my $stderr = $params{stderr};
 	my $replication = $params{replication};
@@ -2499,26 +2502,18 @@ sub poll_query_until
 
 	$expected = 't' unless defined($expected);    # default value
 
-	my $cmd = [
-		$self->installed_command('psql'), '-XAt',
-		'-d', $self->connstr($dbname)
-	];
-	my ($stdout, $stderr);
+	my $session = PostgreSQL::Test::Session->new(node => $self,
+												 dbname => $dbname);
 	my $max_attempts = 10 * $PostgreSQL::Test::Utils::timeout_default;
 	my $attempts = 0;
 
+	my $query_value;
+
 	while ($attempts < $max_attempts)
 	{
-		my $result = IPC::Run::run $cmd, '<', \$query,
-		  '>', \$stdout, '2>', \$stderr;
+		$query_value = $session->query_tuples($query);
 
-		chomp($stdout);
-		chomp($stderr);
-
-		if ($stdout eq $expected && $stderr eq '')
-		{
-			return 1;
-		}
+		return 1 if ($query_value  // 'no value returned') eq $expected;
 
 		# Wait 0.1 second before retrying.
 		usleep(100_000);
@@ -2533,9 +2528,8 @@ $query
 expecting this output:
 $expected
 last actual query output:
-$stdout
-with stderr:
-$stderr);
+$query_value
+);
 	return 0;
 }
 

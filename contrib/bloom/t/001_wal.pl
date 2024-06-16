@@ -5,11 +5,14 @@
 use strict;
 use warnings FATAL => 'all';
 use PostgreSQL::Test::Cluster;
+use PostgreSQL::Test::Session;
 use PostgreSQL::Test::Utils;
 use Test::More;
 
 my $node_primary;
 my $node_standby;
+my $session_primary;
+my $session_standby;
 
 # Run few queries on both primary and standby and check their results match.
 sub test_index_replay
@@ -21,20 +24,18 @@ sub test_index_replay
 	# Wait for standby to catch up
 	$node_primary->wait_for_catchup($node_standby);
 
-	my $queries = qq(SET enable_seqscan=off;
-SET enable_bitmapscan=on;
-SET enable_indexscan=on;
-SELECT * FROM tst WHERE i = 0;
-SELECT * FROM tst WHERE i = 3;
-SELECT * FROM tst WHERE t = 'b';
-SELECT * FROM tst WHERE t = 'f';
-SELECT * FROM tst WHERE i = 3 AND t = 'c';
-SELECT * FROM tst WHERE i = 7 AND t = 'e';
-);
+	my @queries = (
+		"SELECT * FROM tst WHERE i = 0",
+		"SELECT * FROM tst WHERE i = 3",
+		"SELECT * FROM tst WHERE t = 'b'",
+		"SELECT * FROM tst WHERE t = 'f'",
+		"SELECT * FROM tst WHERE i = 3 AND t = 'c'",
+		"SELECT * FROM tst WHERE i = 7 AND t = 'e'",
+	   );
 
 	# Run test queries and compare their result
-	my $primary_result = $node_primary->safe_psql("postgres", $queries);
-	my $standby_result = $node_standby->safe_psql("postgres", $queries);
+	my $primary_result = $session_primary->query_tuples(@queries);
+	my $standby_result = $session_standby->query_tuples(@queries);
 
 	is($primary_result, $standby_result, "$test_name: query result matches");
 	return;
@@ -55,13 +56,24 @@ $node_standby->init_from_backup($node_primary, $backup_name,
 	has_streaming => 1);
 $node_standby->start;
 
+# Create and initialize the sessions
+$session_primary = PostgreSQL::Test::Session->new(node => $node_primary);
+$session_standby = PostgreSQL::Test::Session->new(node => $node_standby);
+my $initset = q[
+   SET enable_seqscan=off;
+   SET enable_bitmapscan=on;
+   SET enable_indexscan=on;
+];
+$session_primary->do($initset);
+$session_standby->do($initset);
+
 # Create some bloom index on primary
-$node_primary->safe_psql("postgres", "CREATE EXTENSION bloom;");
-$node_primary->safe_psql("postgres", "CREATE TABLE tst (i int4, t text);");
-$node_primary->safe_psql("postgres",
+$session_primary->do("CREATE EXTENSION bloom;");
+$session_primary->do("CREATE TABLE tst (i int4, t text);");
+$session_primary->do(
 	"INSERT INTO tst SELECT i%10, substr(encode(sha256(i::text::bytea), 'hex'), 1, 1) FROM generate_series(1,10000) i;"
 );
-$node_primary->safe_psql("postgres",
+$session_primary->do(
 	"CREATE INDEX bloomidx ON tst USING bloom (i, t) WITH (col1 = 3);");
 
 # Test that queries give same result

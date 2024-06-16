@@ -5,6 +5,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use PostgreSQL::Test::Cluster;
+use PostgreSQL::Test::Session;
 use PostgreSQL::Test::Utils;
 
 use Test::More;
@@ -190,16 +191,17 @@ $node->append_conf('postgresql.conf', 'max_prepared_transactions=10');
 $node->start;
 my $port = $node->port;
 my $pgdata = $node->data_dir;
-$node->safe_psql('postgres', "CREATE EXTENSION amcheck");
-$node->safe_psql('postgres', "CREATE EXTENSION pageinspect");
+my $session = PostgreSQL::Test::Session->new(node => $node);
+$session->do("CREATE EXTENSION amcheck");
+$session->do("CREATE EXTENSION pageinspect");
 
 # Get a non-zero datfrozenxid
-$node->safe_psql('postgres', qq(VACUUM FREEZE));
+$session->do(qq(VACUUM FREEZE));
 
 # Create the test table with precisely the schema that our corruption function
 # expects.
-$node->safe_psql(
-	'postgres', qq(
+$session->do(
+	qq(
 		CREATE TABLE public.test (a BIGINT, b TEXT, c TEXT);
 		ALTER TABLE public.test SET (autovacuum_enabled=false);
 		ALTER TABLE public.test ALTER COLUMN c SET STORAGE EXTERNAL;
@@ -209,14 +211,15 @@ $node->safe_psql(
 # We want (0 < datfrozenxid < test.relfrozenxid).  To achieve this, we freeze
 # an otherwise unused table, public.junk, prior to inserting data and freezing
 # public.test
-$node->safe_psql(
-	'postgres', qq(
+$session->do(
+	qq(
 		CREATE TABLE public.junk AS SELECT 'junk'::TEXT AS junk_column;
 		ALTER TABLE public.junk SET (autovacuum_enabled=false);
-		VACUUM FREEZE public.junk
-	));
+	),
+	'VACUUM FREEZE public.junk'
+);
 
-my $rel = $node->safe_psql('postgres',
+my $rel = $session->query_oneval(
 	qq(SELECT pg_relation_filepath('public.test')));
 my $relpath = "$pgdata/$rel";
 
@@ -229,23 +232,24 @@ my $ROWCOUNT_BASIC = 16;
 
 # First insert data needed for tests unrelated to update chain validation.
 # Then freeze the page. These tuples are at offset numbers 1 to 16.
-$node->safe_psql(
-	'postgres', qq(
+$session->do(
+	qq(
 	INSERT INTO public.test (a, b, c)
 		SELECT
 			x'DEADF9F9DEADF9F9'::bigint,
 			'abcdefg',
 			repeat('w', 10000)
 	FROM generate_series(1, $ROWCOUNT_BASIC);
-	VACUUM FREEZE public.test;)
+    ),
+	'VACUUM FREEZE public.test'
 );
 
 # Create some simple HOT update chains for line pointer validation. After
 # the page is HOT pruned, we'll have two redirects line pointers each pointing
 # to a tuple. We'll then change the second redirect to point to the same
 # tuple as the first one and verify that we can detect corruption.
-$node->safe_psql(
-	'postgres', qq(
+$session->do(
+	qq(
 		INSERT INTO public.test (a, b, c)
 			VALUES ( x'DEADF9F9DEADF9F9'::bigint, 'abcdefg',
 					 generate_series(1,2)); -- offset numbers 17 and 18
@@ -254,8 +258,8 @@ $node->safe_psql(
 	));
 
 # Create some more HOT update chains.
-$node->safe_psql(
-	'postgres', qq(
+$session->do(
+	qq(
 		INSERT INTO public.test (a, b, c)
 			VALUES ( x'DEADF9F9DEADF9F9'::bigint, 'abcdefg',
 					 generate_series(3,6)); -- offset numbers 21 through 24
@@ -264,25 +268,30 @@ $node->safe_psql(
 	));
 
 # Negative test case of HOT-pruning with aborted tuple.
-$node->safe_psql(
-	'postgres', qq(
+$session->do(
+	qq(
 		BEGIN;
 		UPDATE public.test SET c = 'a' WHERE c = '5'; -- offset number 27
 		ABORT;
-		VACUUM FREEZE public.test;
-	));
+       ),
+	   'VACUUM FREEZE public.test;',
+	);
 
 # Next update on any tuple will be stored at the same place of tuple inserted
 # by aborted transaction. This should not cause the table to appear corrupt.
-$node->safe_psql(
-	'postgres', qq(
+$session->do(
+	qq(
+        BEGIN;
 		UPDATE public.test SET c = 'a' WHERE c = '6'; -- offset number 27 again
-		VACUUM FREEZE public.test;
-	));
+        COMMIT;
+	),
+	'VACUUM FREEZE public.test;',
+   );
 
 # Data for HOT chain validation, so not calling VACUUM FREEZE.
-$node->safe_psql(
-	'postgres', qq(
+$session->do(
+	qq(
+        BEGIN;
 		INSERT INTO public.test (a, b, c)
 			VALUES ( x'DEADF9F9DEADF9F9'::bigint, 'abcdefg',
 					 generate_series(7,15)); -- offset numbers 28 to 36
@@ -293,11 +302,12 @@ $node->safe_psql(
 		UPDATE public.test SET c = 'a' WHERE c = '13'; -- offset number 41
 		UPDATE public.test SET c = 'a' WHERE c = '14'; -- offset number 42
 		UPDATE public.test SET c = 'a' WHERE c = '15'; -- offset number 43
+        COMMIT;
 	));
 
 # Need one aborted transaction to test corruption in HOT chains.
-$node->safe_psql(
-	'postgres', qq(
+$session->do(
+	qq(
 		BEGIN;
 		UPDATE public.test SET c = 'a' WHERE c = '9'; -- offset number 44
 		ABORT;
@@ -306,19 +316,19 @@ $node->safe_psql(
 # Need one in-progress transaction to test few corruption in HOT chains.
 # We are creating PREPARE TRANSACTION here as these will not be aborted
 # even if we stop the node.
-$node->safe_psql(
-	'postgres', qq(
+$session->do(
+	qq(
 		BEGIN;
 		PREPARE TRANSACTION 'in_progress_tx';
 	));
-my $in_progress_xid = $node->safe_psql(
-	'postgres', qq(
+my $in_progress_xid = $session->query_oneval(
+	qq(
 		SELECT transaction FROM pg_prepared_xacts;
 	));
 
-my $relfrozenxid = $node->safe_psql('postgres',
+my $relfrozenxid = $session->query_oneval(
 	q(select relfrozenxid from pg_class where relname = 'test'));
-my $datfrozenxid = $node->safe_psql('postgres',
+my $datfrozenxid = $session->query_oneval(
 	q(select datfrozenxid from pg_database where datname = 'postgres'));
 
 # Sanity check that our 'test' table has a relfrozenxid newer than the
@@ -326,6 +336,7 @@ my $datfrozenxid = $node->safe_psql('postgres',
 # first normal xid.  We rely on these invariants in some of our tests.
 if ($datfrozenxid <= 3 || $datfrozenxid >= $relfrozenxid)
 {
+	$session->close;
 	$node->clean_node;
 	plan skip_all =>
 	  "Xid thresholds not as expected: got datfrozenxid = $datfrozenxid, relfrozenxid = $relfrozenxid";
@@ -334,17 +345,21 @@ if ($datfrozenxid <= 3 || $datfrozenxid >= $relfrozenxid)
 
 # Find where each of the tuples is located on the page. If a particular
 # line pointer is a redirect rather than a tuple, we record the offset as -1.
-my @lp_off = split '\n', $node->safe_psql(
-	'postgres', qq(
+my $lp_off_res = $session->query(
+	qq(
 	    SELECT CASE WHEN lp_flags = 2 THEN -1 ELSE lp_off END
 	    FROM heap_page_items(get_raw_page('test', 'main', 0))
     )
-);
+   );
+my @lp_off;
+push(@lp_off, $_->[0]) foreach @{$lp_off_res->{rows}};
+
 scalar @lp_off == $ROWCOUNT or BAIL_OUT("row offset counts mismatch");
 
 # Sanity check that our 'test' table on disk layout matches expectations.  If
 # this is not so, we will have to skip the test until somebody updates the test
 # to work on this platform.
+$session->close;
 $node->stop;
 my $file;
 open($file, '+<', $relpath)
@@ -750,17 +765,19 @@ for (my $tupidx = 0; $tupidx < $ROWCOUNT; $tupidx++)
 close($file)
   or BAIL_OUT("close failed: $!");
 $node->start;
+$session->reconnect;
 
 # Run pg_amcheck against the corrupt table with epoch=0, comparing actual
 # corruption messages against the expected messages
 $node->command_checks_all(
 	[ 'pg_amcheck', '--no-dependent-indexes', '-p', $port, 'postgres' ],
 	2, [@expected], [], 'Expected corruption message output');
-$node->safe_psql(
-	'postgres', qq(
+$session->do(
+	qq(
                         COMMIT PREPARED 'in_progress_tx';
         ));
 
+$session->close;
 $node->teardown_node;
 $node->clean_node;
 
