@@ -553,6 +553,9 @@ task:
   setup_additional_packages_script: |
     REM choco install -y --no-progress ...
 
+  pkgconfig_info_script: |
+    pkgconf --list-all
+
   setup_hosts_file_script: |
     echo 127.0.0.1 pg-loadbalancetest >> c:\Windows\System32\Drivers\etc\hosts
     echo 127.0.0.2 pg-loadbalancetest >> c:\Windows\System32\Drivers\etc\hosts
@@ -562,7 +565,10 @@ task:
   # Use /DEBUG:FASTLINK to avoid high memory usage during linking
   configure_script: |
     vcvarsall x64
-    meson setup --backend ninja --buildtype debug -Dc_link_args=/DEBUG:FASTLINK -Dcassert=true -Dinjection_points=true -Db_pch=true -Dextra_lib_dirs=c:\openssl\1.1\lib -Dextra_include_dirs=c:\openssl\1.1\include -DTAR=%TAR% -DPG_TEST_EXTRA="%PG_TEST_EXTRA%" build
+    REM libintl doesn't have a .pc file, so we need to ensure it's discoverable via libdir/include
+    REM might want to disable nls, it makes the test considerably slower
+    REM gssapi cause test failures due to debugging output it generates, not sure why yet
+    meson setup --backend ninja --buildtype debug -Dc_link_args=/DEBUG:FASTLINK -Dcassert=true -Dinjection_points=true -Db_pch=true -DTAR=%TAR% -DPG_TEST_EXTRA="%PG_TEST_EXTRA%" -Dextra_include_dirs=c:/vcpkg/installed/x64-windows/include -Dextra_lib_dirs=c:/vcpkg/installed/x64-windows/debug/lib -Dgssapi=disabled -Dnls=enabled build
 
   build_script: |
     vcvarsall x64
