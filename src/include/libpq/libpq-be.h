@@ -19,10 +19,6 @@
 #define LIBPQ_BE_H
 
 #include <sys/time.h>
-#ifdef USE_OPENSSL
-#include <openssl/ssl.h>
-#include <openssl/err.h>
-#endif
 #include <netinet/tcp.h>
 
 #ifdef ENABLE_GSS
@@ -57,6 +53,17 @@ typedef struct
 #include "libpq/hba.h"
 #include "libpq/pqcomm.h"
 
+/*
+ * These SSL-related #includes must come after all system-provided headers.
+ * This ensures that OpenSSL can take care of conflicts with Windows'
+ * <wincrypt.h> by #undef'ing the conflicting macros.  (We don't directly
+ * include <wincrypt.h>, but some other Windows headers do.) Here <gssapi/gssapi.h>
+ * indirectly inlcudes <wincrypt.h> which cause conflicting macros. 
+ */
+#ifdef USE_OPENSSL
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#endif
 
 /*
  * GSSAPI specific state information
