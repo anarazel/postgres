@@ -1750,6 +1750,7 @@ psql_completion(const char *text, int start, int end)
 	 * commands.  So get the string to look at from rl_line_buffer instead.
 	 */
 	char	   *text_copy = pnstrdup(rl_line_buffer + start, end - start);
+	bool if_continues = false;
 	text = text_copy;
 
 	/* Remember last char of the given input word. */
@@ -3033,7 +3034,16 @@ psql_completion(const char *text, int start, int end)
 	else if (TailMatches("INDEX|CONCURRENTLY", MatchAny, "ON") ||
 			 TailMatches("INDEX|CONCURRENTLY", "ON"))
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_indexables);
+	else
+		if_continues = true;
 
+	/*
+	 * Complete CREATE|UNIQUE INDEX CONCURRENTLY with "ON" and existing
+	 * indexes
+	 */
+	if (!if_continues)
+	{
+	}
 	/*
 	 * Complete CREATE|UNIQUE INDEX CONCURRENTLY with "ON" and existing
 	 * indexes
