@@ -2757,19 +2757,45 @@ if not nlsopt.disabled()
   # warnings if not found.
   msgfmt = find_program('msgfmt', required: nlsopt, native: true)
 
+  intl_link_test = '''
+        #include <libintl.h>
+        int main(void)
+        {
+            return ngettext == 0;
+        }
+  '''
+
   # meson 0.59 has this wrapped in dependency('intl')
   if (msgfmt.found() and
       cc.check_header('libintl.h', required: nlsopt,
         args: test_c_args, include_directories: postgres_inc))
 
-    # in libc
     if cc.has_function('ngettext')
+      # gettext is part of libc
       libintl = declare_dependency()
     else
-      libintl = cc.find_library('intl',
-        has_headers: ['libintl.h'], required: nlsopt,
-        header_include_directories: postgres_inc,
-        dirs: test_lib_d)
+      # gettext is in a dedicated library
+      libintl_int = cc.find_library('intl',
+        required: nlsopt, disabler: true, dirs: test_lib_d,
+        has_headers: ['libintl.h'], header_include_directories: postgres_inc)
+
+      # On some platforms/configurations one needs to link to both intl and
+      # iconv. Test if that's the case.
+      if cc.links(intl_link_test,
+          name: 'ngettext', dependencies: libintl_int,
+          include_directories: postgres_inc, args: test_c_args)
+        # all good, libintl works without iconv
+        libintl = libintl_int
+      else
+        # need iconv as well
+        libiconv = cc.find_library('iconv',
+          required: nlsopt, disabler: true, dirs: test_lib_d)
+        if cc.links(intl_link_test,
+             name: 'ngettext', dependencies: [libintl_int, libiconv],
+             include_directories: postgres_inc, args: test_c_args)
+          libintl = declare_dependency(dependencies: [libintl_int, libiconv])
+        endif
+      endif
     endif
   endif
 
