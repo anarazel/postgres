@@ -2680,6 +2680,14 @@ if not nlsopt.disabled()
   # warnings if not found.
   msgfmt = find_program('msgfmt', required: nlsopt, native: true)
 
+  intl_link_test = '''
+        #include <libintl.h>
+        int main(void)
+        {
+            return ngettext == 0;
+        }
+  '''
+
   # meson 0.59 has this wrapped in dependency('intl')
   if (msgfmt.found() and
       cc.check_header('libintl.h', required: nlsopt,
@@ -2689,10 +2697,31 @@ if not nlsopt.disabled()
     if cc.has_function('ngettext')
       libintl = declare_dependency()
     else
-      libintl = cc.find_library('intl',
+      libintl_int = cc.find_library('intl',
         has_headers: ['libintl.h'], required: nlsopt,
         header_include_directories: postgres_inc,
+        disabler: true,
         dirs: test_lib_d)
+
+      if cc.links(intl_link_test,
+          name: 'libintl suffices',
+          args: test_c_args + perl_ccflags + perl_ldopts,
+          include_directories: postgres_inc,
+          dependencies: libintl_int)
+        # all good, libintl works without iconv
+        libintl = libintl_int
+      else
+        libiconv = cc.find_library('iconv',
+              required: false, disabler: true,
+              dirs: test_lib_d)
+        if cc.links(intl_link_test,
+            name: 'libintl + libiconv suffice',
+            args: test_c_args + perl_ccflags + perl_ldopts,
+            include_directories: postgres_inc,
+            dependencies: [libintl_int, libiconv])
+          libintl = declare_dependency(dependencies: [libintl_int, libiconv])
+        endif
+      endif
     endif
   endif
 
