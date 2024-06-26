@@ -115,6 +115,7 @@ struct sqlca_t
 	/* 6: empty						*/
 	/* 7: empty						*/
 
+	__attribute__((nonstring))
 	char		sqlstate[5];
 };
 
