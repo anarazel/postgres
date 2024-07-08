@@ -1532,8 +1532,8 @@ fi
 if test "$with_gssapi" = yes ; then
   AC_CHECK_HEADERS(gssapi/gssapi.h, [],
 	[AC_CHECK_HEADERS(gssapi.h, [], [AC_MSG_ERROR([gssapi.h header file is required for GSSAPI])])])
-  AC_CHECK_HEADERS(gssapi/gssapi_ext.h, [],
-	[AC_CHECK_HEADERS(gssapi_ext.h, [], [AC_MSG_ERROR([gssapi_ext.h header file is required for GSSAPI])])])
+  AC_CHECK_HEADER(gssapi/gssapi_ext.h, [],
+	[AC_CHECK_HEADER(gssapi_ext.h, [], [AC_MSG_ERROR([gssapi_ext.h header file is required for GSSAPI])])])
 fi
 
 PGAC_PATH_PROGS(OPENSSL, openssl)
