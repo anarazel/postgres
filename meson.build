@@ -919,7 +919,8 @@ if not tclopt.disabled()
       dirs: test_lib_d)
   endif
 
-  if not cc.has_header('tcl.h', dependencies: tcl_dep, required: tclopt)
+  if not cc.has_header('tcl.h', dependencies: tcl_dep, required: tclopt,
+      args: test_c_args, include_directories: postgres_inc)
     tcl_dep = not_found_dep
   endif
 endif
