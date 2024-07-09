@@ -129,13 +129,12 @@ postgres = executable('postgres',
   backend_input,
   sources: post_export_backend_sources,
   objects: backend_objs,
-  link_args: backend_link_args,
   link_with: backend_link_with,
   link_depends: backend_link_depends,
   export_dynamic: true,
   implib: 'postgres',
   dependencies: backend_build_deps,
-  kwargs: default_bin_args,
+  kwargs: default_bin_args + {'link_args': backend_link_args},
 )
 
 backend_targets += postgres

@@ -100,6 +100,7 @@ ldflags = []
 ldflags_be = []
 ldflags_sl = []
 ldflags_mod = []
+ldflags_exec = []
 
 test_c_args = []
 
@@ -2020,6 +2021,7 @@ if cc.get_id() == 'msvc'
   # modules, we only import them dynamically, and they're also noisy.
   ldflags += '/NOEXP'
   ldflags_mod += '/NOIMPLIB'
+  ldflags_exec += '/NOIMPLIB'
 endif
 
 
@@ -2891,6 +2893,7 @@ default_mod_args = default_lib_args + {
 
 default_bin_args = default_target_args + {
   'install_dir': dir_bin,
+  'link_args': ldflags_exec,
 }
 
 if get_option('rpath')
