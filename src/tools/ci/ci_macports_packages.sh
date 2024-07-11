@@ -13,7 +13,15 @@ set -e
 
 packages="$@"
 
-macports_url="https://github.com/macports/macports-base/releases/download/v2.8.1/MacPorts-2.8.1-13-Ventura.pkg"
+macos_ver=$(sw_vers -productVersion | sed 's/\..*//g')
+if [ $macos_ver -eq 14 ]; then
+    macports_url="https://github.com/macports/macports-base/releases/download/v2.9.3/MacPorts-2.9.3-14-Sonoma.pkg"
+elif [ $macos_ver -eq 13 ]; then
+    macports_url="https://github.com/macports/macports-base/releases/download/v2.9.3/MacPorts-2.9.3-13-Ventura.pkg"
+else
+    echo "unsupported macos version ${macos_ver}" 1>2
+    exit 1
+fi
 cache_dmg="macports.hfs.dmg"
 
 if [ "$CIRRUS_CI" != "true" ]; then
