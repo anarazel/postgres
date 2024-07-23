@@ -38,10 +38,12 @@
 #include "postmaster/auxprocess.h"
 #include "postmaster/bgwriter.h"
 #include "postmaster/interrupt.h"
+#include "storage/aio.h"
 #include "storage/buf_internals.h"
 #include "storage/bufmgr.h"
 #include "storage/condition_variable.h"
 #include "storage/fd.h"
+#include "storage/io_queue.h"
 #include "storage/lwlock.h"
 #include "storage/proc.h"
 #include "storage/procsignal.h"
@@ -89,6 +91,7 @@ BackgroundWriterMain(char *startup_data, size_t startup_data_len)
 	sigjmp_buf	local_sigjmp_buf;
 	MemoryContext bgwriter_context;
 	bool		prev_hibernate;
+	IOQueue    *ioq;
 	WritebackContext wb_context;
 
 	Assert(startup_data_len == 0);
@@ -130,6 +133,7 @@ BackgroundWriterMain(char *startup_data, size_t startup_data_len)
 											 ALLOCSET_DEFAULT_SIZES);
 	MemoryContextSwitchTo(bgwriter_context);
 
+	ioq = io_queue_create(128, 0);
 	WritebackContextInit(&wb_context, &bgwriter_flush_after);
 
 	/*
@@ -167,6 +171,7 @@ BackgroundWriterMain(char *startup_data, size_t startup_data_len)
 		 * about in bgwriter, but we do have LWLocks, buffers, and temp files.
 		 */
 		LWLockReleaseAll();
+		pgaio_at_error();
 		ConditionVariableCancelSleep();
 		UnlockBuffers();
 		ReleaseAuxProcessResources(false);
@@ -226,12 +231,27 @@ BackgroundWriterMain(char *startup_data, size_t startup_data_len)
 		/* Clear any already-pending wakeups */
 		ResetLatch(MyLatch);
 
+		/*
+		 * XXX: Before exiting, wait for all IO to finish. That's only
+		 * important to avoid spurious PrintBufferLeakWarning() /
+		 * PrintAioIPLeakWarning() calls, triggered by
+		 * ReleaseAuxProcessResources() being called with isCommit=true.
+		 *
+		 * FIXME: this is theoretically racy, but I didn't want to copy
+		 * HandleMainLoopInterrupts() remaining body here.
+		 */
+		if (ShutdownRequestPending)
+		{
+			io_queue_wait_all(ioq);
+			io_queue_free(ioq);
+		}
+
 		HandleMainLoopInterrupts();
 
 		/*
 		 * Do one cycle of dirty-buffer writing.
 		 */
-		can_hibernate = BgBufferSync(&wb_context);
+		can_hibernate = BgBufferSync(ioq, &wb_context);
 
 		/* Report pending statistics to the cumulative stats system */
 		pgstat_report_bgwriter();
@@ -247,6 +267,9 @@ BackgroundWriterMain(char *startup_data, size_t startup_data_len)
 			 */
 			smgrdestroyall();
 		}
+
+		/* finish IO before sleeping, to avoid blocking other backends */
+		io_queue_wait_all(ioq);
 
 		/*
 		 * Log a new xl_running_xacts every now and then so replication can

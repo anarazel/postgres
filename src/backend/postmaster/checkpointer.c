@@ -46,9 +46,11 @@
 #include "postmaster/bgwriter.h"
 #include "postmaster/interrupt.h"
 #include "replication/syncrep.h"
+#include "storage/aio.h"
 #include "storage/bufmgr.h"
 #include "storage/condition_variable.h"
 #include "storage/fd.h"
+#include "storage/io_queue.h"
 #include "storage/ipc.h"
 #include "storage/lwlock.h"
 #include "storage/proc.h"
@@ -266,6 +268,7 @@ CheckpointerMain(char *startup_data, size_t startup_data_len)
 		 * files.
 		 */
 		LWLockReleaseAll();
+		pgaio_at_error();
 		ConditionVariableCancelSleep();
 		pgstat_report_wait_end();
 		UnlockBuffers();
@@ -719,7 +722,7 @@ ImmediateCheckpointRequested(void)
  * fraction between 0.0 meaning none, and 1.0 meaning all done.
  */
 void
-CheckpointWriteDelay(int flags, double progress)
+CheckpointWriteDelay(IOQueue *ioq, int flags, double progress)
 {
 	static int	absorb_counter = WRITES_PER_ABSORB;
 
@@ -751,6 +754,13 @@ CheckpointWriteDelay(int flags, double progress)
 
 		/* Report interim statistics to the cumulative stats system */
 		pgstat_report_checkpointer();
+
+		/*
+		 * Ensure all pending IO is submitted to avoid unnecessary delays for
+		 * other processes.
+		 */
+		io_queue_wait_all(ioq);
+
 
 		/*
 		 * This sleep used to be connected to bgwriter_delay, typically 200ms.

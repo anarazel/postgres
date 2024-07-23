@@ -1491,6 +1491,16 @@ PageIndexTupleOverwrite(Page page, OffsetNumber offnum,
 	return true;
 }
 
+bool
+PageNeedsChecksumCopy(Page page)
+{
+	if (PageIsNew(page))
+		return false;
+
+	/* If we don't need a checksum, just return the passed-in data */
+	return DataChecksumsEnabled();
+}
+
 
 /*
  * Set checksum for a page in shared buffers.

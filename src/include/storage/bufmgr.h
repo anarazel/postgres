@@ -325,7 +325,8 @@ extern bool ConditionalLockBufferForCleanup(Buffer buffer);
 extern bool IsBufferCleanupOK(Buffer buffer);
 extern bool HoldingBufferPinThatDelaysRecovery(void);
 
-extern bool BgBufferSync(struct WritebackContext *wb_context);
+struct IOQueue;
+extern bool BgBufferSync(struct IOQueue *ioq, struct WritebackContext *wb_context);
 
 extern void LimitAdditionalPins(uint32 *additional_pins);
 extern void LimitAdditionalLocalPins(uint32 *additional_pins);

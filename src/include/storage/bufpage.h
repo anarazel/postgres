@@ -509,5 +509,6 @@ extern bool PageIndexTupleOverwrite(Page page, OffsetNumber offnum,
 									Item newtup, Size newsize);
 extern char *PageSetChecksumCopy(Page page, BlockNumber blkno);
 extern void PageSetChecksumInplace(Page page, BlockNumber blkno);
+extern bool PageNeedsChecksumCopy(Page page);
 
 #endif							/* BUFPAGE_H */
