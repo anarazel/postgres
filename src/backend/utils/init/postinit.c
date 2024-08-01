@@ -753,7 +753,8 @@ InitPostgres(const char *in_dbname, Oid dboid,
 		 * and ShutdownXLOG will need one.  Hence, create said resource owner
 		 * (and register a callback to clean it up after ShutdownXLOG runs).
 		 */
-		CreateAuxProcessResourceOwner();
+		if (!bootstrap)
+			CreateAuxProcessResourceOwner();
 
 		StartupXLOG();
 		/* Release (and warn about) any buffer pins leaked in StartupXLOG */
