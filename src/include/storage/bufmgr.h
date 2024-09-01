@@ -15,6 +15,7 @@
 #define BUFMGR_H
 
 #include "port/pg_iovec.h"
+#include "storage/aio_ref.h"
 #include "storage/block.h"
 #include "storage/buf.h"
 #include "storage/bufpage.h"
@@ -107,10 +108,21 @@ typedef struct BufferManagerRelation
 #define BMR_REL(p_rel) ((BufferManagerRelation){.rel = p_rel})
 #define BMR_SMGR(p_smgr, p_relpersistence) ((BufferManagerRelation){.smgr = p_smgr, .relpersistence = p_relpersistence})
 
+
+#define MAX_IO_COMBINE_LIMIT PG_IOV_MAX
+#define DEFAULT_IO_COMBINE_LIMIT Min(MAX_IO_COMBINE_LIMIT, (128 * 1024) / BLCKSZ)
+
+
 /* Zero out page if reading fails. */
 #define READ_BUFFERS_ZERO_ON_ERROR (1 << 0)
 /* Call smgrprefetch() if I/O necessary. */
 #define READ_BUFFERS_ISSUE_ADVICE (1 << 1)
+
+/*
+ * FIXME: PgAioReturn is defined in aio.h. It'd be much better if we didn't
+ * need to include that here.  Perhaps this could live in a separate header?
+ */
+#include "storage/aio.h"
 
 struct ReadBuffersOperation
 {
@@ -131,6 +143,17 @@ struct ReadBuffersOperation
 	int			flags;
 	int16		nblocks;
 	int16		io_buffers_len;
+
+	/*
+	 * In some rare-ish cases one operation causes multiple reads (e.g. if a
+	 * buffer was concurrently read by another backend). It'd be much better
+	 * if we ensured that each ReadBuffersOperation covered only one IO - but
+	 * that's not entirely trivial, due to having pinned victim buffers before
+	 * starting IOs.
+	 */
+	int16		nios;
+	PgAioHandleRef refs[MAX_IO_COMBINE_LIMIT];
+	PgAioReturn returns[MAX_IO_COMBINE_LIMIT];
 };
 
 typedef struct ReadBuffersOperation ReadBuffersOperation;
@@ -161,8 +184,6 @@ extern PGDLLIMPORT bool track_io_timing;
 extern PGDLLIMPORT int effective_io_concurrency;
 extern PGDLLIMPORT int maintenance_io_concurrency;
 
-#define MAX_IO_COMBINE_LIMIT PG_IOV_MAX
-#define DEFAULT_IO_COMBINE_LIMIT Min(MAX_IO_COMBINE_LIMIT, (128 * 1024) / BLCKSZ)
 extern PGDLLIMPORT int io_combine_limit;
 
 extern PGDLLIMPORT int checkpoint_flush_after;
