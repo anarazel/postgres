@@ -555,7 +555,12 @@ GetAccessStrategy(BufferAccessStrategyType btype)
 			return NULL;
 
 		case BAS_BULKREAD:
-			ring_size_kb = 256;
+
+			/*
+			 * FIXME: Temporary increase to allow large enough streaming reads
+			 * to actually benefit from AIO. This needs a better solution.
+			 */
+			ring_size_kb = 2 * 1024;
 			break;
 		case BAS_BULKWRITE:
 			ring_size_kb = 16 * 1024;

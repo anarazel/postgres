@@ -804,6 +804,10 @@ buffers_to_iovec(struct iovec *iov, void **buffers, int nblocks)
 	return iovcnt;
 }
 
+/*
+ * mdmaxcombine() -- Return the maximum number of total blocks that can be
+ *				 combined with an IO starting at blocknum.
+ */
 uint32
 mdmaxcombine(SMgrRelation reln, ForkNumber forknum,
 			 BlockNumber blocknum)
