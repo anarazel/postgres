@@ -73,6 +73,11 @@ typedef SMgrRelationData *SMgrRelation;
 #define SmgrIsTemp(smgr) \
 	RelFileLocatorBackendIsTemp((smgr)->smgr_rlocator)
 
+struct PgAioHandle;
+struct PgAioSubjectInfo;
+
+extern const struct PgAioSubjectInfo aio_smgr_subject_info;
+
 extern void smgrinit(void);
 extern SMgrRelation smgropen(RelFileLocator rlocator, ProcNumber backend);
 extern bool smgrexists(SMgrRelation reln, ForkNumber forknum);
@@ -97,10 +102,19 @@ extern uint32 smgrmaxcombine(SMgrRelation reln, ForkNumber forknum,
 extern void smgrreadv(SMgrRelation reln, ForkNumber forknum,
 					  BlockNumber blocknum,
 					  void **buffers, BlockNumber nblocks);
+extern void smgrstartreadv(struct PgAioHandle *ioh,
+						   SMgrRelation reln, ForkNumber forknum,
+						   BlockNumber blocknum,
+						   void **buffers, BlockNumber nblocks);
 extern void smgrwritev(SMgrRelation reln, ForkNumber forknum,
 					   BlockNumber blocknum,
 					   const void **buffers, BlockNumber nblocks,
 					   bool skipFsync);
+extern void smgrstartwritev(struct PgAioHandle *ioh,
+							SMgrRelation reln, ForkNumber forknum,
+							BlockNumber blocknum,
+							const void **buffers, BlockNumber nblocks,
+							bool skipFsync);
 extern void smgrwriteback(SMgrRelation reln, ForkNumber forknum,
 						  BlockNumber blocknum, BlockNumber nblocks);
 extern BlockNumber smgrnblocks(SMgrRelation reln, ForkNumber forknum);
@@ -109,6 +123,7 @@ extern void smgrtruncate(SMgrRelation reln, ForkNumber *forknum,
 						 int nforks, BlockNumber *nblocks);
 extern void smgrimmedsync(SMgrRelation reln, ForkNumber forknum);
 extern void smgrregistersync(SMgrRelation reln, ForkNumber forknum);
+extern int	smgrfd(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum, uint32 *off);
 extern void AtEOXact_SMgr(void);
 extern bool ProcessBarrierSmgrRelease(void);
 
@@ -125,5 +140,11 @@ smgrwrite(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 {
 	smgrwritev(reln, forknum, blocknum, &buffer, 1, skipFsync);
 }
+
+extern void pgaio_io_set_subject_smgr(struct PgAioHandle *ioh,
+									  SMgrRelationData *smgr,
+									  ForkNumber forknum,
+									  BlockNumber blocknum,
+									  int nblocks);
 
 #endif							/* SMGR_H */

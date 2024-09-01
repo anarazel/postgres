@@ -57,9 +57,10 @@ typedef enum PgAioSubjectID
 {
 	/* intentionally the zero value, to help catch zeroed memory etc */
 	ASI_INVALID = 0,
+	ASI_SMGR,
 } PgAioSubjectID;
 
-#define ASI_COUNT (ASI_INVALID + 1)
+#define ASI_COUNT (ASI_SMGR + 1)
 
 /*
  * Flags for an IO that can be set with pgaio_io_set_flag().
@@ -90,7 +91,8 @@ typedef enum PgAioHandleFlags
  */
 typedef enum PgAioHandleSharedCallbackID
 {
-	ASC_PLACEHOLDER /* empty enums are invalid */ ,
+	ASC_MD_READV,
+	ASC_MD_WRITEV,
 } PgAioHandleSharedCallbackID;
 
 
@@ -139,6 +141,17 @@ typedef union
 
 typedef union PgAioSubjectData
 {
+	struct
+	{
+		RelFileLocator rlocator;	/* physical relation identifier */
+		BlockNumber blockNum;	/* blknum relative to begin of reln */
+		int			nblocks;
+		ForkNumber	forkNum:8;	/* don't waste 4 byte for four values */
+		bool		is_temp;	/* proc can be inferred by owning AIO */
+		bool		release_lock;
+		int8		mode;
+	}			smgr;
+
 	/* just as an example placeholder for later */
 	struct
 	{

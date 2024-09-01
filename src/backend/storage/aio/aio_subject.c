@@ -20,6 +20,7 @@
 #include "storage/aio_internal.h"
 #include "storage/buf_internals.h"
 #include "storage/bufmgr.h"
+#include "storage/md.h"
 #include "storage/smgr.h"
 #include "utils/memutils.h"
 
@@ -28,9 +29,12 @@ static const PgAioSubjectInfo *aio_subject_info[] = {
 	[ASI_INVALID] = &(PgAioSubjectInfo) {
 		.name = "invalid",
 	},
+	[ASI_SMGR] = &aio_smgr_subject_info,
 };
 
 static const PgAioHandleSharedCallbacks *aio_shared_cbs[] = {
+	[ASC_MD_READV] = &aio_md_readv_cb,
+	[ASC_MD_WRITEV] = &aio_md_writev_cb,
 };
 
 

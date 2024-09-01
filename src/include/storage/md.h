@@ -19,6 +19,10 @@
 #include "storage/smgr.h"
 #include "storage/sync.h"
 
+struct PgAioHandleSharedCallbacks;
+extern const struct PgAioHandleSharedCallbacks aio_md_readv_cb;
+extern const struct PgAioHandleSharedCallbacks aio_md_writev_cb;
+
 /* md storage manager functionality */
 extern void mdinit(void);
 extern void mdopen(SMgrRelation reln);
@@ -36,9 +40,16 @@ extern uint32 mdmaxcombine(SMgrRelation reln, ForkNumber forknum,
 						   BlockNumber blocknum);
 extern void mdreadv(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 					void **buffers, BlockNumber nblocks);
+extern void mdstartreadv(struct PgAioHandle *ioh,
+						 SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
+						 void **buffers, BlockNumber nblocks);
 extern void mdwritev(SMgrRelation reln, ForkNumber forknum,
 					 BlockNumber blocknum,
 					 const void **buffers, BlockNumber nblocks, bool skipFsync);
+extern void mdstartwritev(struct PgAioHandle *ioh,
+						  SMgrRelation reln, ForkNumber forknum,
+						  BlockNumber blocknum,
+						  const void **buffers, BlockNumber nblocks, bool skipFsync);
 extern void mdwriteback(SMgrRelation reln, ForkNumber forknum,
 						BlockNumber blocknum, BlockNumber nblocks);
 extern BlockNumber mdnblocks(SMgrRelation reln, ForkNumber forknum);
@@ -46,6 +57,7 @@ extern void mdtruncate(SMgrRelation reln, ForkNumber forknum,
 					   BlockNumber nblocks);
 extern void mdimmedsync(SMgrRelation reln, ForkNumber forknum);
 extern void mdregistersync(SMgrRelation reln, ForkNumber forknum);
+extern int	mdfd(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum, uint32 *off);
 
 extern void ForgetDatabaseSyncRequests(Oid dbid);
 extern void DropRelationFiles(RelFileLocator *delrels, int ndelrels, bool isRedo);

@@ -53,6 +53,7 @@
 
 #include "access/xlogutils.h"
 #include "lib/ilist.h"
+#include "storage/aio.h"
 #include "storage/bufmgr.h"
 #include "storage/ipc.h"
 #include "storage/md.h"
@@ -93,10 +94,19 @@ typedef struct f_smgr
 	void		(*smgr_readv) (SMgrRelation reln, ForkNumber forknum,
 							   BlockNumber blocknum,
 							   void **buffers, BlockNumber nblocks);
+	void		(*smgr_startreadv) (struct PgAioHandle *ioh,
+									SMgrRelation reln, ForkNumber forknum,
+									BlockNumber blocknum,
+									void **buffers, BlockNumber nblocks);
 	void		(*smgr_writev) (SMgrRelation reln, ForkNumber forknum,
 								BlockNumber blocknum,
 								const void **buffers, BlockNumber nblocks,
 								bool skipFsync);
+	void		(*smgr_startwritev) (struct PgAioHandle *ioh,
+									 SMgrRelation reln, ForkNumber forknum,
+									 BlockNumber blocknum,
+									 const void **buffers, BlockNumber nblocks,
+									 bool skipFsync);
 	void		(*smgr_writeback) (SMgrRelation reln, ForkNumber forknum,
 								   BlockNumber blocknum, BlockNumber nblocks);
 	BlockNumber (*smgr_nblocks) (SMgrRelation reln, ForkNumber forknum);
@@ -104,6 +114,7 @@ typedef struct f_smgr
 								  BlockNumber nblocks);
 	void		(*smgr_immedsync) (SMgrRelation reln, ForkNumber forknum);
 	void		(*smgr_registersync) (SMgrRelation reln, ForkNumber forknum);
+	int			(*smgr_fd) (SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum, uint32 *off);
 } f_smgr;
 
 static const f_smgr smgrsw[] = {
@@ -121,12 +132,15 @@ static const f_smgr smgrsw[] = {
 		.smgr_prefetch = mdprefetch,
 		.smgr_maxcombine = mdmaxcombine,
 		.smgr_readv = mdreadv,
+		.smgr_startreadv = mdstartreadv,
 		.smgr_writev = mdwritev,
+		.smgr_startwritev = mdstartwritev,
 		.smgr_writeback = mdwriteback,
 		.smgr_nblocks = mdnblocks,
 		.smgr_truncate = mdtruncate,
 		.smgr_immedsync = mdimmedsync,
 		.smgr_registersync = mdregistersync,
+		.smgr_fd = mdfd,
 	}
 };
 
@@ -143,6 +157,14 @@ static dlist_head unpinned_relns;
 /* local function prototypes */
 static void smgrshutdown(int code, Datum arg);
 static void smgrdestroy(SMgrRelation reln);
+
+
+static void smgr_aio_reopen(PgAioHandle *ioh);
+
+const struct PgAioSubjectInfo aio_smgr_subject_info = {
+	.name = "smgr",
+	.reopen = smgr_aio_reopen,
+};
 
 
 /*
@@ -621,6 +643,19 @@ smgrreadv(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 }
 
 /*
+ * FILL ME IN
+ */
+void
+smgrstartreadv(struct PgAioHandle *ioh,
+			   SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
+			   void **buffers, BlockNumber nblocks)
+{
+	smgrsw[reln->smgr_which].smgr_startreadv(ioh,
+											 reln, forknum, blocknum, buffers,
+											 nblocks);
+}
+
+/*
  * smgrwritev() -- Write the supplied buffers out.
  *
  * This is to be used only for updating already-existing blocks of a
@@ -649,6 +684,16 @@ smgrwritev(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 {
 	smgrsw[reln->smgr_which].smgr_writev(reln, forknum, blocknum,
 										 buffers, nblocks, skipFsync);
+}
+
+void
+smgrstartwritev(struct PgAioHandle *ioh,
+				SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
+				const void **buffers, BlockNumber nblocks, bool skipFsync)
+{
+	smgrsw[reln->smgr_which].smgr_startwritev(ioh,
+											  reln, forknum, blocknum, buffers,
+											  nblocks, skipFsync);
 }
 
 /*
@@ -807,6 +852,12 @@ smgrimmedsync(SMgrRelation reln, ForkNumber forknum)
 	smgrsw[reln->smgr_which].smgr_immedsync(reln, forknum);
 }
 
+int
+smgrfd(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum, uint32 *off)
+{
+	return smgrsw[reln->smgr_which].smgr_fd(reln, forknum, blocknum, off);
+}
+
 /*
  * AtEOXact_SMgr
  *
@@ -834,4 +885,44 @@ ProcessBarrierSmgrRelease(void)
 {
 	smgrreleaseall();
 	return true;
+}
+
+void
+pgaio_io_set_subject_smgr(PgAioHandle *ioh,
+						  struct SMgrRelationData *smgr,
+						  ForkNumber forknum,
+						  BlockNumber blocknum,
+						  int nblocks)
+{
+	PgAioSubjectData *sd = pgaio_io_get_subject_data(ioh);
+
+	pgaio_io_set_subject(ioh, ASI_SMGR);
+
+	/* backend is implied via IO owner */
+	sd->smgr.rlocator = smgr->smgr_rlocator.locator;
+	sd->smgr.forkNum = forknum;
+	sd->smgr.blockNum = blocknum;
+	sd->smgr.nblocks = nblocks;
+	sd->smgr.is_temp = SmgrIsTemp(smgr);
+	sd->smgr.release_lock = false;
+	sd->smgr.mode = RBM_NORMAL;
+}
+
+static void
+smgr_aio_reopen(PgAioHandle *ioh)
+{
+	PgAioSubjectData *sd = pgaio_io_get_subject_data(ioh);
+	PgAioOpData *od = pgaio_io_get_op_data(ioh);
+	SMgrRelation reln;
+	ProcNumber	procno;
+	uint32		off;
+
+	if (sd->smgr.is_temp)
+		procno = pgaio_io_get_owner(ioh);
+	else
+		procno = INVALID_PROC_NUMBER;
+
+	reln = smgropen(sd->smgr.rlocator, procno);
+	od->read.fd = smgrfd(reln, sd->smgr.forkNum, sd->smgr.blockNum, &off);
+	Assert(off == od->read.offset);
 }
