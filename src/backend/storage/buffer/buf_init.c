@@ -14,6 +14,7 @@
  */
 #include "postgres.h"
 
+#include "storage/aio.h"
 #include "storage/buf_internals.h"
 #include "storage/bufmgr.h"
 #include "storage/proc.h"
@@ -125,6 +126,8 @@ BufferManagerShmemInit(void)
 			buf->wait_backend_pgprocno = INVALID_PROC_NUMBER;
 
 			buf->buf_id = i;
+
+			pgaio_io_ref_clear(&buf->io_in_progress);
 
 			/*
 			 * Initially link all the buffers together as unused. Subsequent

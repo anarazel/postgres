@@ -35,6 +35,11 @@ static const PgAioSubjectInfo *aio_subject_info[] = {
 static const PgAioHandleSharedCallbacks *aio_shared_cbs[] = {
 	[ASC_MD_READV] = &aio_md_readv_cb,
 	[ASC_MD_WRITEV] = &aio_md_writev_cb,
+
+	[ASC_SHARED_BUFFER_READ] = &aio_shared_buffer_read_cb,
+	[ASC_SHARED_BUFFER_WRITE] = &aio_shared_buffer_write_cb,
+	[ASC_LOCAL_BUFFER_READ] = &aio_local_buffer_read_cb,
+	[ASC_LOCAL_BUFFER_WRITE] = &aio_local_buffer_write_cb,
 };
 
 

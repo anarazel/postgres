@@ -18,6 +18,7 @@
 #include "access/parallel.h"
 #include "executor/instrument.h"
 #include "pgstat.h"
+#include "storage/aio.h"
 #include "storage/buf_internals.h"
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
@@ -620,6 +621,8 @@ InitLocalBuffers(void)
 		 */
 		buf->buf_id = -i - 2;
 
+		pgaio_io_ref_clear(&buf->io_in_progress);
+
 		/*
 		 * Intentionally do not initialize the buffer's atomic variable
 		 * (besides zeroing the underlying memory above). That way we get
@@ -835,4 +838,66 @@ AtProcExit_LocalBuffers(void)
 	 * drop the temp rels.
 	 */
 	CheckForLocalBufferLeaks();
+}
+
+bool
+ReadBufferCompleteReadLocal(Buffer buffer, int mode, bool failed)
+{
+	BufferDesc *buf_hdr = NULL;
+	BlockNumber blockno;
+	bool		buf_failed = false;
+	char	   *bufdata = BufferGetBlock(buffer);
+
+	Assert(BufferIsValid(buffer));
+
+	buf_hdr = GetLocalBufferDescriptor(-buffer - 1);
+	blockno = buf_hdr->tag.blockNum;
+
+	/* check for garbage data */
+	if (!failed &&
+		!PageIsVerifiedExtended((Page) bufdata, blockno,
+								PIV_LOG_WARNING | PIV_REPORT_STAT))
+	{
+		RelFileLocator rlocator = BufTagGetRelFileLocator(&buf_hdr->tag);
+		BlockNumber forkNum = buf_hdr->tag.forkNum;
+
+		MemoryContextSwitchTo(ErrorContext);
+
+		if (mode == READ_BUFFERS_ZERO_ON_ERROR || zero_damaged_pages)
+		{
+
+			ereport(WARNING,
+					(errcode(ERRCODE_DATA_CORRUPTED),
+					 errmsg("invalid page in block %u of relation %s; zeroing out page",
+							blockno,
+							relpathperm(rlocator, forkNum))));
+			memset(bufdata, 0, BLCKSZ);
+		}
+		else
+		{
+			ereport(LOG,
+					(errcode(ERRCODE_DATA_CORRUPTED),
+					 errmsg("invalid page in block %u of relation %s",
+							blockno,
+							relpathperm(rlocator, forkNum))));
+			failed = true;
+			buf_failed = true;
+		}
+	}
+
+	/* Terminate I/O and set BM_VALID. */
+	pgaio_io_ref_clear(&buf_hdr->io_in_progress);
+
+	{
+		uint32		buf_state;
+
+		buf_state = pg_atomic_read_u32(&buf_hdr->state);
+		buf_state |= BM_VALID;
+		pg_atomic_unlocked_write_u32(&buf_hdr->state, buf_state);
+	}
+
+	/* release pin held by IO subsystem */
+	LocalRefCount[-buffer - 1] -= 1;
+
+	return buf_failed;
 }
