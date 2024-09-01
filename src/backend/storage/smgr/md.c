@@ -803,6 +803,17 @@ buffers_to_iovec(struct iovec *iov, void **buffers, int nblocks)
 	return iovcnt;
 }
 
+uint32
+mdmaxcombine(SMgrRelation reln, ForkNumber forknum,
+			 BlockNumber blocknum)
+{
+	BlockNumber segoff;
+
+	segoff = blocknum % ((BlockNumber) RELSEG_SIZE);
+
+	return RELSEG_SIZE - segoff;
+}
+
 /*
  * mdreadv() -- Read the specified blocks from a relation.
  */
@@ -832,6 +843,9 @@ mdreadv(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 			Min(nblocks,
 				RELSEG_SIZE - (blocknum % ((BlockNumber) RELSEG_SIZE)));
 		nblocks_this_segment = Min(nblocks_this_segment, lengthof(iov));
+
+		if (nblocks_this_segment != nblocks)
+			elog(ERROR, "read crossing segment boundary");
 
 		iovcnt = buffers_to_iovec(iov, buffers, nblocks_this_segment);
 		size_this_segment = nblocks_this_segment * BLCKSZ;
@@ -955,6 +969,9 @@ mdwritev(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 			Min(nblocks,
 				RELSEG_SIZE - (blocknum % ((BlockNumber) RELSEG_SIZE)));
 		nblocks_this_segment = Min(nblocks_this_segment, lengthof(iov));
+
+		if (nblocks_this_segment != nblocks)
+			elog(ERROR, "write crossing segment boundary");
 
 		iovcnt = buffers_to_iovec(iov, (void **) buffers, nblocks_this_segment);
 		size_this_segment = nblocks_this_segment * BLCKSZ;

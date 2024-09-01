@@ -88,6 +88,8 @@ typedef struct f_smgr
 									BlockNumber blocknum, int nblocks, bool skipFsync);
 	bool		(*smgr_prefetch) (SMgrRelation reln, ForkNumber forknum,
 								  BlockNumber blocknum, int nblocks);
+	uint32		(*smgr_maxcombine) (SMgrRelation reln, ForkNumber forknum,
+									BlockNumber blocknum);
 	void		(*smgr_readv) (SMgrRelation reln, ForkNumber forknum,
 							   BlockNumber blocknum,
 							   void **buffers, BlockNumber nblocks);
@@ -117,6 +119,7 @@ static const f_smgr smgrsw[] = {
 		.smgr_extend = mdextend,
 		.smgr_zeroextend = mdzeroextend,
 		.smgr_prefetch = mdprefetch,
+		.smgr_maxcombine = mdmaxcombine,
 		.smgr_readv = mdreadv,
 		.smgr_writev = mdwritev,
 		.smgr_writeback = mdwriteback,
@@ -586,6 +589,19 @@ smgrprefetch(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 			 int nblocks)
 {
 	return smgrsw[reln->smgr_which].smgr_prefetch(reln, forknum, blocknum, nblocks);
+}
+
+/*
+ * smgrmaxcombine() - Return the maximum number of total blocks that can be
+ *				 combined with an IO starting at blocknum.
+ *
+ * The returned value includes the io for blocknum itself.
+ */
+uint32
+smgrmaxcombine(SMgrRelation reln, ForkNumber forknum,
+			   BlockNumber blocknum)
+{
+	return smgrsw[reln->smgr_which].smgr_maxcombine(reln, forknum, blocknum);
 }
 
 /*
