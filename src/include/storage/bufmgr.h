@@ -117,6 +117,8 @@ typedef struct BufferManagerRelation
 #define READ_BUFFERS_ZERO_ON_ERROR (1 << 0)
 /* Call smgrprefetch() if I/O necessary. */
 #define READ_BUFFERS_ISSUE_ADVICE (1 << 1)
+/* caller will issue more io, don't submit */
+#define READ_BUFFERS_MORE_MORE_MORE (1 << 2)
 
 /*
  * FIXME: PgAioReturn is defined in aio.h. It'd be much better if we didn't

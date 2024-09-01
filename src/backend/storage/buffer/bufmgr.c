@@ -1638,7 +1638,8 @@ AsyncReadBuffers(ReadBuffersOperation *operation,
 
 	if (did_start_io_overall)
 	{
-		pgaio_submit_staged();
+		if (!(flags & READ_BUFFERS_MORE_MORE_MORE))
+			pgaio_submit_staged();
 		return true;
 	}
 	else
