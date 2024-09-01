@@ -262,6 +262,16 @@ extern const char *pgaio_io_get_op_name(PgAioHandle *ioh);
 extern const char *pgaio_io_get_state_name(PgAioHandle *ioh);
 
 
+
+/* These functions are just for use in tests, from within injection points */
+#ifdef USE_INJECTION_POINTS
+
+extern PgAioHandle *pgaio_inj_io_get(void);
+
+#endif
+
+
+
 /* Declarations for the tables of function pointers exposed by each IO method. */
 extern const IoMethodOps pgaio_sync_ops;
 extern const IoMethodOps pgaio_worker_ops;

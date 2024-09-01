@@ -1,0 +1,40 @@
+SELECT count(*) FROM tbl_a WHERE ctid = '(1, 1)';
+ count 
+-------
+     1
+(1 row)
+
+SELECT corrupt_rel_block('tbl_a', 1);
+ corrupt_rel_block 
+-------------------
+ 
+(1 row)
+
+-- FIXME: Should report the error
+SELECT redact($$
+  SELECT read_corrupt_rel_block('tbl_a', 1);
+$$);
+ redact 
+--------
+ t
+(1 row)
+
+-- verify the error is reported
+SELECT redact($$
+  SELECT count(*) FROM tbl_a WHERE ctid = '(1, 1)';
+$$);
+NOTICE:  wrapped error: invalid page in block 2 of relation base/<redacted>
+ redact 
+--------
+ f
+(1 row)
+
+SELECT redact($$
+  SELECT count(*) FROM tbl_a;
+$$);
+NOTICE:  wrapped error: invalid page in block 2 of relation base/<redacted>
+ redact 
+--------
+ f
+(1 row)
+

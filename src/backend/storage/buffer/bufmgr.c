@@ -514,7 +514,6 @@ static void UnpinBufferNoOwner(BufferDesc *buf);
 static void BufferSync(int flags);
 static uint32 WaitBufHdrUnlocked(BufferDesc *buf);
 static void WaitIO(BufferDesc *buf);
-static bool StartBufferIO(BufferDesc *buf, bool forInput, bool nowait);
 static void TerminateBufferIO(BufferDesc *buf, bool clear_dirty,
 							  uint32 set_flag_bits, bool forget_owner,
 							  bool syncio);
@@ -6095,7 +6094,7 @@ WaitIO(BufferDesc *buf)
  * find out if they can perform the I/O as part of a larger operation, without
  * waiting for the answer or distinguishing the reasons why not.
  */
-static bool
+bool
 StartBufferIO(BufferDesc *buf, bool forInput, bool nowait)
 {
 	uint32		buf_state;

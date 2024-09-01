@@ -1,0 +1,148 @@
+-----
+-- IO handles
+----
+-- leak warning: implicit xact
+SELECT handle_get();
+WARNING:  leaked AIO handle
+ handle_get 
+------------
+ 
+(1 row)
+
+-- leak warning: explicit xact
+BEGIN; SELECT handle_get(); COMMIT;
+WARNING:  leaked AIO handle
+ handle_get 
+------------
+ 
+(1 row)
+
+-- leak warning + error: released in different command (thus resowner)
+BEGIN; SELECT handle_get(); SELECT handle_release_last(); COMMIT;
+WARNING:  leaked AIO handle
+ handle_get 
+------------
+ 
+(1 row)
+
+ERROR:  release in unexpected state
+-- no leak, same command
+BEGIN; SELECT handle_get() UNION ALL SELECT handle_release_last(); COMMIT;
+ handle_get 
+------------
+ 
+ 
+(2 rows)
+
+-- leak warning: subtrans
+BEGIN; SAVEPOINT foo; SELECT handle_get(); COMMIT;
+WARNING:  leaked AIO handle
+ handle_get 
+------------
+ 
+(1 row)
+
+-- normal handle use
+SELECT handle_get_release();
+ handle_get_release 
+--------------------
+ 
+(1 row)
+
+-- should error out, API violation
+SELECT handle_get_twice();
+ERROR:  API violation: Only one IO can be handed out
+-- recover after error in implicit xact
+SELECT handle_get_and_error(); SELECT handle_get_release();
+ERROR:  as you command
+ handle_get_release 
+--------------------
+ 
+(1 row)
+
+-- recover after error in explicit xact
+BEGIN; SELECT handle_get_and_error(); ROLLBACK; SELECT handle_get_release();
+ERROR:  as you command
+ handle_get_release 
+--------------------
+ 
+(1 row)
+
+-- recover after error in subtrans
+BEGIN; SAVEPOINT foo; SELECT handle_get_and_error(); ROLLBACK TO SAVEPOINT foo; SELECT handle_get_release(); ROLLBACK;
+ERROR:  as you command
+ handle_get_release 
+--------------------
+ 
+(1 row)
+
+-----
+-- Bounce Buffers handles
+----
+-- leak warning: implicit xact
+SELECT bb_get();
+WARNING:  leaked AIO bounce buffer
+ bb_get 
+--------
+ 
+(1 row)
+
+-- leak warning: explicit xact
+BEGIN; SELECT bb_get(); COMMIT;
+WARNING:  leaked AIO bounce buffer
+ bb_get 
+--------
+ 
+(1 row)
+
+-- missing leak warning: we should warn at command boundaries, not xact boundaries
+BEGIN; SELECT bb_get(); SELECT bb_release_last(); COMMIT;
+WARNING:  leaked AIO bounce buffer
+ bb_get 
+--------
+ 
+(1 row)
+
+ERROR:  can only release handed out BB
+-- leak warning: subtrans
+BEGIN; SAVEPOINT foo; SELECT bb_get(); COMMIT;
+WARNING:  leaked AIO bounce buffer
+ bb_get 
+--------
+ 
+(1 row)
+
+-- normal bb use
+SELECT bb_get_release();
+ bb_get_release 
+----------------
+ 
+(1 row)
+
+-- should error out, API violation
+SELECT bb_get_twice();
+ERROR:  can only hand out one BB
+-- recover after error in implicit xact
+SELECT bb_get_and_error(); SELECT bb_get_release();
+ERROR:  as you command
+ bb_get_release 
+----------------
+ 
+(1 row)
+
+-- recover after error in explicit xact
+BEGIN; SELECT bb_get_and_error(); ROLLBACK; SELECT bb_get_release();
+ERROR:  as you command
+ bb_get_release 
+----------------
+ 
+(1 row)
+
+-- recover after error in subtrans
+BEGIN; SAVEPOINT foo; SELECT bb_get_and_error(); ROLLBACK TO SAVEPOINT foo; SELECT bb_get_release(); ROLLBACK;
+ERROR:  as you command
+ bb_get_release 
+----------------
+ 
+(1 row)
+

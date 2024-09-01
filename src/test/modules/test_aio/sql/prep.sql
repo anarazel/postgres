@@ -1,0 +1,9 @@
+CREATE EXTENSION test_aio;
+
+CREATE TABLE tbl_a(data int not null);
+CREATE TABLE tbl_b(data int not null);
+
+INSERT INTO tbl_a SELECT generate_series(1, 10000);
+INSERT INTO tbl_b SELECT generate_series(1, 10000);
+SELECT grow_rel('tbl_a', 500);
+SELECT grow_rel('tbl_b', 550);
