@@ -841,6 +841,12 @@
 
 #io_method = sync			# (change requires restart)
 
+#io_max_concurrency = 32		# Max number of IOs that may be in
+					# flight at the same time in one backend
+					# (change requires restart)
+#io_bounce_buffers = -1			# -1 sets based on shared_buffers
+					# (change requires restart)
+
 
 #------------------------------------------------------------------------------
 # CUSTOMIZED OPTIONS

@@ -191,6 +191,9 @@ ABI_compatibility:
 
 Section: ClassName - WaitEventIO
 
+AIO_SUBMIT	"Waiting for AIO submission."
+AIO_DRAIN	"Waiting for IOs to finish."
+AIO_COMPLETION	"Waiting for completion callback."
 BASEBACKUP_READ	"Waiting for base backup to read from a file."
 BASEBACKUP_SYNC	"Waiting for data written by a base backup to reach durable storage."
 BASEBACKUP_WRITE	"Waiting for base backup to write to a file."

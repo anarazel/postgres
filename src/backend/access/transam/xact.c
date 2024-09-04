@@ -52,6 +52,7 @@
 #include "replication/origin.h"
 #include "replication/snapbuild.h"
 #include "replication/syncrep.h"
+#include "storage/aio.h"
 #include "storage/condition_variable.h"
 #include "storage/fd.h"
 #include "storage/lmgr.h"
@@ -2462,6 +2463,8 @@ CommitTransaction(void)
 	AtEOXact_LogicalRepWorkers(true);
 	pgstat_report_xact_timestamp(0);
 
+	pgaio_at_xact_end( /* is_subxact = */ false, /* is_commit = */ true);
+
 	ResourceOwnerDelete(TopTransactionResourceOwner);
 	s->curTransactionOwner = NULL;
 	CurTransactionResourceOwner = NULL;
@@ -2975,6 +2978,8 @@ AbortTransaction(void)
 		AtEOXact_LogicalRepWorkers(false);
 		pgstat_report_xact_timestamp(0);
 	}
+
+	pgaio_at_xact_end( /* is_subxact = */ false, /* is_commit = */ false);
 
 	/*
 	 * State remains TRANS_ABORT until CleanupTransaction().
@@ -5185,6 +5190,8 @@ CommitSubTransaction(void)
 	AtEOSubXact_PgStat(true, s->nestingLevel);
 	AtSubCommit_Snapshot(s->nestingLevel);
 
+	pgaio_at_xact_end( /* is_subxact = */ true, /* is_commit = */ true);
+
 	/*
 	 * We need to restore the upper transaction's read-only state, in case the
 	 * upper is read-write while the child is read-only; GUC will incorrectly
@@ -5349,6 +5356,8 @@ AbortSubTransaction(void)
 		AtEOSubXact_PgStat(false, s->nestingLevel);
 		AtSubAbort_Snapshot(s->nestingLevel);
 	}
+
+	pgaio_at_xact_end( /* is_subxact = */ true, /* is_commit = */ false);
 
 	/*
 	 * Restore the upper transaction's read-only state, too.  This should be

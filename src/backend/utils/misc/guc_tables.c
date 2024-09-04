@@ -3202,6 +3202,31 @@ struct config_int ConfigureNamesInt[] =
 	},
 
 	{
+		{"io_max_concurrency",
+			PGC_POSTMASTER,
+			RESOURCES_ASYNCHRONOUS,
+			gettext_noop("Number of IOs that may be in flight in one backend."),
+			NULL,
+		},
+		&io_max_concurrency,
+		-1, -1, 1024,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"io_bounce_buffers",
+			PGC_POSTMASTER,
+			RESOURCES_ASYNCHRONOUS,
+			gettext_noop("Number of IO Bounce Buffers reserved for each backend."),
+			NULL,
+			GUC_UNIT_BLOCKS
+		},
+		&io_bounce_buffers,
+		-1, -1, 4096,
+		NULL, NULL, NULL
+	},
+
+	{
 		{"backend_flush_after", PGC_USERSET, RESOURCES_ASYNCHRONOUS,
 			gettext_noop("Number of pages after which previously performed writes are flushed to disk."),
 			NULL,
