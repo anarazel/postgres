@@ -265,6 +265,9 @@ extern const char *pgaio_io_get_state_name(PgAioHandle *ioh);
 /* Declarations for the tables of function pointers exposed by each IO method. */
 extern const IoMethodOps pgaio_sync_ops;
 extern const IoMethodOps pgaio_worker_ops;
+#ifdef USE_LIBURING
+extern const IoMethodOps pgaio_uring_ops;
+#endif
 
 extern const IoMethodOps *pgaio_impl;
 extern PgAioCtl *aio_ctl;

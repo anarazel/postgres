@@ -2116,6 +2116,7 @@ PgAioReturn
 PgAioSubjectData
 PgAioSubjectID
 PgAioSubjectInfo
+PgAioUringContext
 PgArchData
 PgBackendGSSStatus
 PgBackendSSLStatus

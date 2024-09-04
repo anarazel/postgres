@@ -333,6 +333,7 @@ typedef enum IoMethod
 {
 	IOMETHOD_SYNC = 0,
 	IOMETHOD_WORKER,
+	IOMETHOD_IO_URING,
 } IoMethod;
 
 
