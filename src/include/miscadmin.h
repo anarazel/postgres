@@ -352,6 +352,7 @@ typedef enum BackendType
 	B_ARCHIVER,
 	B_BG_WRITER,
 	B_CHECKPOINTER,
+	B_IO_WORKER,
 	B_STARTUP,
 	B_WAL_RECEIVER,
 	B_WAL_SUMMARIZER,
@@ -380,6 +381,7 @@ extern PGDLLIMPORT BackendType MyBackendType;
 #define AmWalReceiverProcess()		(MyBackendType == B_WAL_RECEIVER)
 #define AmWalSummarizerProcess()	(MyBackendType == B_WAL_SUMMARIZER)
 #define AmWalWriterProcess()		(MyBackendType == B_WAL_WRITER)
+#define AmIoWorkerProcess()			(MyBackendType == B_IO_WORKER)
 
 extern const char *GetBackendTypeDesc(BackendType backendType);
 

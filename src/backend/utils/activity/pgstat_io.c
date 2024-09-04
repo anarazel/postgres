@@ -353,6 +353,7 @@ pgstat_tracks_io_bktype(BackendType bktype)
 	{
 		case B_INVALID:
 		case B_ARCHIVER:
+		case B_IO_WORKER:
 		case B_LOGGER:
 		case B_WAL_RECEIVER:
 		case B_WAL_WRITER:

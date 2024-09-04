@@ -293,6 +293,9 @@ GetBackendTypeDesc(BackendType backendType)
 		case B_CHECKPOINTER:
 			backendDesc = "checkpointer";
 			break;
+		case B_IO_WORKER:
+			backendDesc = "io worker";
+			break;
 		case B_LOGGER:
 			backendDesc = "logger";
 			break;

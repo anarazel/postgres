@@ -6,5 +6,6 @@ backend_sources += files(
   'aio_io.c',
   'aio_subject.c',
   'method_sync.c',
+  'method_worker.c',
   'read_stream.c',
 )

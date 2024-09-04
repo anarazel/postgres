@@ -840,6 +840,7 @@
 #------------------------------------------------------------------------------
 
 #io_method = sync			# (change requires restart)
+#io_workers = 3				# 1-32;
 
 #io_max_concurrency = 32		# Max number of IOs that may be in
 					# flight at the same time in one backend

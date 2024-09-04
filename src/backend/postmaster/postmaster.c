@@ -113,6 +113,7 @@
 #include "replication/walsender.h"
 #include "storage/aio_init.h"
 #include "storage/fd.h"
+#include "storage/io_worker.h"
 #include "storage/ipc.h"
 #include "storage/pmsignal.h"
 #include "storage/proc.h"
@@ -321,6 +322,7 @@ typedef enum
 								 * ckpt */
 	PM_SHUTDOWN_2,				/* waiting for archiver and walsenders to
 								 * finish */
+	PM_SHUTDOWN_IO,				/* waiting for io workers to exit */
 	PM_WAIT_DEAD_END,			/* waiting for dead_end children to exit */
 	PM_NO_CHILDREN,				/* all important children have exited */
 } PMState;
@@ -382,6 +384,10 @@ bool		LoadedSSL = false;
 static DNSServiceRef bonjour_sdref = NULL;
 #endif
 
+/* State for IO worker management. */
+static int	io_worker_count = 0;
+static pid_t io_worker_pids[MAX_IO_WORKERS];
+
 /*
  * postmaster.c - function prototypes
  */
@@ -420,6 +426,9 @@ static int	CountChildren(int target);
 static Backend *assign_backendlist_entry(void);
 static void LaunchMissingBackgroundProcesses(void);
 static void maybe_start_bgworkers(void);
+static bool maybe_reap_io_worker(int pid);
+static void maybe_adjust_io_workers(void);
+static void signal_io_workers(int signal);
 static bool CreateOptsFile(int argc, char *argv[], char *fullprogname);
 static pid_t StartChildProcess(BackendType type);
 static void StartAutovacuumWorker(void);
@@ -1339,6 +1348,11 @@ PostmasterMain(int argc, char *argv[])
 	 */
 	AddToDataDirLockFile(LOCK_FILE_LINE_PM_STATUS, PM_STATUS_STARTING);
 
+	pmState = PM_STARTUP;
+
+	/* Make sure we can perform I/O while starting up. */
+	maybe_adjust_io_workers();
+
 	/* Start bgwriter and checkpointer so they can help with recovery */
 	if (CheckpointerPID == 0)
 		CheckpointerPID = StartChildProcess(B_CHECKPOINTER);
@@ -1351,7 +1365,6 @@ PostmasterMain(int argc, char *argv[])
 	StartupPID = StartChildProcess(B_STARTUP);
 	Assert(StartupPID != 0);
 	StartupStatus = STARTUP_RUNNING;
-	pmState = PM_STARTUP;
 
 	/* Some workers may be scheduled to start now */
 	maybe_start_bgworkers();
@@ -2000,6 +2013,7 @@ process_pm_reload_request(void)
 			signal_child(SysLoggerPID, SIGHUP);
 		if (SlotSyncWorkerPID != 0)
 			signal_child(SlotSyncWorkerPID, SIGHUP);
+		signal_io_workers(SIGHUP);
 
 		/* Reload authentication config files too */
 		if (!load_hba())
@@ -2532,6 +2546,22 @@ process_pm_child_exit(void)
 			}
 		}
 
+		/* Was it an IO worker? */
+		if (maybe_reap_io_worker(pid))
+		{
+			if (!EXIT_STATUS_0(exitstatus) && !EXIT_STATUS_1(exitstatus))
+				HandleChildCrash(pid, exitstatus, _("io worker"));
+
+			maybe_adjust_io_workers();
+
+			if (io_worker_count == 0 &&
+				pmState >= PM_SHUTDOWN_IO)
+			{
+				pmState = PM_WAIT_DEAD_END;
+			}
+			continue;
+		}
+
 		/*
 		 * We don't know anything about this child process.  That's highly
 		 * unexpected, as we do track all the child processes that we fork.
@@ -2769,6 +2799,9 @@ HandleChildCrash(int pid, int exitstatus, const char *procname)
 		if (SlotSyncWorkerPID != 0)
 			sigquit_child(SlotSyncWorkerPID);
 
+		/* Take care of io workers too */
+		signal_io_workers(SIGQUIT);
+
 		/* We do NOT restart the syslogger */
 	}
 
@@ -2992,10 +3025,11 @@ PostmasterStateMachine(void)
 					FatalError = true;
 					pmState = PM_WAIT_DEAD_END;
 
-					/* Kill the walsenders and archiver too */
+					/* Kill walsenders, archiver and aio workers too */
 					SignalChildren(SIGQUIT);
 					if (PgArchPID != 0)
 						signal_child(PgArchPID, SIGQUIT);
+					signal_io_workers(SIGQUIT);
 				}
 			}
 		}
@@ -3005,14 +3039,24 @@ PostmasterStateMachine(void)
 	{
 		/*
 		 * PM_SHUTDOWN_2 state ends when there's no other children than
-		 * dead_end children left. There shouldn't be any regular backends
-		 * left by now anyway; what we're really waiting for is walsenders and
-		 * archiver.
+		 * dead_end children and aio workers left. There shouldn't be any
+		 * regular backends left by now anyway; what we're really waiting for
+		 * is walsenders and archiver.
 		 */
 		if (PgArchPID == 0 && CountChildren(BACKEND_TYPE_ALL) == 0)
 		{
-			pmState = PM_WAIT_DEAD_END;
+			pmState = PM_SHUTDOWN_IO;
+			signal_io_workers(SIGUSR2);
 		}
+	}
+
+	if (pmState == PM_SHUTDOWN_IO)
+	{
+		/*
+		 * PM_SHUTDOWN_IO state ends when there's only dead_end children left.
+		 */
+		if (io_worker_count == 0)
+			pmState = PM_WAIT_DEAD_END;
 	}
 
 	if (pmState == PM_WAIT_DEAD_END)
@@ -3022,17 +3066,22 @@ PostmasterStateMachine(void)
 
 		/*
 		 * PM_WAIT_DEAD_END state ends when the BackendList is entirely empty
-		 * (ie, no dead_end children remain), and the archiver is gone too.
+		 * (ie, no dead_end children remain), and the archiver and aio workers
+		 * are all gone too.
 		 *
-		 * The reason we wait for those two is to protect them against a new
+		 * We need to wait for those because we might have transitioned
+		 * directly to PM_WAIT_DEAD_END due to immediate shutdown or fatal
+		 * error.  Note that they have already been sent appropriate shutdown
+		 * signals, either during a normal state transition leading up to
+		 * PM_WAIT_DEAD_END, or during FatalError processing.
+		 *
+		 * The reason we wait for those is to protect them against a new
 		 * postmaster starting conflicting subprocesses; this isn't an
 		 * ironclad protection, but it at least helps in the
-		 * shutdown-and-immediately-restart scenario.  Note that they have
-		 * already been sent appropriate shutdown signals, either during a
-		 * normal state transition leading up to PM_WAIT_DEAD_END, or during
-		 * FatalError processing.
+		 * shutdown-and-immediately-restart scenario.
 		 */
-		if (dlist_is_empty(&BackendList) && PgArchPID == 0)
+		if (dlist_is_empty(&BackendList) && io_worker_count == 0
+			&& PgArchPID == 0)
 		{
 			/* These other guys should be dead already */
 			Assert(StartupPID == 0);
@@ -3125,10 +3174,14 @@ PostmasterStateMachine(void)
 		/* re-create shared memory and semaphores */
 		CreateSharedMemoryAndSemaphores();
 
+		pmState = PM_STARTUP;
+
+		/* Make sure we can perform I/O while starting up. */
+		maybe_adjust_io_workers();
+
 		StartupPID = StartChildProcess(B_STARTUP);
 		Assert(StartupPID != 0);
 		StartupStatus = STARTUP_RUNNING;
-		pmState = PM_STARTUP;
 		/* crash recovery started, reset SIGKILL flag */
 		AbortStartTime = 0;
 
@@ -3380,6 +3433,7 @@ TerminateChildren(int signal)
 		signal_child(PgArchPID, signal);
 	if (SlotSyncWorkerPID != 0)
 		signal_child(SlotSyncWorkerPID, signal);
+	signal_io_workers(signal);
 }
 
 /*
@@ -3961,6 +4015,7 @@ bgworker_should_start_now(BgWorkerStartTime start_time)
 	{
 		case PM_NO_CHILDREN:
 		case PM_WAIT_DEAD_END:
+		case PM_SHUTDOWN_IO:
 		case PM_SHUTDOWN_2:
 		case PM_SHUTDOWN:
 		case PM_WAIT_BACKENDS:
@@ -4153,6 +4208,109 @@ maybe_start_bgworkers(void)
 		}
 	}
 }
+
+static bool
+maybe_reap_io_worker(int pid)
+{
+	for (int id = 0; id < MAX_IO_WORKERS; ++id)
+	{
+		if (io_worker_pids[id] == pid)
+		{
+			--io_worker_count;
+			io_worker_pids[id] = 0;
+			return true;
+		}
+	}
+	return false;
+}
+
+static void
+maybe_adjust_io_workers(void)
+{
+	/* ATODO: This will need to check if io_method == worker */
+
+	/*
+	 * If we're in final shutting down state, then we're just waiting for all
+	 * processes to exit.
+	 */
+	if (pmState >= PM_SHUTDOWN_IO)
+		return;
+
+	/* Don't start new workers during an immediate shutdown either. */
+	if (Shutdown >= ImmediateShutdown)
+		return;
+
+	/*
+	 * Don't start new workers if we're in the shutdown phase of a crash
+	 * restart. But we *do* need to start if we're already starting up again.
+	 */
+	if (FatalError && pmState >= PM_STOP_BACKENDS)
+		return;
+
+	/* Not enough running? */
+	while (io_worker_count < io_workers)
+	{
+		int			pid;
+		int			id;
+
+		/* Find the lowest unused IO worker ID. */
+
+		/*
+		 * AFIXME: This logic doesn't work right now, the ids aren't
+		 * transported to workers anymore.
+		 */
+		for (id = 0; id < MAX_IO_WORKERS; ++id)
+		{
+			if (io_worker_pids[id] == 0)
+				break;
+		}
+		if (id == MAX_IO_WORKERS)
+			elog(ERROR, "could not find a free IO worker ID");
+
+		Assert(pmState < PM_SHUTDOWN_IO);
+
+		/* Try to launch one. */
+		pid = StartChildProcess(B_IO_WORKER);
+		if (pid > 0)
+		{
+			io_worker_pids[id] = pid;
+			++io_worker_count;
+		}
+		else
+			break;				/* XXX try again soon? */
+	}
+
+	/* Too many running? */
+	if (io_worker_count > io_workers)
+	{
+		/* Ask the highest used IO worker ID to exit. */
+		for (int id = MAX_IO_WORKERS - 1; id >= 0; --id)
+		{
+			if (io_worker_pids[id] != 0)
+			{
+				kill(io_worker_pids[id], SIGUSR2);
+				break;
+			}
+		}
+	}
+}
+
+static void
+signal_io_workers(int signal)
+{
+	for (int i = 0; i < MAX_IO_WORKERS; ++i)
+		if (io_worker_pids[i] != 0)
+			signal_child(io_worker_pids[i], signal);
+}
+
+void
+assign_io_workers(int newval, void *extra)
+{
+	io_workers = newval;
+	if (!IsUnderPostmaster && pmState > PM_INIT)
+		maybe_adjust_io_workers();
+}
+
 
 /*
  * When a backend asks to be notified about worker state changes, we

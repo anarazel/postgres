@@ -23,4 +23,6 @@ extern void pgaio_postmaster_init(void);
 extern void pgaio_postmaster_child_init_local(void);
 extern void pgaio_postmaster_child_init(void);
 
+extern bool pgaio_workers_enabled(void);
+
 #endif							/* AIO_INIT_H */

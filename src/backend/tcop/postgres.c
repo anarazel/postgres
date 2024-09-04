@@ -3318,6 +3318,8 @@ ProcessInterrupts(void)
 					(errcode(ERRCODE_ADMIN_SHUTDOWN),
 					 errmsg("terminating background worker \"%s\" due to administrator command",
 							MyBgworkerEntry->bgw_type)));
+		else if (AmIoWorkerProcess())
+			proc_exit(0);
 		else
 			ereport(FATAL,
 					(errcode(ERRCODE_ADMIN_SHUTDOWN),

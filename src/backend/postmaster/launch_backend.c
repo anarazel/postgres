@@ -55,6 +55,7 @@
 #include "replication/walreceiver.h"
 #include "storage/dsm.h"
 #include "storage/fd.h"
+#include "storage/io_worker.h"
 #include "storage/ipc.h"
 #include "storage/pg_shmem.h"
 #include "storage/pmsignal.h"
@@ -199,6 +200,7 @@ static child_process_kind child_process_kinds[] = {
 	[B_ARCHIVER] = {"archiver", PgArchiverMain, true},
 	[B_BG_WRITER] = {"bgwriter", BackgroundWriterMain, true},
 	[B_CHECKPOINTER] = {"checkpointer", CheckpointerMain, true},
+	[B_IO_WORKER] = {"io_worker", IoWorkerMain, true},
 	[B_STARTUP] = {"startup", StartupProcessMain, true},
 	[B_WAL_RECEIVER] = {"wal_receiver", WalReceiverMain, true},
 	[B_WAL_SUMMARIZER] = {"wal_summarizer", WalSummarizerMain, true},
