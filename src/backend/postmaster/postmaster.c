@@ -4227,7 +4227,8 @@ maybe_reap_io_worker(int pid)
 static void
 maybe_adjust_io_workers(void)
 {
-	/* ATODO: This will need to check if io_method == worker */
+	if (!pgaio_workers_enabled())
+		return;
 
 	/*
 	 * If we're in final shutting down state, then we're just waiting for all

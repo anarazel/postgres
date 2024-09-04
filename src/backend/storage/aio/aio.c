@@ -36,6 +36,7 @@ static void pgaio_bounce_buffer_wait_for_free(void);
 /* Options for io_method. */
 const struct config_enum_entry io_method_options[] = {
 	{"sync", IOMETHOD_SYNC, false},
+	{"worker", IOMETHOD_WORKER, false},
 	{NULL, 0, false}
 };
 
@@ -53,6 +54,7 @@ PgAioPerBackend *my_aio;
 
 static const IoMethodOps *pgaio_ops_table[] = {
 	[IOMETHOD_SYNC] = &pgaio_sync_ops,
+	[IOMETHOD_WORKER] = &pgaio_worker_ops,
 };
 
 
