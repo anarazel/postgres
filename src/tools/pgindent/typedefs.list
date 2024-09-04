@@ -1173,6 +1173,7 @@ IOContext
 IOFuncSelector
 IOObject
 IOOp
+IOQueue
 IO_STATUS_BLOCK
 IPCompareMethod
 ITEM
@@ -2961,6 +2962,7 @@ TocEntry
 TokenAuxData
 TokenizedAuthLine
 TrackItem
+TrackedIO
 TransApplyAction
 TransInvalidationInfo
 TransState

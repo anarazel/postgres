@@ -13,6 +13,7 @@ OBJS = \
 	aio_init.o \
 	aio_io.o \
 	aio_subject.o \
+	io_queue.o \
 	method_io_uring.o \
 	method_sync.o \
 	method_worker.o \
