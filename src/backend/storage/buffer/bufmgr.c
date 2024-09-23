@@ -5434,6 +5434,47 @@ IsBufferCleanupOK(Buffer buffer)
 	return false;
 }
 
+/*
+ * BufferLockHeldByMe - does the backend have the buffer locked?
+ *
+ * This likely should only be used for asserts etc.
+ *
+ * Note that this can only be called for non-temp buffers - there is no
+ * correct value to return for temporary buffers. One might think that just
+ * returning true for temp buffers would work, but the caller might assert
+ * that a lock is *not* held.
+ */
+bool
+BufferLockHeldByMe(Buffer buffer, int mode)
+{
+	BufferDesc *buf;
+	LWLockMode	lwmode;
+
+	/*
+	 * Can't hold a lock without a pin, there never should be uncertainty
+	 * about having a pin.
+	 */
+	Assert(BufferIsPinned(buffer));
+
+	/* there'd be no correct value to return */
+	Assert(!BufferIsLocal(buffer));
+
+	buf = GetBufferDescriptor(buffer - 1);
+
+	if (mode == BUFFER_LOCK_EXCLUSIVE)
+		lwmode = LW_EXCLUSIVE;
+	else if (mode == BUFFER_LOCK_SHARE)
+		lwmode = LW_SHARED;
+	else
+	{
+		Assert(false);
+		pg_unreachable();
+		lwmode = LW_EXCLUSIVE;	/* assuage compiler */
+	}
+
+	return LWLockHeldByMeInMode(BufferDescriptorGetContentLock(buf), lwmode);
+}
+
 
 /*
  *	Functions for buffer I/O handling
