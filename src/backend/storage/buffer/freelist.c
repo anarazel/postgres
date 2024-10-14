@@ -40,12 +40,6 @@ typedef struct
 	pg_atomic_uint32 nextVictimBuffer;
 
 	int			firstFreeBuffer;	/* Head of list of unused buffers */
-	int			lastFreeBuffer; /* Tail of list of unused buffers */
-
-	/*
-	 * NOTE: lastFreeBuffer is undefined when firstFreeBuffer is -1 (that is,
-	 * when the list is empty)
-	 */
 
 	/*
 	 * Statistics.  These counters should be wide enough that they can't
@@ -371,8 +365,6 @@ StrategyFreeBuffer(BufferDesc *buf)
 	if (buf->freeNext == FREENEXT_NOT_IN_LIST)
 	{
 		buf->freeNext = StrategyControl->firstFreeBuffer;
-		if (buf->freeNext < 0)
-			StrategyControl->lastFreeBuffer = buf->buf_id;
 		StrategyControl->firstFreeBuffer = buf->buf_id;
 	}
 
@@ -509,7 +501,6 @@ StrategyInitialize(bool init)
 		 * assume it was previously set up by BufferManagerShmemInit().
 		 */
 		StrategyControl->firstFreeBuffer = 0;
-		StrategyControl->lastFreeBuffer = NBuffers - 1;
 
 		/* Initialize the clock sweep pointer */
 		pg_atomic_init_u32(&StrategyControl->nextVictimBuffer, 0);
