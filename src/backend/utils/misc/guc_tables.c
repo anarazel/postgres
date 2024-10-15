@@ -2079,6 +2079,26 @@ struct config_bool ConfigureNamesBool[] =
 	},
 
 	{
+		{"shared_memory_populate", PGC_POSTMASTER, DEVELOPER_OPTIONS,
+			gettext_noop("frak."),
+			gettext_noop("bar."),
+		},
+		&shared_memory_populate,
+		true,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"partition_freelist", PGC_POSTMASTER, DEVELOPER_OPTIONS,
+			gettext_noop("frak."),
+			gettext_noop("bar."),
+		},
+		&partition_freelist,
+		true,
+		NULL, NULL, NULL
+	},
+
+	{
 		{"sync_replication_slots", PGC_SIGHUP, REPLICATION_STANDBY,
 			gettext_noop("Enables a physical standby to synchronize logical failover replication slots from the primary server."),
 		},

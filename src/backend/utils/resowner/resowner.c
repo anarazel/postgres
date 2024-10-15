@@ -68,13 +68,13 @@ typedef struct ResourceElem
 /*
  * Size of the fixed-size array to hold most-recently remembered resources.
  */
-#define RESOWNER_ARRAY_SIZE 32
+#define RESOWNER_ARRAY_SIZE 64
 
 /*
  * Initially allocated size of a ResourceOwner's hash table.  Must be power of
  * two because we use (capacity - 1) as mask for hashing.
  */
-#define RESOWNER_HASH_INIT_SIZE 64
+#define RESOWNER_HASH_INIT_SIZE 128
 
 /*
  * How many items may be stored in a hash table of given capacity.  When this

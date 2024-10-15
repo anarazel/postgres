@@ -165,7 +165,7 @@ _bt_search(Relation rel, Relation heaprel, BTScanInsert key, Buffer *bufP,
 		 * FIXME: Unfortunately this isn't a usable gating condition, as
 		 * vacuum uses BT_READ and needs the stack.
 		 */
-		if (false && access == BT_WRITE)
+		if (true || access == BT_WRITE)
 		{
 			new_stack = (BTStack) palloc(sizeof(BTStackData));
 			new_stack->bts_blkno = BufferGetBlockNumber(*bufP);
@@ -185,7 +185,7 @@ _bt_search(Relation rel, Relation heaprel, BTScanInsert key, Buffer *bufP,
 		*bufP = _bt_relandgetbuf(rel, *bufP, child, page_access);
 
 		/* okay, all set to move down a level */
-		if (false && access == BT_WRITE)
+		if (true || access == BT_WRITE)
 			stack_in = new_stack;
 	}
 

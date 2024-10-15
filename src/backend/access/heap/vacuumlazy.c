@@ -516,7 +516,7 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 	vac_close_indexes(vacrel->nindexes, vacrel->indrels, NoLock);
 
 	/* Optionally truncate rel */
-	if (should_attempt_truncation(vacrel))
+	if (false && should_attempt_truncation(vacrel))
 		lazy_truncate_heap(vacrel);
 
 	/* Pop the error context stack */

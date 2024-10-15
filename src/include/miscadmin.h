@@ -173,11 +173,14 @@ extern PGDLLIMPORT char *DataDir;
 extern PGDLLIMPORT int data_directory_mode;
 
 extern PGDLLIMPORT int NBuffers;
-extern PGDLLIMPORT bool numa_aware;
 extern PGDLLIMPORT int MaxBackends;
 extern PGDLLIMPORT int MaxConnections;
 extern PGDLLIMPORT int max_worker_processes;
 extern PGDLLIMPORT int max_parallel_workers;
+
+extern PGDLLIMPORT bool numa_aware;
+extern PGDLLIMPORT bool shared_memory_populate;
+extern PGDLLIMPORT bool partition_freelist;
 
 extern PGDLLIMPORT int commit_timestamp_buffers;
 extern PGDLLIMPORT int multixact_member_buffers;

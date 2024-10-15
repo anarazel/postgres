@@ -642,7 +642,8 @@ CreateAnonymousSegment(Size *size)
 		}
 
 		ptr = mmap(NULL, allocsize, PROT_READ | PROT_WRITE,
-				   PG_MMAP_FLAGS | MAP_POPULATE | mmap_flags , -1, 0);
+				   PG_MMAP_FLAGS | ( shared_memory_populate ? MAP_POPULATE : 0) |
+				   mmap_flags , -1, 0);
 		mmap_errno = errno;
 		if (huge_pages == HUGE_PAGES_TRY && ptr == MAP_FAILED)
 			elog(DEBUG1, "mmap(%zu) with MAP_HUGETLB failed, huge pages disabled: %m",
@@ -673,7 +674,7 @@ CreateAnonymousSegment(Size *size)
 		 */
 		allocsize = *size;
 		ptr = mmap(NULL, allocsize, PROT_READ | PROT_WRITE,
-				   PG_MMAP_FLAGS, -1, 0);
+				   PG_MMAP_FLAGS | ( shared_memory_populate ? MAP_POPULATE : 0), -1, 0);
 		mmap_errno = errno;
 	}
 
