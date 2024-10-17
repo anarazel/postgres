@@ -242,7 +242,7 @@ GetLocalVictimBuffer(void)
 		/* Find smgr relation for buffer */
 		oreln = smgropen(BufTagGetRelFileLocator(&bufHdr->tag), MyProcNumber);
 
-		PageSetChecksumInplace(localpage, bufHdr->tag.blockNum);
+		PageSetChecksum(localpage, bufHdr->tag.blockNum);
 
 		io_start = pgstat_prepare_io_time(track_io_timing);
 

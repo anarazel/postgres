@@ -1052,6 +1052,8 @@ XLogCheckBufferNeedsBackup(Buffer buffer)
  * failures. So instead we copy the page and insert the copied data as normal
  * record data.
  *
+ * FIXME: outdated
+ *
  * We only need to do something if page has not yet been full page written in
  * this checkpoint round. The LSN of the inserted wal record is returned if we
  * had to write, InvalidXLogRecPtr otherwise.
@@ -1089,29 +1091,10 @@ XLogSaveBufferForHint(Buffer buffer, bool buffer_std)
 	if (lsn <= RedoRecPtr)
 	{
 		int			flags = 0;
-		PGAlignedBlock copied_buffer;
 		char	   *origdata = (char *) BufferGetBlock(buffer);
 		RelFileLocator rlocator;
 		ForkNumber	forkno;
 		BlockNumber blkno;
-
-		/*
-		 * Copy buffer so we don't have to worry about concurrent hint bit or
-		 * lsn updates. We assume pd_lower/upper cannot be changed without an
-		 * exclusive lock, so the contents bkp are not racy.
-		 */
-		if (buffer_std)
-		{
-			/* Assume we can omit data between pd_lower and pd_upper */
-			Page		page = BufferGetPage(buffer);
-			uint16		lower = ((PageHeader) page)->pd_lower;
-			uint16		upper = ((PageHeader) page)->pd_upper;
-
-			memcpy(copied_buffer.data, origdata, lower);
-			memcpy(copied_buffer.data + upper, origdata + upper, BLCKSZ - upper);
-		}
-		else
-			memcpy(copied_buffer.data, origdata, BLCKSZ);
 
 		XLogBeginInsert();
 
@@ -1119,7 +1102,12 @@ XLogSaveBufferForHint(Buffer buffer, bool buffer_std)
 			flags |= REGBUF_STANDARD;
 
 		BufferGetTag(buffer, &rlocator, &forkno, &blkno);
-		XLogRegisterBlock(0, &rlocator, forkno, blkno, copied_buffer.data, flags);
+
+		/*
+		 * XXX: Should probably be XLogRegisterBuffer(), but assertions make
+		 * that non-viable right now.
+		 */
+		XLogRegisterBlock(0, &rlocator, forkno, blkno, origdata, flags);
 
 		recptr = XLogInsert(RM_XLOG_ID, XLOG_FPI_FOR_HINT);
 	}
