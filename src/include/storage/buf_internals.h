@@ -31,8 +31,8 @@
  * Buffer state is a single 32-bit variable where following data is combined.
  *
  * - 18 bits refcount
- * - 4 bits usage count
- * - 10 bits of flags
+ * - 3 bits usage count
+ * - 11 bits of flags
  *
  * Combining these values allows to perform some operations without locking
  * the buffer header, by modifying them together with a CAS loop.
@@ -40,8 +40,8 @@
  * The definition of buffer state components is below.
  */
 #define BUF_REFCOUNT_BITS 18
-#define BUF_USAGECOUNT_BITS 4
-#define BUF_FLAG_BITS 10
+#define BUF_USAGECOUNT_BITS 3
+#define BUF_FLAG_BITS 11
 
 StaticAssertDecl(BUF_REFCOUNT_BITS + BUF_USAGECOUNT_BITS + BUF_FLAG_BITS == 32,
 				 "buffer bit counts need to equal 32");
@@ -63,6 +63,7 @@ StaticAssertDecl(BUF_REFCOUNT_BITS + BUF_USAGECOUNT_BITS + BUF_FLAG_BITS == 32,
  * Note: BM_TAG_VALID essentially means that there is a buffer hashtable
  * entry associated with the buffer's tag.
  */
+#define BM_SETTING_HINTS		(1U << 21)	/* hint bits are being set */
 #define BM_LOCKED				(1U << 22)	/* buffer header is locked */
 #define BM_DIRTY				(1U << 23)	/* data needs writing */
 #define BM_VALID				(1U << 24)	/* data is valid */
@@ -426,6 +427,7 @@ extern PGDLLIMPORT CkptSortItem *CkptBufferIds;
 /* ResourceOwner callbacks to hold buffer I/Os and pins */
 extern PGDLLIMPORT const ResourceOwnerDesc buffer_io_resowner_desc;
 extern PGDLLIMPORT const ResourceOwnerDesc buffer_pin_resowner_desc;
+extern PGDLLIMPORT const ResourceOwnerDesc buffer_setting_hints_resowner_desc;
 
 /* Convenience wrappers over ResourceOwnerRemember/Forget */
 static inline void
@@ -447,6 +449,18 @@ static inline void
 ResourceOwnerForgetBufferIO(ResourceOwner owner, Buffer buffer)
 {
 	ResourceOwnerForget(owner, Int32GetDatum(buffer), &buffer_io_resowner_desc);
+}
+static inline void
+ResourceOwnerRememberBufferSettingHints(ResourceOwner owner, Buffer buffer)
+{
+	ResourceOwnerRemember(owner, Int32GetDatum(buffer),
+						  &buffer_setting_hints_resowner_desc);
+}
+static inline void
+ResourceOwnerForgetBufferSettingHints(ResourceOwner owner, Buffer buffer)
+{
+	ResourceOwnerForget(owner, Int32GetDatum(buffer),
+						&buffer_setting_hints_resowner_desc);
 }
 
 /*

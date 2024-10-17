@@ -55,10 +55,15 @@ one must hold a pin and an exclusive content lock on the containing buffer.
 This ensures that no one else might see a partially-updated state of the
 tuple while they are doing visibility checks.
 
-4. It is considered OK to update tuple commit status bits (ie, OR the
-values HEAP_XMIN_COMMITTED, HEAP_XMIN_INVALID, HEAP_XMAX_COMMITTED, or
-HEAP_XMAX_INVALID into t_infomask) while holding only a shared lock and
-pin on a buffer.  This is OK because another backend looking at the tuple
+4. It is allowed to update non-critical information on a page ("hint bits")
+while holding only a shared lock and pin on the page, provided that either
+BufferPrepareToSetHintBits() or BufferSetHintBits16() is used.
+
+For example, we update tuple commit status bits this way (i.e. OR the values
+HEAP_XMIN_COMMITTED, HEAP_XMIN_INVALID, HEAP_XMAX_COMMITTED, or
+HEAP_XMAX_INVALID into t_infomask).
+
+This is OK because another backend looking at the tuple
 at about the same time would OR the same bits into the field, so there
 is little or no risk of conflicting update; what's more, if there did
 manage to be a conflict it would merely mean that one bit-update would
@@ -68,6 +73,11 @@ great harm is done if they get reset to zero by conflicting updates.
 Note, however, that a tuple is frozen by setting both HEAP_XMIN_INVALID
 and HEAP_XMIN_COMMITTED; this is a critical update and accordingly requires
 an exclusive buffer lock (and it must also be WAL-logged).
+
+Using BufferSetHintBits16() to set hint bits, or calling
+BufferPrepareToSetHintBits() before setting multiple hint bits, ensures that
+write IO cannot happen at the same time as modifying hint bits. Without that,
+the checksum computed at the start of the write could end up outdated.
 
 5. To physically remove a tuple or compact free space on a page, one
 must hold a pin and an exclusive lock, *and* observe while holding the

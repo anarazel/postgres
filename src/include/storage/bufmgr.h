@@ -296,6 +296,12 @@ extern void LimitAdditionalLocalPins(uint32 *additional_pins);
 
 extern bool EvictUnpinnedBuffer(Buffer buf);
 
+extern bool BufferPrepareToSetHintBits(Buffer buffer);
+extern void BufferFinishSetHintBits(Buffer buffer, bool mark_dirty,
+									bool buffer_std);
+extern bool BufferSetHintBits16(Buffer buffer, uint16 *ptr, uint16 val);
+
+
 /* in buf_init.c */
 extern void BufferManagerShmemInit(void);
 extern Size BufferManagerShmemSize(void);

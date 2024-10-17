@@ -222,6 +222,8 @@ static void ResOwnerReleaseBufferIO(Datum res);
 static char *ResOwnerPrintBufferIO(Datum res);
 static void ResOwnerReleaseBufferPin(Datum res);
 static char *ResOwnerPrintBufferPin(Datum res);
+static void ResOwnerReleaseBufferSettingHints(Datum res);
+static char *ResOwnerPrintBufferSettingHints(Datum res);
 
 const ResourceOwnerDesc buffer_io_resowner_desc =
 {
@@ -239,6 +241,15 @@ const ResourceOwnerDesc buffer_pin_resowner_desc =
 	.release_priority = RELEASE_PRIO_BUFFER_PINS,
 	.ReleaseResource = ResOwnerReleaseBufferPin,
 	.DebugPrint = ResOwnerPrintBufferPin
+};
+
+const ResourceOwnerDesc buffer_setting_hints_resowner_desc =
+{
+	.name = "buffer setting hints",
+	.release_phase = RESOURCE_RELEASE_BEFORE_LOCKS,
+	.release_priority = RELEASE_PRIO_BUFFER_IOS,
+	.ReleaseResource = ResOwnerReleaseBufferSettingHints,
+	.DebugPrint = ResOwnerPrintBufferSettingHints
 };
 
 /*
@@ -1737,7 +1748,8 @@ BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 
 	/* some sanity checks while we hold the buffer header lock */
 	Assert(BUF_STATE_GET_REFCOUNT(victim_buf_state) == 1);
-	Assert(!(victim_buf_state & (BM_TAG_VALID | BM_VALID | BM_DIRTY | BM_IO_IN_PROGRESS)));
+	Assert(!(victim_buf_state & (BM_TAG_VALID | BM_VALID | BM_DIRTY
+								 | BM_IO_IN_PROGRESS | BM_SETTING_HINTS)));
 
 	victim_buf_hdr->tag = newTag;
 
@@ -2092,7 +2104,8 @@ again:
 	buf_state = pg_atomic_read_u32(&buf_hdr->state);
 
 	Assert(BUF_STATE_GET_REFCOUNT(buf_state) == 1);
-	Assert(!(buf_state & (BM_TAG_VALID | BM_VALID | BM_DIRTY)));
+	Assert(!(buf_state & (BM_TAG_VALID | BM_VALID | BM_DIRTY
+						  | BM_IO_IN_PROGRESS | BM_SETTING_HINTS)));
 
 	CheckBufferIsPinnedOnce(buf);
 #endif
@@ -4913,33 +4926,15 @@ IncrBufferRefCount(Buffer buffer)
 }
 
 /*
- * MarkBufferDirtyHint
- *
- *	Mark a buffer dirty for non-critical changes.
- *
- * This is essentially the same as MarkBufferDirty, except:
- *
- * 1. The caller does not write WAL; so if checksums are enabled, we may need
- *	  to write an XLOG_FPI_FOR_HINT WAL record to protect against torn pages.
- * 2. The caller might have only share-lock instead of exclusive-lock on the
- *	  buffer's content lock.
- * 3. This function does not guarantee that the buffer is always marked dirty
- *	  (due to a race condition), so it cannot be used for important changes.
+ * Implementation of MarkBufferDirtyHint(), separate because
+ * BufferSetHintBits16() needs to be able to set hint bits without setting
+ * BM_SETTING_HINTS.
  */
-void
-MarkBufferDirtyHint(Buffer buffer, bool buffer_std)
+static inline void
+MarkBufferDirtyHintImpl(Buffer buffer, bool buffer_std, bool single_hint_write)
 {
 	BufferDesc *bufHdr;
 	Page		page = BufferGetPage(buffer);
-
-	if (!BufferIsValid(buffer))
-		elog(ERROR, "bad buffer ID: %d", buffer);
-
-	if (BufferIsLocal(buffer))
-	{
-		MarkLocalBufferDirty(buffer);
-		return;
-	}
 
 	bufHdr = GetBufferDescriptor(buffer - 1);
 
@@ -5057,6 +5052,35 @@ MarkBufferDirtyHint(Buffer buffer, bool buffer_std)
 				VacuumCostBalance += VacuumCostPageDirty;
 		}
 	}
+}
+
+/*
+ * MarkBufferDirtyHint
+ *
+ *	Mark a buffer dirty for non-critical changes.
+ *
+ * This is essentially the same as MarkBufferDirty, except:
+ *
+ * 1. The caller does not write WAL; so if checksums are enabled, we may need
+ *	  to write an XLOG_FPI_FOR_HINT WAL record to protect against torn pages.
+ * 2. The caller might have only share-lock instead of exclusive-lock on the
+ *	  buffer's content lock.
+ * 3. This function does not guarantee that the buffer is always marked dirty
+ *	  (due to a race condition), so it cannot be used for important changes.
+ */
+void
+MarkBufferDirtyHint(Buffer buffer, bool buffer_std)
+{
+	if (!BufferIsValid(buffer))
+		elog(ERROR, "bad buffer ID: %d", buffer);
+
+	if (BufferIsLocal(buffer))
+	{
+		MarkLocalBufferDirty(buffer);
+		return;
+	}
+
+	MarkBufferDirtyHintImpl(buffer, buffer_std, false);
 }
 
 /*
@@ -5486,7 +5510,8 @@ BufferLockHeldByMe(Buffer buffer, int mode)
  */
 
 /*
- * WaitIO -- Block until the IO_IN_PROGRESS flag on 'buf' is cleared.
+ * WaitIO -- Block until the IO_IN_PROGRESS and SETTING_HINTS flags on 'buf'
+ * are cleared.
  */
 static void
 WaitIO(BufferDesc *buf)
@@ -5497,6 +5522,7 @@ WaitIO(BufferDesc *buf)
 	for (;;)
 	{
 		uint32		buf_state;
+		uint32		wait_event;
 
 		/*
 		 * It may not be necessary to acquire the spinlock to check the flag
@@ -5506,9 +5532,21 @@ WaitIO(BufferDesc *buf)
 		buf_state = LockBufHdr(buf);
 		UnlockBufHdr(buf, buf_state);
 
-		if (!(buf_state & BM_IO_IN_PROGRESS))
+		if (likely((buf_state & (BM_IO_IN_PROGRESS | BM_SETTING_HINTS)) == 0))
 			break;
-		ConditionVariableSleep(cv, WAIT_EVENT_BUFFER_IO);
+		else if (buf_state & BM_IO_IN_PROGRESS)
+		{
+			Assert(!(buf_state & BM_SETTING_HINTS));
+			wait_event = WAIT_EVENT_BUFFER_IO;
+		}
+		else
+		{
+			Assert(buf_state & BM_SETTING_HINTS);
+			Assert(!(buf_state & BM_IO_IN_PROGRESS));
+			wait_event = WAIT_EVENT_BUFFER_SETTING_HINTS;
+		}
+
+		ConditionVariableSleep(cv, wait_event);
 	}
 	ConditionVariableCancelSleep();
 }
@@ -5548,7 +5586,7 @@ StartBufferIO(BufferDesc *buf, bool forInput, bool nowait)
 	{
 		buf_state = LockBufHdr(buf);
 
-		if (!(buf_state & BM_IO_IN_PROGRESS))
+		if (!(buf_state & (BM_IO_IN_PROGRESS | BM_SETTING_HINTS)))
 			break;
 		UnlockBufHdr(buf, buf_state);
 		if (nowait)
@@ -5564,6 +5602,8 @@ StartBufferIO(BufferDesc *buf, bool forInput, bool nowait)
 		UnlockBufHdr(buf, buf_state);
 		return false;
 	}
+
+	Assert(!(buf_state & BM_SETTING_HINTS));
 
 	buf_state |= BM_IO_IN_PROGRESS;
 	UnlockBufHdr(buf, buf_state);
@@ -5603,6 +5643,7 @@ TerminateBufferIO(BufferDesc *buf, bool clear_dirty, uint32 set_flag_bits,
 	buf_state = LockBufHdr(buf);
 
 	Assert(buf_state & BM_IO_IN_PROGRESS);
+	Assert(!(buf_state & BM_SETTING_HINTS));
 
 	buf_state &= ~(BM_IO_IN_PROGRESS | BM_IO_ERROR);
 	if (clear_dirty && !(buf_state & BM_JUST_DIRTIED))
@@ -5639,6 +5680,7 @@ AbortBufferIO(Buffer buffer)
 
 	buf_state = LockBufHdr(buf_hdr);
 	Assert(buf_state & (BM_IO_IN_PROGRESS | BM_TAG_VALID));
+	Assert(!(buf_state & BM_SETTING_HINTS));
 
 	if (!(buf_state & BM_VALID))
 	{
@@ -6066,6 +6108,28 @@ ResOwnerPrintBufferPin(Datum res)
 	return DebugPrintBufferRefcount(DatumGetInt32(res));
 }
 
+static void
+ResOwnerReleaseBufferSettingHints(Datum res)
+{
+	Buffer		buffer = DatumGetInt32(res);
+
+	/*
+	 * At this point we don't know if the buffer was a standard buffer or
+	 * whether the caller wanted to dirty the buffer. But we don't need to
+	 * dirty the buffer, which also means we don't need to know if the buffer
+	 * was a standard buffer or not.
+	 */
+	BufferFinishSetHintBits(buffer, false, false);
+}
+
+static char *
+ResOwnerPrintBufferSettingHints(Datum res)
+{
+	Buffer		buffer = DatumGetInt32(res);
+
+	return psprintf("lost track of setting hint bits on buffer %d", buffer);
+}
+
 /*
  * Try to evict the current block in a shared buffer.
  *
@@ -6127,4 +6191,230 @@ EvictUnpinnedBuffer(Buffer buf)
 	UnpinBuffer(desc);
 
 	return result;
+}
+
+/*
+ * Try to acquire the right to set hint bits for buf.
+ *
+ * It's only permitted to set hint bits in a buffer if the buffer is not
+ * undergoing IO. Otherwise the page level checksum could be corrupted. This
+ * could happen both for PG's checksum and on the OS/filesystem
+ * level. E.g. btrfs with direct-io relies on the page to not change while IO
+ * is going on.
+ *
+ * We can't just check if IO going on at the time BufferPrepareToSetHintBits()
+ * is called, we also need to block IO from starting until we're done setting
+ * hints. This is achieved by setting BM_SETTING_HINTS for the buffer and
+ * having StartBufferIO()/WaitIO() wait for that.  We could combine
+ * BM_SETTING_HINTS and BM_IO_IN_PROGRESS into one, as they can never be set
+ * at the same time, but that seems unnecessarily confusing.
+ *
+ * Because we use only a single bit (BM_SETTING_HINTS) to track whether hint
+ * bits are currently being set, we cannot allow multiple backends to set
+ * hints at the same time - it'd be unknown whether BM_SETTING_HINTS would
+ * need to be remain set when a backend finishes setting hint bits.  In almost
+ * all situations the two backends would just set the same hint bits anyway,
+ * so this is unlikely to be a problem.
+ *
+ * If allowed to set hint bits, the caller needs to call
+ * BufferFinishSetHintBits() once done setting hint bits. In case of an error
+ * occuring before BufferFinishSetHintBits() is reached, the cleanup will be
+ * done via resowner.c.
+ *
+ * It can make sense to amortize the cost of BufferPrepareToSetHintBits() +
+ * BufferFinishSetHintBits() over multiple hint bit sets on a page.
+ *
+ * If a caller just needs to set one hint bit for a buffer, it is cheaper to
+ * use BufferSetHintBits16() instead.
+ *
+ * Returns whether caller is allowed to set hint bits.
+ */
+bool
+BufferPrepareToSetHintBits(Buffer buffer)
+{
+	BufferDesc *desc;
+	uint32		old_buf_state;
+
+	Assert(BufferIsPinned(buffer));
+
+	if (BufferIsLocal(buffer))
+		return true;
+
+	ResourceOwnerEnlarge(CurrentResourceOwner);
+
+	desc = GetBufferDescriptor(buffer - 1);
+
+	/*
+	 * We could use LockBufHdr() instead, but a CAS loop turns out to be
+	 * slightly faster and has better concurrency behaviour due to not
+	 * blocking other backends.
+	 */
+	old_buf_state = pg_atomic_read_u32(&desc->state);
+
+	for (;;)
+	{
+		uint32		new_buf_state;
+
+		if (unlikely(old_buf_state & BM_LOCKED))
+			old_buf_state = WaitBufHdrUnlocked(desc);
+
+		if (unlikely((old_buf_state & (BM_SETTING_HINTS | BM_IO_IN_PROGRESS)) != 0))
+			return false;
+
+		new_buf_state = old_buf_state;
+
+		new_buf_state |= BM_SETTING_HINTS;
+
+		if (likely(pg_atomic_compare_exchange_u32(&desc->state, &old_buf_state,
+												  new_buf_state)))
+		{
+			ResourceOwnerRememberBufferSettingHints(CurrentResourceOwner, buffer);
+
+			return true;
+		}
+	}
+}
+
+/*
+ * Release the permission to set hint bits on the current page.
+ */
+void
+BufferFinishSetHintBits(Buffer buffer, bool mark_dirty, bool buffer_std)
+{
+	BufferDesc *desc;
+	uint32		new_buf_state;
+	uint32		old_buf_state;
+	bool		is_dirty = false;
+
+	Assert(BufferIsPinned(buffer));
+
+	if (BufferIsLocal(buffer))
+	{
+		MarkLocalBufferDirty(buffer);
+		return;
+	}
+
+	desc = GetBufferDescriptor(buffer - 1);
+
+	/*
+	 * We could use LockBufHdr() instead, but a CAS loop turns out to be
+	 * slightly faster and has better concurrency behaviour due to not
+	 * blocking other backends.
+	 */
+	old_buf_state = pg_atomic_read_u32(&desc->state);
+
+	for (;;)
+	{
+		Assert(old_buf_state & (BM_TAG_VALID));
+		Assert(old_buf_state & (BM_VALID));
+		Assert(old_buf_state & (BM_SETTING_HINTS));
+		Assert(!(old_buf_state & (BM_IO_IN_PROGRESS)));
+
+		if (unlikely(old_buf_state & BM_LOCKED))
+			old_buf_state = WaitBufHdrUnlocked(desc);
+
+		is_dirty = (old_buf_state & (BM_DIRTY | BM_JUST_DIRTIED)) ==
+			(BM_DIRTY | BM_JUST_DIRTIED);
+
+		new_buf_state = old_buf_state;
+		new_buf_state &= ~BM_SETTING_HINTS;
+
+		if (likely(pg_atomic_compare_exchange_u32(&desc->state, &old_buf_state,
+												  new_buf_state)))
+		{
+			break;
+		}
+	}
+
+	/*
+	 * It might be worth combining some of the atomic operations happening
+	 * inside MarkBufferDirtyHintImpl() with the above.
+	 */
+	if (mark_dirty && !is_dirty)
+		MarkBufferDirtyHintImpl(buffer, buffer_std, true);
+
+	ResourceOwnerForgetBufferSettingHints(CurrentResourceOwner, buffer);
+
+	/*
+	 * Wake everyone that might be waiting for a chance to perform IO (i.e.
+	 * WaitIO()).
+	 *
+	 * XXX: Right now this is somewhat expensive, due to
+	 * ConditionVariableBroadcast() acquiring its spinlock unconditionally. I
+	 * don't see a good way to avoid that from the bufmgr.c side, we don't
+	 * know if there is somebody waiting.
+	 */
+	ConditionVariableBroadcast(BufferDescriptorGetIOCV(desc));
+}
+
+/*
+ * Try to set a 16 bit hint bit value.
+ *
+ * This is cheaper than BufferPrepareToSetHintBits() +
+ * BufferFinishSetHintBits() when doing a single hint bit write for a buffer,
+ * but more expensive when setting multiple hint bits.
+ *
+ * The motivation for BufferSetHintBits16() is the same as for
+ * BufferPrepareToSetHintBits(), the mechanism to make it safe differs:
+ * Instead of setting BM_SETTING_HINTS while hint bits are set, this function
+ * checks if IO is in progress, and sets the hint bit if not, while holding
+ * the buffer header spinlock.
+ *
+ * Assumes that the buffer has the standard layout. The buffer will be marked
+ * dirty if possible.
+ *
+ * Returns whether the hint bit was set.
+ */
+bool
+BufferSetHintBits16(Buffer buffer, uint16 *ptr, uint16 val)
+{
+	BufferDesc *desc;
+	uint32		buf_state;
+	bool		did_set = false;
+	bool		is_dirty = false;
+
+	Assert(BufferIsPinned(buffer));
+
+	/*
+	 * TODO: Add assert ensuring ptr inside the buffer.
+	 */
+
+	if (unlikely(BufferIsLocal(buffer)))
+	{
+		desc = GetLocalBufferDescriptor(-buffer - 1);
+		buf_state = pg_atomic_read_u32(&desc->state);
+
+		if (likely((buf_state & (BM_SETTING_HINTS | BM_IO_IN_PROGRESS)) == 0))
+		{
+			*ptr = val;
+
+			did_set = true;
+		}
+
+		is_dirty = (buf_state & (BM_DIRTY | BM_JUST_DIRTIED)) ==
+			(BM_DIRTY | BM_JUST_DIRTIED);
+		if (did_set && !is_dirty)
+			MarkLocalBufferDirty(buffer);
+	}
+	else
+	{
+		desc = GetBufferDescriptor(buffer - 1);
+		buf_state = LockBufHdr(desc);
+
+		if (likely((buf_state & (BM_SETTING_HINTS | BM_IO_IN_PROGRESS)) == 0))
+		{
+			*ptr = val;
+
+			did_set = true;
+		}
+
+		UnlockBufHdr(desc, buf_state);
+
+		is_dirty = (buf_state & (BM_DIRTY | BM_JUST_DIRTIED)) ==
+			(BM_DIRTY | BM_JUST_DIRTIED);
+		if (did_set && !is_dirty)
+			MarkBufferDirtyHintImpl(buffer, true, true);
+	}
+
+	return did_set;
 }
