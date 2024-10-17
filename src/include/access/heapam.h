@@ -426,6 +426,34 @@ extern bool HeapTupleIsSurelyDead(HeapTuple htup,
 								  struct GlobalVisState *vistest);
 
 /*
+ * FIXME: define to be removed
+ *
+ * Without this I see worse performance. But it's a bit ugly, so I thought
+ * it'd be useful to leave a way in for others to experiment with this.
+ */
+#define BATCHMVCC_FEWER_ARGS
+
+#ifdef BATCHMVCC_FEWER_ARGS
+typedef struct BatchMVCCState
+{
+	HeapTupleData tuples[MaxHeapTuplesPerPage];
+	bool		visible[MaxHeapTuplesPerPage];
+} BatchMVCCState;
+#endif
+
+extern int	HeapTupleSatisfiesMVCCBatch(Snapshot snapshot, Buffer buffer,
+										int ntups,
+#ifdef BATCHMVCC_FEWER_ARGS
+										BatchMVCCState *batchmvcc,
+#else
+										HeapTupleData *tuples,
+										bool *visible,
+#endif
+										OffsetNumber *vistuples_dense);
+
+
+
+/*
  * To avoid leaking too much knowledge about reorderbuffer implementation
  * details this is implemented in reorderbuffer.c not heapam_visibility.c
  */

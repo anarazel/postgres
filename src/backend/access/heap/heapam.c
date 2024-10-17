@@ -441,42 +441,106 @@ page_collect_tuples(HeapScanDesc scan, Snapshot snapshot,
 					BlockNumber block, int lines,
 					bool all_visible, bool check_serializable)
 {
+	Oid			relid = RelationGetRelid(scan->rs_base.rs_rd);
+#ifdef BATCHMVCC_FEWER_ARGS
+	BatchMVCCState batchmvcc;
+#else
+	HeapTupleData tuples[MaxHeapTuplesPerPage];
+	bool		visible[MaxHeapTuplesPerPage];
+#endif
 	int			ntup = 0;
-	OffsetNumber lineoff;
+	int			nvis = 0;
 
-	for (lineoff = FirstOffsetNumber; lineoff <= lines; lineoff++)
+	/* page at a time should have been disabled otherwise */
+	Assert(IsMVCCSnapshot(snapshot));
+
+	/* first find all tuples on the page */
+	for (OffsetNumber lineoff = FirstOffsetNumber; lineoff <= lines; lineoff++)
 	{
 		ItemId		lpp = PageGetItemId(page, lineoff);
-		HeapTupleData loctup;
-		bool		valid;
+		HeapTuple	tup;
 
-		if (!ItemIdIsNormal(lpp))
+		if (unlikely(!ItemIdIsNormal(lpp)))
 			continue;
 
-		loctup.t_data = (HeapTupleHeader) PageGetItem(page, lpp);
-		loctup.t_len = ItemIdGetLength(lpp);
-		loctup.t_tableOid = RelationGetRelid(scan->rs_base.rs_rd);
-		ItemPointerSet(&(loctup.t_self), block, lineoff);
-
-		if (all_visible)
-			valid = true;
-		else
-			valid = HeapTupleSatisfiesVisibility(&loctup, snapshot, buffer);
-
-		if (check_serializable)
-			HeapCheckForSerializableConflictOut(valid, scan->rs_base.rs_rd,
-												&loctup, buffer, snapshot);
-
-		if (valid)
+		/*
+		 * If the page is not all-visible or we need to check serializability,
+		 * maintain enough state to be able to refind the tuple efficiently,
+		 * without again needing to extract it from the page.
+		 */
+		if (!all_visible || check_serializable)
 		{
-			scan->rs_vistuples[ntup] = lineoff;
-			ntup++;
+#ifdef BATCHMVCC_FEWER_ARGS
+			tup = &batchmvcc.tuples[ntup];
+#else
+			tup = &tuples[ntup];
+#endif
+
+			tup->t_data = (HeapTupleHeader) PageGetItem(page, lpp);
+			tup->t_len = ItemIdGetLength(lpp);
+			tup->t_tableOid = relid;
+			ItemPointerSet(&(tup->t_self), block, lineoff);
 		}
+
+		/*
+		 * If the page is all visible, these fields won'otherwise wont be
+		 * populated in loop below.
+		 */
+		if (all_visible)
+		{
+			if (check_serializable)
+			{
+#ifdef BATCHMVCC_FEWER_ARGS
+				batchmvcc.visible[ntup] = true;
+#else
+				visible[ntup] = true;
+#endif
+			}
+			scan->rs_vistuples[ntup] = lineoff;
+		}
+
+		ntup++;
 	}
 
 	Assert(ntup <= MaxHeapTuplesPerPage);
 
-	return ntup;
+	/* unless the page is all visible, test visibility for all tuples one go */
+	if (all_visible)
+		nvis = ntup;
+	else
+		nvis = HeapTupleSatisfiesMVCCBatch(snapshot, buffer,
+										   ntup,
+#ifdef BATCHMVCC_FEWER_ARGS
+										   &batchmvcc,
+#else
+										   tuples, visible,
+#endif
+										   scan->rs_vistuples
+			);
+
+	/*
+	 * So far we don't have batch API for testing serializabilty, so do so
+	 * one-by-one.
+	 */
+	if (check_serializable)
+	{
+		for (int i = 0; i < ntup; i++)
+		{
+#ifdef BATCHMVCC_FEWER_ARGS
+			HeapCheckForSerializableConflictOut(batchmvcc.visible[i],
+												scan->rs_base.rs_rd,
+												&batchmvcc.tuples[i],
+												buffer, snapshot);
+#else
+			HeapCheckForSerializableConflictOut(visible[i],
+												scan->rs_base.rs_rd,
+												&tuples[i],
+												buffer, snapshot);
+#endif
+		}
+	}
+
+	return nvis;
 }
 
 /*
