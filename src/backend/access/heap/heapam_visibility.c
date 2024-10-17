@@ -80,9 +80,37 @@
 
 
 /*
- * SetHintBits()
+ * To be allowed to set hint bits, SetHintBits() needs to call
+ * BufferPrepareToSetHintBits(). However, that's not free, and some callsites
+ * call SetHintBits() on many tuples in a row. For those it makes sense to
+ * amortize the cost of BufferPrepareToSetHintBits(). Additionally it's
+ * desirable to defer the cost of BufferPrepareToSetHintBits() until a hint
+ * bit needs to actually be set. This enum serves as the necessary state space
+ * passed to SetHintbitsExt().
+ */
+typedef enum SetHintBitsState
+{
+	/* not yet checked if hint bits may be set */
+	SHB_INITIAL,
+	/* failed to get permission to set hint bits, don't check again */
+	SHB_DISABLED,
+	/* allowed to set hint bits */
+	SHB_ENABLED,
+} SetHintBitsState;
+
+/*
+ * SetHintBitsExt()
  *
  * Set commit/abort hint bits on a tuple, if appropriate at this time.
+ *
+ * To be allowed to set a hint bit on a tuple, the page must not be undergoing
+ * IO at this time (otherwise we e.g. could corrupt PG's page checksum or even
+ * the filesystem's, as is known to happen with btrfs).
+ *
+ * The right to set a hint bit is either acquired on a page level with
+ * BufferPrepareToSetHintBits(). Only a single backend gets the right to set
+ * hint bits at a time.  Alternatively, if called with a NULL
+ * SetHintBitsState*, hint bits are set with BufferSetHintBits16().
  *
  * It is only safe to set a transaction-committed hint bit if we know the
  * transaction's commit record is guaranteed to be flushed to disk before the
@@ -111,9 +139,16 @@
  * InvalidTransactionId if no check is needed.
  */
 static inline void
-SetHintBits(HeapTupleHeader tuple, Buffer buffer,
-			uint16 infomask, TransactionId xid)
+SetHintBitsExt(HeapTupleHeader tuple, Buffer buffer,
+			   uint16 infomask, TransactionId xid, SetHintBitsState *state)
 {
+	/*
+	 * In batched mode and we previously did not get permission to set hint
+	 * bits. Don't try again, in all likelihood IO is still going on.
+	 */
+	if (state && *state == SHB_DISABLED)
+		return;
+
 	if (TransactionIdIsValid(xid))
 	{
 		/* NB: xid must be known committed here! */
@@ -127,8 +162,55 @@ SetHintBits(HeapTupleHeader tuple, Buffer buffer,
 		}
 	}
 
+	/*
+	 * In non-batched mode, set hint bits via BufferSetHintBits16(), for a
+	 * single hint bit update that's faster than BufferPrepareToSetHintBits();
+	 * updating the hint bits; BufferFinishSetHintBits();
+	 */
+	if (!state)
+	{
+		BufferSetHintBits16(buffer,
+							&tuple->t_infomask,
+							tuple->t_infomask | infomask);
+		return;
+	}
+
+	/*
+	 * If this is the first hint that we'd like to set on the page, check if
+	 * we are allowed to do so.
+	 */
+	if (*state == SHB_INITIAL)
+	{
+		if (BufferPrepareToSetHintBits(buffer))
+		{
+			*state = SHB_ENABLED;
+		}
+		else
+		{
+			/*
+			 * If we hold an exclusive lock, nobody else should be able to
+			 * prevent us from setting hint bits. This is important as there
+			 * are a few hint bit sets that are important for correctness -
+			 * all those happen with the buffer exclusively locked.
+			 */
+			Assert(!BufferLockHeldByMe(buffer, BUFFER_LOCK_EXCLUSIVE));
+			*state = SHB_DISABLED;
+			return;
+		}
+	}
+
 	tuple->t_infomask |= infomask;
-	MarkBufferDirtyHint(buffer, true);
+}
+
+/*
+ * Simple wrapper around SetHintBitExt(), use when operating on a single
+ * tuple.
+ */
+static inline void
+SetHintBits(HeapTupleHeader tuple, Buffer buffer,
+			uint16 infomask, TransactionId xid)
+{
+	SetHintBitsExt(tuple, buffer, infomask, xid, NULL);
 }
 
 /*
@@ -868,9 +950,9 @@ HeapTupleSatisfiesDirty(HeapTuple htup, Snapshot snapshot,
  * inserting/deleting transaction was still running --- which was more cycles
  * and more contention on ProcArrayLock.
  */
-static bool
+static inline bool
 HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
-					   Buffer buffer)
+					   Buffer buffer, SetHintBitsState *state)
 {
 	HeapTupleHeader tuple = htup->t_data;
 
@@ -916,8 +998,8 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 			if (!TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetRawXmax(tuple)))
 			{
 				/* deleting subtransaction must have aborted */
-				SetHintBits(tuple, buffer, HEAP_XMAX_INVALID,
-							InvalidTransactionId);
+				SetHintBitsExt(tuple, buffer, HEAP_XMAX_INVALID,
+							   InvalidTransactionId, state);
 				return true;
 			}
 
@@ -929,13 +1011,13 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 		else if (XidInMVCCSnapshot(HeapTupleHeaderGetRawXmin(tuple), snapshot))
 			return false;
 		else if (TransactionIdDidCommit(HeapTupleHeaderGetRawXmin(tuple)))
-			SetHintBits(tuple, buffer, HEAP_XMIN_COMMITTED,
-						HeapTupleHeaderGetRawXmin(tuple));
+			SetHintBitsExt(tuple, buffer, HEAP_XMIN_COMMITTED,
+						   HeapTupleHeaderGetRawXmin(tuple), state);
 		else
 		{
 			/* it must have aborted or crashed */
-			SetHintBits(tuple, buffer, HEAP_XMIN_INVALID,
-						InvalidTransactionId);
+			SetHintBitsExt(tuple, buffer, HEAP_XMIN_INVALID,
+						   InvalidTransactionId, state);
 			return false;
 		}
 	}
@@ -998,14 +1080,14 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 		if (!TransactionIdDidCommit(HeapTupleHeaderGetRawXmax(tuple)))
 		{
 			/* it must have aborted or crashed */
-			SetHintBits(tuple, buffer, HEAP_XMAX_INVALID,
-						InvalidTransactionId);
+			SetHintBitsExt(tuple, buffer, HEAP_XMAX_INVALID,
+						   InvalidTransactionId, state);
 			return true;
 		}
 
 		/* xmax transaction committed */
-		SetHintBits(tuple, buffer, HEAP_XMAX_COMMITTED,
-					HeapTupleHeaderGetRawXmax(tuple));
+		SetHintBitsExt(tuple, buffer, HEAP_XMAX_COMMITTED,
+					   HeapTupleHeaderGetRawXmax(tuple), state);
 	}
 	else
 	{
@@ -1615,6 +1697,7 @@ HeapTupleSatisfiesMVCCBatch(Snapshot snapshot, Buffer buffer,
 							OffsetNumber *vistuples_dense)
 {
 	int			nvis = 0;
+	SetHintBitsState state = SHB_INITIAL;
 
 	Assert(IsMVCCSnapshot(snapshot));
 
@@ -1627,7 +1710,7 @@ HeapTupleSatisfiesMVCCBatch(Snapshot snapshot, Buffer buffer,
 		HeapTuple	tup = &tuples[i];
 #endif
 
-		valid = HeapTupleSatisfiesMVCC(tup, snapshot, buffer);
+		valid = HeapTupleSatisfiesMVCC(tup, snapshot, buffer, &state);
 #ifdef BATCHMVCC_FEWER_ARGS
 		batchmvcc->visible[i] = valid;
 #else
@@ -1639,6 +1722,9 @@ HeapTupleSatisfiesMVCCBatch(Snapshot snapshot, Buffer buffer,
 			nvis++;
 		}
 	}
+
+	if (state == SHB_ENABLED)
+		BufferFinishSetHintBits(buffer, true, true);
 
 	return nvis;
 }
@@ -1659,7 +1745,7 @@ HeapTupleSatisfiesVisibility(HeapTuple htup, Snapshot snapshot, Buffer buffer)
 	switch (snapshot->snapshot_type)
 	{
 		case SNAPSHOT_MVCC:
-			return HeapTupleSatisfiesMVCC(htup, snapshot, buffer);
+			return HeapTupleSatisfiesMVCC(htup, snapshot, buffer, NULL);
 		case SNAPSHOT_SELF:
 			return HeapTupleSatisfiesSelf(htup, snapshot, buffer);
 		case SNAPSHOT_ANY:
