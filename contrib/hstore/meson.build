@@ -43,6 +43,11 @@ install_headers(
   install_dir: dir_include_extension / 'hstore',
 )
 
+bitcode_modules += {
+  'target': hstore,
+  'srcfiles': hstore_sources,
+}
+
 tests += {
   'name': 'hstore',
   'sd': meson.current_source_dir(),

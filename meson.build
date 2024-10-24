@@ -814,6 +814,8 @@ if add_languages('cpp', required: llvmopt, native: false)
     # Some distros put LLVM and clang in different paths, so fallback to
     # find via PATH, too.
     clang = find_program(llvm_binpath / 'clang', 'clang', required: true)
+    llvm_lto = find_program(llvm_binpath / 'llvm-lto', required: true)
+    irlink = find_program('src/tools/irlink', native: true)
   endif
 elif llvmopt.auto()
   message('llvm requires a C++ compiler')
@@ -2893,6 +2895,11 @@ test_deps = []
 tests = []
 meson_extension_tests = []
 
+# List of object files + source files to generated LLVM IR for inlining.
+# Each element is a hash of:
+# {'target': target, 'srcfiles': ..., 'additional_flags': ..., 'depends': [dependency]}.
+bitcode_modules = []
+
 
 # Default options for targets
 
@@ -3211,6 +3218,11 @@ subdir('src/test')
 subdir('src/interfaces/ecpg/test')
 
 subdir('doc/src/sgml')
+
+# generate bitcode for JIT inlining after giving contrib modules etc a chance
+# to add themselves to bitcode_modules[]
+subdir('src/backend/jit/llvm/bitcode', if_found: llvm)
+
 
 generated_sources_ac += {'': ['GNUmakefile']}
 
@@ -3846,6 +3858,15 @@ if meson.version().version_compare('>=0.57')
     },
     section: 'Programs',
   )
+
+  if llvm.found()
+    summary(
+      {
+        'clang': clang,
+      },
+      section: 'Programs',
+    )
+  endif
 
   summary(
     {
