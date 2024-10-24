@@ -13,6 +13,8 @@
 #define _PG_LOCALE_
 
 #ifdef USE_ICU
+/* the cplusplus portion doesn't parse inside extern "C" { } */
+#define U_SHOW_CPLUSPLUS_API 0
 #include <unicode/ucol.h>
 #endif
 
