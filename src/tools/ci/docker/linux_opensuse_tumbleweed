@@ -17,7 +17,7 @@ RUN \
   \
   bison \
   ccache \
-  clang15 \
+  clang \
   flex \
   gcc \
   gcc-c++ \
@@ -36,7 +36,7 @@ RUN \
   libzstd-devel \
   llvm15-devel \
   pam-devel \
-  python38-devel \
+  python-devel \
   readline-devel \
   tcl-devel \
   \
