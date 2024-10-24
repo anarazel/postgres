@@ -41,3 +41,8 @@ tests += {
     ],
   },
 }
+
+bitcode_modules += {
+  'target': citext,
+  'srcfiles': citext_sources,
+}
