@@ -1,0 +1,54 @@
+FROM quay.io/centos/centos:stream8
+# Enable powertools and EPEL repository
+RUN \
+  dnf -y install dnf-plugins-core && \
+  dnf config-manager --set-enabled powertools && \
+  dnf -y install epel-release && \
+  dnf -y update && \
+  dnf -y install \
+  \
+  git \
+  meson \
+  perl \
+  perl-IPC-Run \
+  \
+  bison \
+  ccache \
+  clang \
+  diffutils \
+  flex \
+  gcc \
+  gettext \
+  \
+  krb5-devel \
+  libicu-devel \
+  libuuid-devel \
+  libxml2-devel \
+  libxslt-devel \
+  libzstd-devel \
+  llvm-devel \
+  lz4-devel \
+  openldap-devel \
+  openssl-devel \
+  pam-devel \
+  python3-devel \
+  readline-devel \
+  systemd-devel \
+  tcl-devel \
+  \
+  krb5-server \
+  krb5-server-ldap \
+  krb5-workstation \
+  lz4 \
+  openldap-clients \
+  openldap-servers \
+  openssl \
+  zstd \
+  \
+  glibc-langpack-en \
+  \
+  && \
+  pip3 install ninja && \
+  yum clean all
+
+ENV LANG=en_US.UTF-8
