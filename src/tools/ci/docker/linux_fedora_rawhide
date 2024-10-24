@@ -1,0 +1,49 @@
+FROM fedora:rawhide
+RUN \
+  dnf -y update && \
+  dnf -y install \
+  git \
+  meson \
+  perl \
+  perl-IPC-Run \
+  \
+  bison \
+  ccache \
+  clang \
+  flex \
+  gcc \
+  gettext \
+  ninja-build \
+  \
+  krb5-devel \
+  libicu-devel \
+  libuuid-devel \
+  libxml2-devel \
+  libxslt-devel \
+  libzstd-devel \
+  llvm-devel \
+  lz4-devel \
+  openldap-devel \
+  openssl-devel \
+  pam-devel \
+  python3-devel \
+  readline-devel \
+  systemd-devel \
+  tcl-devel \
+  \
+  krb5-server \
+  krb5-server-ldap \
+  krb5-workstation \
+  lz4 \
+  openldap-clients \
+  openldap-servers \
+  openssl \
+  zstd \
+  \
+  langpacks-en \
+  glibc-langpack-en \
+  \
+  && \
+  yum clean all
+
+ENV LANG=en_US.UTF-8
