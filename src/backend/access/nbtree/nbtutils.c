@@ -2475,10 +2475,18 @@ _bt_killitems(IndexScanDesc scan)
 			 * it's possible that multiple processes attempt to do this
 			 * simultaneously, leading to multiple full-page images being sent
 			 * to WAL (if wal_log_hints or data checksums are enabled), which
-			 * is undesirable.
+			 * is undesirable.  We need to use the hint bit infrastructure to
+			 * update the page while just holding a share lock.
 			 */
 			if (killtuple && !ItemIdIsDead(iid))
 			{
+				/*
+				 * If we're not able to set hint bits, there's no point
+				 * continuing.
+				 */
+				if (!killedsomething && !BufferPrepareToSetHintBits(so->currPos.buf))
+					goto unlock_page;
+
 				/* found the item/all posting list items */
 				ItemIdMarkDead(iid);
 				killedsomething = true;
@@ -2489,8 +2497,6 @@ _bt_killitems(IndexScanDesc scan)
 	}
 
 	/*
-	 * Since this can be redone later if needed, mark as dirty hint.
-	 *
 	 * Whenever we mark anything LP_DEAD, we also set the page's
 	 * BTP_HAS_GARBAGE flag, which is likewise just a hint.  (Note that we
 	 * only rely on the page-level flag in !heapkeyspace indexes.)
@@ -2498,9 +2504,10 @@ _bt_killitems(IndexScanDesc scan)
 	if (killedsomething)
 	{
 		opaque->btpo_flags |= BTP_HAS_GARBAGE;
-		MarkBufferDirtyHint(so->currPos.buf, true);
+		BufferFinishSetHintBits(so->currPos.buf, true, true);
 	}
 
+unlock_page:
 	_bt_unlockbuf(scan->indexRelation, so->currPos.buf);
 }
 

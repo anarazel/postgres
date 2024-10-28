@@ -593,6 +593,13 @@ _hash_kill_items(IndexScanDesc scan)
 
 			if (ItemPointerEquals(&ituple->t_tid, &currItem->heapTid))
 			{
+				/*
+				 * Use hint bit infrastructure to be allowed to modify the
+				 * page without holding an exclusive lock.
+				 */
+				if (!BufferPrepareToSetHintBits(so->currPos.buf))
+					goto unlock_page;
+
 				/* found the item */
 				ItemIdMarkDead(iid);
 				killedsomething = true;
@@ -610,9 +617,10 @@ _hash_kill_items(IndexScanDesc scan)
 	if (killedsomething)
 	{
 		opaque->hasho_flag |= LH_PAGE_HAS_DEAD_TUPLES;
-		MarkBufferDirtyHint(buf, true);
+		BufferFinishSetHintBits(so->currPos.buf, true, true);
 	}
 
+unlock_page:
 	if (so->hashso_bucket_buf == so->currPos.buf ||
 		havePin)
 		LockBuffer(so->currPos.buf, BUFFER_LOCK_UNLOCK);

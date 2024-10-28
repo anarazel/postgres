@@ -904,12 +904,19 @@ fsm_vacuum_page(Relation rel, FSMAddress addr,
 	max_avail = fsm_get_max_avail(page);
 
 	/*
-	 * Reset the next slot pointer. This encourages the use of low-numbered
-	 * pages, increasing the chances that a later vacuum can truncate the
-	 * relation.  We don't bother with a lock here, nor with marking the page
-	 * dirty if it wasn't already, since this is just a hint.
+	 * Try to reset the next slot pointer. This encourages the use of
+	 * low-numbered pages, increasing the chances that a later vacuum can
+	 * truncate the relation.  We don't bother with a lock here, nor with
+	 * marking the page dirty if it wasn't already, since this is just a hint.
+	 *
+	 * To be allowed to update the page without an exclusive lock, we have to
+	 * use the hint bit infrastructure.
 	 */
-	((FSMPage) PageGetContents(page))->fp_next_slot = 0;
+	if (BufferPrepareToSetHintBits(buf))
+	{
+		((FSMPage) PageGetContents(page))->fp_next_slot = 0;
+		BufferFinishSetHintBits(buf, false, false);
+	}
 
 	ReleaseBuffer(buf);
 
