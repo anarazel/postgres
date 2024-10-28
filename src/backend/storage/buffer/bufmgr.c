@@ -4986,6 +4986,23 @@ MarkSharedBufferDirtyHint(Buffer buffer, bool buffer_std, bool clear_setting_hin
 	Assert(LWLockHeldByMe(BufferDescriptorGetContentLock(bufHdr)));
 
 	/*
+	 * A share-locked buffer may only be marked dirty for hints after having
+	 * gotten the permission to do so with BufferPrepareToSetHintBits(). It'd
+	 * perhaps be cheap enough to test this even outside of assert enabled
+	 * builds, but LWLockHeldByMeInMode() says "debug support only".
+	 */
+#ifdef USE_ASSERT_CHECKING
+	{
+		uint32		buf_state = pg_atomic_read_u32(&bufHdr->state);
+
+		if (!LWLockHeldByMeInMode(BufferDescriptorGetContentLock(bufHdr), LW_EXCLUSIVE))
+		{
+			Assert(buf_state & BM_SETTING_HINTS);
+		}
+	}
+#endif
+
+	/*
 	 * This routine might get called many times on the same page, if we are
 	 * making the first scan after commit of an xact that added/deleted many
 	 * tuples. So, be as quick as we can if the buffer is already dirty.  We
