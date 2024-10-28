@@ -16,6 +16,7 @@ test: ri-trigger
 test: partial-index
 test: two-ids
 test: multiple-row-versions
+test: index-killtuples
 test: index-only-scan
 test: predicate-lock-hot-tuple
 test: update-conflict-out
