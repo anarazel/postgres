@@ -1039,7 +1039,7 @@ _bt_relandgetbuf(Relation rel, Buffer obuf, BlockNumber blkno, int access)
 void
 _bt_relbuf(Relation rel, Buffer buf)
 {
-	_bt_unlockbuf(rel, buf);
+	//_bt_unlockbuf(rel, buf);
 	ReleaseBuffer(buf);
 }
 
@@ -1056,7 +1056,7 @@ void
 _bt_lockbuf(Relation rel, Buffer buf, int access)
 {
 	/* LockBuffer() asserts that pin is held by this backend */
-	LockBuffer(buf, access);
+	//LockBuffer(buf, access);
 
 	/*
 	 * It doesn't matter that _bt_unlockbuf() won't get called in the event of
@@ -1093,7 +1093,7 @@ _bt_unlockbuf(Relation rel, Buffer buf)
 	VALGRIND_CHECK_MEM_IS_DEFINED(BufferGetPage(buf), BLCKSZ);
 
 	/* LockBuffer() asserts that pin is held by this backend */
-	LockBuffer(buf, BUFFER_LOCK_UNLOCK);
+	//LockBuffer(buf, BUFFER_LOCK_UNLOCK);
 
 	if (!RelationUsesLocalBuffers(rel))
 		VALGRIND_MAKE_MEM_NOACCESS(BufferGetPage(buf), BLCKSZ);

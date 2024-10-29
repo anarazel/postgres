@@ -204,7 +204,13 @@ choose_freelist(void)
 			elog(ERROR, "node out of range: %d > %u", cpu, strategy_nnodes);
 #endif
 
+#if 1
 		freelist_idx = cpu % strategy_ncpus;
+#elif 1
+		freelist_idx = cpu % strategy_nnodes;
+#else
+		freelist_idx = MyProcPid % strategy_ncpus;
+#endif
 	}
 
 	return &StrategyControl->freelists[freelist_idx];
@@ -659,7 +665,7 @@ StrategyInitialize(bool init)
 			{
 				belongs_to = 0;
 			}
-			else if (shared_memory_populate && false)
+			else if (shared_memory_populate)
 			{
 				rc = move_pages(0, 1, pages, NULL, &status,
 								0);
@@ -671,7 +677,12 @@ StrategyInitialize(bool init)
 				else if (status >= strategy_ncpus)
 					elog(LOG, "freelist page: %d, too high: %d", i + 1, status);
 
+#if 0
 				belongs_to = status;
+#else
+				belongs_to = status * (strategy_ncpus / strategy_nnodes)
+					+ (i / percpubuffers) % (strategy_ncpus / strategy_nnodes);
+#endif
 			}
 			else
 			{

@@ -638,7 +638,7 @@ CreateAnonymousSegment(Size *size)
 				 *numa_get_run_node_mask()->maskp,
 				 *numa_get_membind()->maskp
 				);
-			numa_set_interleave_mask(numa_get_membind());
+			//numa_set_interleave_mask(numa_get_membind());
 		}
 
 		ptr = mmap(NULL, allocsize, PROT_READ | PROT_WRITE,
@@ -651,8 +651,9 @@ CreateAnonymousSegment(Size *size)
 
 		if (numa_aware)
 		{
-			//numa_interleave_memory(ptr, allocsize, numa_get_mems_allowed());
-			numa_set_interleave_mask(numa_no_nodes_ptr);
+			numa_interleave_memory(ptr, allocsize, numa_get_mems_allowed());
+			//numa_police_memory(ptr, allocsize);
+			//numa_set_interleave_mask(numa_no_nodes_ptr);
 		}
 
 	}
