@@ -365,7 +365,37 @@ BufferDescriptorGetContentLock(const BufferDesc *bdesc)
  * Functions for acquiring/releasing a shared buffer header's spinlock.  Do
  * not apply these to local buffers!
  */
-extern uint32 LockBufHdr(BufferDesc *desc);
+extern uint32 LockBufHdrSlow(BufferDesc *desc);
+
+/*
+ * Lock buffer header - set BM_LOCKED in buffer state.
+ *
+ * Implemented as a static inline in the header due to freelist.c using it in
+ * a reasonably common path.
+ */
+static inline uint32
+LockBufHdr(BufferDesc *desc)
+{
+	uint32		old_buf_state;
+
+	Assert(!BufferIsLocal(BufferDescriptorGetBuffer(desc)));
+
+	/* fast path, intended to be inlined into calling functions */
+
+	/* set BM_LOCKED flag */
+	old_buf_state = pg_atomic_fetch_or_u32(&desc->state, BM_LOCKED);
+	if (likely(!(old_buf_state & BM_LOCKED)))
+		return old_buf_state | BM_LOCKED;
+
+	/*
+	 * The overhead of the spin delay code and the retry loop itself would be
+	 * noticeable due to the buffer header lock being taken very frequently.
+	 * Therefore it is moved into a separate function marked pg_noinline.
+	 */
+
+	/* slow path with loop etc, not intended to be inlined */
+	return LockBufHdrSlow(desc);
+}
 
 static inline void
 UnlockBufHdr(BufferDesc *desc, uint32 buf_state)

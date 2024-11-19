@@ -5738,10 +5738,12 @@ rlocator_comparator(const void *p1, const void *p2)
 }
 
 /*
- * Lock buffer header - set BM_LOCKED in buffer state.
+ * Slow path helper for LockBufHdr().
+ *
+ * See comment in LockBufHdr() for the reason this is moved out of line.
  */
-uint32
-LockBufHdr(BufferDesc *desc)
+pg_noinline uint32
+LockBufHdrSlow(BufferDesc *desc)
 {
 	SpinDelayStatus delayStatus;
 	uint32		old_buf_state;
