@@ -24,6 +24,9 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/file.h>
+#ifdef HAVE_SYS_VFS_H
+#include <sys/vfs.h>
+#endif
 
 #include "access/xlogutils.h"
 #include "commands/tablespace.h"
@@ -447,6 +450,37 @@ mdunlinkfork(RelFileLocatorBackend rlocator, ForkNumber forknum, bool isRedo)
 	pfree(path);
 }
 
+static void
+report_disk_space(const char *reason, const char *path)
+{
+	/*
+	 * I'm sure there's a way to do this on other OSs too, but for the
+	 * debugging here this should be sufficient.
+	 */
+#ifdef HAVE_SYS_VFS_H
+	int			saved_errno = errno;
+	struct statfs sf;
+	int			ret;
+
+	ret = statfs(path, &sf);
+
+	if (ret != 0)
+		elog(WARNING, "%s: statfs failed: %m", reason);
+	else
+		elog(LOG, "%s: free space for filesystem containing \"%s\" "
+			 "f_blocks: %llu, f_bfree: %llu, f_bavail: %llu "
+			 "f_files: %llu, f_ffree: %llu",
+			 reason, path,
+			 (long long unsigned) sf.f_blocks,
+			 (long long unsigned) sf.f_bfree,
+			 (long long unsigned) sf.f_bavail,
+			 (long long unsigned) sf.f_files,
+			 (long long unsigned) sf.f_ffree);
+
+	errno = saved_errno;
+#endif
+}
+
 /*
  * mdextend() -- Add a block to the specified relation.
  *
@@ -494,11 +528,16 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 
 	if ((nbytes = FileWrite(v->mdfd_vfd, buffer, BLCKSZ, seekpos, WAIT_EVENT_DATA_FILE_EXTEND)) != BLCKSZ)
 	{
+		if (errno == ENOSPC)
+			report_disk_space("mdextend failing with ENOSPC",
+							  FilePathName(v->mdfd_vfd));
+
 		if (nbytes < 0)
 			ereport(ERROR,
 					(errcode_for_file_access(),
-					 errmsg("could not extend file \"%s\": %m",
-							FilePathName(v->mdfd_vfd)),
+					 errmsg("could not extend file \"%s\" from %u to %u blocks: %m",
+							FilePathName(v->mdfd_vfd),
+							blocknum, blocknum + 1),
 					 errhint("Check free disk space.")));
 		/* short write: complain appropriately */
 		ereport(ERROR,
@@ -584,10 +623,15 @@ mdzeroextend(SMgrRelation reln, ForkNumber forknum,
 								WAIT_EVENT_DATA_FILE_EXTEND);
 			if (ret != 0)
 			{
+				if (errno == ENOSPC)
+					report_disk_space("mdzeroextend FileFallocate failing with ENOSPC",
+									  FilePathName(v->mdfd_vfd));
+
 				ereport(ERROR,
 						errcode_for_file_access(),
-						errmsg("could not extend file \"%s\" with FileFallocate(): %m",
-							   FilePathName(v->mdfd_vfd)),
+						errmsg("could not extend file \"%s\" by %u blocks, from %u to %u, using FileFallocate(): %m",
+							   FilePathName(v->mdfd_vfd),
+							   numblocks, segstartblock, segstartblock+numblocks),
 						errhint("Check free disk space."));
 			}
 		}
@@ -606,11 +650,18 @@ mdzeroextend(SMgrRelation reln, ForkNumber forknum,
 						   seekpos, (off_t) BLCKSZ * numblocks,
 						   WAIT_EVENT_DATA_FILE_EXTEND);
 			if (ret < 0)
+			{
+				if (errno == ENOSPC)
+					report_disk_space("mdzeroextend FileZero failing with ENOSPC",
+									  FilePathName(v->mdfd_vfd));
+
 				ereport(ERROR,
 						errcode_for_file_access(),
-						errmsg("could not extend file \"%s\": %m",
-							   FilePathName(v->mdfd_vfd)),
+						errmsg("could not extend file \"%s\" by %u blocks, from %u to %u, using FileZero(): %m",
+							   FilePathName(v->mdfd_vfd),
+							   numblocks, segstartblock, segstartblock+numblocks),
 						errhint("Check free disk space."));
+			}
 		}
 
 		if (!skipFsync && !SmgrIsTemp(reln))
