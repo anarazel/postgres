@@ -237,6 +237,29 @@
 #endif
 
 /*
+ * pg_noreturn declares that a function will not return in an non-exceptional
+ * way, like C11's _Noreturn.
+ *
+ * Note that pg_noreturn cannot be added to function pointers / typedefs, it
+ * only affects function declarations / definitions.  For function pointers,
+ * use pg_attribute_noreturn() (TODO: Change name).
+ *
+ * Because at least one compiler complains about assigning a pointer to a
+ * function without __attribute__((noreturn)) to a function pointer with
+ * __attribute__((noreturn)), we add the attribute even in pg_noreturn.
+ *
+ * XXX: The above is a bit absurd, perhaps we should just use
+ * __declspec(noreturn) for msvc and the attribute for gcc compatible
+ * compilers?
+ */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define HAVE_PG_NORETURN 1
+#define pg_noreturn _Noreturn pg_attribute_noreturn()
+#else
+#define pg_noreturn
+#endif
+
+/*
  * Use "pg_attribute_always_inline" in place of "inline" for functions that
  * we wish to force inlining of, even when the compiler's heuristics would
  * choose not to.  But, if possible, don't force inlining in unoptimized
