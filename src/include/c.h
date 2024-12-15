@@ -361,11 +361,11 @@
  * This idea is due to Laurent Deniau.
  *
  * MSVC has an implementation of __VA_ARGS__ that doesn't conform to the
- * standard unless you use the /Zc:preprocessor compiler flag, but that
- * isn't available before Visual Studio 2019.  For now, use a different
- * definition that also works on older compilers.
+ * standard unless you use the /Zc:preprocessor compiler flag, but that isn't
+ * available before Visual Studio 2019.  Use a different implementation iff
+ * using the old preprocessor (it doesn't work with the new preprocessor).
  */
-#ifdef _MSC_VER
+#if defined(_MSC_VER) && (!defined(_MSVC_TRADITIONAL) || _MSVC_TRADITIONAL)
 #define EXPAND(args) args
 #define VA_ARGS_NARGS(...) \
 	VA_ARGS_NARGS_ EXPAND((__VA_ARGS__, \
