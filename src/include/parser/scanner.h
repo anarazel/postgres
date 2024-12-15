@@ -145,6 +145,6 @@ extern void setup_scanner_errposition_callback(ScannerCallbackState *scbstate,
 											   core_yyscan_t yyscanner,
 											   int location);
 extern void cancel_scanner_errposition_callback(ScannerCallbackState *scbstate);
-extern void scanner_yyerror(const char *message, core_yyscan_t yyscanner) pg_attribute_noreturn();
+extern pg_noreturn void scanner_yyerror(const char *message, core_yyscan_t yyscanner);
 
 #endif							/* SCANNER_H */

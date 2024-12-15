@@ -215,7 +215,6 @@
 #define pg_attribute_aligned(a) __attribute__((aligned(a)))
 #define pg_attribute_noreturn() __attribute__((noreturn))
 #define pg_attribute_packed() __attribute__((packed))
-#define HAVE_PG_ATTRIBUTE_NORETURN 1
 #elif defined(_MSC_VER)
 /*
  * MSVC supports aligned.  noreturn is also possible but in MSVC it is
@@ -878,8 +877,8 @@ typedef NameData *Name;
  * we should declare it as long as !FRONTEND.
  */
 #ifndef FRONTEND
-extern void ExceptionalCondition(const char *conditionName,
-								 const char *fileName, int lineNumber) pg_attribute_noreturn();
+extern pg_noreturn void ExceptionalCondition(const char *conditionName,
+											 const char *fileName, int lineNumber);
 #endif
 
 /*

@@ -12,6 +12,6 @@
 #ifndef HELP_CONFIG_H
 #define HELP_CONFIG_H 1
 
-extern void GucInfoMain(void) pg_attribute_noreturn();
+extern pg_noreturn void GucInfoMain(void);
 
 #endif

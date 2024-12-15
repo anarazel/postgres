@@ -1326,7 +1326,7 @@ extern int	plpgsql_peek(void);
 extern void plpgsql_peek2(int *tok1_p, int *tok2_p, int *tok1_loc,
 						  int *tok2_loc);
 extern int	plpgsql_scanner_errposition(int location);
-extern void plpgsql_yyerror(const char *message) pg_attribute_noreturn();
+extern pg_noreturn void plpgsql_yyerror(const char *message);
 extern int	plpgsql_location_to_lineno(int location);
 extern int	plpgsql_latest_lineno(void);
 extern void plpgsql_scanner_init(const char *str);

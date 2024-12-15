@@ -33,7 +33,7 @@ extern PGDLLIMPORT Form_pg_attribute attrtypes[MAXATTR];
 extern PGDLLIMPORT int numattr;
 
 
-extern void BootstrapModeMain(int argc, char *argv[], bool check_only) pg_attribute_noreturn();
+extern pg_noreturn void BootstrapModeMain(int argc, char *argv[], bool check_only);
 
 extern void closerel(char *relname);
 extern void boot_openrel(char *relname);
@@ -58,6 +58,6 @@ extern void boot_get_type_io_data(Oid typid,
 extern int	boot_yyparse(void);
 
 extern int	boot_yylex(void);
-extern void boot_yyerror(const char *message) pg_attribute_noreturn();
+extern pg_noreturn void boot_yyerror(const char *message);
 
 #endif							/* BOOTSTRAP_H */

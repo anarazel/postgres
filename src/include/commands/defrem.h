@@ -160,6 +160,6 @@ extern List *defGetQualifiedName(DefElem *def);
 extern TypeName *defGetTypeName(DefElem *def);
 extern int	defGetTypeLength(DefElem *def);
 extern List *defGetStringList(DefElem *def);
-extern void errorConflictingDefElem(DefElem *defel, ParseState *pstate) pg_attribute_noreturn();
+extern pg_noreturn void errorConflictingDefElem(DefElem *defel, ParseState *pstate);
 
 #endif							/* DEFREM_H */

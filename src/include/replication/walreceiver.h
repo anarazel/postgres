@@ -486,7 +486,7 @@ walrcv_clear_result(WalRcvExecResult *walres)
 }
 
 /* prototypes for functions in walreceiver.c */
-extern void WalReceiverMain(char *startup_data, size_t startup_data_len) pg_attribute_noreturn();
+extern pg_noreturn void WalReceiverMain(char *startup_data, size_t startup_data_len);
 extern void ProcessWalRcvInterrupts(void);
 extern void WalRcvForceReply(void);
 

@@ -27,8 +27,8 @@ extern PGDLLIMPORT int CheckPointTimeout;
 extern PGDLLIMPORT int CheckPointWarning;
 extern PGDLLIMPORT double CheckPointCompletionTarget;
 
-extern void BackgroundWriterMain(char *startup_data, size_t startup_data_len) pg_attribute_noreturn();
-extern void CheckpointerMain(char *startup_data, size_t startup_data_len) pg_attribute_noreturn();
+extern pg_noreturn void BackgroundWriterMain(char *startup_data, size_t startup_data_len);
+extern pg_noreturn void CheckpointerMain(char *startup_data, size_t startup_data_len);
 
 extern void RequestCheckpoint(int flags);
 extern void CheckpointWriteDelay(int flags, double progress);

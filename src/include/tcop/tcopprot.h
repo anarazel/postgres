@@ -73,19 +73,19 @@ extern List *pg_plan_queries(List *querytrees, const char *query_string,
 							 ParamListInfo boundParams);
 
 extern void die(SIGNAL_ARGS);
-extern void quickdie(SIGNAL_ARGS) pg_attribute_noreturn();
+extern pg_noreturn void quickdie(SIGNAL_ARGS);
 extern void StatementCancelHandler(SIGNAL_ARGS);
-extern void FloatExceptionHandler(SIGNAL_ARGS) pg_attribute_noreturn();
+extern pg_noreturn void FloatExceptionHandler(SIGNAL_ARGS);
 extern void HandleRecoveryConflictInterrupt(ProcSignalReason reason);
 extern void ProcessClientReadInterrupt(bool blocked);
 extern void ProcessClientWriteInterrupt(bool blocked);
 
 extern void process_postgres_switches(int argc, char *argv[],
 									  GucContext ctx, const char **dbname);
-extern void PostgresSingleUserMain(int argc, char *argv[],
-								   const char *username) pg_attribute_noreturn();
-extern void PostgresMain(const char *dbname,
-						 const char *username) pg_attribute_noreturn();
+extern pg_noreturn void PostgresSingleUserMain(int argc, char *argv[],
+											   const char *username);
+extern pg_noreturn void PostgresMain(const char *dbname,
+									 const char *username);
 extern long get_stack_depth_rlimit(void);
 extern void ResetUsage(void);
 extern void ShowUsage(const char *title);

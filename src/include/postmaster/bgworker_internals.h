@@ -52,6 +52,6 @@ extern void ForgetUnstartedBackgroundWorkers(void);
 extern void ResetBackgroundWorkerCrashTimes(void);
 
 /* Entry point for background worker processes */
-extern void BackgroundWorkerMain(char *startup_data, size_t startup_data_len) pg_attribute_noreturn();
+extern pg_noreturn void BackgroundWorkerMain(char *startup_data, size_t startup_data_len);
 
 #endif							/* BGWORKER_INTERNALS_H */

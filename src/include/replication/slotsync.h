@@ -26,7 +26,7 @@ extern PGDLLIMPORT char *PrimarySlotName;
 extern char *CheckAndGetDbnameFromConninfo(void);
 extern bool ValidateSlotSyncParams(int elevel);
 
-extern void ReplSlotSyncWorkerMain(char *startup_data, size_t startup_data_len) pg_attribute_noreturn();
+extern pg_noreturn void ReplSlotSyncWorkerMain(char *startup_data, size_t startup_data_len);
 
 extern void ShutDownSlotSync(void);
 extern bool SlotSyncWorkerCanRestart(void);

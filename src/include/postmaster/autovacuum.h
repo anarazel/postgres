@@ -56,8 +56,8 @@ extern void autovac_init(void);
 /* called from postmaster when a worker could not be forked */
 extern void AutoVacWorkerFailed(void);
 
-extern void AutoVacLauncherMain(char *startup_data, size_t startup_data_len) pg_attribute_noreturn();
-extern void AutoVacWorkerMain(char *startup_data, size_t startup_data_len) pg_attribute_noreturn();
+extern pg_noreturn void AutoVacLauncherMain(char *startup_data, size_t startup_data_len);
+extern pg_noreturn void AutoVacWorkerMain(char *startup_data, size_t startup_data_len);
 
 extern bool AutoVacuumRequestWork(AutoVacuumWorkItemType type,
 								  Oid relationId, BlockNumber blkno);

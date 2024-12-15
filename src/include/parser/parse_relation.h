@@ -110,9 +110,9 @@ extern bool isLockedRefname(ParseState *pstate, const char *refname);
 extern void addNSItemToQuery(ParseState *pstate, ParseNamespaceItem *nsitem,
 							 bool addToJoinList,
 							 bool addToRelNameSpace, bool addToVarNameSpace);
-extern void errorMissingRTE(ParseState *pstate, RangeVar *relation) pg_attribute_noreturn();
-extern void errorMissingColumn(ParseState *pstate,
-							   const char *relname, const char *colname, int location) pg_attribute_noreturn();
+extern pg_noreturn void errorMissingRTE(ParseState *pstate, RangeVar *relation);
+extern pg_noreturn void errorMissingColumn(ParseState *pstate,
+										   const char *relname, const char *colname, int location);
 extern void expandRTE(RangeTblEntry *rte, int rtindex, int sublevels_up,
 					  int location, bool include_dropped,
 					  List **colnames, List **colvars);

@@ -416,10 +416,10 @@ extern PGDLLIMPORT ErrorContextCallback *error_context_stack;
 	} while (0)
 
 /*
- * Some compilers understand pg_attribute_noreturn(); for other compilers,
- * insert pg_unreachable() so that the compiler gets the point.
+ * Some compilers understand pg_noreturn, for other compilers, insert
+ * pg_unreachable() so that the compiler gets the point.
  */
-#ifdef HAVE_PG_ATTRIBUTE_NORETURN
+#ifdef HAVE_PG_NORETURN
 #define PG_RE_THROW()  \
 	pg_re_throw()
 #else
@@ -476,9 +476,9 @@ extern void EmitErrorReport(void);
 extern ErrorData *CopyErrorData(void);
 extern void FreeErrorData(ErrorData *edata);
 extern void FlushErrorState(void);
-extern void ReThrowError(ErrorData *edata) pg_attribute_noreturn();
+extern pg_noreturn void ReThrowError(ErrorData *edata);
 extern void ThrowErrorData(ErrorData *edata);
-extern void pg_re_throw(void) pg_attribute_noreturn();
+extern pg_noreturn void pg_re_throw(void);
 
 extern char *GetErrorContextStack(void);
 
