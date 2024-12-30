@@ -84,9 +84,6 @@
  * tts_values/tts_isnull are allocated either when the slot is created (when
  * the descriptor is provided), or when a descriptor is assigned to the slot;
  * they are of length equal to the descriptor's natts.
- *
- * The TTS_FLAG_SLOW flag is saved state for
- * slot_deform_heap_tuple, and should not be touched by any other code.
  *----------
  */
 
@@ -98,12 +95,8 @@
 #define			TTS_FLAG_SHOULDFREE		(1 << 2)
 #define TTS_SHOULDFREE(slot) (((slot)->tts_flags & TTS_FLAG_SHOULDFREE) != 0)
 
-/* saved state for slot_deform_heap_tuple */
-#define			TTS_FLAG_SLOW		(1 << 3)
-#define TTS_SLOW(slot) (((slot)->tts_flags & TTS_FLAG_SLOW) != 0)
-
 /* fixed tuple descriptor */
-#define			TTS_FLAG_FIXED		(1 << 4)
+#define			TTS_FLAG_FIXED		(1 << 4)	/* XXX change to #3? */
 #define TTS_FIXED(slot) (((slot)->tts_flags & TTS_FLAG_FIXED) != 0)
 
 struct TupleTableSlotOps;

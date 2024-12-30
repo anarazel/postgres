@@ -15,6 +15,7 @@
 #define TUPMACS_H
 
 #include "catalog/pg_type_d.h"	/* for TYPALIGN macros */
+#include "port/pg_bitutils.h"
 
 
 /*
@@ -68,6 +69,89 @@ fetch_att(const void *T, bool attbyval, int attlen)
 	}
 	else
 		return PointerGetDatum(T);
+}
+
+#ifndef HAVE__BUILTIN_CTZ
+/*
+ * For returning the 0-based position of the right-most 0 bit of a uint8, or 8
+ * if all bits are 1 bits.
+ */
+static const uint8 pg_rightmost_zero_pos[256] = {
+	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 4,
+	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 5,
+	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 4,
+	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 6,
+	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 4,
+	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 5,
+	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 4,
+	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 7,
+	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 4,
+	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 5,
+	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 4,
+	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 6,
+	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 4,
+	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 5,
+	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 4,
+	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 8
+};
+#endif
+
+/*
+ * first_null_attr
+ *		Inspect a NULL bitmask from a tuple and return the 0-based attnum of the
+ *		first NULL attribute.  Returns natts if no NULLs were found.
+ */
+static inline int
+first_null_attr(const bits8 *bits, int natts)
+{
+	int			lastByte = natts >> 3;
+	int			bytenum;
+	int			res;
+
+#ifdef USE_ASSERT_CHECKING
+	int			firstnull_check = natts;
+
+	/* Do it the slow way and check we get the same answer. */
+	for (int i = 0; i < natts; i++)
+	{
+		if (att_isnull(i, bits))
+		{
+			firstnull_check = i;
+			break;
+		}
+	}
+#endif
+
+	/* Process all bytes up to just before the byte for the natts index */
+	for (bytenum = 0; bytenum < lastByte; bytenum++)
+	{
+		/* break if there's any NULL attrs (a 0 bit) */
+		if (bits[bytenum] != 0xFF)
+			break;
+	}
+
+	res = bytenum << 3;
+
+#ifdef HAVE__BUILTIN_CTZ
+	/*
+	 * Promote to 32-bit before doing bit-wise NOT.  This means we'll convert
+	 * 0xff into 0xffffff00 rather than 0x0, which is undefined with
+	 * __builtin_ctz.  That'll mean we correctly get 8 for 0xff
+	 */
+	res += __builtin_ctz(~(uint32) bits[bytenum]);
+#else
+	res += pg_rightmost_zero_pos[bits[bytenum]];
+#endif
+
+	/*
+	 * Since we did no masking to mask out bits beyond natts, we may have
+	 * found a bit higher than natts, so we must cap to natts
+	 */
+	res = Min(res, natts);
+
+	Assert(res == firstnull_check);
+
+	return res;
 }
 #endif							/* FRONTEND */
 

@@ -865,20 +865,17 @@ extern MinimalTuple minimal_expand_tuple(HeapTuple sourceTuple, TupleDesc tupleD
 static inline Datum
 fastgetattr(HeapTuple tup, int attnum, TupleDesc tupleDesc, bool *isnull)
 {
+	CompactAttribute *att = TupleDescCompactAttr(tupleDesc, attnum - 1);
+
 	Assert(attnum > 0);
-
 	*isnull = false;
-	if (HeapTupleNoNulls(tup))
-	{
-		CompactAttribute *att;
 
-		att = TupleDescCompactAttr(tupleDesc, attnum - 1);
-		if (att->attcacheoff >= 0)
-			return fetchatt(att, (char *) tup->t_data + tup->t_data->t_hoff +
-							att->attcacheoff);
-		else
-			return nocachegetattr(tup, attnum, tupleDesc);
-	}
+	if (att->attcacheoff >= 0 && !HeapTupleHasNulls(tup))
+		return fetchatt(att, (char *) tup->t_data + tup->t_data->t_hoff +
+						att->attcacheoff);
+
+	if (HeapTupleNoNulls(tup))
+		return nocachegetattr(tup, attnum, tupleDesc);
 	else
 	{
 		if (att_isnull(attnum - 1, tup->t_data->t_bits))

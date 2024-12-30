@@ -197,6 +197,9 @@ CreateTemplateTupleDesc(int natts)
 	desc->tdtypmod = -1;
 	desc->tdrefcount = -1;		/* assume not reference-counted */
 
+	/* This will be set to the correct value by TupleDescFinalize() */
+	desc->firstNonCachedOffAttr = -1;
+
 	return desc;
 }
 
@@ -457,6 +460,9 @@ TupleDescCopy(TupleDesc dst, TupleDesc src)
  *		descriptor to another.
  *
  * !!! Constraints and defaults are not copied !!!
+ *
+ * The caller must take care of calling TupleDescFinalize() on once all
+ * TupleDesc changes have been made.
  */
 void
 TupleDescCopyEntry(TupleDesc dst, AttrNumber dstAttno,
@@ -487,6 +493,37 @@ TupleDescCopyEntry(TupleDesc dst, AttrNumber dstAttno,
 	dstAtt->attgenerated = '\0';
 
 	populate_compact_attribute(dst, dstAttno - 1);
+}
+
+/*
+ * TupleDescFinalize
+ *		Finalize the given TupleDesc.  This must be called after the
+ *		attributes arrays have been populated or adjusted by any code.
+ *
+ * Must be called after populate_compact_attribute() and before
+ * BlessTupleDesc().
+ */
+void
+TupleDescFinalize(TupleDesc tupdesc)
+{
+	int			firstNonCachedOffAttr = 0;
+	int			offp = 0;
+
+	for (int i = 0; i < tupdesc->natts; i++)
+	{
+		CompactAttribute *cattr = TupleDescCompactAttr(tupdesc, i);
+
+		if (cattr->attlen <= 0)
+			break;
+
+		offp = att_nominal_alignby(offp, cattr->attalignby);
+		cattr->attcacheoff = offp;
+
+		offp += cattr->attlen;
+		firstNonCachedOffAttr = i + 1;
+	}
+
+	tupdesc->firstNonCachedOffAttr = firstNonCachedOffAttr;
 }
 
 /*

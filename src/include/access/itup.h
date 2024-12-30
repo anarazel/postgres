@@ -131,24 +131,20 @@ IndexInfoFindDataOffset(unsigned short t_info)
 static inline Datum
 index_getattr(IndexTuple tup, int attnum, TupleDesc tupleDesc, bool *isnull)
 {
+	CompactAttribute *attr = TupleDescCompactAttr(tupleDesc, attnum - 1);
+
 	Assert(isnull);
 	Assert(attnum > 0);
 
 	*isnull = false;
 
-	if (!IndexTupleHasNulls(tup))
-	{
-		CompactAttribute *attr = TupleDescCompactAttr(tupleDesc, attnum - 1);
+	if (attr->attcacheoff >= 0 && !IndexTupleHasNulls(tup))
+		return fetchatt(attr,
+						(char *) tup + IndexInfoFindDataOffset(tup->t_info) +
+						attr->attcacheoff);
 
-		if (attr->attcacheoff >= 0)
-		{
-			return fetchatt(attr,
-							(char *) tup + IndexInfoFindDataOffset(tup->t_info) +
-							attr->attcacheoff);
-		}
-		else
-			return nocache_index_getattr(tup, attnum, tupleDesc);
-	}
+	if (!IndexTupleHasNulls(tup))
+		return nocache_index_getattr(tup, attnum, tupleDesc);
 	else
 	{
 		if (att_isnull(attnum - 1, (bits8 *) tup + sizeof(IndexTupleData)))
