@@ -63,6 +63,8 @@ typedef enum
 	SHMEM_TYPE_MMAP,
 }			PGShmemType;
 
+extern PGDLLIMPORT int huge_pages_status;
+
 #ifndef WIN32
 extern PGDLLIMPORT unsigned long UsedShmemSegID;
 #else

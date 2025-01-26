@@ -135,6 +135,16 @@ BufferManagerShmemInit(void)
 							 LWTRANCHE_BUFFER_CONTENT);
 
 			ConditionVariableInit(BufferDescriptorGetIOCV(buf));
+
+			/*
+			 * Unused buffers are inaccessible. But if we're not enforcing
+			 * making buffers inaccessible without a pin, we won't mark
+			 * buffers as accessible during pinning, therefore we better don't
+			 * make them initially inaccessible.
+			 */
+#if defined(ENFORCE_BUFFER_PROT) && defined(ENFORCE_BUFFER_PROT_READ)
+			SetBufferProtection(i + 1, false, false);
+#endif
 		}
 
 		/* Correct last entry of linked list */

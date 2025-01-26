@@ -361,3 +361,27 @@
  * Enable tracing of syncscan operations (see also the trace_syncscan GUC var).
  */
 /* #define TRACE_SYNCSCAN */
+
+
+/*
+ * On some operating systems we know how to change whether pages are
+ * readable/writeable. We can use that to verify that we are following buffer
+ * locking rules, we can make pages inaccessible or read-only when we don't
+ * have sufficient locks etc. This obviously is fairly expensive, so by
+ * default we only so in assert enabled builds.
+ */
+#if defined(USE_ASSERT_CHECKING) && !defined(WIN32)
+#define ENFORCE_BUFFER_PROT
+#endif
+
+/*
+ * Protecting pages against being modified without an exclusive lock /
+ * BufferPrepareToSetHintBits() is reasonably cheap, neither happens *that*
+ * often. Pinning/unpinning buffers is a lot more common, making it more
+ * expensive to call mprotect() that often.
+ *
+ * Therefore disable this by default, even in assert enabled builds.
+ */
+#ifdef ENFORCE_BUFFER_PROT
+/* #define ENFORCE_BUFFER_PROT_READ */
+#endif

@@ -37,6 +37,10 @@
 #include <sys/file.h>
 #include <unistd.h>
 
+#ifdef ENFORCE_BUFFER_PROT
+#include <sys/mman.h>			/* for mprotect() */
+#endif							/* ENFORCE_BUFFER_PROT */
+
 #include "access/tableam.h"
 #include "access/xloginsert.h"
 #include "access/xlogutils.h"
@@ -53,6 +57,7 @@
 #include "storage/fd.h"
 #include "storage/ipc.h"
 #include "storage/lmgr.h"
+#include "storage/pg_shmem.h"
 #include "storage/proc.h"
 #include "storage/read_stream.h"
 #include "storage/smgr.h"
@@ -1065,8 +1070,6 @@ ZeroAndLockBuffer(Buffer buffer, ReadBufferMode mode, bool already_valid)
 
 	if (need_to_zero)
 	{
-		memset(BufferGetPage(buffer), 0, BLCKSZ);
-
 		/*
 		 * Grab the buffer content lock before marking the page as valid, to
 		 * make sure that no other backend sees the zeroed page before the
@@ -1079,7 +1082,12 @@ ZeroAndLockBuffer(Buffer buffer, ReadBufferMode mode, bool already_valid)
 		 * already valid.)
 		 */
 		if (!isLocalBuf)
+		{
 			LWLockAcquire(BufferDescriptorGetContentLock(bufHdr), LW_EXCLUSIVE);
+			SetBufferProtection(buffer, true, true);
+		}
+
+		memset(BufferGetPage(buffer), 0, BLCKSZ);
 
 		if (isLocalBuf)
 		{
@@ -1505,6 +1513,9 @@ WaitReadBuffers(ReadBuffersOperation *operation)
 		io_first_block = blocknum + i;
 		io_buffers_len = 1;
 
+		if (persistence != RELPERSISTENCE_TEMP)
+			SetBufferProtection(io_buffers[0], true, true);
+
 		/*
 		 * How many neighboring-on-disk blocks can we scatter-read into other
 		 * buffers at the same time?  In this case we don't wait if we see an
@@ -1520,7 +1531,13 @@ WaitReadBuffers(ReadBuffersOperation *operation)
 				   BufferGetBlockNumber(buffers[i]) + 1);
 
 			io_buffers[io_buffers_len] = buffers[++i];
-			io_pages[io_buffers_len++] = BufferGetBlock(buffers[i]);
+			io_pages[io_buffers_len] = BufferGetBlock(buffers[i]);
+
+			/* smgrreadv() needs to modify the buffer */
+			if (persistence != RELPERSISTENCE_TEMP)
+				SetBufferProtection(io_buffers[io_buffers_len], true, true);
+
+			io_buffers_len++;
 		}
 
 		io_start = pgstat_prepare_io_time(track_io_timing);
@@ -1579,6 +1596,9 @@ WaitReadBuffers(ReadBuffersOperation *operation)
 				/* Set BM_VALID, terminate IO, and wake up any waiters */
 				TerminateBufferIO(bufHdr, false, BM_VALID, true);
 			}
+
+			if (persistence != RELPERSISTENCE_TEMP)
+				SetBufferProtection(io_buffers[j], true, false);
 
 			/* Report I/Os as completing individually. */
 			TRACE_POSTGRESQL_BUFFER_READ_DONE(forknum, io_first_block + j,
@@ -2233,7 +2253,9 @@ ExtendBufferedRelShared(BufferManagerRelation bmr,
 		buf_block = BufHdrGetBlock(GetBufferDescriptor(buffers[i] - 1));
 
 		/* new buffers are zero-filled */
+		SetBufferProtection(buffers[i], true, true);
 		MemSet((char *) buf_block, 0, BLCKSZ);
+		SetBufferProtection(buffers[i], true, false);
 	}
 
 	/*
@@ -2460,7 +2482,7 @@ ExtendBufferedRelShared(BufferManagerRelation bmr,
 		}
 
 		if (lock)
-			LWLockAcquire(BufferDescriptorGetContentLock(buf_hdr), LW_EXCLUSIVE);
+			LockBuffer(buf, BUFFER_LOCK_EXCLUSIVE);
 
 		TerminateBufferIO(buf_hdr, false, BM_VALID, true);
 	}
@@ -2765,6 +2787,10 @@ PinBuffer(BufferDesc *buf, BufferAccessStrategy strategy)
 				 * non-accessible in any case.
 				 */
 				VALGRIND_MAKE_MEM_DEFINED(BufHdrGetBlock(buf), BLCKSZ);
+
+#if defined(ENFORCE_BUFFER_PROT) && defined(ENFORCE_BUFFER_PROT_READ)
+				SetBufferProtection(BufferDescriptorGetBuffer(buf), true, false);
+#endif
 				break;
 			}
 		}
@@ -2837,6 +2863,10 @@ PinBuffer_Locked(BufferDesc *buf)
 	 */
 	VALGRIND_MAKE_MEM_DEFINED(BufHdrGetBlock(buf), BLCKSZ);
 
+#if defined(ENFORCE_BUFFER_PROT) && defined(ENFORCE_BUFFER_PROT_READ)
+	SetBufferProtection(BufferDescriptorGetBuffer(buf), true, false);
+#endif
+
 	/*
 	 * Since we hold the buffer spinlock, we can update the buffer state and
 	 * release the lock in one operation.
@@ -2895,6 +2925,10 @@ UnpinBufferNoOwner(BufferDesc *buf)
 		 * accessed while a buffer lock is held.
 		 */
 		VALGRIND_MAKE_MEM_NOACCESS(BufHdrGetBlock(buf), BLCKSZ);
+
+#if defined(ENFORCE_BUFFER_PROT) && defined(ENFORCE_BUFFER_PROT_READ)
+		SetBufferProtection(BufferDescriptorGetBuffer(buf), false, false);
+#endif
 
 		/* I'd better not still hold the buffer content lock */
 		Assert(!LWLockHeldByMe(BufferDescriptorGetContentLock(buf)));
@@ -3717,6 +3751,69 @@ CheckForBufferLeaks(void)
 }
 
 /*
+ * To verify that we are following buffer locking rules, we can make pages
+ * inaccessible or read-only when we don't have sufficient locks etc.
+ *
+ * XXX: It might be possible to fold the VALGRIND_MAKE_MEM_NOACCESS() /
+ * VALGRIND_MAKE_MEM_DEFINED() calls into this.
+ */
+#ifdef ENFORCE_BUFFER_PROT
+void
+SetBufferProtection(Buffer buf, bool allow_reads, bool allow_writes)
+{
+	static long	pagesz = 0;
+	int			prot = PROT_NONE;
+	int			rc;
+
+	Assert(huge_pages_status != HUGE_PAGES_UNKNOWN &&
+		   huge_pages_status != HUGE_PAGES_TRY);
+	StaticAssertStmt(PROT_NONE == 0, "that can't be right");
+
+	if (unlikely(pagesz == 0))
+	{
+		pagesz = sysconf(_SC_PAGESIZE);
+
+		elog(DEBUG1, "sysconf(_SC_PAGESIZE) = %ld", pagesz);
+		if (pagesz == -1)
+		{
+			elog(ERROR, "sysconf(_SC_PAGESIZE) failed: %m");
+		}
+		else if (pagesz > BLCKSZ)
+		{
+			elog(DEBUG1, "pagesz > BLCKSZ, disabling buffer protection mode");
+			pagesz = -1;
+		}
+		else if(BLCKSZ % pagesz != 0)
+		{
+			elog(DEBUG1, "BLCKSZ %% pagesz != 0, disabling buffer protection mode");
+			pagesz = -1;
+		}
+		else if (huge_pages_status == HUGE_PAGES_ON)
+		{
+			/* can't set status in a granular enough way */
+			elog(DEBUG1, "huge pages enabled, disabling buffer protection mode");
+			pagesz = -1;
+		}
+	}
+
+	/* disabled */
+	if (pagesz == -1)
+		return;
+
+	if (allow_reads)
+		prot |= PROT_READ;
+
+	if (allow_writes)
+		prot |= PROT_WRITE;
+
+	rc = mprotect(BufferGetBlock(buf), BLCKSZ, prot);
+
+	if (rc != 0)
+		elog(ERROR, "mprotect(%d, %d) failed: %m", buf, prot);
+}
+#endif							/* ENFORCE_BUFFER_PROT */
+
+/*
  * Helper routine to issue warnings when a buffer is unexpectedly pinned
  */
 char *
@@ -3911,7 +4008,10 @@ FlushBuffer(BufferDesc *buf, SMgrRelation reln, IOObject io_object,
 	bufBlock = BufHdrGetBlock(buf);
 
 	/* Update page checksum if desired. */
+	SetBufferProtection(BufferDescriptorGetBuffer(buf), true, true);
 	PageSetChecksum((Page) bufBlock, buf->tag.blockNum);
+	/* FIXME: could theoretically be exclusively locked */
+	SetBufferProtection(BufferDescriptorGetBuffer(buf), true, false);
 
 	io_start = pgstat_prepare_io_time(track_io_timing);
 
@@ -5203,19 +5303,38 @@ void
 LockBuffer(Buffer buffer, int mode)
 {
 	BufferDesc *buf;
+	LWLock	   *content_lock;
 
 	Assert(BufferIsPinned(buffer));
 	if (BufferIsLocal(buffer))
 		return;					/* local buffers need no lock */
 
 	buf = GetBufferDescriptor(buffer - 1);
+	content_lock = BufferDescriptorGetContentLock(buf);
 
 	if (mode == BUFFER_LOCK_UNLOCK)
-		LWLockRelease(BufferDescriptorGetContentLock(buf));
+	{
+#ifdef ENFORCE_BUFFER_PROT
+		bool		was_exclusive;
+
+		was_exclusive = LWLockHeldByMeInMode(content_lock, LW_EXCLUSIVE);
+#endif							/* ENFORCE_BUFFER_PROT */
+
+		LWLockRelease(content_lock);
+
+#ifdef ENFORCE_BUFFER_PROT
+		if (was_exclusive)
+			SetBufferProtection(buffer, true, false);
+#endif							/* ENFORCE_BUFFER_PROT */
+	}
 	else if (mode == BUFFER_LOCK_SHARE)
-		LWLockAcquire(BufferDescriptorGetContentLock(buf), LW_SHARED);
+		LWLockAcquire(content_lock, LW_SHARED);
 	else if (mode == BUFFER_LOCK_EXCLUSIVE)
-		LWLockAcquire(BufferDescriptorGetContentLock(buf), LW_EXCLUSIVE);
+	{
+		LWLockAcquire(content_lock, LW_EXCLUSIVE);
+
+		SetBufferProtection(buffer, true, true);
+	}
 	else
 		elog(ERROR, "unrecognized buffer lock mode: %d", mode);
 }
@@ -5229,6 +5348,7 @@ bool
 ConditionalLockBuffer(Buffer buffer)
 {
 	BufferDesc *buf;
+	bool		ret;
 
 	Assert(BufferIsPinned(buffer));
 	if (BufferIsLocal(buffer))
@@ -5236,8 +5356,13 @@ ConditionalLockBuffer(Buffer buffer)
 
 	buf = GetBufferDescriptor(buffer - 1);
 
-	return LWLockConditionalAcquire(BufferDescriptorGetContentLock(buf),
-									LW_EXCLUSIVE);
+	ret = LWLockConditionalAcquire(BufferDescriptorGetContentLock(buf),
+								   LW_EXCLUSIVE);
+
+	if (ret)
+		SetBufferProtection(buffer, true, true);
+
+	return ret;
 }
 
 /*
@@ -6349,6 +6474,11 @@ BufferPrepareToSetHintBits(Buffer buffer)
 		{
 			ResourceOwnerRememberBufferSettingHints(CurrentResourceOwner, buffer);
 
+#ifdef ENFORCE_BUFFER_PROT
+			if (!LWLockHeldByMeInMode(BufferDescriptorGetContentLock(desc), LW_EXCLUSIVE))
+				SetBufferProtection(buffer, true, true);
+#endif							/* ENFORCE_BUFFER_PROT */
+
 			return true;
 		}
 	}
@@ -6440,6 +6570,11 @@ BufferFinishSetHintBits(Buffer buffer, bool mark_dirty, bool buffer_std)
 	 * know if there is somebody waiting.
 	 */
 	ConditionVariableBroadcast(BufferDescriptorGetIOCV(desc));
+
+#ifdef ENFORCE_BUFFER_PROT
+	if (!LWLockHeldByMeInMode(BufferDescriptorGetContentLock(desc), LW_EXCLUSIVE))
+		SetBufferProtection(buffer, true, false);
+#endif							/* ENFORCE_BUFFER_PROT */
 }
 
 /*
@@ -6512,6 +6647,16 @@ BufferSetHintBits16(Buffer buffer, uint16 *ptr, uint16 val)
 			 */
 			if (likely(is_dirty))
 			{
+#ifdef ENFORCE_BUFFER_PROT
+				bool exclusive;
+
+				exclusive = LWLockHeldByMeInMode(BufferDescriptorGetContentLock(desc),
+												 LW_EXCLUSIVE);
+
+				if (!exclusive)
+					SetBufferProtection(buffer, true, true);
+#endif
+
 				buf_state = LockBufHdr(desc);
 
 				if (likely((buf_state & (BM_SETTING_HINTS | BM_IO_IN_PROGRESS)) == 0))
@@ -6527,6 +6672,11 @@ BufferSetHintBits16(Buffer buffer, uint16 *ptr, uint16 val)
 				 * between us checking and us setting the hint bit. In that
 				 * case we'll simply not mark the buffer dirty.
 				 */
+
+#ifdef ENFORCE_BUFFER_PROT
+				if (!exclusive)
+					SetBufferProtection(buffer, true, false);
+#endif
 			}
 			else
 			{

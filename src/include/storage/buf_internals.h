@@ -487,6 +487,15 @@ extern Size StrategyShmemSize(void);
 extern void StrategyInitialize(bool init);
 extern bool have_free_buffer(void);
 
+#ifdef ENFORCE_BUFFER_PROT
+extern void SetBufferProtection(Buffer buf, bool allow_reads, bool allow_writes);
+#else
+static inline void
+SetBufferProtection(Buffer buf, bool allow_reads, bool allow_writes)
+{
+}
+#endif
+
 /* buf_table.c */
 extern Size BufTableShmemSize(int size);
 extern void InitBufTable(int size);
