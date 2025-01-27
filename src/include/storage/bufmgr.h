@@ -224,6 +224,7 @@ extern void WaitReadBuffers(ReadBuffersOperation *operation);
 extern void ReleaseBuffer(Buffer buffer);
 extern void UnlockReleaseBuffer(Buffer buffer);
 extern bool BufferIsExclusiveLocked(Buffer buffer);
+extern bool BufferIsReadOnly(Buffer buffer);
 extern bool BufferIsDirty(Buffer buffer);
 extern void MarkBufferDirty(Buffer buffer);
 extern void IncrBufferRefCount(Buffer buffer);

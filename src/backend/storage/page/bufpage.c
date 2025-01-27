@@ -1489,7 +1489,7 @@ PageIndexTupleOverwrite(Page page, OffsetNumber offnum,
  *
  * In the past this needed to be done on a copy of the page, due to the
  * possibility of e.g. hint bits being set concurrently. However, this is not
- * necessary anymore as hint bits won't be set while IO is going on.
+ * necessary anymore as hint bits aren't set anymore while IO is going on.
  */
 void
 PageSetChecksum(Page page, BlockNumber blkno)

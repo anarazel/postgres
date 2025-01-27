@@ -2501,6 +2501,52 @@ BufferIsExclusiveLocked(Buffer buffer)
 }
 
 /*
+ * BufferIsReadOnly
+ *
+ *      Checks if buffer is protected against modifications
+ *
+ * Buffer must be pinned.
+ *
+ * A buffer can be protected against modification either by holding an
+ * exclusive lock, or by BM_SETTING_HINTS being set, as that prevents hint
+ * bits being set concurrently.
+ */
+bool
+BufferIsReadOnly(Buffer buffer)
+{
+	BufferDesc *bufHdr;
+	uint32		buf_state;
+
+	Assert(BufferIsPinned(buffer));
+
+	if (BufferIsLocal(buffer))
+	{
+		/* local buffers can't be modified concurrently */
+		return true;
+	}
+	else
+	{
+		bufHdr = GetBufferDescriptor(buffer - 1);
+
+		if (LWLockHeldByMeInMode(BufferDescriptorGetContentLock(bufHdr),
+								 LW_EXCLUSIVE))
+			return true;
+	}
+
+	buf_state = pg_atomic_read_u32(&bufHdr->state);
+
+	/*
+	 * XXX: This doesn't ensure that this backend set BM_SETTING_HINTS. But we
+	 * don't have a convenient way of checking that fact, and this will only
+	 * rarely lead to returning the wrong value...
+	 */
+	if (buf_state & BM_SETTING_HINTS)
+		return true;
+
+	return false;
+}
+
+/*
  * BufferIsDirty
  *
  *		Checks if buffer is already dirty.
