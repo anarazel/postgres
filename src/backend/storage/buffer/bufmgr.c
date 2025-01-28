@@ -4926,12 +4926,16 @@ IncrBufferRefCount(Buffer buffer)
 }
 
 /*
- * Implementation of MarkBufferDirtyHint(), separate because
- * BufferSetHintBits16() needs to be able to set hint bits without setting
- * BM_SETTING_HINTS.
+ * Implementation of MarkBufferDirtyHint() for shared buffers, with some extra
+ * options for internal callers.
+ *
+ * If clear_setting_hints is set, the BM_SETTING_HINTS flag is reset before
+ * the function returns. This allows callers to ensure that the flag prevents
+ * further hint bits from being set by other sessions while we might be WAL
+ * logging the hint bit change. It also often saves one atomic operation.
  */
 static inline void
-MarkBufferDirtyHintImpl(Buffer buffer, bool buffer_std, bool single_hint_write)
+MarkSharedBufferDirtyHint(Buffer buffer, bool buffer_std, bool clear_setting_hints)
 {
 	BufferDesc *bufHdr;
 	Page		page = BufferGetPage(buffer);
@@ -4983,7 +4987,7 @@ MarkBufferDirtyHintImpl(Buffer buffer, bool buffer_std, bool single_hint_write)
 			 */
 			if (RecoveryInProgress() ||
 				RelFileLocatorSkippingWAL(BufTagGetRelFileLocator(&bufHdr->tag)))
-				return;
+				goto clear_setting_hints;
 
 			/*
 			 * If the block is already dirty because we either made a change
@@ -5040,6 +5044,14 @@ MarkBufferDirtyHintImpl(Buffer buffer, bool buffer_std, bool single_hint_write)
 		}
 
 		buf_state |= BM_DIRTY | BM_JUST_DIRTIED;
+
+		if (clear_setting_hints)
+		{
+			Assert(buf_state & BM_SETTING_HINTS);
+			buf_state &= ~BM_SETTING_HINTS;
+			clear_setting_hints = false;
+		}
+
 		UnlockBufHdr(bufHdr, buf_state);
 
 		if (delayChkptFlags)
@@ -5051,6 +5063,17 @@ MarkBufferDirtyHintImpl(Buffer buffer, bool buffer_std, bool single_hint_write)
 			if (VacuumCostActive)
 				VacuumCostBalance += VacuumCostPageDirty;
 		}
+	}
+
+clear_setting_hints:
+	if (clear_setting_hints)
+	{
+		uint32		buf_state;
+
+		buf_state = LockBufHdr(bufHdr);
+		Assert(buf_state & BM_SETTING_HINTS);
+		buf_state &= ~BM_SETTING_HINTS;
+		UnlockBufHdr(bufHdr, buf_state);
 	}
 }
 
@@ -5080,7 +5103,7 @@ MarkBufferDirtyHint(Buffer buffer, bool buffer_std)
 		return;
 	}
 
-	MarkBufferDirtyHintImpl(buffer, buffer_std, false);
+	MarkSharedBufferDirtyHint(buffer, buffer_std, false);
 }
 
 /*
@@ -6310,11 +6333,31 @@ BufferFinishSetHintBits(Buffer buffer, bool mark_dirty, bool buffer_std)
 		Assert(old_buf_state & (BM_SETTING_HINTS));
 		Assert(!(old_buf_state & (BM_IO_IN_PROGRESS)));
 
-		if (unlikely(old_buf_state & BM_LOCKED))
-			old_buf_state = WaitBufHdrUnlocked(desc);
-
 		is_dirty = (old_buf_state & (BM_DIRTY | BM_JUST_DIRTIED)) ==
 			(BM_DIRTY | BM_JUST_DIRTIED);
+
+		/*
+		 * Clear BM_SETTING_HINTS unless we need to dirty the page. If we need
+		 * to do so, we can't clear BM_SETTING_HINTS yet, as dirtying a page
+		 * might need to WAL log hint bits. For that we need to hold onto
+		 * BM_SETTING_HINTS to:
+		 *
+		 * a) Prevent concurrent changes by other backends, which could
+		 *    corrupt the WAL checksum. No other backend can set hint bits
+		 *    while BM_SETTING_HINTS is set providing sufficient protection.
+		 *
+		 * b) Have the right to modify the buffer, to set the LSN. Without
+		 *    that we could corrupt the checksum that another backend computed
+		 *    while writing out the page.
+		 */
+		if (unlikely(mark_dirty && !is_dirty))
+			break;
+
+		if (unlikely(old_buf_state & BM_LOCKED))
+		{
+			old_buf_state = WaitBufHdrUnlocked(desc);
+			continue;
+		}
 
 		new_buf_state = old_buf_state;
 		new_buf_state &= ~BM_SETTING_HINTS;
@@ -6326,12 +6369,8 @@ BufferFinishSetHintBits(Buffer buffer, bool mark_dirty, bool buffer_std)
 		}
 	}
 
-	/*
-	 * It might be worth combining some of the atomic operations happening
-	 * inside MarkBufferDirtyHintImpl() with the above.
-	 */
 	if (mark_dirty && !is_dirty)
-		MarkBufferDirtyHintImpl(buffer, buffer_std, true);
+		MarkSharedBufferDirtyHint(buffer, buffer_std, true);
 
 	ResourceOwnerForgetBufferSettingHints(CurrentResourceOwner, buffer);
 
@@ -6350,7 +6389,7 @@ BufferFinishSetHintBits(Buffer buffer, bool mark_dirty, bool buffer_std)
 /*
  * Try to set a 16 bit hint bit value.
  *
- * This is cheaper than BufferPrepareToSetHintBits() +
+ * This often is cheaper than BufferPrepareToSetHintBits() +
  * BufferFinishSetHintBits() when doing a single hint bit write for a buffer,
  * but more expensive when setting multiple hint bits.
  *
@@ -6358,7 +6397,9 @@ BufferFinishSetHintBits(Buffer buffer, bool mark_dirty, bool buffer_std)
  * BufferPrepareToSetHintBits(), the mechanism to make it safe differs:
  * Instead of setting BM_SETTING_HINTS while hint bits are set, this function
  * checks if IO is in progress, and sets the hint bit if not, while holding
- * the buffer header spinlock.
+ * the buffer header spinlock.  However, if the page is not yet dirty, we do
+ * need to set BM_SETTING_HINTS, as dirtying the page might involve WAL
+ * logging the hint bit change, which does not tolerate concurrent changes.
  *
  * Assumes that the buffer has the standard layout. The buffer will be marked
  * dirty if possible.
@@ -6374,10 +6415,8 @@ BufferSetHintBits16(Buffer buffer, uint16 *ptr, uint16 val)
 	bool		is_dirty = false;
 
 	Assert(BufferIsPinned(buffer));
-
-	/*
-	 * TODO: Add assert ensuring ptr inside the buffer.
-	 */
+	Assert((char *) ptr >= (char *) BufferGetPage(buffer) &&
+		   (char *) ptr <= ((char *) BufferGetPage(buffer) + BLCKSZ));
 
 	if (unlikely(BufferIsLocal(buffer)))
 	{
@@ -6399,21 +6438,50 @@ BufferSetHintBits16(Buffer buffer, uint16 *ptr, uint16 val)
 	else
 	{
 		desc = GetBufferDescriptor(buffer - 1);
-		buf_state = LockBufHdr(desc);
+
+		buf_state = pg_atomic_read_u32(&desc->state);
 
 		if (likely((buf_state & (BM_SETTING_HINTS | BM_IO_IN_PROGRESS)) == 0))
 		{
-			*ptr = val;
+			is_dirty = (buf_state & (BM_DIRTY | BM_JUST_DIRTIED)) ==
+				(BM_DIRTY | BM_JUST_DIRTIED);
 
-			did_set = true;
+			/*
+			 * If the buffer is not dirty, we have to add the BM_SETTING_HINTS
+			 * hint flags, to prevent concurrent modifications while
+			 * MarkSharedBufferDirtyHint() WAL logs the hint bit change.
+			 *
+			 * In theory we could use the fastpath even when not yet dirty iff
+			 * WAL logging of hint bits is disabled. But that doesn't seem worth it.
+			 */
+			if (likely(is_dirty))
+			{
+				buf_state = LockBufHdr(desc);
+
+				if (likely((buf_state & (BM_SETTING_HINTS | BM_IO_IN_PROGRESS)) == 0))
+				{
+					*ptr = val;
+					did_set = true;
+				}
+
+				UnlockBufHdr(desc, buf_state);
+
+				/*
+				 * It's possible that the dirty bit was concurrently cleared
+				 * between us checking and us setting the hint bit. In that
+				 * case we'll simply not mark the buffer dirty.
+				 */
+			}
+			else
+			{
+				if (BufferPrepareToSetHintBits(buffer))
+				{
+					*ptr = val;
+					BufferFinishSetHintBits(buffer, true, true);
+					did_set = true;
+				}
+			}
 		}
-
-		UnlockBufHdr(desc, buf_state);
-
-		is_dirty = (buf_state & (BM_DIRTY | BM_JUST_DIRTIED)) ==
-			(BM_DIRTY | BM_JUST_DIRTIED);
-		if (did_set && !is_dirty)
-			MarkBufferDirtyHintImpl(buffer, true, true);
 	}
 
 	return did_set;
