@@ -286,6 +286,22 @@ GetLocalVictimBuffer(void)
 	return BufferDescriptorGetBuffer(bufHdr);
 }
 
+/* see GetSoftPinLimit() */
+uint32
+GetSoftLocalPinLimit(void)
+{
+	/* Every backend has its own temporary buffers, and can pin them all. */
+	return num_temp_buffers;
+}
+
+/* see GetAdditionalPinLimit() */
+uint32
+GetAdditionalLocalPinLimit(void)
+{
+	Assert(NLocalPinnedBuffers <= num_temp_buffers);
+	return num_temp_buffers - NLocalPinnedBuffers;
+}
+
 /* see LimitAdditionalPins() */
 void
 LimitAdditionalLocalPins(uint32 *additional_pins)
