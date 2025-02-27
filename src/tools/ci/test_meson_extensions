@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+
+import argparse
+import os
+import shutil
+import subprocess
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument('--meson', help='path to meson binary',
+                    type=str, required=True)
+parser.add_argument('--meson_args', help='args of meson binary',
+                    type=str, nargs='*', required=False)
+parser.add_argument('--test_dir', help='test source directory',
+                    type=str, required=True)
+parser.add_argument('--test_out_dir', help='test output directory',
+                    type=str, required=True)
+parser.add_argument('--builddir', help='meson build directory',
+                    type=str, required=True)
+parser.add_argument('--pkg_conf_path',
+                    help='PKG_CONF_PATH from surrounding meson build',
+                    type=str, nargs='?', const='', required=False)
+parser.add_argument('c_args', help='c_args from surrounding meson build',
+                     nargs='*')
+
+args = parser.parse_args()
+
+meson_bin = args.meson
+meson_args = ' '.join(args.meson_args)
+test_source_dir = args.test_dir
+test_out_dir = args.test_out_dir
+build_dir = args.builddir
+pkg_conf_path = args.pkg_conf_path
+c_args = ' '.join(args.c_args)
+
+exit_code = 0
+
+def remove_duplicates(duplicate_str):
+    words = duplicate_str.split()
+    return ' '.join(sorted(set(words), key=words.index))
+
+
+def run_tests(pkg_conf_path_local, message):
+    print('\n{}\n{}\n'.format('#' * 60, message), flush=True)
+
+    env = {**os.environ, }
+    env['PKG_CONFIG_PATH'] = '{}:{}:{}'.format(
+      pkg_conf_path_local, pkg_conf_path, env.get('PKG_CONFIG_PATH', ''),
+    ).strip(': ')
+    env['CC'] = '{} {}'.format(
+      c_args, env.get('CC', ''),
+    )
+    env['CC'] = remove_duplicates(env['CC'])
+
+    # Clear the build directory beforehand.
+    if os.path.exists(test_out_dir):
+        shutil.rmtree(test_out_dir)
+
+    if meson_args:
+        meson_setup_command = [meson_bin, meson_args, 'setup', test_out_dir]
+    else:
+        meson_setup_command = [meson_bin, 'setup', test_out_dir]
+
+    meson_compile_command = ['meson', 'compile', '-C', test_out_dir, '-v']
+
+    subprocess.run(meson_setup_command, env=env, cwd=test_source_dir, check=True)
+    subprocess.run(meson_compile_command, cwd=test_source_dir, check=True)
+
+run_tests(os.path.join(build_dir, 'meson-uninstalled'),
+          message='Testing postgresql-extension-warnings-uninstalled')
