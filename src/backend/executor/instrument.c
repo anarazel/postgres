@@ -26,38 +26,121 @@ static void BufferUsageAdd(BufferUsage *dst, const BufferUsage *add);
 static void WalUsageAdd(WalUsage *dst, WalUsage *add);
 
 
-/* Allocate new instrumentation structure(s) */
+/* General purpose instrumentation handling */
 Instrumentation *
-InstrAlloc(int n, int instrument_options, bool async_mode)
+InstrAlloc(int instrument_options)
 {
 	Instrumentation *instr;
 
 	/* initialize all fields to zeroes, then modify as needed */
-	instr = palloc0(n * sizeof(Instrumentation));
+	instr = palloc0(sizeof(Instrumentation));
 	if (instrument_options & (INSTRUMENT_BUFFERS | INSTRUMENT_TIMER | INSTRUMENT_WAL))
 	{
-		bool		need_buffers = (instrument_options & INSTRUMENT_BUFFERS) != 0;
-		bool		need_wal = (instrument_options & INSTRUMENT_WAL) != 0;
-		bool		need_timer = (instrument_options & INSTRUMENT_TIMER) != 0;
-		int			i;
-
-		for (i = 0; i < n; i++)
-		{
-			instr[i].need_bufusage = need_buffers;
-			instr[i].need_walusage = need_wal;
-			instr[i].need_timer = need_timer;
-			instr[i].async_mode = async_mode;
-		}
+		instr->need_bufusage = (instrument_options & INSTRUMENT_BUFFERS) != 0;
+		instr->need_walusage = (instrument_options & INSTRUMENT_WAL) != 0;
+		instr->need_timer = (instrument_options & INSTRUMENT_TIMER) != 0;
 	}
+
+	return instr;
+}
+
+void
+InstrStart(Instrumentation *instr)
+{
+	if (instr->need_timer)
+	{
+		if (!INSTR_TIME_IS_ZERO(instr->starttime))
+			elog(ERROR, "InstrStartNode called twice in a row");
+		else
+			INSTR_TIME_SET_CURRENT(instr->starttime);
+	}
+
+	if (instr->need_bufusage)
+		instr->bufusage_start = pgBufferUsage;
+
+	if (instr->need_walusage)
+		instr->walusage_start = pgWalUsage;
+}
+
+void
+InstrStop(Instrumentation *instr)
+{
+	instr_time	endtime;
+
+	/* let's update the time only if the timer was requested */
+	if (instr->need_timer)
+	{
+		if (INSTR_TIME_IS_ZERO(instr->starttime))
+			elog(ERROR, "InstrStop called without start");
+
+		INSTR_TIME_SET_CURRENT(endtime);
+		INSTR_TIME_ACCUM_DIFF(instr->total, endtime, instr->starttime);
+
+		INSTR_TIME_SET_ZERO(instr->starttime);
+	}
+
+	/* Add delta of buffer usage since entry to node's totals */
+	if (instr->need_bufusage)
+		BufferUsageAccumDiff(&instr->bufusage,
+							 &pgBufferUsage, &instr->bufusage_start);
+
+	if (instr->need_walusage)
+		WalUsageAccumDiff(&instr->walusage,
+						  &pgWalUsage, &instr->walusage_start);
+}
+
+/* Trigger instrumentation handling */
+TriggerInstrumentation *
+InstrAllocTrigger(int n, int instrument_options)
+{
+	TriggerInstrumentation *tginstr = palloc0(n * sizeof(TriggerInstrumentation));
+	bool		need_buffers = (instrument_options & INSTRUMENT_BUFFERS) != 0;
+	bool		need_wal = (instrument_options & INSTRUMENT_WAL) != 0;
+	bool		need_timer = (instrument_options & INSTRUMENT_TIMER) != 0;
+	int			i;
+
+	for (i = 0; i < n; i++)
+	{
+		tginstr[i].instr.need_bufusage = need_buffers;
+		tginstr[i].instr.need_walusage = need_wal;
+		tginstr[i].instr.need_timer = need_timer;
+	}
+
+	return tginstr;
+}
+
+void
+InstrStartTrigger(TriggerInstrumentation *tginstr)
+{
+	InstrStart(&tginstr->instr);
+}
+
+void
+InstrStopTrigger(TriggerInstrumentation *tginstr, int firings)
+{
+	InstrStop(&tginstr->instr);
+	tginstr->firings += firings;
+}
+
+/* Node instrumentation handling */
+
+/* Allocate new node instrumentation structure */
+NodeInstrumentation *
+InstrAllocNode(int instrument_options, bool async_mode)
+{
+	NodeInstrumentation *instr = palloc(sizeof(NodeInstrumentation));
+
+	InstrInitNode(instr, instrument_options);
+	instr->async_mode = async_mode;
 
 	return instr;
 }
 
 /* Initialize a pre-allocated instrumentation structure. */
 void
-InstrInit(Instrumentation *instr, int instrument_options)
+InstrInitNode(NodeInstrumentation *instr, int instrument_options)
 {
-	memset(instr, 0, sizeof(Instrumentation));
+	memset(instr, 0, sizeof(NodeInstrumentation));
 	instr->need_bufusage = (instrument_options & INSTRUMENT_BUFFERS) != 0;
 	instr->need_walusage = (instrument_options & INSTRUMENT_WAL) != 0;
 	instr->need_timer = (instrument_options & INSTRUMENT_TIMER) != 0;
@@ -65,7 +148,7 @@ InstrInit(Instrumentation *instr, int instrument_options)
 
 /* Entry to a plan node */
 void
-InstrStartNode(Instrumentation *instr)
+InstrStartNode(NodeInstrumentation *instr)
 {
 	if (instr->need_timer)
 	{
@@ -85,7 +168,7 @@ InstrStartNode(Instrumentation *instr)
 
 /* Exit from a plan node */
 void
-InstrStopNode(Instrumentation *instr, double nTuples)
+InstrStopNode(NodeInstrumentation *instr, double nTuples)
 {
 	double		save_tuplecount = instr->tuplecount;
 	instr_time	endtime;
@@ -133,7 +216,7 @@ InstrStopNode(Instrumentation *instr, double nTuples)
 
 /* Update tuple count */
 void
-InstrUpdateTupleCount(Instrumentation *instr, double nTuples)
+InstrUpdateTupleCount(NodeInstrumentation *instr, double nTuples)
 {
 	/* count the returned tuples */
 	instr->tuplecount += nTuples;
@@ -141,7 +224,7 @@ InstrUpdateTupleCount(Instrumentation *instr, double nTuples)
 
 /* Finish a run cycle for a plan node */
 void
-InstrEndLoop(Instrumentation *instr)
+InstrEndLoop(NodeInstrumentation *instr)
 {
 	/* Skip if nothing has happened, or already shut down */
 	if (!instr->running)
@@ -166,7 +249,7 @@ InstrEndLoop(Instrumentation *instr)
 
 /* aggregate instrumentation information */
 void
-InstrAggNode(Instrumentation *dst, Instrumentation *add)
+InstrAggNode(NodeInstrumentation *dst, NodeInstrumentation *add)
 {
 	if (!dst->running && add->running)
 	{

@@ -1023,7 +1023,7 @@ pgss_ExecutorStart(QueryDesc *queryDesc, int eflags)
 			MemoryContext oldcxt;
 
 			oldcxt = MemoryContextSwitchTo(queryDesc->estate->es_query_cxt);
-			queryDesc->totaltime = InstrAlloc(1, INSTRUMENT_ALL, false);
+			queryDesc->totaltime = InstrAlloc(INSTRUMENT_ALL);
 			MemoryContextSwitchTo(oldcxt);
 		}
 	}
@@ -1082,12 +1082,6 @@ pgss_ExecutorEnd(QueryDesc *queryDesc)
 	if (queryId != INT64CONST(0) && queryDesc->totaltime &&
 		pgss_enabled(nesting_level))
 	{
-		/*
-		 * Make sure stats accumulation is done.  (Note: it's okay if several
-		 * levels of hook all do this.)
-		 */
-		InstrEndLoop(queryDesc->totaltime);
-
 		pgss_store(queryDesc->sourceText,
 				   queryId,
 				   queryDesc->plannedstmt->stmt_location,
