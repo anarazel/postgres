@@ -24,6 +24,11 @@ install_data('autoinc.example',
   kwargs: contrib_doc_args,
 )
 
+bitcode_modules += {
+  'target': autoinc,
+  'srcfiles': autoinc_sources,
+}
+
 
 insert_username_sources = files(
   'insert_username.c',
@@ -51,6 +56,11 @@ install_data('insert_username.example',
   kwargs: contrib_doc_args,
 )
 
+bitcode_modules += {
+  'target': insert_username,
+  'srcfiles': insert_username_sources,
+}
+
 
 moddatetime_sources = files(
   'moddatetime.c',
@@ -77,6 +87,11 @@ install_data(
 install_data('moddatetime.example',
   kwargs: contrib_doc_args,
 )
+
+bitcode_modules += {
+  'target': moddatetime,
+  'srcfiles': moddatetime_sources,
+}
 
 
 # this is needed for the regression tests;
@@ -107,3 +122,8 @@ install_data('refint.control', 'refint--1.0.sql',
 install_data('refint.example',
   kwargs: contrib_doc_args,
 )
+
+bitcode_modules += {
+  'target': refint,
+  'srcfiles': refint_sources,
+}

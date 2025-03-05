@@ -16,6 +16,11 @@ auto_explain = shared_module('auto_explain',
 )
 contrib_targets += auto_explain
 
+bitcode_modules += {
+  'target': auto_explain,
+  'srcfiles': auto_explain_sources,
+}
+
 tests += {
   'name': 'auto_explain',
   'sd': meson.current_source_dir(),

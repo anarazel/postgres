@@ -22,6 +22,11 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+bitcode_modules += {
+  'target': dict_int,
+  'srcfiles': dict_int_sources,
+}
+
 tests += {
   'name': 'dict_int',
   'sd': meson.current_source_dir(),

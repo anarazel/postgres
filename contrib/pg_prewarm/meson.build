@@ -25,6 +25,12 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+# XXX?
+bitcode_modules += {
+  'target': pg_prewarm,
+  'srcfiles': pg_prewarm_sources,
+}
+
 tests += {
   'name': 'pg_prewarm',
   'sd': meson.current_source_dir(),

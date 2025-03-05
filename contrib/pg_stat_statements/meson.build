@@ -36,6 +36,11 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+bitcode_modules += {
+  'target': pg_stat_statements,
+  'srcfiles': pg_stat_statements_sources,
+}
+
 tests += {
   'name': 'pg_stat_statements',
   'sd': meson.current_source_dir(),

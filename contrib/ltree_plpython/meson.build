@@ -30,6 +30,17 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+bitcode_modules += {
+  'target': ltree_plpython,
+  'srcfiles': ltree_plpython_sources,
+  'additional_flags': [
+    '-I@0@'.format(ltree_dir_up),
+    '-DPLPYTHON_LIBNAME="plpython3"',
+    '-I@0@'.format(python3_inc_dir),
+    '-I@0@'.format(plpython_dir),
+  ]
+}
+
 ltree_plpython_regress = [
   'ltree_plpython'
 ]

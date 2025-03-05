@@ -16,6 +16,11 @@ basic_archive = shared_module('basic_archive',
 )
 contrib_targets += basic_archive
 
+bitcode_modules += {
+  'target': basic_archive,
+  'srcfiles': basic_archive_sources,
+}
+
 tests += {
   'name': 'basic_archive',
   'sd': meson.current_source_dir(),

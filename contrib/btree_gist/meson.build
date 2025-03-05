@@ -54,6 +54,11 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+bitcode_modules += {
+  'target': btree_gist,
+  'srcfiles': btree_gist_sources,
+}
+
 tests += {
   'name': 'btree_gist',
   'sd': meson.current_source_dir(),

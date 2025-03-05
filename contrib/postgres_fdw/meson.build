@@ -30,6 +30,15 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+# XXX?
+bitcode_modules += {
+  'target': postgres_fdw,
+  'srcfiles': postgres_fdw_sources,
+  'additional_flags': [
+    '-I@0@'.format(libpq_dir),
+  ]
+}
+
 tests += {
   'name': 'postgres_fdw',
   'sd': meson.current_source_dir(),

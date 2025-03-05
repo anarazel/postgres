@@ -40,6 +40,12 @@ contrib_targets += custom_target('sepgsql.sql',
   install_dir: dir_data / 'contrib',
 )
 
+# XXX?
+bitcode_modules += {
+  'target': sepgsql,
+  'srcfiles': sepgsql_sources,
+}
+
 tests += {
   'name': 'sepgsql',
   'sd': meson.current_source_dir(),

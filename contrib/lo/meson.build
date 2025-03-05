@@ -24,6 +24,11 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+bitcode_modules += {
+  'target': lo,
+  'srcfiles': lo_sources,
+}
+
 tests += {
   'name': 'lo',
   'sd': meson.current_source_dir(),

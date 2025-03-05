@@ -30,6 +30,16 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+bitcode_modules += {
+  'target': jsonb_plpython,
+  'srcfiles': jsonb_plpython_sources,
+  'additional_flags': [
+    '-DPLPYTHON_LIBNAME="plpython3"',
+    '-I@0@'.format(python3_inc_dir),
+    '-I@0@'.format(plpython_dir),
+  ]
+}
+
 jsonb_plpython_regress = [
   'jsonb_plpython'
 ]

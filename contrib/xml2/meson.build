@@ -32,6 +32,11 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+bitcode_modules += {
+  'target': xml2,
+  'srcfiles': xml2_sources,
+}
+
 tests += {
   'name': 'xml2',
   'sd': meson.current_source_dir(),

@@ -17,6 +17,14 @@ oid2name = executable('oid2name',
 )
 contrib_targets += oid2name
 
+bitcode_modules += {
+  'target': oid2name,
+  'srcfiles': oid2name_sources,
+  'additional_flags': [
+    '-I@0@'.format(libpq_dir),
+  ]
+}
+
 tests += {
   'name': 'oid2name',
   'sd': meson.current_source_dir(),

@@ -29,6 +29,11 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+bitcode_modules += {
+  'target': uuid_ossp,
+  'srcfiles': uuid_ossp_sources,
+}
+
 tests += {
   'name': 'uuid-ossp',
   'sd': meson.current_source_dir(),

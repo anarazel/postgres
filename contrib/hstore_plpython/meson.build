@@ -30,6 +30,18 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+bitcode_modules += {
+  'target': hstore_plpython,
+  'srcfiles': hstore_plpython_sources,
+  'additional_flags': [
+    '-I@0@'.format(hstore_dir_up),
+    '-DPLPYTHON_LIBNAME="plpython3"',
+    '-I@0@'.format(python3_inc_dir),
+    '-I@0@'.format(plpython_dir),
+    perl_ccflags,
+  ]
+}
+
 hstore_plpython_regress = [
   'hstore_plpython'
 ]

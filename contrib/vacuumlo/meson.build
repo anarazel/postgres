@@ -17,6 +17,15 @@ vacuumlo = executable('vacuumlo',
 )
 contrib_targets += vacuumlo
 
+# XXX?
+bitcode_modules += {
+  'target': vacuumlo,
+  'srcfiles': vacuumlo_sources,
+  'additional_flags': [
+    '-I@0@'.format(libpq_dir)
+  ]
+}
+
 tests += {
   'name': 'vacuumlo',
   'sd': meson.current_source_dir(),

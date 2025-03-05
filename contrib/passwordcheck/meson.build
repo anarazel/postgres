@@ -26,6 +26,11 @@ passwordcheck = shared_module('passwordcheck',
 )
 contrib_targets += passwordcheck
 
+bitcode_modules += {
+  'target': passwordcheck,
+  'srcfiles': passwordcheck_sources,
+}
+
 tests += {
   'name': 'passwordcheck',
   'sd': meson.current_source_dir(),

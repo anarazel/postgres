@@ -22,6 +22,11 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+bitcode_modules += {
+  'target': tsm_system_rows,
+  'srcfiles': tsm_system_rows_sources,
+}
+
 tests += {
   'name': 'tsm_system_rows',
   'sd': meson.current_source_dir(),

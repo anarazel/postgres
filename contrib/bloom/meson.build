@@ -28,6 +28,11 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+bitcode_modules += {
+  'target': bloom,
+  'srcfiles': bloom_sources,
+}
+
 tests += {
   'name': 'bloom',
   'sd': meson.current_source_dir(),

@@ -5,6 +5,7 @@ fuzzystrmatch_sources = files(
   'dmetaphone.c',
   'fuzzystrmatch.c',
 )
+bc_fuzzystrmatch_sources = fuzzystrmatch_sources
 
 daitch_mokotoff_h = custom_target('daitch_mokotoff',
   input: 'daitch_mokotoff_header.pl',
@@ -34,6 +35,15 @@ install_data(
   'fuzzystrmatch--1.1--1.2.sql',
   kwargs: contrib_data_args,
 )
+
+bitcode_modules += {
+  'target': fuzzystrmatch,
+  'depends': daitch_mokotoff_h,
+  'srcfiles': bc_fuzzystrmatch_sources,
+  'additional_flags': [
+    '-I@0@'.format(meson.current_build_dir())
+  ]
+}
 
 tests += {
   'name': 'fuzzystrmatch',

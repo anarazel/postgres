@@ -37,6 +37,15 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+bitcode_modules += {
+  'target': bool_plperl,
+  'srcfiles': bool_plperl_sources,
+  'additional_flags': [
+    '-I@0@'.format(plperl_dir),
+    perl_ccflags
+  ]
+}
+
 tests += {
   'name': 'bool_plperl',
   'sd': meson.current_source_dir(),

@@ -37,6 +37,16 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+bitcode_modules += {
+  'target': hstore_plperl,
+  'srcfiles': hstore_plperl_sources,
+  'additional_flags': [
+    '-I@0@'.format(hstore_dir_up),
+    '-I@0@'.format(plperl_dir),
+    perl_ccflags,
+  ]
+}
+
 tests += {
   'name': 'hstore_plperl',
   'sd': meson.current_source_dir(),

@@ -24,6 +24,12 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+# XXX?
+bitcode_modules += {
+  'target': pgrowlocks,
+  'srcfiles': pgrowlocks_sources,
+}
+
 tests += {
   'name': 'pgrowlocks',
   'sd': meson.current_source_dir(),

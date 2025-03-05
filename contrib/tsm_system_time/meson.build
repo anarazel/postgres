@@ -22,6 +22,11 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+bitcode_modules += {
+  'target': tsm_system_time,
+  'srcfiles': tsm_system_time_sources,
+}
+
 tests += {
   'name': 'tsm_system_time',
   'sd': meson.current_source_dir(),

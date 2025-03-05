@@ -1244,6 +1244,7 @@ if not pyopt.disabled()
   python3_inst = pm.find_installation(python.path(), required: pyopt)
   if python3_inst.found()
     python3_dep = python3_inst.dependency(embed: true, required: pyopt)
+    python3_inc_dir = python3_inst.get_variable('INCLUDEPY')
     # Remove this check after we depend on Meson >= 1.1.0
     if not cc.check_header('Python.h', dependencies: python3_dep, required: pyopt, include_directories: postgres_inc)
       python3_dep = not_found_dep

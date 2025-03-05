@@ -27,6 +27,11 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+bitcode_modules += {
+  'target': pg_buffercache,
+  'srcfiles': pg_buffercache_sources,
+}
+
 tests += {
   'name': 'pg_buffercache',
   'sd': meson.current_source_dir(),

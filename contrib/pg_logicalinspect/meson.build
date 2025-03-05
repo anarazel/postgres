@@ -22,6 +22,11 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+bitcode_modules += {
+  'target': pg_logicalinspect,
+  'srcfiles': pg_logicalinspect_sources,
+}
+
 tests += {
   'name': 'pg_logicalinspect',
   'sd': meson.current_source_dir(),

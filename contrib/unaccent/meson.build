@@ -28,6 +28,11 @@ install_data(
   install_dir: dir_data / 'tsearch_data'
 )
 
+bitcode_modules += {
+  'target': unaccent,
+  'srcfiles': unaccent_sources,
+}
+
 # XXX: Implement downlo
 tests += {
   'name': 'unaccent',

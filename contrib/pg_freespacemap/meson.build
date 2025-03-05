@@ -25,6 +25,11 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+bitcode_modules += {
+  'target': pg_freespacemap,
+  'srcfiles': pg_freespacemap_sources,
+}
+
 tests += {
   'name': 'pg_freespacemap',
   'sd': meson.current_source_dir(),

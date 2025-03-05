@@ -37,6 +37,7 @@ foreach n : ['SPI', 'Util']
   plperl_sources += xs_c
 endforeach
 
+plperl_dir = meson.current_source_dir()
 plperl_inc = include_directories('.')
 
 if host_system == 'windows'

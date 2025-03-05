@@ -50,6 +50,9 @@ export_file = custom_target('libpq.exports',
 libpq_inc = include_directories('.', '../../port')
 libpq_c_args = ['-DSO_MAJOR_VERSION=5']
 
+# libpq-fe.h is needed to generate bitcode for some extensions
+libpq_dir = meson.current_source_dir()
+
 # Not using both_libraries() here as
 # 1) resource files should only be in the shared library
 # 2) we want the .pc file to include a dependency to {pgport,common}_static for

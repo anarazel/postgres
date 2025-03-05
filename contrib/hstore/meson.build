@@ -43,6 +43,8 @@ install_headers(
   install_dir: dir_include_extension / 'hstore',
 )
 
+# some files includes "hstore/hstore.h" instead of "hstore.h"
+hstore_dir_up = join_paths(meson.current_source_dir(), '..')
 bitcode_modules += {
   'target': hstore,
   'srcfiles': hstore_sources,

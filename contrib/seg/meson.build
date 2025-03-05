@@ -11,6 +11,7 @@ seg_scan = custom_target('segscan',
 )
 generated_sources += seg_scan
 seg_sources += seg_scan
+bc_seg_sources = seg_sources
 
 seg_parse = custom_target('segparse',
   input: 'segparse.y',
@@ -18,6 +19,7 @@ seg_parse = custom_target('segparse',
 )
 generated_sources += seg_parse.to_list()
 seg_sources += seg_parse
+bc_seg_sources += seg_parse[0]
 
 if host_system == 'windows'
   seg_sources += rc_lib_gen.process(win32ver_rc, extra_args: [
@@ -46,6 +48,14 @@ install_headers(
   'segdata.h',
   install_dir: dir_include_extension / 'seg',
 )
+
+bitcode_modules += {
+  'target': seg,
+  'srcfiles': bc_seg_sources,
+  'additional_flags': [
+    '-I@0@'.format(meson.current_source_dir()),
+  ]
+}
 
 tests += {
   'name': 'seg',

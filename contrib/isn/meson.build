@@ -29,6 +29,11 @@ install_headers(
   install_dir: dir_include_extension / 'isn',
 )
 
+bitcode_modules += {
+  'target': isn,
+  'srcfiles': isn_sources,
+}
+
 tests += {
   'name': 'isn',
   'sd': meson.current_source_dir(),

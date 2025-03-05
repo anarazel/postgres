@@ -22,6 +22,11 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+# XXX?
+bitcode_modules += {
+  'target': pg_surgery,
+  'srcfiles': pg_surgery_sources,
+}
 
 tests += {
   'name': 'pg_surgery',

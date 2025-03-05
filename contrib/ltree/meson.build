@@ -41,6 +41,16 @@ install_headers(
   install_dir: dir_include_extension / 'ltree',
 )
 
+ltree_dir = meson.current_source_dir()
+ltree_dir_up = join_paths(ltree_dir, '..')
+bitcode_modules += {
+  'target': ltree,
+  'srcfiles': ltree_sources,
+  'additional_flags': [
+    '-I@0@'.format(ltree_dir)
+  ]
+}
+
 tests += {
   'name': 'ltree',
   'sd': meson.current_source_dir(),

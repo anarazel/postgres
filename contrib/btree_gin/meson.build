@@ -25,6 +25,11 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+bitcode_modules += {
+  'target': btree_gin,
+  'srcfiles': btree_gin_sources,
+}
+
 tests += {
   'name': 'btree_gin',
   'sd': meson.current_source_dir(),

@@ -30,6 +30,11 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+bitcode_modules += {
+  'target': pgstattuple,
+  'srcfiles': pgstattuple_sources,
+}
+
 tests += {
   'name': 'pgstattuple',
   'sd': meson.current_source_dir(),

@@ -22,6 +22,11 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+bitcode_modules += {
+  'target': tablefunc,
+  'srcfiles': tablefunc_sources,
+}
+
 tests += {
   'name': 'tablefunc',
   'sd': meson.current_source_dir(),

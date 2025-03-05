@@ -24,6 +24,12 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+bitcode_modules += {
+  'target': earthdistance,
+  'srcfiles': earthdistance_sources,
+}
+
+
 tests += {
   'name': 'earthdistance',
   'sd': meson.current_source_dir(),

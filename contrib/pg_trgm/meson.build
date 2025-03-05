@@ -32,6 +32,11 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+bitcode_modules += {
+  'target': pg_trgm,
+  'srcfiles': pg_trgm_sources,
+}
+
 tests += {
   'name': 'pg_trgm',
   'sd': meson.current_source_dir(),

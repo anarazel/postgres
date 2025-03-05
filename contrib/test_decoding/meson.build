@@ -16,6 +16,11 @@ test_decoding = shared_module('test_decoding',
 )
 contrib_targets += test_decoding
 
+bitcode_modules += {
+  'target': test_decoding,
+  'srcfiles': test_decoding_sources,
+}
+
 tests += {
   'name': 'test_decoding',
   'sd': meson.current_source_dir(),

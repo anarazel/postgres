@@ -24,6 +24,11 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+bitcode_modules += {
+  'target': pg_visibility,
+  'srcfiles': pg_visibility_sources,
+}
+
 tests += {
   'name': 'pg_visibility',
   'sd': meson.current_source_dir(),

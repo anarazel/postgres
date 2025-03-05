@@ -29,3 +29,8 @@ install_data(
   'sslinfo.control',
   kwargs: contrib_data_args,
 )
+
+bitcode_modules += {
+  'target': sslinfo,
+  'srcfiles': sslinfo_sources,
+}

@@ -16,6 +16,11 @@ basebackup_to_shell = shared_module('basebackup_to_shell',
 )
 contrib_targets += basebackup_to_shell
 
+bitcode_modules += {
+  'target': basebackup_to_shell,
+  'srcfiles': basebackup_to_shell_sources,
+}
+
 tests += {
   'name': 'basebackup_to_shell',
   'sd': meson.current_source_dir(),

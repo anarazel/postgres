@@ -29,6 +29,7 @@ plpython_sources += custom_target('spiexceptions.h',
 
 # FIXME: need to duplicate import library ugliness?
 plpython_inc = include_directories('.')
+plpython_dir = meson.current_source_dir()
 
 if host_system == 'windows'
   plpython_sources += rc_lib_gen.process(win32ver_rc, extra_args: [

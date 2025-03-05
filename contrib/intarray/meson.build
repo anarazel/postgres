@@ -33,6 +33,11 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+bitcode_modules += {
+  'target': intarray,
+  'srcfiles': intarray_sources,
+}
+
 tests += {
   'name': 'intarray',
   'sd': meson.current_source_dir(),

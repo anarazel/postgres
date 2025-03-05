@@ -98,6 +98,10 @@ install_data(
   kwargs: contrib_data_args,
 )
 
+bitcode_modules += {
+  'target': pgcrypto,
+  'srcfiles': pgcrypto_sources,
+}
 
 tests += {
   'name': 'pgcrypto',

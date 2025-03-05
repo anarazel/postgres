@@ -15,3 +15,8 @@ auth_delay = shared_module('auth_delay',
   kwargs: contrib_mod_args,
 )
 contrib_targets += auth_delay
+
+bitcode_modules += {
+  'target': auth_delay,
+  'srcfiles': auth_delay_sources,
+}

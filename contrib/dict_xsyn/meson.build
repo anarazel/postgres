@@ -29,6 +29,11 @@ install_data(
   }
 )
 
+bitcode_modules += {
+  'target': dict_xsyn,
+  'srcfiles': dict_xsyn_sources,
+}
+
 tests += {
   'name': 'dict_xsyn',
   'sd': meson.current_source_dir(),
