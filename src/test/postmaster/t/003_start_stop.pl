@@ -63,6 +63,11 @@ for (my $i = 0; $i <= 20; $i++)
 	my $negotiate_ssl_code = pack("Nnn", 8, 1234, 5679);
 	my $sent = $sock->send($negotiate_ssl_code);
 
+	if ($sent != 8)
+	{
+		note "huh, sent $sent bytes instead of 8";
+	}
+
 	# Read reply. We expect the server to reject it with 'N'
 	my $reply = "";
 	$sock->recv($reply, 1);
