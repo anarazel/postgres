@@ -54,6 +54,8 @@ llvm_irgen_command += [
   '-O2',
   '-Wno-ignored-attributes',
   '-Wno-empty-body',
+  '-Wno-unknown-warning-option',
+  '-Wno-compound-token-split-by-macro',
 ]
 llvm_irgen_dep_args = ['-MD', '-MQ', '@OUTPUT0@', '-MF', '@DEPFILE@']
 

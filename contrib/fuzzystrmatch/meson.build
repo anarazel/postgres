@@ -38,7 +38,7 @@ install_data(
 
 bitcode_modules += {
   'target': fuzzystrmatch,
-  'depends': daitch_mokotoff_h,
+#  'depends': daitch_mokotoff_h,
   'srcfiles': bc_fuzzystrmatch_sources,
   'additional_flags': [
     '-I@0@'.format(meson.current_build_dir())

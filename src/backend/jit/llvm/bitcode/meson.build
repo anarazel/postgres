@@ -16,19 +16,22 @@ foreach bitcode_module : bitcode_modules
   endif
 
   foreach srcfile : bitcode_module['srcfiles']
-    message('File = @0@'.format(srcfile))
-    if meson.version().version_compare('>=0.59')
+    #message('File = @0@'.format(srcfile))
+    #message('File2 = @0@'.format(srcfile.full_path()))
+    if meson.version().version_compare('>=1.3')
       srcfilename = fs.parent(srcfile) / fs.name(srcfile)
     else
       srcfilename = '@0@'.format(srcfile)
     endif
-    targetname = '@0@_@1@_@2@.bc'.format(
+    targetname = '@0@_@1@.bc'.format(
       bitcode_name,
-      fs.parent(srcfilename).underscorify(), fs.name(srcfilename))
+      srcfilename.underscorify()
+    )
+
     bitcode_targets += custom_target(
       targetname,
-      depends: bitcode_module.get('depends', []),
-      input: [srcfile, bitcode_obj.extract_objects(srcfile)],
+      depends: [bitcode_module.get('depends', []), bitcode_module['target']],
+      input: [srcfile], #, bitcode_obj.extract_objects(srcfile)],
       output: targetname,
       command: [llvm_irgen_command, bitcode_cflags_local],
       install: true,

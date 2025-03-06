@@ -3,6 +3,7 @@
 seg_sources = files(
   'seg.c',
 )
+bc_seg_sources = seg_sources
 
 seg_scan = custom_target('segscan',
   input: 'segscan.l',
@@ -11,7 +12,6 @@ seg_scan = custom_target('segscan',
 )
 generated_sources += seg_scan
 seg_sources += seg_scan
-bc_seg_sources = seg_sources
 
 seg_parse = custom_target('segparse',
   input: 'segparse.y',
@@ -19,7 +19,7 @@ seg_parse = custom_target('segparse',
 )
 generated_sources += seg_parse.to_list()
 seg_sources += seg_parse
-bc_seg_sources += seg_parse[0]
+#bc_seg_sources += seg_parse[0]
 
 if host_system == 'windows'
   seg_sources += rc_lib_gen.process(win32ver_rc, extra_args: [
