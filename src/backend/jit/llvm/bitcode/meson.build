@@ -16,6 +16,7 @@ foreach bitcode_module : bitcode_modules
   endif
 
   foreach srcfile : bitcode_module['srcfiles']
+    message('File = @0@'.format(srcfile))
     if meson.version().version_compare('>=0.59')
       srcfilename = fs.parent(srcfile) / fs.name(srcfile)
     else

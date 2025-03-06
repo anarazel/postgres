@@ -3,6 +3,7 @@
 cube_sources = files(
   'cube.c',
 )
+bc_cube_sources = cube_sources
 
 cube_scan = custom_target('cubescan',
   input: 'cubescan.l',
@@ -11,7 +12,7 @@ cube_scan = custom_target('cubescan',
 )
 generated_sources += cube_scan
 cube_sources += cube_scan
-bc_cube_sources = cube_sources
+bc_cube_sources += meson.current_build_dir() / 'cubescan.c'
 
 cube_parse = custom_target('cubeparse',
   input: 'cubeparse.y',
@@ -19,7 +20,7 @@ cube_parse = custom_target('cubeparse',
 )
 generated_sources += cube_parse.to_list()
 cube_sources += cube_parse
-bc_cube_sources += cube_parse[0]
+bc_cube_sources += meson.current_build_dir() / 'cubeparse.c'
 
 if host_system == 'windows'
   cube_sources += rc_lib_gen.process(win32ver_rc, extra_args: [
@@ -53,6 +54,7 @@ install_headers(
 cube_dir = meson.current_source_dir()
 bitcode_modules += {
   'target': cube,
+  'depends': [cube_scan, cube_parse],
   'srcfiles': bc_cube_sources,
   'additional_flags': [
     '-I@0@'.format(cube_dir),
