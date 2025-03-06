@@ -561,7 +561,7 @@
     <term><acronym>PGXS</acronym></term>
     <listitem>
      <para>
-      <link linkend="extend-pgxs"><productname>PostgreSQL</productname> Extension System</link>
+      <link linkend="extend-postgres-pgxs"><productname>PostgreSQL</productname> Extension System</link>
      </para>
     </listitem>
    </varlistentry>

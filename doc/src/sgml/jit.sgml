@@ -223,7 +223,7 @@ SET
     of types <literal>C</literal> and <literal>internal</literal>, as well as
     operators based on such functions.  To do so for functions in extensions,
     the definitions of those functions need to be made available.
-    When using <link linkend="extend-pgxs">PGXS</link> to build an extension
+    When using <link linkend="extend-postgres-pgxs">PGXS</link> to build an extension
     against a server that has been compiled with LLVM JIT support, the
     relevant files will be built and installed automatically.
    </para>

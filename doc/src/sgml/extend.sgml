@@ -1421,7 +1421,7 @@ include $(PGXS)
 </programlisting>
 
      This makefile relies on <acronym>PGXS</acronym>, which is described
-     in <xref linkend="extend-pgxs"/>.  The command <literal>make install</literal>
+     in <xref linkend="extend-postgres-pgxs"/>.  The command <literal>make install</literal>
      will install the control and script files into the correct
      directory as reported by <application>pg_config</application>.
     </para>
@@ -1434,21 +1434,26 @@ include $(PGXS)
    </sect2>
   </sect1>
 
-  <sect1 id="extend-pgxs">
+  <sect1 id="extend-postgres">
    <title>Extension Building Infrastructure</title>
-
-   <indexterm zone="extend-pgxs">
-    <primary>pgxs</primary>
-   </indexterm>
 
    <para>
     If you are thinking about distributing your
     <productname>PostgreSQL</productname> extension modules, setting up a
     portable build system for them can be fairly difficult.  Therefore
     the <productname>PostgreSQL</productname> installation provides a build
-    infrastructure for extensions, called <acronym>PGXS</acronym>, so
-    that simple extension modules can be built simply against an
-    already installed server.  <acronym>PGXS</acronym> is mainly intended
+    infrastructure for extensions, called <literal>PGXS</literal>
+    (<xref linkend="extend-postgres-pgxs"/>) and
+    its meson counterpart <literal>postgresql-extension.pc</literal>
+    (<xref linkend="extend-postgres-meson"/>).
+   </para>
+
+  </sect1>
+
+  <sect1 id="extend-postgres-pgxs">
+   <title>PGXS</title>
+
+   <para>  <acronym>PGXS</acronym> is mainly intended
     for extensions that include C code, although it can be used for
     pure-SQL extensions too.  Note that <acronym>PGXS</acronym> is not
     intended to be a universal build system framework that can be used
@@ -1488,7 +1493,7 @@ include $(PGXS)
     Set one of these three variables to specify what is built:
 
     <variablelist>
-     <varlistentry id="extend-pgxs-modules">
+     <varlistentry id="extend-postgres-pgxs-modules">
       <term><varname>MODULES</varname></term>
       <listitem>
        <para>
@@ -1498,7 +1503,7 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
-     <varlistentry id="extend-pgxs-module-big">
+     <varlistentry id="extend-postgres-pgxs-module-big">
       <term><varname>MODULE_big</varname></term>
       <listitem>
        <para>
@@ -1508,7 +1513,7 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
-     <varlistentry id="extend-pgxs-program">
+     <varlistentry id="extend-postgres-pgxs-program">
       <term><varname>PROGRAM</varname></term>
       <listitem>
        <para>
@@ -1522,7 +1527,7 @@ include $(PGXS)
     The following variables can also be set:
 
     <variablelist>
-     <varlistentry id="extend-pgxs-extension">
+     <varlistentry id="extend-postgres-pgxs-extension">
       <term><varname>EXTENSION</varname></term>
       <listitem>
        <para>
@@ -1534,7 +1539,7 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
-     <varlistentry id="extend-pgxs-moduledir">
+     <varlistentry id="extend-postgres-pgxs-moduledir">
       <term><varname>MODULEDIR</varname></term>
       <listitem>
        <para>
@@ -1547,7 +1552,7 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
-     <varlistentry id="extend-pgxs-data">
+     <varlistentry id="extend-postgres-pgxs-data">
       <term><varname>DATA</varname></term>
       <listitem>
        <para>
@@ -1556,7 +1561,7 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
-     <varlistentry id="extend-pgxs-data-built">
+     <varlistentry id="extend-postgres-pgxs-data-built">
       <term><varname>DATA_built</varname></term>
       <listitem>
        <para>
@@ -1567,7 +1572,7 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
-     <varlistentry id="extend-pgxs-data-tsearch">
+     <varlistentry id="extend-postgres-pgxs-data-tsearch">
       <term><varname>DATA_TSEARCH</varname></term>
       <listitem>
        <para>
@@ -1577,7 +1582,7 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
-     <varlistentry id="extend-pgxs-docs">
+     <varlistentry id="extend-postgres-pgxs-docs">
       <term><varname>DOCS</varname></term>
       <listitem>
        <para>
@@ -1587,7 +1592,7 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
-     <varlistentry id="extend-pgxs-headers">
+     <varlistentry id="extend-postgres-pgxs-headers">
       <term><varname>HEADERS</varname></term>
       <term><varname>HEADERS_built</varname></term>
       <listitem>
@@ -1603,7 +1608,7 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
-     <varlistentry id="extend-pgxs-headers-module">
+     <varlistentry id="extend-postgres-pgxs-headers-module">
       <term><varname>HEADERS_$MODULE</varname></term>
       <term><varname>HEADERS_built_$MODULE</varname></term>
       <listitem>
@@ -1629,7 +1634,7 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
-     <varlistentry id="extend-pgxs-scripts">
+     <varlistentry id="extend-postgres-pgxs-scripts">
       <term><varname>SCRIPTS</varname></term>
       <listitem>
        <para>
@@ -1639,7 +1644,7 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
-     <varlistentry id="extend-pgxs-scripts-built">
+     <varlistentry id="extend-postgres-pgxs-scripts-built">
       <term><varname>SCRIPTS_built</varname></term>
       <listitem>
        <para>
@@ -1650,7 +1655,7 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
-     <varlistentry id="extend-pgxs-regress">
+     <varlistentry id="extend-postgres-pgxs-regress">
       <term><varname>REGRESS</varname></term>
       <listitem>
        <para>
@@ -1659,7 +1664,7 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
-     <varlistentry id="extend-pgxs-regress-opts">
+     <varlistentry id="extend-postgres-pgxs-regress-opts">
       <term><varname>REGRESS_OPTS</varname></term>
       <listitem>
        <para>
@@ -1668,7 +1673,7 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
-     <varlistentry id="extend-pgxs-isolation">
+     <varlistentry id="extend-postgres-pgxs-isolation">
       <term><varname>ISOLATION</varname></term>
       <listitem>
        <para>
@@ -1677,7 +1682,7 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
-     <varlistentry id="extend-pgxs-isolation-opts">
+     <varlistentry id="extend-postgres-pgxs-isolation-opts">
       <term><varname>ISOLATION_OPTS</varname></term>
       <listitem>
        <para>
@@ -1687,7 +1692,7 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
-     <varlistentry id="extend-pgxs-tap-tests">
+     <varlistentry id="extend-postgres-pgxs-tap-tests">
       <term><varname>TAP_TESTS</varname></term>
       <listitem>
        <para>
@@ -1696,7 +1701,7 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
-     <varlistentry id="extend-pgxs-no-install">
+     <varlistentry id="extend-postgres-pgxs-no-install">
       <term><varname>NO_INSTALL</varname></term>
       <listitem>
        <para>
@@ -1706,7 +1711,7 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
-     <varlistentry id="extend-pgxs-no-installcheck">
+     <varlistentry id="extend-postgres-pgxs-no-installcheck">
       <term><varname>NO_INSTALLCHECK</varname></term>
       <listitem>
        <para>
@@ -1715,7 +1720,7 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
-     <varlistentry id="extend-pgxs-extra-clean">
+     <varlistentry id="extend-postgres-pgxs-extra-clean">
       <term><varname>EXTRA_CLEAN</varname></term>
       <listitem>
        <para>
@@ -1724,7 +1729,7 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
-     <varlistentry id="extend-pgxs-pg-cppflags">
+     <varlistentry id="extend-postgres-pgxs-pg-cppflags">
       <term><varname>PG_CPPFLAGS</varname></term>
       <listitem>
        <para>
@@ -1733,7 +1738,7 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
-     <varlistentry id="extend-pgxs-pg-cflags">
+     <varlistentry id="extend-postgres-pgxs-pg-cflags">
       <term><varname>PG_CFLAGS</varname></term>
       <listitem>
        <para>
@@ -1742,7 +1747,7 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
-     <varlistentry id="extend-pgxs-pg-cxxflags">
+     <varlistentry id="extend-postgres-pgxs-pg-cxxflags">
       <term><varname>PG_CXXFLAGS</varname></term>
       <listitem>
        <para>
@@ -1751,7 +1756,7 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
-     <varlistentry id="extend-pgxs-pg-ldflags">
+     <varlistentry id="extend-postgres-pgxs-pg-ldflags">
       <term><varname>PG_LDFLAGS</varname></term>
       <listitem>
        <para>
@@ -1760,7 +1765,7 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
-     <varlistentry id="extend-pgxs-pg-libs">
+     <varlistentry id="extend-postgres-pgxs-pg-libs">
       <term><varname>PG_LIBS</varname></term>
       <listitem>
        <para>
@@ -1769,7 +1774,7 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
-     <varlistentry id="extend-pgxs-shlib-link">
+     <varlistentry id="extend-postgres-pgxs-shlib-link">
       <term><varname>SHLIB_LINK</varname></term>
       <listitem>
        <para>
@@ -1778,7 +1783,7 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
-     <varlistentry id="extend-pgxs-pg-config">
+     <varlistentry id="extend-postgres-pgxs-pg-config">
       <term><varname>PG_CONFIG</varname></term>
       <listitem>
        <para>
@@ -1892,6 +1897,28 @@ make VPATH=/path/to/extension/source/tree install
     </para>
 
    </tip>
+  </sect1>
+
+  <sect1 id="extend-postgres-meson">
+   <title>postgresql-extension.pc</title>
+
+   <para>
+    When Postgres is built by using meson, it generates
+    <literal>postgresql-extension.pc</literal> pkg-config file. Extension
+    libraries can use this file like <literal>PGXS</literal>
+    (<xref linkend="extend-postgres-pgxs"/>).
+
+    To use the <literal>postgresql-extension.pc</literal> infrastructure for
+    your extension, you must write a simple meson.build file. In the
+    meson.build file, you need to include the
+    <literal>postgresql-extension.pc</literal> pkg-config file. Here is an
+    example that builds an extension module named isbn_issn, consisting of a
+    shared library containing some C code, an extension control file, an SQL
+    script, an include file (only needed if other modules might need to access
+    the extension functions without going via SQL), and a documentation text
+    file: 
+   </para>
+
   </sect1>
 
  </chapter>
