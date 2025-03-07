@@ -154,10 +154,28 @@ sub wait_connect
 	my $banner = "background_psql: ready";
 	my $banner_match = qr/(^|\n)$banner\r?\n/;
 	$self->{stdin} .= "\\echo $banner\n\\warn $banner\n";
-	$self->{run}->pump()
-	  until ($self->{stdout} =~ /$banner_match/
-		  && $self->{stderr} =~ /$banner\r?\n/)
-	  || $self->{timeout}->is_expired;
+
+	# IPC::Run throws in case psql exits while we're pumping. To make it
+	# easier to diagnose that, catch the error, report stdout/stderr at time
+	# of death and reraise.
+	eval {
+		$self->{run}->pump()
+		  until ($self->{stdout} =~ /$banner_match/
+			  && $self->{stderr} =~ /$banner\r?\n/)
+		  || $self->{timeout}->is_expired;
+	};
+	if ($@)
+	{
+		chomp(my $stdout = $self->{stdout});
+		chomp(my $stderr = $self->{stderr});
+		chomp(my $err = $@);
+		diag qq(psql died while connecting:
+  stdout: $stdout
+  stderr: $stderr
+  perl error: $err
+);
+		die "psql died while connecting";
+	}
 
 	note "connect output:\n",
 	  explain {
