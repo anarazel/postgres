@@ -2554,7 +2554,7 @@ sub connect_ok
 		connstr => "$connstr",
 		on_error_stop => 0);
 
-	is($ret, 0, $test_name);
+	is($ret, 0, "$test_name: connect succeeds, as expected");
 
 	if (defined($params{expected_stdout}))
 	{
@@ -2619,11 +2619,11 @@ sub connect_fails
 		extra_params => ['-w'],
 		connstr => "$connstr");
 
-	isnt($ret, 0, $test_name);
+	isnt($ret, 0, "$test_name: connect fails, as expected");
 
 	if (defined($params{expected_stderr}))
 	{
-		like($stderr, $params{expected_stderr}, "$test_name: matches");
+		like($stderr, $params{expected_stderr}, "$test_name: stderr matches");
 	}
 
 	$self->log_check($test_name, $log_location, %params);
