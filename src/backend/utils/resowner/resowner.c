@@ -159,10 +159,11 @@ struct ResourceOwnerData
 	LOCALLOCK  *locks[MAX_RESOWNER_LOCKS];	/* list of owned locks */
 
 	/*
-	 * AIO handles need be registered in critical sections and therefore
-	 * cannot use the normal ResourceElem mechanism.
+	 * AIO handles & bounce buffers need be registered in critical sections
+	 * and therefore cannot use the normal ResourceElem mechanism.
 	 */
 	dlist_head	aio_handles;
+	dlist_head	aio_bounce_buffers;
 };
 
 
@@ -434,6 +435,7 @@ ResourceOwnerCreate(ResourceOwner parent, const char *name)
 	}
 
 	dlist_init(&owner->aio_handles);
+	dlist_init(&owner->aio_bounce_buffers);
 
 	return owner;
 }
@@ -741,6 +743,13 @@ ResourceOwnerReleaseInternal(ResourceOwner owner,
 			dlist_node *node = dlist_head_node(&owner->aio_handles);
 
 			pgaio_io_release_resowner(node, !isCommit);
+		}
+
+		while (!dlist_is_empty(&owner->aio_bounce_buffers))
+		{
+			dlist_node *node = dlist_head_node(&owner->aio_bounce_buffers);
+
+			pgaio_bounce_buffer_release_resowner(node, !isCommit);
 		}
 	}
 	else if (phase == RESOURCE_RELEASE_LOCKS)
@@ -1110,4 +1119,16 @@ void
 ResourceOwnerForgetAioHandle(ResourceOwner owner, struct dlist_node *ioh_node)
 {
 	dlist_delete_from(&owner->aio_handles, ioh_node);
+}
+
+void
+ResourceOwnerRememberAioBounceBuffer(ResourceOwner owner, struct dlist_node *ioh_node)
+{
+	dlist_push_tail(&owner->aio_bounce_buffers, ioh_node);
+}
+
+void
+ResourceOwnerForgetAioBounceBuffer(ResourceOwner owner, struct dlist_node *ioh_node)
+{
+	dlist_delete_from(&owner->aio_bounce_buffers, ioh_node);
 }

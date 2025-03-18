@@ -127,6 +127,12 @@ struct PgAioHandle
 	/* raw result of the IO operation */
 	int32		result;
 
+	/*
+	 * List of bounce_buffers owned by IO. It would suffice to use an index
+	 * based linked list here.
+	 */
+	slist_head	bounce_buffers;
+
 	/**
 	 * In which list the handle is registered, depends on the state:
 	 * - IDLE, in per-backend list
@@ -182,10 +188,23 @@ struct PgAioHandle
 };
 
 
+/* typedef is in aio_types.h */
+struct PgAioBounceBuffer
+{
+	slist_node	node;
+	struct ResourceOwnerData *resowner;
+	dlist_node	resowner_node;
+	char	   *buffer;
+};
+
+
 typedef struct PgAioBackend
 {
 	/* index into PgAioCtl->io_handles */
 	uint32		io_handle_off;
+
+	/* index into PgAioCtl->bounce_buffers */
+	uint32		bounce_buffers_off;
 
 	/* IO Handles that currently are not used */
 	dclist_head idle_ios;
@@ -217,6 +236,12 @@ typedef struct PgAioBackend
 	 * IOs being appended at the end.
 	 */
 	dclist_head in_flight_ios;
+
+	/* Bounce Buffers that currently are not used */
+	slist_head	idle_bbs;
+
+	/* see handed_out_io */
+	PgAioBounceBuffer *handed_out_bb;
 } PgAioBackend;
 
 
@@ -244,6 +269,15 @@ typedef struct PgAioCtl
 
 	uint32		io_handle_count;
 	PgAioHandle *io_handles;
+
+	/*
+	 * To perform AIO on buffers that are not located in shared memory (either
+	 * because they are not in shared memory or because we need to operate on
+	 * a copy, as e.g. the case for writes when checksums are in use)
+	 */
+	uint32		bounce_buffers_count;
+	PgAioBounceBuffer *bounce_buffers;
+	char	   *bounce_buffers_data;
 } PgAioCtl;
 
 

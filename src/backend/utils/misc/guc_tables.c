@@ -3294,6 +3294,19 @@ struct config_int ConfigureNamesInt[] =
 	},
 
 	{
+		{"io_bounce_buffers",
+			PGC_POSTMASTER,
+			RESOURCES_IO,
+			gettext_noop("Number of IO Bounce Buffers reserved for each backend."),
+			NULL,
+			GUC_UNIT_BLOCKS
+		},
+		&io_bounce_buffers,
+		-1, -1, 4096,
+		NULL, NULL, NULL
+	},
+
+	{
 		{"io_workers",
 			PGC_SIGHUP,
 			RESOURCES_IO,

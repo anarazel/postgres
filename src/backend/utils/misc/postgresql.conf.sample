@@ -211,6 +211,8 @@
 					# -1 sets based on shared_buffers
 					# (change requires restart)
 #io_workers = 3				# 1-32;
+#io_bounce_buffers = -1			# -1 sets based on shared_buffers
+					# (change requires restart)
 
 # - Worker Processes -
 

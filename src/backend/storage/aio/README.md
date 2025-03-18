@@ -406,6 +406,33 @@ shared memory no less!), completion callbacks instead have to encode errors in
 a more compact format that can be converted into an error message.
 
 
+### AIO Bounce Buffers
+
+For some uses of AIO there is no convenient memory location as the source /
+destination of an AIO. E.g. when data checksums are enabled, writes from
+shared buffers currently cannot be done directly from shared buffers, as a
+shared buffer lock still allows some modification, e.g., for hint bits (see
+`FlushBuffer()`). If the write were done in-place, such modifications can
+cause the checksum to fail.
+
+For synchronous IO this is solved by copying the buffer to separate memory
+before computing the checksum and using that copy as the source buffer for the
+AIO.
+
+However, for AIO that is not a workable solution:
+- Instead of a single buffer many buffers are required, as many IOs might be
+  in flight
+- When using the [worker method](#worker), the source/target of IO needs to be
+  in shared memory, otherwise the workers won't be able to access the memory.
+
+The AIO subsystem addresses this by providing a limited number of bounce
+buffers that can be used as the source / target for IO. A bounce buffer can be
+acquired with `pgaio_bounce_buffer_get()` and multiple bounce buffers can be
+associated with an AIO Handle with `pgaio_io_assoc_bounce_buffer()`.
+
+Bounce buffers are automatically released when the IO completes.
+
+
 ## Helpers
 
 Using the low-level AIO API introduces too much complexity to do so all over
