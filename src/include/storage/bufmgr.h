@@ -15,6 +15,7 @@
 #define BUFMGR_H
 
 #include "port/pg_iovec.h"
+#include "storage/aio_types.h"
 #include "storage/block.h"
 #include "storage/buf.h"
 #include "storage/bufpage.h"
@@ -169,6 +170,9 @@ extern PGDLLIMPORT int io_max_combine_limit;
 extern PGDLLIMPORT int checkpoint_flush_after;
 extern PGDLLIMPORT int backend_flush_after;
 extern PGDLLIMPORT int bgwriter_flush_after;
+
+extern const PgAioHandleCallbacks aio_shared_buffer_readv_cb;
+extern const PgAioHandleCallbacks aio_local_buffer_readv_cb;
 
 /* in buf_init.c */
 extern PGDLLIMPORT char *BufferBlocks;
