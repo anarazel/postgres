@@ -38,11 +38,13 @@
 #include "postmaster/auxprocess.h"
 #include "postmaster/bgwriter.h"
 #include "postmaster/interrupt.h"
+#include "storage/aio.h"
 #include "storage/aio_subsys.h"
 #include "storage/buf_internals.h"
 #include "storage/bufmgr.h"
 #include "storage/condition_variable.h"
 #include "storage/fd.h"
+#include "storage/io_queue.h"
 #include "storage/lwlock.h"
 #include "storage/proc.h"
 #include "storage/procsignal.h"
@@ -90,6 +92,7 @@ BackgroundWriterMain(const void *startup_data, size_t startup_data_len)
 	sigjmp_buf	local_sigjmp_buf;
 	MemoryContext bgwriter_context;
 	bool		prev_hibernate;
+	IOQueue    *ioq;
 	WritebackContext wb_context;
 
 	Assert(startup_data_len == 0);
@@ -131,6 +134,7 @@ BackgroundWriterMain(const void *startup_data, size_t startup_data_len)
 											 ALLOCSET_DEFAULT_SIZES);
 	MemoryContextSwitchTo(bgwriter_context);
 
+	ioq = io_queue_create(128, 0);
 	WritebackContextInit(&wb_context, &bgwriter_flush_after);
 
 	/*
@@ -228,12 +232,22 @@ BackgroundWriterMain(const void *startup_data, size_t startup_data_len)
 		/* Clear any already-pending wakeups */
 		ResetLatch(MyLatch);
 
+		/*
+		 * FIXME: this is theoretically racy, but I didn't want to copy
+		 * ProcessMainLoopInterrupts() remaining body here.
+		 */
+		if (ShutdownRequestPending)
+		{
+			io_queue_wait_all(ioq);
+			io_queue_free(ioq);
+		}
+
 		ProcessMainLoopInterrupts();
 
 		/*
 		 * Do one cycle of dirty-buffer writing.
 		 */
-		can_hibernate = BgBufferSync(&wb_context);
+		can_hibernate = BgBufferSync(ioq, &wb_context);
 
 		/* Report pending statistics to the cumulative stats system */
 		pgstat_report_bgwriter();
@@ -249,6 +263,9 @@ BackgroundWriterMain(const void *startup_data, size_t startup_data_len)
 			 */
 			smgrdestroyall();
 		}
+
+		/* finish IO before sleeping, to avoid blocking other backends */
+		io_queue_wait_all(ioq);
 
 		/*
 		 * Log a new xl_running_xacts every now and then so replication can
