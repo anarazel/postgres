@@ -115,6 +115,11 @@ typedef struct f_smgr
 								BlockNumber blocknum,
 								const void **buffers, BlockNumber nblocks,
 								bool skipFsync);
+	void		(*smgr_startwritev) (PgAioHandle *ioh,
+									 SMgrRelation reln, ForkNumber forknum,
+									 BlockNumber blocknum,
+									 const void **buffers, BlockNumber nblocks,
+									 bool skipFsync);
 	void		(*smgr_writeback) (SMgrRelation reln, ForkNumber forknum,
 								   BlockNumber blocknum, BlockNumber nblocks);
 	BlockNumber (*smgr_nblocks) (SMgrRelation reln, ForkNumber forknum);
@@ -142,6 +147,7 @@ static const f_smgr smgrsw[] = {
 		.smgr_readv = mdreadv,
 		.smgr_startreadv = mdstartreadv,
 		.smgr_writev = mdwritev,
+		.smgr_startwritev = mdstartwritev,
 		.smgr_writeback = mdwriteback,
 		.smgr_nblocks = mdnblocks,
 		.smgr_truncate = mdtruncate,
@@ -784,6 +790,29 @@ smgrwritev(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 	HOLD_INTERRUPTS();
 	smgrsw[reln->smgr_which].smgr_writev(reln, forknum, blocknum,
 										 buffers, nblocks, skipFsync);
+	RESUME_INTERRUPTS();
+}
+
+/*
+ * smgrstartwritev() -- asynchronous version of smgrwritev()
+ *
+ * This starts an asynchronous writev IO using the IO handle `ioh`. Other than
+ * `ioh` all parameters are the same as smgrwritev().
+ *
+ * Completion callbacks above smgr will be passed the result as the number of
+ * successfully written blocks if the write [partially] succeeds. This
+ * maintains the abstraction that smgr operates on the level of blocks, rather
+ * than bytes.
+ */
+void
+smgrstartwritev(PgAioHandle *ioh,
+				SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
+				const void **buffers, BlockNumber nblocks, bool skipFsync)
+{
+	HOLD_INTERRUPTS();
+	smgrsw[reln->smgr_which].smgr_startwritev(ioh,
+											  reln, forknum, blocknum, buffers,
+											  nblocks, skipFsync);
 	RESUME_INTERRUPTS();
 }
 

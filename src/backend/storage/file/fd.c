@@ -2349,6 +2349,34 @@ retry:
 }
 
 int
+FileStartWriteV(PgAioHandle *ioh, File file,
+				int iovcnt, off_t offset,
+				uint32 wait_event_info)
+{
+	int			returnCode;
+	Vfd		   *vfdP;
+
+	Assert(FileIsValid(file));
+
+	DO_DB(elog(LOG, "FileStartWriteV: %d (%s) " INT64_FORMAT " %d",
+			   file, VfdCache[file].fileName,
+			   (int64) offset,
+			   iovcnt));
+
+	returnCode = FileAccess(file);
+	if (returnCode < 0)
+		return returnCode;
+
+	vfdP = &VfdCache[file];
+
+	/* FIXME: think about / reimplement  temp_file_limit */
+
+	pgaio_io_start_writev(ioh, vfdP->fd, iovcnt, offset);
+
+	return 0;
+}
+
+int
 FileSync(File file, uint32 wait_event_info)
 {
 	int			returnCode;
