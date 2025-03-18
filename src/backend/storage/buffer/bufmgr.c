@@ -1779,6 +1779,18 @@ AsyncReadBuffers(ReadBuffersOperation *operation, int *nblocks_progress)
 	IOObject	io_object;
 	bool		did_start_io;
 
+#if 0
+	ereport(DEBUG3,
+			errmsg("%s: op->blocks: %d, op->blocks_done: %d, *nblocks_progress: %d, first buf %d",
+				   __func__,
+				   operation->nblocks,
+				   nblocks_done,
+				   *nblocks_progress,
+				   buffers[0]),
+			errhidestmt(true),
+			errhidecontext(true));
+#endif
+
 	/*
 	 * When this IO is executed synchronously, either because the caller will
 	 * immediately block waiting for the IO or because IOMETHOD_SYNC is used,
@@ -1872,6 +1884,13 @@ AsyncReadBuffers(ReadBuffersOperation *operation, int *nblocks_progress)
 		operation->nblocks_done += 1;
 		*nblocks_progress = 1;
 
+		ereport(DEBUG3,
+				errmsg("%s - trunc: %d",
+					   __func__,
+					   operation->nblocks_done),
+				errhidestmt(true),
+				errhidecontext(true));
+
 		pgaio_io_release(ioh);
 		pgaio_wref_clear(&operation->io_wref);
 		did_start_io = false;
@@ -1918,6 +1937,12 @@ AsyncReadBuffers(ReadBuffersOperation *operation, int *nblocks_progress)
 		 */
 		for (int i = nblocks_done + 1; i < operation->nblocks; i++)
 		{
+#if 0
+			/* FIXME: Remove forced short read */
+			if (i > 3)
+				break;
+#endif
+
 			if (!ReadBuffersCanStartIO(buffers[i], true))
 				break;
 			/* Must be consecutive block numbers. */
