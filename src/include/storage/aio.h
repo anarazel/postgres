@@ -354,6 +354,20 @@ extern bool pgaio_have_staged(void);
 
 
 /* --------------------------------------------------------------------------------
+ * Bounce Buffers
+ * --------------------------------------------------------------------------------
+ */
+
+extern PgAioBounceBuffer *pgaio_bounce_buffer_get(void);
+extern void pgaio_io_assoc_bounce_buffer(PgAioHandle *ioh, PgAioBounceBuffer *bb);
+extern uint32 pgaio_bounce_buffer_id(PgAioBounceBuffer *bb);
+extern void pgaio_bounce_buffer_release(PgAioBounceBuffer *bb);
+extern char *pgaio_bounce_buffer_buffer(PgAioBounceBuffer *bb);
+extern void pgaio_bounce_buffer_release_resowner(struct dlist_node *bb_node, bool on_error);
+
+
+
+/* --------------------------------------------------------------------------------
  * Other
  * --------------------------------------------------------------------------------
  */
@@ -365,6 +379,7 @@ extern void pgaio_closing_fd(int fd);
 /* GUCs */
 extern PGDLLIMPORT int io_method;
 extern PGDLLIMPORT int io_max_concurrency;
+extern PGDLLIMPORT int io_bounce_buffers;
 
 
 #endif							/* AIO_H */

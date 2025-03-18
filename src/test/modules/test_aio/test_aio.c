@@ -52,6 +52,7 @@ static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 
 
 static PgAioHandle *last_handle;
+static PgAioBounceBuffer *last_bb;
 
 
 
@@ -670,6 +671,60 @@ Datum
 batch_end(PG_FUNCTION_ARGS)
 {
 	pgaio_exit_batchmode();
+	PG_RETURN_VOID();
+}
+
+PG_FUNCTION_INFO_V1(bb_get);
+Datum
+bb_get(PG_FUNCTION_ARGS)
+{
+	last_bb = pgaio_bounce_buffer_get();
+
+	PG_RETURN_VOID();
+}
+
+PG_FUNCTION_INFO_V1(bb_release_last);
+Datum
+bb_release_last(PG_FUNCTION_ARGS)
+{
+	if (!last_bb)
+		elog(ERROR, "no bb");
+
+	pgaio_bounce_buffer_release(last_bb);
+
+	PG_RETURN_VOID();
+}
+
+PG_FUNCTION_INFO_V1(bb_get_and_error);
+Datum
+bb_get_and_error(PG_FUNCTION_ARGS)
+{
+	pgaio_bounce_buffer_get();
+
+	elog(ERROR, "as you command");
+	PG_RETURN_VOID();
+}
+
+PG_FUNCTION_INFO_V1(bb_get_twice);
+Datum
+bb_get_twice(PG_FUNCTION_ARGS)
+{
+	pgaio_bounce_buffer_get();
+	pgaio_bounce_buffer_get();
+
+	PG_RETURN_VOID();
+}
+
+
+PG_FUNCTION_INFO_V1(bb_get_release);
+Datum
+bb_get_release(PG_FUNCTION_ARGS)
+{
+	PgAioBounceBuffer *bb;
+
+	bb = pgaio_bounce_buffer_get();
+	pgaio_bounce_buffer_release(bb);
+
 	PG_RETURN_VOID();
 }
 

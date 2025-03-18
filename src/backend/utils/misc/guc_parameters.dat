@@ -1880,6 +1880,14 @@
   max => 'MAX_IO_WORKERS',
 },
 
+{ name => 'io_bounce_buffers', type => 'int', context => 'PGC_POSTMASTER', group => 'RESOURCES_IO',
+  short_desc => 'Number of IO Bounce Buffers reserved for each backend.',
+  variable => 'io_bounce_buffers',
+  boot_val => '-1',
+  min => '-1',
+  max => '4096',
+},
+
 { name => 'backend_flush_after', type => 'int', context => 'PGC_USERSET', group => 'RESOURCES_IO',
   short_desc => 'Number of pages after which previously performed writes are flushed to disk.',
   long_desc => '0 disables forced writeback.',
