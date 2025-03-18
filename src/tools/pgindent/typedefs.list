@@ -348,6 +348,7 @@ BufferManagerRelation
 BufferStrategyControl
 BufferTag
 BufferUsage
+BuffersToWrite
 BuildAccumulator
 BuiltinScript
 BulkInsertState
