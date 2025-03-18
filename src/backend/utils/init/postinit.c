@@ -785,8 +785,12 @@ InitPostgres(const char *in_dbname, Oid dboid,
 		 * We don't yet have an aux-process resource owner, but StartupXLOG
 		 * and ShutdownXLOG will need one.  Hence, create said resource owner
 		 * (and register a callback to clean it up after ShutdownXLOG runs).
+		 *
+		 * In bootstrap mode CreateAuxProcessResourceOwner() was already
+		 * called in BootstrapModeMain().
 		 */
-		CreateAuxProcessResourceOwner();
+		if (!bootstrap)
+			CreateAuxProcessResourceOwner();
 
 		StartupXLOG();
 		/* Release (and warn about) any buffer pins leaked in StartupXLOG */
