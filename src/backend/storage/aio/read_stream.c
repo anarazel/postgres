@@ -405,6 +405,30 @@ static void
 read_stream_look_ahead(ReadStream *stream)
 {
 	/*
+	 * Batch-submitting multiple IOs is more efficient than doing so
+	 * one-by-one. If we just ramp up to the max, we'll only be allowed to
+	 * submit one io_combine_limit sized IO. Defer submitting IO in that case.
+	 *
+	 * FIXME: This needs better heuristics.
+	 */
+#if 1
+	if (!stream->sync_mode && stream->distance > (io_combine_limit * 8))
+	{
+		if (stream->pinned_buffers + stream->pending_read_nblocks > ((stream->distance * 3) / 4))
+		{
+#if 0
+			ereport(LOG,
+					errmsg("reduce reduce reduce: pinned: %d, pending: %d, distance: %d",
+						   stream->pinned_buffers,
+						   stream->pending_read_nblocks,
+						   stream->distance));
+#endif
+			return;
+		}
+	}
+#endif
+
+	/*
 	 * Allow amortizing the cost of submitting IO over multiple IOs. This
 	 * requires that we don't do any operations that could lead to a deadlock
 	 * with staged-but-unsubmitted IO. The callback needs to opt-in to being
