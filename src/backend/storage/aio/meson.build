@@ -7,6 +7,7 @@ backend_sources += files(
   'aio_init.c',
   'aio_io.c',
   'aio_target.c',
+  'io_queue.c',
   'method_io_uring.c',
   'method_sync.c',
   'method_worker.c',
