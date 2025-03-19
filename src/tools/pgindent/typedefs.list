@@ -2,10 +2,12 @@ ACCESS_ALLOWED_ACE
 ACL
 ACL_SIZE_INFORMATION
 AFFIX
+ANY
 ASN1_INTEGER
 ASN1_OBJECT
 ASN1_OCTET_STRING
 ASN1_STRING
+ATAlterConstraint
 AV
 A_ArrayExpr
 A_Const
@@ -160,7 +162,6 @@ ArrayType
 AsyncQueueControl
 AsyncQueueEntry
 AsyncRequest
-ATAlterConstraint
 AttInMetadata
 AttStatsSlot
 AttoptCacheEntry
@@ -267,8 +268,8 @@ BitmapAndPath
 BitmapAndState
 BitmapHeapPath
 BitmapHeapScan
-BitmapHeapScanInstrumentation
 BitmapHeapScanDesc
+BitmapHeapScanInstrumentation
 BitmapHeapScanState
 BitmapIndexScan
 BitmapIndexScanState
@@ -377,6 +378,9 @@ CTEMaterialize
 CTESearchClause
 CURL
 CURLM
+CURLMcode
+CURLMsg
+CURLcode
 CURLoption
 CV
 CachedExpression
@@ -664,7 +668,6 @@ DumpableObjectType
 DumpableObjectWithAcl
 DynamicFileList
 DynamicZoneAbbrev
-EC_KEY
 EDGE
 ENGINE
 EOM_flatten_into_method
@@ -745,10 +748,12 @@ ExpandedRange
 ExpandedRecordFieldInfo
 ExpandedRecordHeader
 ExplainDirectModify_function
+ExplainExtensionOption
 ExplainForeignModify_function
 ExplainForeignScan_function
 ExplainFormat
 ExplainOneQuery_hook_type
+ExplainOptionHandler
 ExplainSerializeOption
 ExplainState
 ExplainStmt
@@ -1170,6 +1175,7 @@ HeadlineWordEntry
 HeapCheckContext
 HeapPageFreeze
 HeapScanDesc
+HeapScanDescData
 HeapTuple
 HeapTupleData
 HeapTupleFields
@@ -1264,8 +1270,8 @@ InjectionPointCallback
 InjectionPointCondition
 InjectionPointConditionType
 InjectionPointEntry
-InjectionPointsCtl
 InjectionPointSharedState
+InjectionPointsCtl
 InlineCodeBlock
 InsertStmt
 Instrumentation
@@ -1637,8 +1643,8 @@ ManyTestResourceKind
 Material
 MaterialPath
 MaterialState
-MdfdVec
 MdPathStr
+MdfdVec
 Memoize
 MemoizeEntry
 MemoizeInstrumentation
@@ -1652,6 +1658,7 @@ MemoryContextCallback
 MemoryContextCallbackFunction
 MemoryContextCounters
 MemoryContextData
+MemoryContextId
 MemoryContextMethodID
 MemoryContextMethods
 MemoryStatsPrintFunc
@@ -1745,6 +1752,7 @@ NumericSortSupport
 NumericSumAccum
 NumericVar
 OAuthValidatorCallbacks
+OAuthValidatorModuleInit
 OM_uint32
 OP
 OSAPerGroupState
@@ -2134,10 +2142,10 @@ PermutationStepBlockerType
 PgAioBackend
 PgAioCtl
 PgAioHandle
-PgAioHandleCallbackID
-PgAioHandleCallbackStage
 PgAioHandleCallbackComplete
+PgAioHandleCallbackID
 PgAioHandleCallbackReport
+PgAioHandleCallbackStage
 PgAioHandleCallbacks
 PgAioHandleCallbacksEntry
 PgAioHandleFlags
@@ -2181,9 +2189,9 @@ PgStatShared_Common
 PgStatShared_Database
 PgStatShared_Function
 PgStatShared_HashEntry
+PgStatShared_IO
 PgStatShared_InjectionPoint
 PgStatShared_InjectionPointFixed
-PgStatShared_IO
 PgStatShared_Relation
 PgStatShared_ReplSlot
 PgStatShared_SLRU
@@ -2330,12 +2338,12 @@ PushFilter
 PushFilterOps
 PushFunction
 PyCFunction
-PyMappingMethods
 PyMethodDef
 PyModuleDef
 PyObject
-PySequenceMethods
 PyTypeObject
+PyType_Slot
+PyType_Spec
 Py_ssize_t
 QPRS_STATE
 QTN2QTState
@@ -2449,6 +2457,7 @@ RelOptInfo
 RelOptKind
 RelPathStr
 RelStatsInfo
+RelSyncCallbackFunction
 RelToCheck
 RelToCluster
 RelabelType
@@ -2698,6 +2707,7 @@ SharedIncrementalSortInfo
 SharedIndexScanInstrumentation
 SharedInvalCatalogMsg
 SharedInvalCatcacheMsg
+SharedInvalRelSyncMsg
 SharedInvalRelcacheMsg
 SharedInvalRelmapMsg
 SharedInvalSmgrMsg
@@ -2961,6 +2971,7 @@ TarMethodData
 TarMethodFile
 TargetEntry
 TclExceptionNameMap
+Tcl_CmdInfo
 Tcl_DString
 Tcl_FileProc
 Tcl_HashEntry
@@ -2968,6 +2979,7 @@ Tcl_HashTable
 Tcl_Interp
 Tcl_NotifierProcs
 Tcl_Obj
+Tcl_Size
 Tcl_Time
 TempNamespaceStatus
 TestDSMRegistryStruct
@@ -3098,6 +3110,7 @@ U32
 U8
 UChar
 UCharIterator
+UColAttribute
 UColAttributeValue
 UCollator
 UConverter
@@ -3113,6 +3126,7 @@ UnicodeNormalizationQC
 Unique
 UniquePath
 UniquePathMethod
+UniqueRelInfo
 UniqueState
 UnlistenStmt
 UnresolvedTup
@@ -3143,8 +3157,11 @@ VacuumRelation
 VacuumStmt
 ValidIOData
 ValidateIndexState
-ValidatorModuleState
 ValidatorModuleResult
+ValidatorModuleState
+ValidatorShutdownCB
+ValidatorStartupCB
+ValidatorValidateCB
 ValuesScan
 ValuesScanState
 Var
@@ -3349,8 +3366,8 @@ _resultmap
 _stringlist
 access_vector_t
 acquireLocksOnSubLinks_context
-add_nulling_relids_context
 addFkConstraintSides
+add_nulling_relids_context
 adjust_appendrel_attrs_context
 allocfunc
 amadjustmembers_function
@@ -3364,6 +3381,7 @@ amcostestimate_function
 amendscan_function
 amestimateparallelscan_function
 amgetbitmap_function
+amgettreeheight_function
 amgettuple_function
 aminitparallelscan_function
 aminsert_function
@@ -3374,13 +3392,27 @@ amparallelrescan_function
 amproperty_function
 amrescan_function
 amrestrpos_function
-amtranslate_strategy_function amtranslatestrategy;
-amtranslate_cmptype_function amtranslatecmptype;
+amtranslate_cmptype_function
+amtranslate_strategy_function
 amvacuumcleanup_function
 amvalidate_function
 array_iter
 array_unnest_fctx
 assign_collations_context
+astreamer
+astreamer_archive_context
+astreamer_extractor
+astreamer_gzip_decompressor
+astreamer_gzip_writer
+astreamer_lz4_frame
+astreamer_member
+astreamer_ops
+astreamer_plain_writer
+astreamer_recovery_injector
+astreamer_tar_archiver
+astreamer_tar_parser
+astreamer_verify
+astreamer_zstd_frame
 auth_password_hook_typ
 autovac_table
 av_relation
@@ -3407,20 +3439,6 @@ bbsink_shell
 bbsink_state
 bbsink_throttle
 bbsink_zstd
-astreamer
-astreamer_archive_context
-astreamer_extractor
-astreamer_gzip_decompressor
-astreamer_gzip_writer
-astreamer_lz4_frame
-astreamer_member
-astreamer_ops
-astreamer_plain_writer
-astreamer_recovery_injector
-astreamer_tar_archiver
-astreamer_tar_parser
-astreamer_verify
-astreamer_zstd_frame
 bgworker_main_type
 bh_node_type
 binaryheap
@@ -3476,8 +3494,12 @@ create_upper_paths_hook_type
 createdb_failure_params
 crosstab_HashEnt
 crosstab_cat_desc
+curl_infotype
+curl_socket_t
+curl_version_info_data
 datapagemap_iterator_t
 datapagemap_t
+date
 dateKEY
 datetkn
 dce_uuid_t
@@ -3539,6 +3561,8 @@ exec_thread_arg
 execution_state
 exit_function
 explain_get_index_name_hook_type
+explain_per_node_hook_type
+explain_per_plan_hook_type
 f_smgr
 fasthash_state
 fd_set
@@ -3647,15 +3671,19 @@ instr_time
 int128
 int16
 int16KEY
+int16_t
 int2vector
 int32
 int32KEY
 int32_t
 int64
 int64KEY
+int64_t
 int8
+int8_t
 int8x16_t
 internalPQconninfoOption
+interval
 intptr_t
 intset_internal_node
 intset_leaf_node
@@ -3777,7 +3805,6 @@ pg_atomic_flag
 pg_atomic_uint32
 pg_atomic_uint64
 pg_be_sasl_mech
-pg_case_map
 pg_category_range
 pg_checksum_context
 pg_checksum_raw_context
@@ -3871,6 +3898,8 @@ plpgsql_CastExprHashEntry
 plpgsql_CastHashEntry
 plpgsql_CastHashKey
 plpgsql_HashEnt
+plpgsql_expr_walker_callback
+plpgsql_stmt_walker_callback
 pltcl_call_state
 pltcl_interp_desc
 pltcl_proc_desc
@@ -3975,6 +4004,7 @@ rt_node_class_test_elem
 rt_radix_tree
 saophash_hash
 save_buffer
+save_locale_t
 scram_state
 scram_state_enum
 script_error_callback_arg
@@ -4068,6 +4098,7 @@ time_t
 timeout_handler_proc
 timeout_params
 timerCA
+timestamp
 tlist_vinfo
 toast_compress_header
 tokenize_error_callback_arg
@@ -4111,7 +4142,6 @@ unicodeStyleColumnFormat
 unicodeStyleFormat
 unicodeStyleRowFormat
 unicode_linestyle
-UniqueRelInfo
 unit_conversion
 unlogged_relation_entry
 utf_local_conversion_func
@@ -4254,6 +4284,7 @@ xmlGenericErrorFunc
 xmlNodePtr
 xmlNodeSetPtr
 xmlParserCtxtPtr
+xmlParserErrors
 xmlParserInputPtr
 xmlSaveCtxt
 xmlSaveCtxtPtr
@@ -4274,5 +4305,3 @@ yyscan_t
 z_stream
 z_streamp
 zic_t
-ExplainExtensionOption
-ExplainOptionHandler
