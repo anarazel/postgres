@@ -502,7 +502,9 @@ task:
         su postgres <<-EOF
           meson setup \
             --buildtype=debug \
-            -Dcassert=true -Dinjection_points=true \
+            -Dcassert=true \
+            -Dinjection_points=true \
+            -Dnitpick=true \
             ${LINUX_MESON_FEATURES} \
             build
         EOF

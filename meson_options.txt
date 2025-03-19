@@ -52,6 +52,9 @@ option('PG_TEST_EXTRA', type: 'string', value: '',
 option('PG_GIT_REVISION', type: 'string', value: 'HEAD',
   description: 'git revision to be packaged by pgdist target')
 
+option('nitpick', type: 'boolean', value: false,
+  description: 'annoy the hell out of you, committers ought to enable this')
+
 
 # Compilation options
 
