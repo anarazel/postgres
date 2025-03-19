@@ -31,7 +31,7 @@ sepgsql = shared_module('sepgsql',
 )
 contrib_targets += sepgsql
 
-contrib_targets += custom_target('sepgsql.sql',
+data_targets += custom_target('sepgsql.sql',
   input: 'sepgsql.sql.in',
   output: 'sepgsql.sql',
   command: [sed, '-e', 's,MODULE_PATHNAME,$libdir/sepgsql,g', '@INPUT@'],

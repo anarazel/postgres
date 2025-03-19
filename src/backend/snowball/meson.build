@@ -94,4 +94,4 @@ install_subdir('stopwords',
 )
 
 backend_targets += dict_snowball
-backend_targets += snowball_create
+data_targets += snowball_create
