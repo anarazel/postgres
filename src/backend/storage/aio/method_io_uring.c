@@ -25,7 +25,7 @@
 #include "postgres.h"
 
 /* included early, for IOMETHOD_IO_URING_ENABLED */
-#include "storage/aio.h"
+#include "storage/aio.h"		/* IWYU pragma: keep */
 
 #ifdef IOMETHOD_IO_URING_ENABLED
 
@@ -33,6 +33,7 @@
 #include <unistd.h>
 
 #include <liburing.h>
+/* IWYU pragma: no_include <liburing/io_uring.h> */
 
 #include "miscadmin.h"
 #include "storage/aio_internal.h"

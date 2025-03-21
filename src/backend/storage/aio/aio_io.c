@@ -19,9 +19,7 @@
 #include "postgres.h"
 
 #include "miscadmin.h"
-#include "storage/aio.h"
 #include "storage/aio_internal.h"
-#include "storage/fd.h"
 #include "utils/wait_event.h"
 
 

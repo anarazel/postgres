@@ -13,7 +13,7 @@
 #ifndef PQSIGNAL_H
 #define PQSIGNAL_H
 
-#include <signal.h>
+#include <signal.h>				/* IWYU pragma: export */
 
 #ifdef WIN32
 /* Emulate POSIX sigset_t APIs on Windows */

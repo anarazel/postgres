@@ -16,10 +16,12 @@
 #define AIO_INTERNAL_H
 
 
+/* IWYU pragma: begin_exports */
 #include "lib/ilist.h"
 #include "port/pg_iovec.h"
 #include "storage/aio.h"
 #include "storage/condition_variable.h"
+/* IWYU pragma: end_exports */
 
 
 /*
@@ -90,6 +92,7 @@ typedef enum PgAioHandleState
 } PgAioHandleState;
 
 
+/* IWYU pragma: begin_exports */
 struct ResourceOwnerData;
 
 /*
@@ -99,6 +102,7 @@ struct ResourceOwnerData;
  * space. We tried using bitfields, but several compilers generate rather
  * horrid code for that.
  */
+/* IWYU pragma: end_exports */
 struct PgAioHandle
 {
 	/* all state updates should go through pgaio_io_update_state() */

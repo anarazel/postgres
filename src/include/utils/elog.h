@@ -14,7 +14,7 @@
 #ifndef ELOG_H
 #define ELOG_H
 
-#include <setjmp.h>
+#include <setjmp.h>				/* IWYU pragma: export */
 
 #include "lib/stringinfo.h"
 
@@ -76,7 +76,7 @@ struct Node;
 #define ERRCODE_IS_CATEGORY(ec)  (((ec) & ~((1 << 12) - 1)) == 0)
 
 /* SQLSTATE codes for errors are defined in a separate file */
-#include "utils/errcodes.h"
+#include "utils/errcodes.h"		/* IWYU pragma: export */
 
 /*
  * Provide a way to prevent "errno" from being accidentally used inside an

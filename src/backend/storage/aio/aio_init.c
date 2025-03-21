@@ -15,13 +15,12 @@
 #include "postgres.h"
 
 #include "miscadmin.h"
-#include "storage/aio.h"
 #include "storage/aio_internal.h"
 #include "storage/aio_subsys.h"
 #include "storage/bufmgr.h"
-#include "storage/io_worker.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"
+#include "storage/procnumber.h"
 #include "storage/shmem.h"
 #include "utils/guc.h"
 
