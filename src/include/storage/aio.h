@@ -18,7 +18,7 @@
 #ifndef AIO_H
 #define AIO_H
 
-#include "storage/aio_types.h"
+#include "storage/aio_types.h"	/* IWYU pragma: export */
 #include "storage/procnumber.h"
 
 
@@ -293,7 +293,7 @@ extern ProcNumber pgaio_io_get_owner(PgAioHandle *ioh);
 extern void pgaio_io_get_wref(PgAioHandle *ioh, PgAioWaitRef *iow);
 
 /* functions in aio_io.c */
-struct iovec;
+struct iovec;					/* IWYU pragma: export */
 extern int	pgaio_io_get_iovec(PgAioHandle *ioh, struct iovec **iov);
 
 extern PgAioOp pgaio_io_get_op(PgAioHandle *ioh);

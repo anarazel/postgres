@@ -38,16 +38,15 @@
 
 #include "postgres.h"
 
-#include "lib/ilist.h"
 #include "miscadmin.h"
 #include "port/atomics.h"
-#include "storage/aio.h"
 #include "storage/aio_internal.h"
 #include "storage/aio_subsys.h"
+#include "storage/procnumber.h"
 #include "utils/guc.h"
 #include "utils/guc_hooks.h"
 #include "utils/resowner.h"
-#include "utils/wait_event_types.h"
+#include "utils/wait_event.h"
 
 #ifdef USE_INJECTION_POINTS
 #include "utils/injection_point.h"

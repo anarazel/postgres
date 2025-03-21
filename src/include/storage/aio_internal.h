@@ -16,10 +16,12 @@
 #define AIO_INTERNAL_H
 
 
+/* IWYU pragma: begin_exports */
 #include "lib/ilist.h"
 #include "port/pg_iovec.h"
 #include "storage/aio.h"
 #include "storage/condition_variable.h"
+/* IWYU pragma: end_exports */
 
 
 /*
@@ -90,7 +92,10 @@ typedef enum PgAioHandleState
 } PgAioHandleState;
 
 
+/* IWYU pragma: begin_exports */
 struct ResourceOwnerData;
+
+/* IWYU pragma: end_exports */
 
 /* typedef is in aio_types.h */
 struct PgAioHandle

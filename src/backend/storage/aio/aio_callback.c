@@ -16,7 +16,6 @@
 #include "postgres.h"
 
 #include "miscadmin.h"
-#include "storage/aio.h"
 #include "storage/aio_internal.h"
 #include "storage/bufmgr.h"
 #include "storage/md.h"

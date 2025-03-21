@@ -14,7 +14,6 @@
 
 #include "postgres.h"
 
-#include "storage/aio.h"
 #include "storage/aio_internal.h"
 #include "storage/smgr.h"
 
