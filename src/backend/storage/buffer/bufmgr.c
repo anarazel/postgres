@@ -1572,6 +1572,7 @@ WaitReadBuffers(ReadBuffersOperation *operation)
 		{
 			BufferDesc *bufHdr;
 			Block		bufBlock;
+			int			piv_flags;
 			bool		verified;
 			bool		checksum_failure;
 
@@ -1587,8 +1588,11 @@ WaitReadBuffers(ReadBuffersOperation *operation)
 			}
 
 			/* check for garbage data */
+			piv_flags = PIV_LOG_WARNING;
+			if (ignore_checksum_failure)
+				piv_flags |= PIV_IGNORE_CHECKSUM_FAILURE;
 			verified = PageIsVerified((Page) bufBlock, io_first_block + j,
-									  PIV_LOG_WARNING, &checksum_failure);
+									  piv_flags, &checksum_failure);
 			if (checksum_failure)
 			{
 				RelFileLocatorBackend rloc = operation->smgr->smgr_rlocator;
@@ -6442,6 +6446,7 @@ buffer_readv_complete_one(PgAioTargetData *td, uint8 buf_off, Buffer buffer,
 	BufferTag	tag = buf_hdr->tag;
 	char	   *bufdata = BufferGetBlock(buffer);
 	uint32		set_flag_bits;
+	int			piv_flags;
 
 	/* check that the buffer is in the expected state for a read */
 #ifdef USE_ASSERT_CHECKING
