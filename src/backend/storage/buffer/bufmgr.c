@@ -1815,6 +1815,14 @@ AsyncReadBuffers(ReadBuffersOperation *operation, int *nblocks_progress)
 		flags |= READ_BUFFERS_ZERO_ON_ERROR;
 
 	/*
+	 * For the same reason as with zero_damaged_pages we need to use this
+	 * backend's ignore_checksum_failure value.
+	 */
+	if (ignore_checksum_failure)
+		flags |= READ_BUFFERS_IGNORE_CHECKSUM_FAILURES;
+
+
+	/*
 	 * To be allowed to report stats in the local completion callback we need
 	 * to prepare to report stats now. This ensures we can safely report the
 	 * checksum failure even in a critical section.
@@ -1945,6 +1953,11 @@ AsyncReadBuffers(ReadBuffersOperation *operation, int *nblocks_progress)
 		 * ---
 		 */
 		io_start = pgstat_prepare_io_time(track_io_timing);
+		smgrstartreadv(ioh, operation->smgr, forknum,
+					   blocknum + nblocks_done,
+					   io_pages, io_buffers_len);
+		pgstat_count_io_op_time(io_object, io_context, IOOP_READ,
+								io_start, 1, io_buffers_len * BLCKSZ);
 
 		if (persistence == RELPERSISTENCE_TEMP)
 			pgBufferUsage.local_blks_read += io_buffers_len;
