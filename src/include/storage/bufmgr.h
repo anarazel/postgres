@@ -112,6 +112,8 @@ typedef struct BufferManagerRelation
 #define READ_BUFFERS_ZERO_ON_ERROR (1 << 0)
 /* Call smgrprefetch() if I/O necessary. */
 #define READ_BUFFERS_ISSUE_ADVICE (1 << 1)
+/* Don't treat page as invalid due to checksum failures. */
+#define READ_BUFFERS_IGNORE_CHECKSUM_FAILURES (1 << 2)
 
 struct ReadBuffersOperation
 {

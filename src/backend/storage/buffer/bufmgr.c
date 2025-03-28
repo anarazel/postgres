@@ -6466,13 +6466,20 @@ buffer_readv_complete_one(PgAioTargetData *td, uint8 buf_off, Buffer buffer,
 	*checksum_failure = false;
 
 	/*
-	 * Check for garbage data.
-	 *
 	 * We ask PageIsVerified() to only log the message about checksum errors,
 	 * as the completion might be run in any backend (or IO workers). We will
+	 * report checksum errors in buffer_readv_report().
 	 */
+	piv_flags = PIV_LOG_LOG;
+
+	/* the local zero_damaged_pages may differ from the issuer's */
+	if (flags & READ_BUFFERS_IGNORE_CHECKSUM_FAILURES)
+		piv_flags |= PIV_IGNORE_CHECKSUM_FAILURE;
+
+	/* Check for garbage data. */
 	if (!failed &&
-		!PageIsVerified((Page) bufdata, tag.blockNum, PIV_LOG_LOG, checksum_failure))
+		!PageIsVerified((Page) bufdata, tag.blockNum, piv_flags,
+						checksum_failure))
 	{
 		PgAioResult result_one;
 
