@@ -400,7 +400,7 @@ extern const char *pgaio_io_get_target_name(PgAioHandle *ioh);
  * XXX: This likely should be eventually be disabled by default, at least in
  * non-assert builds.
  */
-#define PGAIO_VERBOSE		1
+#define PGAIO_VERBOSE		0
 
 /*
  * Simple ereport() wrapper that only logs if PGAIO_VERBOSE is defined.

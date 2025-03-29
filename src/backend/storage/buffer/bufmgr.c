@@ -7228,21 +7228,27 @@ buffer_stage_common(PgAioHandle *ioh, bool is_write, bool is_temp)
  */
 static inline void
 buffer_readv_decode_error(PgAioResult result,
-						  bool *was_zeroed, uint8 *first_invalid_off,
-						  uint8 *count_invalid, uint8 *count_checksum)
+						  bool *zeroed_any,
+						  bool *ignored_any,
+						  uint8 *zeroed_or_error_count,
+						  uint8 *checkfail_count,
+						  uint8 *first_off)
 {
 	uint32		rem_error = result.error_data;
 
-	*was_zeroed = rem_error & 1;
+	*zeroed_any = rem_error & 1;
 	rem_error >>= 1;
 
-	*first_invalid_off = rem_error & ((1 << 7) - 1);
+	*ignored_any = rem_error & 1;
+	rem_error >>= 1;
+
+	*zeroed_or_error_count = rem_error & ((1 << 7) - 1);
 	rem_error >>= 7;
 
-	*count_invalid = rem_error & ((1 << 7) - 1);
+	*checkfail_count = rem_error & ((1 << 7) - 1);
 	rem_error >>= 7;
 
-	*count_checksum = rem_error & ((1 << 7) - 1);
+	*first_off = rem_error & ((1 << 7) - 1);
 	rem_error >>= 7;
 }
 
@@ -7250,45 +7256,75 @@ buffer_readv_decode_error(PgAioResult result,
  * Helper to encode errors for buffer_readv_complete()
  *
  * Errors are encoded as follows:
- * - bit 0 indicates whether page was zeroed (1) or not (0)
- * - next 7 bits indicate the first offset is the offset of the first page
- *   that failed verification in a larger IO
- * - next 7 bits indicate the number of corruptions
+ * - bit 0 indicates whether any page was zeroed (1) or not (0)
+ * - bit 1 indicates whether any checksum failure was ignored (1) or not (0)
+ * - next 7 bits indicate the number of errored or zeroed pages
  * - next 7 bits indicate the number of checksum failures
+ * - next 7 bits indicate the first offset of the first page
+ *   that was errored or zerored or, if no errors/zeroes, the first ignored
+ *   checksum
  */
 static inline void
 buffer_readv_encode_error(PgAioResult *result,
 						  bool is_temp,
-						  bool was_zeroed,
-						  uint8 first_invalid_off,
-						  uint8 count_invalid,
-						  uint8 count_checksum)
+						  bool zeroed_any,
+						  bool ignored_any,
+						  uint8 error_count,
+						  uint8 zeroed_count,
+						  uint8 checkfail_count,
+						  uint8 first_error_off,
+						  uint8 first_zeroed_off,
+						  uint8 first_ignored_off)
 {
 
 	uint8		shift = 0;
+	uint8		zeroed_or_error_count =
+		error_count > 0 ? error_count : zeroed_count;
+	uint8		first_off;
 
 	StaticAssertStmt(PG_IOV_MAX <= 1 << 7,
 					 "PG_IOV_MAX is bigger than reserved space for error data");
 	StaticAssertStmt((1 + 7 + 7 + 7) <= PGAIO_RESULT_ERROR_BITS,
 					 "PGAIO_RESULT_ERROR_BITS is insufficient for buffer_readv");
 
+	/*
+	 * We only have space to encode one offset - but luckily that's good
+	 * enough. If there is an error, the error is the integeresting offset,
+	 * same with a zeroed buffer vs an ignored buffer.
+	 */
+	if (error_count > 0)
+		first_off = first_error_off;
+	else if (zeroed_count > 0)
+		first_off = first_zeroed_off;
+	else
+		first_off = first_ignored_off;
+
+	Assert(!zeroed_any || error_count == 0);
+
 	result->error_data = 0;
 
-	result->error_data |= was_zeroed << shift;
+	result->error_data |= zeroed_any << shift;
 	shift += 1;
 
-	result->error_data |= ((uint32) first_invalid_off) << shift;
+	result->error_data |= ignored_any << shift;
+	shift += 1;
+
+	result->error_data |= ((uint32) zeroed_or_error_count) << shift;
 	shift += 7;
 
-	result->error_data |= ((uint32) count_invalid) << shift;
+	result->error_data |= ((uint32) checkfail_count) << shift;
 	shift += 7;
 
-	result->error_data |= ((uint32) count_checksum) << shift;
+	result->error_data |= ((uint32) first_off) << shift;
 	shift += 7;
 
 	result->id = is_temp ? PGAIO_HCB_LOCAL_BUFFER_READV :
 		PGAIO_HCB_SHARED_BUFFER_READV;
-	result->status = was_zeroed ? PGAIO_RS_WARNING : PGAIO_RS_ERROR;
+
+	if (error_count > 0)
+		result->status = PGAIO_RS_ERROR;
+	else
+		result->status = PGAIO_RS_WARNING;
 
 	/*
 	 * The encoding is complicated enough to warrant cross-checking it against
@@ -7296,18 +7332,22 @@ buffer_readv_encode_error(PgAioResult *result,
 	 */
 #ifdef USE_ASSERT_CHECKING
 	{
-		bool		was_zeroed2;
-		uint8		first_invalid_off2;
-		uint8		invalid_count2;
-		uint8		checksum_failure_count2;
+		bool		zeroed_any_2,
+					ignored_any_2;
+		uint8		zeroed_or_error_count_2,
+					checkfail_count_2,
+					first_off_2;
 
-		buffer_readv_decode_error(*result, &was_zeroed2,
-								  &first_invalid_off2, &invalid_count2,
-								  &checksum_failure_count2);
-		Assert(was_zeroed == was_zeroed2);
-		Assert(first_invalid_off == first_invalid_off2);
-		Assert(invalid_count2 == invalid_count2);
-		Assert(checksum_failure_count2 == checksum_failure_count2);
+		buffer_readv_decode_error(*result,
+								  &zeroed_any_2, &ignored_any_2,
+								  &zeroed_or_error_count_2,
+								  &checkfail_count_2,
+								  &first_off_2);
+		Assert(zeroed_any == zeroed_any_2);
+		Assert(ignored_any == ignored_any_2);
+		Assert(zeroed_or_error_count == zeroed_or_error_count_2);
+		Assert(checkfail_count == checkfail_count_2);
+		Assert(first_off == first_off_2);
 	}
 #endif
 }
@@ -7319,7 +7359,10 @@ buffer_readv_encode_error(PgAioResult *result,
 static pg_attribute_always_inline void
 buffer_readv_complete_one(PgAioTargetData *td, uint8 buf_off, Buffer buffer,
 						  uint8 flags, bool failed, bool is_temp,
-						  bool *failed_verification, bool *checksum_failure)
+						  bool *buffer_invalid,
+						  bool *failed_checksum,
+						  bool *ignored_checksum,
+						  bool *zeroed_buffer)
 {
 	BufferDesc *buf_hdr = is_temp ?
 		GetLocalBufferDescriptor(-buffer - 1)
@@ -7343,8 +7386,10 @@ buffer_readv_complete_one(PgAioTargetData *td, uint8 buf_off, Buffer buffer,
 	}
 #endif
 
-	*failed_verification = false;
-	*checksum_failure = false;
+	*buffer_invalid = false;
+	*failed_checksum = false;
+	*ignored_checksum = false;
+	*zeroed_buffer = false;
 
 	/*
 	 * We ask PageIsVerified() to only log the message about checksum errors,
@@ -7358,23 +7403,27 @@ buffer_readv_complete_one(PgAioTargetData *td, uint8 buf_off, Buffer buffer,
 		piv_flags |= PIV_IGNORE_CHECKSUM_FAILURE;
 
 	/* Check for garbage data. */
-	if (!failed &&
-		!PageIsVerified((Page) bufdata, tag.blockNum, piv_flags,
-						checksum_failure))
+	if (!failed)
 	{
 		PgAioResult result_one;
 
-		*failed_verification = true;
-
-		if (flags & READ_BUFFERS_ZERO_ON_ERROR)
+		if (!PageIsVerified((Page) bufdata, tag.blockNum, piv_flags,
+							failed_checksum))
 		{
-			memset(bufdata, 0, BLCKSZ);
+			if (flags & READ_BUFFERS_ZERO_ON_ERROR)
+			{
+				memset(bufdata, 0, BLCKSZ);
+				*zeroed_buffer = true;
+			}
+			else
+			{
+				*buffer_invalid = true;
+				/* mark buffer as having failed */
+				failed = true;
+			}
 		}
-		else
-		{
-			/* mark buffer as having failed */
-			failed = true;
-		}
+		else if (*failed_checksum)
+			*ignored_checksum = true;
 
 		/*
 		 * Immediately log a message about the invalid page, but only to the
@@ -7390,11 +7439,19 @@ buffer_readv_complete_one(PgAioTargetData *td, uint8 buf_off, Buffer buffer,
 		 * To avoid duplicating the code to emit these log messages, we reuse
 		 * buffer_readv_report().
 		 */
-		buffer_readv_encode_error(&result_one, is_temp,
-								  flags & READ_BUFFERS_ZERO_ON_ERROR,
-								  buf_off, 1, *checksum_failure ? 1 : 0);
-		pgaio_result_report(result_one, td, LOG_SERVER_ONLY);
+		if (*buffer_invalid || *failed_checksum || *zeroed_buffer)
+		{
+			buffer_readv_encode_error(&result_one, is_temp,
+									  *zeroed_buffer,
+									  *ignored_checksum,
+									  *buffer_invalid,
+									  *zeroed_buffer ? 1 : 0,
+									  *failed_checksum ? 1 : 0,
+									  buf_off, buf_off, buf_off);
+			pgaio_result_report(result_one, td, LOG_SERVER_ONLY);
+		}
 	}
+
 
 	/* Terminate I/O and set BM_VALID. */
 	set_flag_bits = failed ? BM_IO_ERROR : BM_VALID;
@@ -7431,9 +7488,13 @@ buffer_readv_complete(PgAioHandle *ioh, PgAioResult prior_result,
 {
 	PgAioResult result = prior_result;
 	PgAioTargetData *td = pgaio_io_get_target_data(ioh);
-	uint8		first_invalid_off = 0;
-	uint8		invalid_count = 0;
-	uint8		checksum_failure_count = 0;
+	uint8		first_error_off = 0;
+	uint8		first_zeroed_off = 0;
+	uint8		first_ignored_off = 0;
+	uint8		error_count = 0;
+	uint8		zeroed_count = 0;
+	uint8		ignored_count = 0;
+	uint8		checkfail_count = 0;
 	uint64	   *io_data;
 	uint8		handle_data_len;
 
@@ -7455,7 +7516,9 @@ buffer_readv_complete(PgAioHandle *ioh, PgAioResult prior_result,
 		Buffer		buf = io_data[buf_off];
 		bool		failed;
 		bool		failed_verification = false;
-		bool		checksum_failure = false;
+		bool		failed_checksum = false;
+		bool		zeroed_buffer = false;
+		bool		ignored_checksum = false;
 
 		Assert(BufferIsValid(buf));
 
@@ -7469,43 +7532,48 @@ buffer_readv_complete(PgAioHandle *ioh, PgAioResult prior_result,
 			|| prior_result.result <= buf_off;
 
 		buffer_readv_complete_one(td, buf_off, buf, cb_data, failed, is_temp,
-								  &failed_verification, &checksum_failure);
+								  &failed_verification,
+								  &failed_checksum,
+								  &ignored_checksum,
+								  &zeroed_buffer);
 
 		/*
-		 * Track information about the number of errors across all pages, as
-		 * there can be multiple pages failing verification as part of one IO.
+		 * Track information about the number of different kinds of error
+		 * conditions across all pages, as there can be multiple pages failing
+		 * verification as part of one IO.
 		 */
-		if (failed_verification)
-		{
-			if (invalid_count++ == 0)
-				first_invalid_off = buf_off;
-			if (checksum_failure)
-				checksum_failure_count++;
-		}
-		else
-			Assert(!checksum_failure);
+		if (failed_verification && !zeroed_buffer && error_count++ == 0)
+			first_error_off = buf_off;
+		if (zeroed_buffer && zeroed_count++ == 0)
+			first_zeroed_off = buf_off;
+		if (ignored_checksum && ignored_count++ == 0)
+			first_ignored_off = buf_off;
+		if (failed_checksum)
+			checkfail_count++;
 	}
 
 	/*
 	 * If the smgr read succeeded [partially] and page verification failed for
 	 * some of the pages, adjust the IO's result state appropriately.
 	 */
-	if (prior_result.status != PGAIO_RS_ERROR && invalid_count > 0)
+	if (prior_result.status != PGAIO_RS_ERROR &&
+		(error_count > 0 || ignored_count > 0 || zeroed_count > 0))
 	{
-		bool		was_zeroed = cb_data & READ_BUFFERS_ZERO_ON_ERROR;
-
-		buffer_readv_encode_error(&result, is_temp, was_zeroed,
-								  first_invalid_off, invalid_count,
-								  checksum_failure_count);
+		buffer_readv_encode_error(&result, is_temp,
+								  zeroed_count > 0, ignored_count > 0,
+								  error_count, zeroed_count, checkfail_count,
+								  first_error_off, first_zeroed_off,
+								  first_ignored_off);
+		pgaio_result_report(result, td, DEBUG1);
 	}
 
 	/*
 	 * For shared relations this reporting is done in
 	 * shared_buffer_readv_complete_local().
 	 */
-	if (is_temp && checksum_failure_count > 0)
+	if (is_temp && checkfail_count > 0)
 		pgstat_report_checksum_failures_in_db(td->smgr.rlocator.dbOid,
-											  checksum_failure_count);
+											  checkfail_count);
 
 	return result;
 }
@@ -7518,63 +7586,96 @@ buffer_readv_complete(PgAioHandle *ioh, PgAioResult prior_result,
  * buffer_readv_decode_error().
  */
 static void
-buffer_readv_report(PgAioResult result, const PgAioTargetData *target_data,
+buffer_readv_report(PgAioResult result, const PgAioTargetData *td,
 					int elevel)
 {
-	BlockNumber blocknum = target_data->smgr.blockNum;
-	int			nblocks = target_data->smgr.nblocks;
-	ProcNumber	errProc;
-	bool		was_zeroed;
-	uint8		first_invalid_off;
-	uint8		invalid_count;
-	uint8		checksum_failure_count;
-	RelPathStr	rpath;
+	int			nblocks = td->smgr.nblocks;
+	BlockNumber first = td->smgr.blockNum;
+	BlockNumber last = first + nblocks - 1;
+	ProcNumber	errProc =
+		td->smgr.is_temp ? MyProcNumber : INVALID_PROC_NUMBER;
+	RelPathStr	rpath =
+		relpathbackend(td->smgr.rlocator, errProc, td->smgr.forkNum);
+	bool		zeroed_any,
+				ignored_any;
+	uint8		zeroed_or_error_count,
+				checkfail_count,
+				first_off;
+	uint8		affected_count;
+	const char *msg_one,
+			   *msg_mult,
+			   *det_mult,
+			   *hint_mult;
 
-	buffer_readv_decode_error(result, &was_zeroed, &first_invalid_off,
-							  &invalid_count, &checksum_failure_count);
+	buffer_readv_decode_error(result, &zeroed_any, &ignored_any,
+							  &zeroed_or_error_count,
+							  &checkfail_count,
+							  &first_off);
 
-	if (target_data->smgr.is_temp)
-		errProc = MyProcNumber;
-	else
-		errProc = INVALID_PROC_NUMBER;
-
-	rpath = relpathbackend(target_data->smgr.rlocator, errProc,
-						   target_data->smgr.forkNum);
-
-	if (was_zeroed)
+	/*
+	 * Treat a read that had both zeroed buffers *and* ignored checksums as a
+	 * special case, it's too irregular to be emitted the same way as the other
+	 * cases.
+	 */
+	if (zeroed_any && ignored_any)
 	{
+		Assert(zeroed_any && ignored_any);
+		Assert(nblocks > 1);	/* same block can't be both zeroed and ignored */
+		Assert(result.status != PGAIO_RS_ERROR);
+		affected_count = zeroed_or_error_count;
+
 		ereport(elevel,
 				errcode(ERRCODE_DATA_CORRUPTED),
-				invalid_count == 1 ?
-				errmsg("invalid page in block %u of relation %s; zeroing out page",
-					   blocknum + first_invalid_off, rpath.str) :
-				errmsg("zeroing out %u invalid pages among blocks %u..%u of relation %s",
-					   invalid_count,
-					   blocknum, blocknum + nblocks - 1, rpath.str),
-				invalid_count > 1 ?
-				errdetail("Block %u held first invalid page.",
-						  blocknum + first_invalid_off) : 0,
-				invalid_count > 1 ?
-				errhint("See server log for the other %u invalid blocks.",
-						invalid_count - 1) : 0);
+				errmsg("zeroing %u pages and ignoring %u checksum failures among blocks %u..%u of relation %s",
+					   affected_count, checkfail_count, first, last, rpath.str),
+				affected_count > 1 ?
+				errdetail("Block %u held first zeroed page.",
+						  first + first_off) : 0,
+				errhint("See server log for details about the other %u invalid blocks.",
+						affected_count + checkfail_count - 1));
+		return;
+	}
+
+	/*
+	 * The other messages are highly repetitive. To avoid duplicating a long
+	 * and complicated ereport(), gather the translated format strings
+	 * separately and then do one common ereport.
+	 */
+	if (result.status == PGAIO_RS_ERROR)
+	{
+		Assert(!zeroed_any);	/* can't have invalid pages when zeroing them */
+		affected_count = zeroed_or_error_count;
+		msg_one = _("invalid page in block %u of relation %s");
+		msg_mult = _("%u invalid pages among blocks %u..%u of relation %s");
+		det_mult = _("Block %u held first invalid page.");
+		hint_mult = _("See server log for the other %u invalid blocks.");
+	}
+	else if (zeroed_any && !ignored_any)
+	{
+		affected_count = zeroed_or_error_count;
+		msg_one = _("invalid page in block %u of relation %s; zeroing out page");
+		msg_mult = _("zeroing out %u invalid pages among blocks %u..%u of relation %s");
+		det_mult = _("Block %u held first zeroed page.");
+		hint_mult = _("See server log for the other %u zeroed blocks.");
+	}
+	else if (!zeroed_any && ignored_any)
+	{
+		affected_count = checkfail_count;
+		msg_one = _("ignoring checksum failure in block %u of relation %s");
+		msg_mult = _("ignoring %u checksum failures among blocks %u..%u of relation %s");
+		det_mult = _("Block %u held first ignored page.");
+		hint_mult = _("See server log for the other %u ignored blocks.");
 	}
 	else
-	{
-		ereport(elevel,
-				errcode(ERRCODE_DATA_CORRUPTED),
-				invalid_count == 1 ?
-				errmsg("invalid page in block %u of relation %s",
-					   blocknum + first_invalid_off, rpath.str) :
-				errmsg("%u invalid pages among blocks %u..%u of relation %s",
-					   invalid_count,
-					   blocknum, blocknum + nblocks - 1, rpath.str),
-				invalid_count > 1 ?
-				errdetail("Block %u held first invalid page.",
-						  blocknum + first_invalid_off) : 0,
-				invalid_count > 1 ?
-				errhint("See server log for the other %u invalid blocks.",
-						invalid_count - 1) : 0);
-	}
+		pg_unreachable();
+
+	ereport(elevel,
+			errcode(ERRCODE_DATA_CORRUPTED),
+			affected_count == 1 ?
+			errmsg_internal(msg_one, first + first_off, rpath.str) :
+			errmsg_internal(msg_mult, affected_count, first, last, rpath.str),
+			affected_count > 1 ? errdetail_internal(det_mult, first + first_off) : 0,
+			affected_count > 1 ? errhint_internal(hint_mult, affected_count - 1) : 0);
 }
 
 /*
@@ -7716,23 +7817,28 @@ static PgAioResult
 shared_buffer_readv_complete_local(PgAioHandle *ioh, PgAioResult prior_result,
 								   uint8 cb_data)
 {
-	bool		was_zeroed;
-	uint8		first_invalid_off;
-	uint8		invalid_count;
-	uint8		checksum_failure_count;
+	bool		zeroed_any,
+				ignored_any;
+	uint8		zeroed_or_error_count,
+				checkfail_count,
+				first_off;
 
 	if (prior_result.status == PGAIO_RS_OK)
 		return prior_result;
 
-	buffer_readv_decode_error(prior_result, &was_zeroed, &first_invalid_off,
-							  &invalid_count, &checksum_failure_count);
+	buffer_readv_decode_error(prior_result,
+							  &zeroed_any,
+							  &ignored_any,
+							  &zeroed_or_error_count,
+							  &checkfail_count,
+							  &first_off);
 
-	if (checksum_failure_count)
+	if (checkfail_count)
 	{
 		PgAioTargetData *td = pgaio_io_get_target_data(ioh);
 
 		pgstat_report_checksum_failures_in_db(td->smgr.rlocator.dbOid,
-											  checksum_failure_count);
+											  checkfail_count);
 	}
 
 	return prior_result;

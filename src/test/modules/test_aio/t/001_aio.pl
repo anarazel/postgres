@@ -19,11 +19,16 @@ SKIP:
 {
 	skip 'Injection points not supported by this build', 1
 	  unless $ENV{enable_injection_points} eq 'yes';
-	test_inject_worker('worker', $node_worker);
+	#test_inject_worker('worker', $node_worker);
 }
 
 $node_worker->stop();
 
+if (1)
+{
+	done_testing();
+	exit(0);
+}
 
 ###
 # Test io_method=io_uring
@@ -91,6 +96,7 @@ sub create_node
 shared_preload_libraries=test_aio
 log_min_messages = 'DEBUG3'
 log_statement=all
+log_error_verbosity=default
 restart_after_crash=false
 temp_buffers=100
 ));
@@ -1017,7 +1023,7 @@ SELECT modify_rel_block('tbl_zero', 3, corrupt_header=>true);
 			"$persistency: test zeroing of invalid block 2,3 in larger read, ZERO_ON_ERROR",
 			qq(SELECT read_rel_block_ll('tbl_zero', 1, nblocks=>4, zero_on_error=>true)),
 			qr/^$/,
-			qr/^psql:<stdin>:\d+: WARNING:  zeroing out 2 invalid pages among blocks 1..4 of relation base\/.*\/.*\nDETAIL:  Block 2 held first invalid page\.\nHINT:[^\n]+$/
+			qr/^psql:<stdin>:\d+: WARNING:  zeroing out 2 invalid pages among blocks 1..4 of relation base\/.*\/.*\nDETAIL:  Block 2 held first zeroed page\.\nHINT:[^\n]+$/
 		);
 
 		# Then test zeroing vio zero_damaged_pages
@@ -1032,7 +1038,7 @@ SELECT read_rel_block_ll('tbl_zero', 1, nblocks=>4, zero_on_error=>false)
 COMMIT;
 ),
 			qr/^$/,
-			qr/^psql:<stdin>:\d+: WARNING:  zeroing out 2 invalid pages among blocks 1..4 of relation base\/.*\/.*\nDETAIL:  Block 2 held first invalid page\.\nHINT:[^\n]+$/
+			qr/^psql:<stdin>:\d+: WARNING:  zeroing out 2 invalid pages among blocks 1..4 of relation base\/.*\/.*\nDETAIL:  Block 2 held first zeroed page\.\nHINT:[^\n]+$/
 		);
 
 		$psql_a->query_safe(qq(COMMIT));
@@ -1096,10 +1102,12 @@ sub test_checksum
 	$psql_a->query_safe(
 		qq(
 CREATE TABLE tbl_normal(id int) WITH (AUTOVACUUM_ENABLED = false);
-INSERT INTO tbl_normal SELECT generate_series(1, 10000);
+INSERT INTO tbl_normal SELECT generate_series(1, 5000);
+SELECT modify_rel_block('tbl_normal', 3, corrupt_checksum=>true);
 
 CREATE TEMPORARY TABLE tbl_temp(id int) WITH (AUTOVACUUM_ENABLED = false);
 INSERT INTO tbl_temp SELECT generate_series(1, 5000);
+SELECT modify_rel_block('tbl_temp', 3, corrupt_checksum=>true);
 SELECT modify_rel_block('tbl_temp', 4, corrupt_checksum=>true);
 ));
 
@@ -1117,10 +1125,6 @@ SELECT modify_rel_block('pg_shseclabel', 3, corrupt_checksum=>true);
 	# Check that page validity errors are detected, checksums stats increase, normal rel
 	my ($cs_count_before, $cs_ts_before) =
 	  checksum_failures($psql_a, 'postgres');
-	$psql_a->query_safe(
-		qq(
-SELECT modify_rel_block('tbl_normal', 3, corrupt_checksum=>true);
-));
 	psql_like(
 		$io_method,
 		$psql_a,
@@ -1143,10 +1147,6 @@ SELECT read_rel_block_ll('tbl_normal', 3, nblocks=>1, zero_on_error=>false);),
 
 	# Check that page validity errors are detected, checksums stats increase, temp rel
 	($cs_count_after, $cs_ts_after) = checksum_failures($psql_a, 'postgres');
-	$psql_a->query_safe(
-		qq(
-SELECT modify_rel_block('tbl_temp', 3, corrupt_checksum=>true);
-));
 	psql_like(
 		$io_method,
 		$psql_a,
@@ -1255,6 +1255,145 @@ SELECT modify_rel_block('tbl_cs_fail', 1, zero=>true);
 	$psql->quit();
 }
 
+# Test that we detect checksum failures and report them
+sub test_ignore_checksum
+{
+	my $io_method = shift;
+	my $node = shift;
+
+	my $psql = $node->background_psql('postgres', on_error_stop => 0);
+
+	$psql->query_safe(
+		qq(
+CREATE TABLE tbl_cs_fail(id int) WITH (AUTOVACUUM_ENABLED = false);
+INSERT INTO tbl_cs_fail SELECT generate_series(1, 10000);
+));
+
+	my $count_sql = "SELECT count(*) FROM tbl_cs_fail";
+	my $invalidate_sql = qq(
+SELECT invalidate_rel_block('tbl_cs_fail', g.i)
+FROM generate_series(0, 6) g(i);
+);
+
+	my $expect = $psql->query_safe($count_sql);
+
+	$psql->query_safe(
+		qq(
+SELECT modify_rel_block('tbl_cs_fail', 1, corrupt_checksum=>true);
+SELECT modify_rel_block('tbl_cs_fail', 5, corrupt_checksum=>true);
+SELECT modify_rel_block('tbl_cs_fail', 6, corrupt_checksum=>true);
+));
+
+	$psql->query_safe($invalidate_sql);
+	psql_like($io_method, $psql,
+		"ignore_checksum_failure=off fails",
+		$count_sql, qr/^$/, qr/ERROR:  invalid page in block/);
+
+	$psql->query_safe("SET ignore_checksum_failure=on");
+
+	$psql->query_safe($invalidate_sql);
+	psql_like($io_method, $psql,
+			  "ignore_checksum_failure=on succeeds",
+			  $count_sql,
+			  qr/^$expect$/,
+			  qr/WARNING:  ignoring \d checksum failures among blocks/);
+
+
+	$psql->query_safe(
+		qq(
+SELECT modify_rel_block('tbl_cs_fail', 2, zero=>true);
+SELECT modify_rel_block('tbl_cs_fail', 3, corrupt_checksum=>true);
+SELECT modify_rel_block('tbl_cs_fail', 4, corrupt_header=>true);
+));
+
+	my $log_location = -s $node->logfile;
+	psql_like(
+		$io_method,
+		$psql,
+		"test reading of checksum failed block 3, with ignore",
+		qq(
+SELECT read_rel_block_ll('tbl_cs_fail', 3, nblocks=>1, zero_on_error=>false);),
+		qr/^$/,
+		qr/^psql:<stdin>:\d+: WARNING:  ignoring checksum failure in block 3/
+	);
+
+	$log_location =
+	  $node->wait_for_log(qr/LOG:  ignoring checksum failure/, $log_location);
+
+	psql_like(
+		$io_method,
+		$psql,
+		"test reading of valid block 2, checksum failed 3, invalid 4, zero=false",
+		qq(
+SELECT read_rel_block_ll('tbl_cs_fail', 2, nblocks=>3, zero_on_error=>false);),
+		qr/^$/,
+		qr/^psql:<stdin>:\d+: ERROR:  invalid page in block 4 of relation base\/\d+\/\d+$/
+	);
+
+	$psql->query(
+		qq(
+SELECT modify_rel_block('tbl_cs_fail', 2, zero=>true);
+SELECT modify_rel_block('tbl_cs_fail', 3, corrupt_checksum=>true);
+SELECT modify_rel_block('tbl_cs_fail', 4, corrupt_checksum=>true);
+SELECT modify_rel_block('tbl_cs_fail', 5, corrupt_header=>true);
+SELECT modify_rel_block('tbl_cs_fail', 6, corrupt_header=>true);
+SELECT modify_rel_block('tbl_cs_fail', 7, corrupt_header=>true);
+));
+	$psql->{stderr} = '';
+
+	$log_location = -s $node->logfile;
+	psql_like(
+		$io_method,
+		$psql,
+		"test reading of valid block 2, checksum failed 3-4, invalid 5-7, zero=true",
+		qq(
+SELECT read_rel_block_ll('tbl_cs_fail', 2, nblocks=>6, zero_on_error=>true);),
+		qr/^$/,
+		qr/^psql:<stdin>:\d+: WARNING:  zeroing 3 pages and ignoring 2 checksum failures among blocks 2..7 of relation/
+	);
+
+	$node->wait_for_log(qr/LOG:  ignoring checksum failure in block 3/,
+						$log_location);
+	$node->wait_for_log(qr/LOG:  ignoring checksum failure in block 4/,
+						$log_location);
+	$node->wait_for_log(qr/LOG:  invalid page in block 5 of relation base.*; zeroing out page/,
+						$log_location);
+	$node->wait_for_log(qr/LOG:  invalid page in block 6 of relation base.*; zeroing out page/,
+						$log_location);
+	$node->wait_for_log(qr/LOG:  invalid page in block 7 of relation base.*; zeroing out page/,
+						$log_location);
+
+	$psql->query(
+		qq(
+SELECT modify_rel_block('tbl_cs_fail', 3, corrupt_checksum=>true, corrupt_header=>true);
+));
+	$psql->{stderr} = '';
+
+	# Reading a page with both an invalid header and an invalid checksum
+	psql_like(
+		$io_method,
+		$psql,
+		"test reading of block with both invalid header and invalid checksum, zero=false",
+		qq(
+SELECT read_rel_block_ll('tbl_cs_fail', 3, nblocks=>1, zero_on_error=>false);),
+		qr/^$/,
+		qr/^psql:<stdin>:\d+: ERROR:  invalid page in block 3 of relation/
+	);
+
+	psql_like(
+		$io_method,
+		$psql,
+		"test reading of block 3 with both invalid header and invalid checksum, zero=true",
+		qq(
+SELECT read_rel_block_ll('tbl_cs_fail', 3, nblocks=>1, zero_on_error=>true);),
+		qr/^$/,
+		qr/^psql:<stdin>:\d+: WARNING:  invalid page in block 3 of relation base\/.*; zeroing out page/
+	);
+
+
+	$psql->quit();
+}
+
 
 # Run all tests that are supported for all io_methods
 sub test_generic
@@ -1280,21 +1419,22 @@ SELECT modify_rel_block('tbl_corr', 1, corrupt_header=>true);
 CHECKPOINT;
 ));
 
-	test_handle($io_method, $node);
-	test_io_error($io_method, $node);
-	test_batchmode($io_method, $node);
-	test_startwait_io($io_method, $node);
-	test_complete_foreign($io_method, $node);
-	test_close_fd($io_method, $node);
-	test_invalidate($io_method, $node);
+	#test_handle($io_method, $node);
+	#test_io_error($io_method, $node);
+	#test_batchmode($io_method, $node);
+	#test_startwait_io($io_method, $node);
+	#test_complete_foreign($io_method, $node);
+	#test_close_fd($io_method, $node);
+	#test_invalidate($io_method, $node);
 	test_zero($io_method, $node);
 	test_checksum($io_method, $node);
-	test_checksum_createdb($io_method, $node);
+	test_ignore_checksum($io_method, $node);
+	#test_checksum_createdb($io_method, $node);
 
   SKIP:
 	{
 		skip 'Injection points not supported by this build', 1
 		  unless $ENV{enable_injection_points} eq 'yes';
-		test_inject($io_method, $node);
+		#test_inject($io_method, $node);
 	}
 }

@@ -368,6 +368,7 @@ read_rel_block_ll(PG_FUNCTION_ARGS)
 	Buffer		bufs[PG_IOV_MAX];
 	BufferDesc *buf_hdrs[PG_IOV_MAX];
 	Page		pages[PG_IOV_MAX];
+	uint8		srb_flags = 0;
 	PgAioReturn ior;
 	PgAioHandle *ioh;
 	PgAioWaitRef iow;
@@ -408,12 +409,16 @@ read_rel_block_ll(PG_FUNCTION_ARGS)
 
 	pgaio_io_set_handle_data_32(ioh, (uint32 *) bufs, nblocks);
 
+	if (zero_on_error | zero_damaged_pages)
+		srb_flags |= READ_BUFFERS_ZERO_ON_ERROR;
+	if (ignore_checksum_failure)
+		srb_flags |= READ_BUFFERS_IGNORE_CHECKSUM_FAILURES;
+
 	pgaio_io_register_callbacks(ioh,
 								RelationUsesLocalBuffers(rel) ?
 								PGAIO_HCB_LOCAL_BUFFER_READV :
 								PGAIO_HCB_SHARED_BUFFER_READV,
-								(zero_on_error | zero_damaged_pages) ?
-								READ_BUFFERS_ZERO_ON_ERROR : 0);
+								srb_flags);
 
 	if (batchmode_enter)
 		pgaio_enter_batchmode();
