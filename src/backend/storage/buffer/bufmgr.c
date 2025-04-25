@@ -1884,12 +1884,14 @@ AsyncReadBuffers(ReadBuffersOperation *operation, int *nblocks_progress)
 		operation->nblocks_done += 1;
 		*nblocks_progress = 1;
 
+#if 0
 		ereport(DEBUG3,
 				errmsg("%s - trunc: %d",
 					   __func__,
 					   operation->nblocks_done),
 				errhidestmt(true),
 				errhidecontext(true));
+#endif
 
 		pgaio_io_release(ioh);
 		pgaio_wref_clear(&operation->io_wref);
@@ -7313,6 +7315,18 @@ buffer_stage_common(PgAioHandle *ioh, bool is_write, bool is_temp)
 			: GetBufferDescriptor(buffer - 1);
 		uint32		buf_state;
 
+#if 0
+		ereport(DEBUG3,
+				errmsg("%s: io: %d, off: %d/%d, buffer: %d,",
+					   __func__,
+					   pgaio_io_get_id(ioh),
+					   i, handle_data_len,
+					   buffer
+					),
+				errhidestmt(true),
+				errhidecontext(true));
+#endif
+
 		/*
 		 * Check that all the buffers are actually ones that could conceivably
 		 * be done in one IO, i.e. are sequential. This is the last
@@ -7730,6 +7744,20 @@ buffer_readv_complete(PgAioHandle *ioh, PgAioResult prior_result,
 		failed =
 			prior_result.status == PGAIO_RS_ERROR
 			|| prior_result.result <= buf_off;
+
+#if 0
+		ereport(DEBUG3,
+				errmsg("%s: io %d: %d/%d: buffer: %d, failed: %d, temp: %d",
+					   __func__,
+					   pgaio_io_get_id(ioh),
+					   buf_off, handle_data_len,
+					   buf,
+					   failed,
+					   is_temp
+					),
+				errhidestmt(true),
+				errhidecontext(true));
+#endif
 
 		buffer_readv_complete_one(td, buf_off, buf, cb_data, failed, is_temp,
 								  &failed_verification,
