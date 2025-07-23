@@ -83,7 +83,9 @@ IndexNext(IndexScanState *node)
 	ExprContext *econtext;
 	ScanDirection direction;
 	IndexScanDesc scandesc;
+	ItemPointer tid;
 	TupleTableSlot *slot;
+	BufferUsage prev_bufusage;
 
 	/*
 	 * extract necessary information from index scan node
@@ -126,10 +128,27 @@ IndexNext(IndexScanState *node)
 	}
 
 	/*
-	 * ok, now that we have what we need, fetch the next tuple.
+	 * Ok, now that we have what we need, fetch the next tuple.
+	 *
+	 * Use index_getnext_tid(), rather than index_getnext_slot(), to allow
+	 * collecting buffer access stats separately for index and table accesses.
 	 */
-	while (index_getnext_slot(scandesc, direction, slot))
+	while ((tid = index_getnext_tid(scandesc, direction)) != NULL)
 	{
+		prev_bufusage = pgBufferUsage;
+
+		if (unlikely(!index_fetch_heap(scandesc, slot)))
+		{
+			node->iss_Instrument.table_misses++;
+			continue;
+		}
+
+		BufferUsageAccumDiff(&node->iss_Instrument.table_bufusage, &pgBufferUsage,
+							 &prev_bufusage);
+
+		if (scandesc->xs_heap_continue)
+			elog(ERROR, "non-MVCC snapshots are not supported in index-only scans");
+
 		CHECK_FOR_INTERRUPTS();
 
 		/*
