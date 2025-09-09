@@ -198,6 +198,19 @@ typedef void (*amrescan_function) (IndexScanDesc scan,
 typedef bool (*amgettuple_function) (IndexScanDesc scan,
 									 ScanDirection direction);
 
+/* next batch of valid tuples */
+typedef IndexScanBatch (*amgetbatch_function) (IndexScanDesc scan,
+											   IndexScanBatch priorbatch,
+											   ScanDirection direction);
+
+/* mark dead items in index page */
+typedef void (*amkillitemsbatch_function) (IndexScanDesc scan,
+										   IndexScanBatch batch);
+
+/* drop TID recycling interlock held to prevent concurrent VACUUM recycling */
+typedef void (*amunguardbatch_function) (IndexScanDesc scan,
+										 IndexScanBatch batch);
+
 /* fetch all valid tuples */
 typedef int64 (*amgetbitmap_function) (IndexScanDesc scan,
 									   TIDBitmap *tbm);
@@ -205,11 +218,9 @@ typedef int64 (*amgetbitmap_function) (IndexScanDesc scan,
 /* end index scan */
 typedef void (*amendscan_function) (IndexScanDesc scan);
 
-/* mark current scan position */
-typedef void (*ammarkpos_function) (IndexScanDesc scan);
-
-/* restore marked scan position */
-typedef void (*amrestrpos_function) (IndexScanDesc scan);
+/* invalidate index AM state that independently tracks scan's position */
+typedef void (*amposreset_function) (IndexScanDesc scan,
+									 IndexScanBatch batch);
 
 /*
  * Callback function signatures - for parallel index scans.
@@ -309,10 +320,12 @@ typedef struct IndexAmRoutine
 	ambeginscan_function ambeginscan;
 	amrescan_function amrescan;
 	amgettuple_function amgettuple; /* can be NULL */
+	amgetbatch_function amgetbatch; /* can be NULL */
+	amkillitemsbatch_function amkillitemsbatch; /* can be NULL */
+	amunguardbatch_function amunguardbatch; /* can be NULL */
 	amgetbitmap_function amgetbitmap;	/* can be NULL */
 	amendscan_function amendscan;
-	ammarkpos_function ammarkpos;	/* can be NULL */
-	amrestrpos_function amrestrpos; /* can be NULL */
+	amposreset_function amposreset; /* can be NULL */
 
 	/* interface functions to support parallel index scans */
 	amestimateparallelscan_function amestimateparallelscan; /* can be NULL */

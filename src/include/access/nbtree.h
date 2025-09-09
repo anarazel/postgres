@@ -924,111 +924,27 @@ typedef struct BTVacuumPostingData
 
 typedef BTVacuumPostingData *BTVacuumPosting;
 
+/* Per-batch data private to the btree index AM */
+typedef struct BTBatchData
+{
+	Buffer		buf;			/* index page buffer pin (TID reuse interlock) */
+	BlockNumber currPage;		/* index page with matching items */
+	BlockNumber prevPage;		/* currPage's left sibling */
+	BlockNumber nextPage;		/* currPage's right sibling */
+	bool		moreLeft;		/* more matching pages to the left? */
+	bool		moreRight;		/* more matching pages to the right? */
+} BTBatchData;
+
 /*
- * BTScanOpaqueData is the btree-private state needed for an indexscan.
- * This consists of preprocessed scan keys (see _bt_preprocess_keys() for
- * details of the preprocessing), information about the current location
- * of the scan, and information about the marked location, if any.  (We use
- * BTScanPosData to represent the data needed for each of current and marked
- * locations.)	In addition we can remember some known-killed index entries
- * that must be marked before we can move off the current page.
- *
- * Index scans work a page at a time: we pin and read-lock the page, identify
- * all the matching items on the page and save them in BTScanPosData, then
- * release the read-lock while returning the items to the caller for
- * processing.  This approach minimizes lock/unlock traffic.  We must always
- * drop the lock to make it okay for caller to process the returned items.
- * Whether or not we can also release the pin during this window will vary.
- * We drop the pin (when so->dropPin) to avoid blocking progress by VACUUM
- * (see nbtree/README section about making concurrent TID recycling safe).
- * We'll always release both the lock and the pin on the current page before
- * moving on to its sibling page.
- *
- * If we are doing an index-only scan, we save the entire IndexTuple for each
- * matched item, otherwise only its heap TID and offset.  The IndexTuples go
- * into a separate workspace array; each BTScanPosItem stores its tuple's
- * offset within that array.  Posting list tuples store a "base" tuple once,
- * allowing the same key to be returned for each TID in the posting list
- * tuple.
+ * Access the btree-private per-batch data from an IndexScanBatch pointer.
+ * This follows the standard convention for index AM opaque state: it can be
+ * found at a fixed negative offset from the IndexScanBatch pointer.
  */
-
-typedef struct BTScanPosItem	/* what we remember about each match */
+static inline BTBatchData *
+BTBatchGetData(IndexScanBatch batch)
 {
-	ItemPointerData heapTid;	/* TID of referenced heap item */
-	OffsetNumber indexOffset;	/* index item's location within page */
-	LocationIndex tupleOffset;	/* IndexTuple's offset in workspace, if any */
-} BTScanPosItem;
-
-typedef struct BTScanPosData
-{
-	Buffer		buf;			/* currPage buf (invalid means unpinned) */
-
-	/* page details as of the saved position's call to _bt_readpage */
-	BlockNumber currPage;		/* page referenced by items array */
-	BlockNumber prevPage;		/* currPage's left link */
-	BlockNumber nextPage;		/* currPage's right link */
-	XLogRecPtr	lsn;			/* currPage's LSN (when so->dropPin) */
-
-	/* scan direction for the saved position's call to _bt_readpage */
-	ScanDirection dir;
-
-	/*
-	 * If we are doing an index-only scan, nextTupleOffset is the first free
-	 * location in the associated tuple storage workspace.
-	 */
-	int			nextTupleOffset;
-
-	/*
-	 * moreLeft and moreRight track whether we think there may be matching
-	 * index entries to the left and right of the current page, respectively.
-	 */
-	bool		moreLeft;
-	bool		moreRight;
-
-	/*
-	 * The items array is always ordered in index order (ie, increasing
-	 * indexoffset).  When scanning backwards it is convenient to fill the
-	 * array back-to-front, so we start at the last slot and fill downwards.
-	 * Hence we need both a first-valid-entry and a last-valid-entry counter.
-	 * itemIndex is a cursor showing which entry was last returned to caller.
-	 */
-	int			firstItem;		/* first valid index in items[] */
-	int			lastItem;		/* last valid index in items[] */
-	int			itemIndex;		/* current index in items[] */
-
-	BTScanPosItem items[MaxTIDsPerBTreePage];	/* MUST BE LAST */
-} BTScanPosData;
-
-typedef BTScanPosData *BTScanPos;
-
-#define BTScanPosIsPinned(scanpos) \
-( \
-	AssertMacro(BlockNumberIsValid((scanpos).currPage) || \
-				!BufferIsValid((scanpos).buf)), \
-	BufferIsValid((scanpos).buf) \
-)
-#define BTScanPosUnpin(scanpos) \
-	do { \
-		ReleaseBuffer((scanpos).buf); \
-		(scanpos).buf = InvalidBuffer; \
-	} while (0)
-#define BTScanPosUnpinIfPinned(scanpos) \
-	do { \
-		if (BTScanPosIsPinned(scanpos)) \
-			BTScanPosUnpin(scanpos); \
-	} while (0)
-
-#define BTScanPosIsValid(scanpos) \
-( \
-	AssertMacro(BlockNumberIsValid((scanpos).currPage) || \
-				!BufferIsValid((scanpos).buf)), \
-	BlockNumberIsValid((scanpos).currPage) \
-)
-#define BTScanPosInvalidate(scanpos) \
-	do { \
-		(scanpos).buf = InvalidBuffer; \
-		(scanpos).currPage = InvalidBlockNumber; \
-	} while (0)
+	return (BTBatchData *) ((char *) batch - MAXALIGN(sizeof(BTBatchData)));
+}
 
 /* We need one of these for each equality-type SK_SEARCHARRAY scan key */
 typedef struct BTArrayKeyInfo
@@ -1050,6 +966,28 @@ typedef struct BTArrayKeyInfo
 	ScanKey		high_compare;	/* array's < or <= upper bound */
 } BTArrayKeyInfo;
 
+/*
+ * BTScanOpaqueData is the btree-private state needed for an indexscan.
+ * This consists of preprocessed scan keys (see _bt_preprocess_keys() for
+ * details of the preprocessing), and information about the current array
+ * keys.  There are assumptions about how the current array keys track the
+ * progress of the index scan through the index's key space (see _bt_readpage
+ * and _bt_advance_array_keys), but we don't actually track anything about the
+ * current scan position in this opaque struct.
+ *
+ * Index scans work a page at a time, as required by the amgetbatch contract:
+ * we pin and read-lock the page, identify all the matching items on the page
+ * and return them in a newly allocated batch.  We then release the read-lock
+ * using amgetbatch utility routines.  This approach minimizes lock/unlock
+ * traffic. _bt_next is passed priorbatch, which contains details of which
+ * page is next in line to be read (priorbatch is provided as an argument to
+ * btgetbatch by core code).
+ *
+ * If we are doing an index-only scan, we save the entire IndexTuple for each
+ * matched item, otherwise only its heap TID and offset.  This is also per the
+ * amgetbatch contract.  Posting list tuples store a "base" tuple once,
+ * allowing the same key to be returned for each TID in the posting list.
+ */
 typedef struct BTScanOpaqueData
 {
 	/* these fields are set by _bt_preprocess_keys(): */
@@ -1066,32 +1004,6 @@ typedef struct BTScanOpaqueData
 	BTArrayKeyInfo *arrayKeys;	/* info about each equality-type array key */
 	FmgrInfo   *orderProcs;		/* ORDER procs for required equality keys */
 	MemoryContext arrayContext; /* scan-lifespan context for array data */
-
-	/* info about killed items if any (killedItems is NULL if never used) */
-	int		   *killedItems;	/* currPos.items indexes of killed items */
-	int			numKilled;		/* number of currently stored items */
-	bool		dropPin;		/* drop leaf pin before btgettuple returns? */
-
-	/*
-	 * If we are doing an index-only scan, these are the tuple storage
-	 * workspaces for the currPos and markPos respectively.  Each is of size
-	 * BLCKSZ, so it can hold as much as a full page's worth of tuples.
-	 */
-	char	   *currTuples;		/* tuple storage for currPos */
-	char	   *markTuples;		/* tuple storage for markPos */
-
-	/*
-	 * If the marked position is on the same page as current position, we
-	 * don't use markPos, but just keep the marked itemIndex in markItemIndex
-	 * (all the rest of currPos is valid for the mark position). Hence, to
-	 * determine if there is a mark, first look at markItemIndex, then at
-	 * markPos.
-	 */
-	int			markItemIndex;	/* itemIndex, or -1 if not valid */
-
-	/* keep these last in struct for efficiency */
-	BTScanPosData currPos;		/* current position data */
-	BTScanPosData markPos;		/* marked position, if any */
 } BTScanOpaqueData;
 
 typedef BTScanOpaqueData *BTScanOpaque;
@@ -1160,14 +1072,17 @@ extern bool btinsert(Relation rel, Datum *values, bool *isnull,
 extern IndexScanDesc btbeginscan(Relation rel, int nkeys, int norderbys);
 extern Size btestimateparallelscan(Relation rel, int nkeys, int norderbys);
 extern void btinitparallelscan(void *target);
-extern bool btgettuple(IndexScanDesc scan, ScanDirection dir);
+extern IndexScanBatch btgetbatch(IndexScanDesc scan,
+								 IndexScanBatch priorbatch,
+								 ScanDirection dir);
 extern int64 btgetbitmap(IndexScanDesc scan, TIDBitmap *tbm);
 extern void btrescan(IndexScanDesc scan, ScanKey scankey, int nscankeys,
 					 ScanKey orderbys, int norderbys);
+extern void btkillitemsbatch(IndexScanDesc scan, IndexScanBatch batch);
+extern void btunguardbatch(IndexScanDesc scan, IndexScanBatch batch);
 extern void btparallelrescan(IndexScanDesc scan);
 extern void btendscan(IndexScanDesc scan);
-extern void btmarkpos(IndexScanDesc scan);
-extern void btrestrpos(IndexScanDesc scan);
+extern void btposreset(IndexScanDesc scan, IndexScanBatch batch);
 extern IndexBulkDeleteResult *btbulkdelete(IndexVacuumInfo *info,
 										   IndexBulkDeleteResult *stats,
 										   IndexBulkDeleteCallback callback,
@@ -1271,8 +1186,9 @@ extern void _bt_preprocess_keys(IndexScanDesc scan);
 /*
  * prototypes for functions in nbtreadpage.c
  */
-extern bool _bt_readpage(IndexScanDesc scan, ScanDirection dir,
-						 OffsetNumber offnum, bool firstpage);
+extern bool _bt_readpage(IndexScanDesc scan, IndexScanBatch newbatch,
+						 ScanDirection dir, OffsetNumber offnum,
+						 bool firstpage);
 extern void _bt_start_array_keys(IndexScanDesc scan, ScanDirection dir);
 extern int	_bt_binsrch_array_skey(FmgrInfo *orderproc,
 								   bool cur_elem_trig, ScanDirection dir,
@@ -1287,15 +1203,15 @@ extern BTStack _bt_search(Relation rel, Relation heaprel, BTScanInsert key,
 						  Buffer *bufP, int access, bool returnstack);
 extern OffsetNumber _bt_binsrch_insert(Relation rel, BTInsertState insertstate);
 extern int32 _bt_compare(Relation rel, BTScanInsert key, Page page, OffsetNumber offnum);
-extern bool _bt_first(IndexScanDesc scan, ScanDirection dir);
-extern bool _bt_next(IndexScanDesc scan, ScanDirection dir);
+extern IndexScanBatch _bt_first(IndexScanDesc scan, ScanDirection dir);
+extern IndexScanBatch _bt_next(IndexScanDesc scan, ScanDirection dir,
+							   IndexScanBatch priorbatch);
 extern Buffer _bt_get_endpoint(Relation rel, uint32 level, bool rightmost);
 
 /*
  * prototypes for functions in nbtutils.c
  */
 extern BTScanInsert _bt_mkscankey(Relation rel, IndexTuple itup);
-extern void _bt_killitems(IndexScanDesc scan);
 extern BTCycleId _bt_vacuum_cycleid(Relation rel);
 extern BTCycleId _bt_start_vacuum(Relation rel);
 extern void _bt_end_vacuum(Relation rel);

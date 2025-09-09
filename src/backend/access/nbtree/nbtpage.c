@@ -1037,6 +1037,9 @@ _bt_relbuf(Relation rel, Buffer buf)
  * Lock is acquired without acquiring another pin.  This is like a raw
  * LockBuffer() call, but performs extra steps needed by Valgrind.
  *
+ * Note: _bt_batch_unlock in nbtsearch.c (indexam_util_batch_unlock wrapper
+ * function) has matching Valgrind buffer lock instrumentation.
+ *
  * Note: Caller may need to call _bt_checkpage() with buf when pin on buf
  * wasn't originally acquired in _bt_getbuf() or _bt_relandgetbuf().
  */
@@ -1078,13 +1081,19 @@ _bt_unlockbuf(Relation rel, Buffer buf)
 	 * Buffer is pinned and locked, which means that it is expected to be
 	 * defined and addressable.  Check that proactively.
 	 */
-	VALGRIND_CHECK_MEM_IS_DEFINED(BufferGetPage(buf), BLCKSZ);
+#if defined(USE_VALGRIND)
+	Page		page = BufferGetPage(buf);
+
+	VALGRIND_CHECK_MEM_IS_DEFINED(page, BLCKSZ);
+#endif
 
 	/* LockBuffer() asserts that pin is held by this backend */
 	LockBuffer(buf, BUFFER_LOCK_UNLOCK);
 
+#if defined(USE_VALGRIND)
 	if (!RelationUsesLocalBuffers(rel))
-		VALGRIND_MAKE_MEM_NOACCESS(BufferGetPage(buf), BLCKSZ);
+		VALGRIND_MAKE_MEM_NOACCESS(page, BLCKSZ);
+#endif
 }
 
 /*

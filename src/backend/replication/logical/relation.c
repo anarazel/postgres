@@ -887,10 +887,12 @@ IsIndexUsableForReplicaIdentityFull(Relation idxrel, AttrMap *attrmap)
 		return false;
 
 	/*
-	 * The given index access method must implement "amgettuple", which will
-	 * be used later to fetch the tuples.  See RelationFindReplTupleByIndex().
+	 * The given index access method must implement "amgettuple" or
+	 * "amgetbatch", which will be used later to fetch the tuples.  See
+	 * RelationFindReplTupleByIndex().
 	 */
-	if (GetIndexAmRoutineByAmId(idxrel->rd_rel->relam, false)->amgettuple == NULL)
+	if (GetIndexAmRoutineByAmId(idxrel->rd_rel->relam, false)->amgettuple == NULL &&
+		GetIndexAmRoutineByAmId(idxrel->rd_rel->relam, false)->amgetbatch == NULL)
 		return false;
 
 	return true;

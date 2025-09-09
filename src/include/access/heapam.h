@@ -129,9 +129,36 @@ typedef struct IndexFetchHeapData
 	Buffer		xs_cbuf;
 	BlockNumber xs_blk;
 
-	/* Current heap block's corresponding page in the visibility map */
-	Buffer		xs_vmbuffer;
+	/* For index-only scans that must access the visibility map */
+	Buffer		xs_vmbuffer;	/* visibility map buffer */
+	int			xs_vm_items;	/* # items to resolve visibility info for */
+	bool		xs_lastinblock; /* last TID on this block in current batch? */
+
 } IndexFetchHeapData;
+
+/*
+ * Per-batch data private to the heap table AM.
+ *
+ * Stored at a negative offset from the IndexScanBatch pointer, in the
+ * table AM opaque area of each batch allocation.
+ */
+typedef struct HeapBatchData
+{
+	uint8	   *visInfo;		/* per-item visibility flags, or NULL */
+} HeapBatchData;
+
+/*
+ * Per-item visibility flags stored in HeapBatchData.visInfo array
+ */
+#define HEAP_BATCH_VIS_CHECKED		0x01	/* checked item in VM? */
+#define HEAP_BATCH_VIS_ALL_VISIBLE	0x02	/* block is known all-visible? */
+
+/* Access the heap-private per-batch data from an IndexScanBatch pointer */
+static inline HeapBatchData *
+heap_batch_data(IndexScanBatch batch, IndexScanDesc scan)
+{
+	return (HeapBatchData *) ((char *) batch - scan->batch_table_offset);
+}
 
 /* Result codes for HeapTupleSatisfiesVacuum */
 typedef enum

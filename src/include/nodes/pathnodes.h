@@ -1425,12 +1425,12 @@ typedef struct IndexOptInfo
 	bool		amoptionalkey;
 	bool		amsearcharray;
 	bool		amsearchnulls;
-	/* does AM have amgettuple interface? */
-	bool		amhasgettuple;
+	/* does AM have amgetbatch (or gettuple) interface? */
+	bool		amhasgetbatch;
 	/* does AM have amgetbitmap interface? */
 	bool		amhasgetbitmap;
 	bool		amcanparallel;
-	/* does AM have ammarkpos interface? */
+	/* is AM prepared for us to restore a mark? */
 	bool		amcanmarkpos;
 	/* AM's cost estimator */
 	/* Rather than include amapi.h here, we declare amcostestimate like this */

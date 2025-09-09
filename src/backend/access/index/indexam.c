@@ -24,9 +24,7 @@
  *		index_parallelscan_initialize - initialize parallel scan
  *		index_parallelrescan  - (re)start a parallel scan of an index
  *		index_beginscan_parallel - join parallel index scan
- *		index_getnext_tid	- get the next TID from a scan
- *		index_fetch_heap		- get the scan's next heap tuple
- *		index_getnext_slot	- get the next tuple from a scan
+ *		index_getnext_tid	- amgettuple table AM helper routine
  *		index_getbitmap - get all tuples from a scan
  *		index_bulk_delete	- bulk deletion of index tuples
  *		index_vacuum_cleanup	- post-deletion cleanup of an index
@@ -255,6 +253,7 @@ index_insert_cleanup(Relation indexRelation,
 IndexScanDesc
 index_beginscan(Relation heapRelation,
 				Relation indexRelation,
+				bool xs_want_itup,
 				Snapshot snapshot,
 				IndexScanInstrumentation *instrument,
 				int nkeys, int norderbys)
@@ -281,7 +280,23 @@ index_beginscan(Relation heapRelation,
 	 */
 	scan->heapRelation = heapRelation;
 	scan->xs_snapshot = snapshot;
+	scan->MVCCScan = IsMVCCLikeSnapshot(snapshot);
 	scan->instrument = instrument;
+	scan->xs_want_itup = xs_want_itup;
+	scan->batchImmediateUnguard = (scan->MVCCScan && !xs_want_itup);
+
+	if (indexRelation->rd_indam->amgetbatch != NULL)
+		index_batchscan_init(scan);
+
+	/* Resolve which getnext_slot implementation to use for this scan */
+	if (xs_want_itup)
+		scan->xs_getnext_slot = scan->usebatchring ?
+			heapRelation->rd_tableam->index_only_batch_getnext_slot :
+			heapRelation->rd_tableam->index_only_getnext_slot;
+	else
+		scan->xs_getnext_slot = scan->usebatchring ?
+			heapRelation->rd_tableam->index_batch_getnext_slot :
+			heapRelation->rd_tableam->index_getnext_slot;
 
 	/* prepare to fetch index matches from table */
 	scan->xs_heapfetch = table_index_fetch_begin(heapRelation);
@@ -312,6 +327,7 @@ index_beginscan_bitmap(Relation indexRelation,
 	 * up by RelationGetIndexScan.
 	 */
 	scan->xs_snapshot = snapshot;
+	scan->MVCCScan = IsMVCCLikeSnapshot(snapshot);
 	scan->instrument = instrument;
 
 	return scan;
@@ -373,12 +389,14 @@ index_rescan(IndexScanDesc scan,
 	Assert(nkeys == scan->numberOfKeys);
 	Assert(norderbys == scan->numberOfOrderBys);
 
-	/* Release resources (like buffer pins) from table accesses */
+	/* reset table AM state for rescan */
 	if (scan->xs_heapfetch)
 		table_index_fetch_reset(scan->xs_heapfetch);
 
 	scan->kill_prior_tuple = false; /* for safety */
-	scan->xs_heap_continue = false;
+
+	if (scan->usebatchring)
+		index_batchscan_reset(scan);
 
 	scan->indexRelation->rd_indam->amrescan(scan, keys, nkeys,
 											orderbys, norderbys);
@@ -394,12 +412,23 @@ index_endscan(IndexScanDesc scan)
 	SCAN_CHECKS;
 	CHECK_SCAN_PROCEDURE(amendscan);
 
+	/* Free cached bitmap batch if any */
+	if (scan->xs_bitmap_batch != NULL)
+	{
+		pfree(batch_alloc_base(scan->xs_bitmap_batch, scan));
+		scan->xs_bitmap_batch = NULL;
+	}
+
 	/* Release resources (like buffer pins) from table accesses */
 	if (scan->xs_heapfetch)
 	{
 		table_index_fetch_end(scan->xs_heapfetch);
 		scan->xs_heapfetch = NULL;
 	}
+
+	/* Cleanup batching, so that the AM can release pins and so on. */
+	if (scan->usebatchring)
+		index_batchscan_end(scan);
 
 	/* End the AM's scan */
 	scan->indexRelation->rd_indam->amendscan(scan);
@@ -422,24 +451,25 @@ void
 index_markpos(IndexScanDesc scan)
 {
 	SCAN_CHECKS;
-	CHECK_SCAN_PROCEDURE(ammarkpos);
+	CHECK_SCAN_PROCEDURE(amgetbatch);
 
-	scan->indexRelation->rd_indam->ammarkpos(scan);
+	/* Only amgetbatch index AMs support mark and restore */
+	index_batchscan_mark_pos(scan);
 }
 
 /* ----------------
  *		index_restrpos	- restore a scan position
  *
- * NOTE: this only restores the internal scan state of the index AM.  See
- * comments for ExecRestrPos().
+ * NOTE: this only restores the batch positional state shared by the table and
+ * index AMs.  See comments for ExecRestrPos().
  *
  * NOTE: For heap, in the presence of HOT chains, mark/restore only works
  * correctly if the scan's snapshot is MVCC-safe; that ensures that there's at
  * most one returnable tuple in each HOT chain, and so restoring the prior
- * state at the granularity of the index AM is sufficient.  Since the only
- * current user of mark/restore functionality is nodeMergejoin.c, this
- * effectively means that merge-join plans only work for MVCC snapshots.  This
- * could be fixed if necessary, but for now it seems unimportant.
+ * state at the scan item granularity is sufficient.  Since the only current
+ * user of mark/restore functionality is nodeMergejoin.c, this effectively
+ * means that merge-join plans only work for MVCC snapshots.  This could be
+ * fixed if necessary, but for now it seems unimportant.
  * ----------------
  */
 void
@@ -448,16 +478,14 @@ index_restrpos(IndexScanDesc scan)
 	Assert(IsMVCCLikeSnapshot(scan->xs_snapshot));
 
 	SCAN_CHECKS;
-	CHECK_SCAN_PROCEDURE(amrestrpos);
+	CHECK_SCAN_PROCEDURE(amgetbatch);
 
-	/* release resources (like buffer pins) from table accesses */
+	/* reset table AM state for rescan */
 	if (scan->xs_heapfetch)
 		table_index_fetch_reset(scan->xs_heapfetch);
 
-	scan->kill_prior_tuple = false; /* for safety */
-	scan->xs_heap_continue = false;
-
-	scan->indexRelation->rd_indam->amrestrpos(scan);
+	/* also notify table AM and index AM */
+	index_batchscan_restore_pos(scan);
 }
 
 /*
@@ -579,6 +607,9 @@ index_parallelrescan(IndexScanDesc scan)
 	if (scan->xs_heapfetch)
 		table_index_fetch_reset(scan->xs_heapfetch);
 
+	if (scan->usebatchring)
+		index_batchscan_reset(scan);
+
 	/* amparallelrescan is optional; assume no-op if not provided by AM */
 	if (scan->indexRelation->rd_indam->amparallelrescan != NULL)
 		scan->indexRelation->rd_indam->amparallelrescan(scan);
@@ -591,6 +622,7 @@ index_parallelrescan(IndexScanDesc scan)
  */
 IndexScanDesc
 index_beginscan_parallel(Relation heaprel, Relation indexrel,
+						 bool xs_want_itup,
 						 IndexScanInstrumentation *instrument,
 						 int nkeys, int norderbys,
 						 ParallelIndexScanDesc pscan)
@@ -612,7 +644,23 @@ index_beginscan_parallel(Relation heaprel, Relation indexrel,
 	 */
 	scan->heapRelation = heaprel;
 	scan->xs_snapshot = snapshot;
+	scan->MVCCScan = IsMVCCLikeSnapshot(snapshot);
 	scan->instrument = instrument;
+	scan->xs_want_itup = xs_want_itup;
+	scan->batchImmediateUnguard = (scan->MVCCScan && !xs_want_itup);
+
+	if (indexrel->rd_indam->amgetbatch != NULL)
+		index_batchscan_init(scan);
+
+	/* Resolve which getnext_slot implementation to use for this scan */
+	if (xs_want_itup)
+		scan->xs_getnext_slot = scan->usebatchring ?
+			heaprel->rd_tableam->index_only_batch_getnext_slot :
+			heaprel->rd_tableam->index_only_getnext_slot;
+	else
+		scan->xs_getnext_slot = scan->usebatchring ?
+			heaprel->rd_tableam->index_batch_getnext_slot :
+			heaprel->rd_tableam->index_getnext_slot;
 
 	/* prepare to fetch index matches from table */
 	scan->xs_heapfetch = table_index_fetch_begin(heaprel);
@@ -621,10 +669,14 @@ index_beginscan_parallel(Relation heaprel, Relation indexrel,
 }
 
 /* ----------------
- * index_getnext_tid - get the next TID from a scan
+ * index_getnext_tid - amgettuple interface
  *
  * The result is the next TID satisfying the scan keys,
  * or NULL if no more matching tuples exist.
+ *
+ * This should only be called by table AM's index_getnext_slot implementation,
+ * and only given an index AM that supports the single-tuple amgettuple
+ * interface.
  * ----------------
  */
 ItemPointer
@@ -648,7 +700,6 @@ index_getnext_tid(IndexScanDesc scan, ScanDirection direction)
 
 	/* Reset kill flag immediately for safety */
 	scan->kill_prior_tuple = false;
-	scan->xs_heap_continue = false;
 
 	/* If we're out of index entries, we're done */
 	if (!found)
@@ -665,97 +716,6 @@ index_getnext_tid(IndexScanDesc scan, ScanDirection direction)
 
 	/* Return the TID of the tuple we found. */
 	return &scan->xs_heaptid;
-}
-
-/* ----------------
- *		index_fetch_heap - get the scan's next heap tuple
- *
- * The result is a visible heap tuple associated with the index TID most
- * recently fetched by index_getnext_tid, or NULL if no more matching tuples
- * exist.  (There can be more than one matching tuple because of HOT chains,
- * although when using an MVCC snapshot it should be impossible for more than
- * one such tuple to exist.)
- *
- * On success, the buffer containing the heap tup is pinned (the pin will be
- * dropped in a future index_getnext_tid, index_fetch_heap or index_endscan
- * call).
- *
- * Note: caller must check scan->xs_recheck, and perform rechecking of the
- * scan keys if required.  We do not do that here because we don't have
- * enough information to do it efficiently in the general case.
- * ----------------
- */
-bool
-index_fetch_heap(IndexScanDesc scan, TupleTableSlot *slot)
-{
-	bool		all_dead = false;
-	bool		found;
-
-	found = table_index_fetch_tuple(scan->xs_heapfetch, &scan->xs_heaptid,
-									scan->xs_snapshot, slot,
-									&scan->xs_heap_continue, &all_dead);
-
-	if (found)
-		pgstat_count_heap_fetch(scan->indexRelation);
-
-	/*
-	 * If we scanned a whole HOT chain and found only dead tuples, tell index
-	 * AM to kill its entry for that TID (this will take effect in the next
-	 * amgettuple call, in index_getnext_tid).  We do not do this when in
-	 * recovery because it may violate MVCC to do so.  See comments in
-	 * RelationGetIndexScan().
-	 */
-	if (!scan->xactStartedInRecovery)
-		scan->kill_prior_tuple = all_dead;
-
-	return found;
-}
-
-/* ----------------
- *		index_getnext_slot - get the next tuple from a scan
- *
- * The result is true if a tuple satisfying the scan keys and the snapshot was
- * found, false otherwise.  The tuple is stored in the specified slot.
- *
- * On success, resources (like buffer pins) are likely to be held, and will be
- * dropped by a future index_getnext_tid, index_fetch_heap or index_endscan
- * call).
- *
- * Note: caller must check scan->xs_recheck, and perform rechecking of the
- * scan keys if required.  We do not do that here because we don't have
- * enough information to do it efficiently in the general case.
- * ----------------
- */
-bool
-index_getnext_slot(IndexScanDesc scan, ScanDirection direction, TupleTableSlot *slot)
-{
-	for (;;)
-	{
-		if (!scan->xs_heap_continue)
-		{
-			ItemPointer tid;
-
-			/* Time to fetch the next TID from the index */
-			tid = index_getnext_tid(scan, direction);
-
-			/* If we're out of index entries, we're done */
-			if (tid == NULL)
-				break;
-
-			Assert(ItemPointerEquals(tid, &scan->xs_heaptid));
-		}
-
-		/*
-		 * Fetch the next (or only) visible heap tuple for this index entry.
-		 * If we don't find anything, loop around and grab the next TID from
-		 * the index.
-		 */
-		Assert(ItemPointerIsValid(&scan->xs_heaptid));
-		if (index_fetch_heap(scan, slot))
-			return true;
-	}
-
-	return false;
 }
 
 /* ----------------

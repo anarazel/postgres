@@ -1763,7 +1763,6 @@ typedef struct IndexScanState
  *		Instrument		   local index scan instrumentation
  *		SharedInfo		   parallel worker instrumentation (no leader entry)
  *		TableSlot		   slot for holding tuples fetched from the table
- *		VMBuffer		   buffer in use for visibility map testing, if any
  *		PscanLen		   size of parallel index-only scan descriptor
  *		NameCStringAttNums attnums of name typed columns to pad to NAMEDATALEN
  *		NameCStringCount   number of elements in the NameCStringAttNums array
@@ -1786,7 +1785,6 @@ typedef struct IndexOnlyScanState
 	IndexScanInstrumentation *ioss_Instrument;
 	SharedIndexScanInstrumentation *ioss_SharedInfo;
 	TupleTableSlot *ioss_TableSlot;
-	Buffer		ioss_VMBuffer;
 	Size		ioss_PscanLen;
 	AttrNumber *ioss_NameCStringAttNums;
 	int			ioss_NameCStringCount;

@@ -48,6 +48,12 @@ typedef struct IndexScanInstrumentation
 {
 	/* Index search count (incremented with pgstat_count_index_scan call) */
 	uint64		nsearches;
+
+	/*
+	 * heap blocks fetched counts (incremented by index_getnext_slot calls
+	 * within table AMs, though only during index-only scans)
+	 */
+	uint64		nheapfetches;
 } IndexScanInstrumentation;
 
 /*

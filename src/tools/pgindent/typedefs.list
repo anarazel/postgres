@@ -202,6 +202,7 @@ BOOL
 BOOLEAN
 BOX
 BTArrayKeyInfo
+BTBatchData
 BTBuildState
 BTCallbackState
 BTCycleId
@@ -229,8 +230,6 @@ BTScanInsertData
 BTScanKeyPreproc
 BTScanOpaque
 BTScanOpaqueData
-BTScanPosData
-BTScanPosItem
 BTShared
 BTSortArrayContext
 BTSpool
@@ -259,6 +258,9 @@ BaseBackupCmd
 BaseBackupTargetHandle
 BaseBackupTargetType
 BatchMVCCState
+BatchMatchingItem
+BatchRingBuffer
+BatchRingItemPos
 BeginDirectModify_function
 BeginForeignInsert_function
 BeginForeignModify_function
@@ -1228,6 +1230,7 @@ HbaLine
 HeadlineJsonState
 HeadlineParsedText
 HeadlineWordEntry
+HeapBatchData
 HeapCheckContext
 HeapCheckReadStreamData
 HeapPageFreeze
@@ -1307,6 +1310,8 @@ IndexOrderByDistance
 IndexPath
 IndexRuntimeKeyInfo
 IndexScan
+IndexScanBatch
+IndexScanBatchData
 IndexScanDesc
 IndexScanDescData
 IndexScanInstrumentation
@@ -3510,18 +3515,17 @@ amcanreturn_function
 amcostestimate_function
 amendscan_function
 amestimateparallelscan_function
+amgetbatch_function
 amgetbitmap_function
 amgettreeheight_function
 amgettuple_function
 aminitparallelscan_function
 aminsert_function
 aminsertcleanup_function
-ammarkpos_function
 amoptions_function
 amparallelrescan_function
 amproperty_function
 amrescan_function
-amrestrpos_function
 amtranslate_cmptype_function
 amtranslate_strategy_function
 amvacuumcleanup_function
