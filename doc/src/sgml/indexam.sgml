@@ -807,9 +807,12 @@ amgetbatch (IndexScanDesc scan,
   <para>
    The <function>amgetbatch</function> interface is an alternative to
    <function>amgettuple</function> that returns matching index entries in batches
-   rather than one at a time.  By returning all matching index entries from a
-   single index page together, the table AM gains visibility into which table
-   blocks will be needed in the near future.
+   rather than one at a time. This enables the table access method to
+   optimize table block access patterns and perform I/O prefetching.
+   By returning all matching index entries from a single index page together,
+   the table AM can readahead through the index and identify which table
+   blocks will be needed, allowing prefetching of table AM pages during
+   ordered index scans.
   </para>
 
   <para>
@@ -1004,7 +1007,8 @@ amunguardbatch (IndexScanDesc scan,
    free the pins at an opportune point (for example when <function>amrescan</function>
    and/or <function>amendscan</function> are called).  It must also keep the
    number of retained pins fixed and small, to avoid exhausting the backend's
-   buffer pin limit.
+   buffer pin limit (which is shared with the table AM's read stream
+   for index scan prefetching).
   </para>
 
   <para>
@@ -1378,6 +1382,60 @@ amtranslatecmptype (CompareType cmptype, Oid opfamily, Oid opcintype);
    <function>amgetbitmap</function> and not <function>amgettuple</function>/<function>amgetbatch</function>,
    or vice versa, if its internal implementation is unsuited to one API or the other.
   </para>
+
+  <sect2 id="index-scanning-batches">
+   <title>Table AM Considerations for Batch Scanning</title>
+
+   <para>
+    This section is primarily relevant to
+    <link linkend="tableam">table access method</link> authors.
+    When an index scan uses the <function>amgetbatch</function> interface,
+    the table AM is responsible for managing position state within the
+    <structname>IndexScanDesc</structname>'s
+    <structfield>batchringbuf</structfield> and for controlling when
+    buffer pins on index pages are released.
+   </para>
+
+   <para>
+    The <structfield>scanPos</structfield> field within
+    <structfield>batchringbuf</structfield> tracks which batch and item within
+    that batch will be returned next to the executor.  The table AM must advance
+    <structfield>scanPos</structfield> as tuples are returned by
+    <function>table_index_getnext_slot</function>.  The core code may also
+    modify this field during operations such as mark/restore.
+   </para>
+
+   <para>
+    The <structfield>prefetchPos</structfield> field tracks the position used
+    for I/O prefetching.  It is generally advanced by initializing it from
+    <structfield>scanPos</structfield> within a read stream callback, allowing
+    the table AM to prefetch table blocks pointed to by items that are well
+    ahead of the current scan position.  Initially
+    <structfield>prefetchPos</structfield> starts at
+    <structfield>scanPos</structfield>, but as the read stream ramps up it can
+    get far ahead &mdash; spanning multiple index pages if necessary to
+    maintain an optimal I/O prefetch distance for table block reads.  A major
+    goal of the <function>amgetbatch</function> interface is to allow the
+    table AM to prefetch without being limited to items from the current
+    <structfield>scanPos</structfield> batch's index leaf page.
+   </para>
+
+   <para>
+    Both <structfield>scanPos</structfield> and
+    <structfield>prefetchPos</structfield> are controlled by the table AM and
+    core code; index access methods should not access or manipulate these
+    fields.  See the <filename>src/backend/access/heap/</filename>
+    implementation for a reference example.
+   </para>
+
+   <para>
+    For details on buffer pin management during batch scans, including the
+    <structfield>batchImmediateUnguard</structfield> policy and the
+    <function>amunguardbatch</function> callback, see
+    <xref linkend="index-locking"/>.
+   </para>
+
+  </sect2>
 
  </sect1>
 

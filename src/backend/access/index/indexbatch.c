@@ -10,7 +10,10 @@
  * approach enables efficient prefetching of table AM blocks during ordered
  * index scans.
  *
- * The ring buffer loads batches in index key space order.
+ * The ring buffer loads batches in index key space order.  This allows the
+ * table AM to maintain an adequate prefetch distance: its read stream
+ * callback is thereby able to request table blocks referenced by index pages
+ * that are well ahead of the current scan position's index page.
  *
  * There's three types of functions in this module:
  *
@@ -29,6 +32,25 @@
  * 3. Index AM utilities (indexam_util_*): Helper functions called by index
  *    AMs that implement the amgetbatch interface.  These manage batch
  *    allocation, index page buffer lock release, and batch memory recycling.
+ *
+ * These three layers coordinate without explicit coupling: the core lifecycle
+ * functions assume that table AMs use scanPos/scanBatch and prefetchPos/
+ * prefetchBatch in a standardized way (see heapam_handler.c for the reference
+ * implementation), while table AMs assume that index AMs free and unlock
+ * batches according to the conventions established here.  See indexam.sgml
+ * for the full specification of this contract.
+ *
+ * The table AM fully controls the read stream as its own private state.
+ * When the scan direction changes, the table AM must immediately reset its
+ * read stream and invalidate prefetchPos -- blocks already requested via
+ * prefetchPos will no longer match what scanPos needs to return.
+ *
+ * Crossing a batch boundary in a new scan direction is a separate process,
+ * handled here: table AMs are required to call tableam_util_batch_dirchange
+ * to leave the scan's batch ring buffer in a consistent state.  The current
+ * implementation handles this by simply discarding most batches.  The key
+ * invariant is that all loaded batches must be in a consistent scan direction
+ * order.
  *
  * Portions Copyright (c) 1996-2026, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
@@ -62,6 +84,7 @@ index_batchscan_init(IndexScanDesc scan)
 
 	scan->batchringbuf.scanPos.valid = false;
 	scan->batchringbuf.markPos.valid = false;
+	scan->batchringbuf.prefetchPos.valid = false;
 
 	scan->batchringbuf.markBatch = NULL;
 	scan->batchringbuf.headBatch = 0;	/* initial head batch */
@@ -83,6 +106,7 @@ index_batchscan_reset(IndexScanDesc scan)
 
 	batchringbuf->scanPos.valid = false;
 	batchringbuf->markPos.valid = false;
+	batchringbuf->prefetchPos.valid = false;
 
 	/*
 	 * Ensure tableam_util_free_batch won't skip the old markBatch in the loop
@@ -219,7 +243,13 @@ index_batchscan_mark_pos(IndexScanDesc scan)
  * the current scanBatch when needed.
  *
  * We just discard all batches (other than markBatch/restored scanBatch),
- * except when markBatch is already the scan's current scanBatch.
+ * except when markBatch is already the scan's current scanBatch.  We always
+ * invalidate prefetchPos.  The read stream and related prefetching state are
+ * reset by table_index_fetch_reset(), called before this function.  This
+ * approach keeps things simple for table AMs: most code that deals with
+ * batches is thereby able to assume that the common case where scan direction
+ * never changes is the only case (tableam_util_batch_dirchange takes a
+ * similar approach to handling a cross-batch change in scan direction).
  */
 void
 index_batchscan_restore_pos(IndexScanDesc scan)
@@ -233,6 +263,14 @@ index_batchscan_restore_pos(IndexScanDesc scan)
 	Assert(scan->MVCCScan);
 	Assert(scan->xs_heapfetch);
 	Assert(markPos->valid);
+
+	/*
+	 * Restoring a mark always requires stopping prefetching.  This is similar
+	 * to the handling table AMs implement to deal with a tuple-level change
+	 * in the scan's direction.  The read stream must have already been reset
+	 * by the caller (via table_index_fetch_reset).
+	 */
+	batchringbuf->prefetchPos.valid = false;
 
 	if (scanBatch == markBatch)
 	{
@@ -303,6 +341,13 @@ index_batchscan_restore_pos(IndexScanDesc scan)
  * point on batchringbuf will look as if our new scan direction had been used
  * from the start.  This approach isn't particularly efficient, but it works
  * well enough for what ought to be a relatively rare occurrence.
+ *
+ * Caller must have reset the scan's read stream before calling here.  That
+ * needs to happen as soon as the scan requests a tuple in whatever scan
+ * direction is opposite-to-current.  We only deal with the case where the
+ * scan backs up by enough items to cross a batch boundary (when the scan
+ * resumes scanning in its original direction/ends before crossing a boundary,
+ * there isn't any need to call here).
  */
 void
 tableam_util_batch_dirchange(IndexScanDesc scan)

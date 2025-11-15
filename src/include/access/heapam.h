@@ -134,6 +134,18 @@ typedef struct IndexFetchHeapData
 	int			xs_vm_items;	/* # items to resolve visibility info for */
 	bool		xs_lastinblock; /* last TID on this block in current batch? */
 
+	/*
+	 * The read stream is allocated at the beginning of the scan and reset on
+	 * rescan or when the scan direction changes. The scan direction is saved
+	 * each time a new tuple is requested. If the scan direction changes from
+	 * one tuple to the next, the read stream releases all previously pinned
+	 * buffers and resets the prefetch block.
+	 */
+	bool		xs_paused;		/* paused until next batch is read? */
+	ScanDirection xs_read_stream_dir;	/* index scan direction */
+	BlockNumber xs_prefetch_block;	/* last block returned to xs_read_stream */
+	ReadStream *xs_read_stream; /* index I/O prefetching read stream */
+
 } IndexFetchHeapData;
 
 /*

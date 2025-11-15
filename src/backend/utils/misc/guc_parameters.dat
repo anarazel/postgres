@@ -891,6 +891,13 @@
   boot_val => 'true',
 },
 
+{ name => 'enable_indexscan_prefetch', type => 'bool', context => 'PGC_USERSET', group => 'QUERY_TUNING_METHOD',
+  short_desc => 'Enables prefetching for index scans and index-only scans.',
+  flags => 'GUC_EXPLAIN',
+  variable => 'enable_indexscan_prefetch',
+  boot_val => 'true',
+},
+
 { name => 'enable_material', type => 'bool', context => 'PGC_USERSET', group => 'QUERY_TUNING_METHOD',
   short_desc => 'Enables the planner\'s use of materialization.',
   flags => 'GUC_EXPLAIN',

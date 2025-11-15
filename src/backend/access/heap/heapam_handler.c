@@ -37,6 +37,7 @@
 #include "commands/progress.h"
 #include "executor/executor.h"
 #include "miscadmin.h"
+#include "optimizer/cost.h"
 #include "pgstat.h"
 #include "storage/bufmgr.h"
 #include "storage/bufpage.h"
@@ -61,6 +62,9 @@ static BlockNumber heapam_scan_get_blocks_done(HeapScanDesc hscan);
 static bool BitmapHeapScanNextBlock(TableScanDesc scan,
 									bool *recheck,
 									uint64 *lossy_pages, uint64 *exact_pages);
+static BlockNumber heapam_getnext_stream(ReadStream *stream,
+										 void *callback_private_data,
+										 void *per_buffer_data);
 
 
 /* ------------------------------------------------------------------------
@@ -102,6 +106,17 @@ heapam_index_fetch_reset(IndexFetchTableData *scan)
 	/* Rescans should avoid an excessive number of VM lookups */
 	hscan->xs_vm_items = 1;
 
+	/* Reset read stream direction unconditionally */
+	hscan->xs_read_stream_dir = NoMovementScanDirection;
+
+	/* Reset read stream itself, and other associated state */
+	if (hscan->xs_read_stream)
+	{
+		hscan->xs_prefetch_block = InvalidBlockNumber;
+		hscan->xs_paused = false;
+		read_stream_reset(hscan->xs_read_stream);
+	}
+
 	/*
 	 * Deliberately avoid dropping pins now held in xs_cbuf and xs_vmbuffer.
 	 * This saves cycles during certain tight nested loop joins, and during
@@ -122,6 +137,9 @@ heapam_index_fetch_end(IndexFetchTableData *scan)
 	/* drop pin if there's a pinned visibility map page */
 	if (BufferIsValid(hscan->xs_vmbuffer))
 		ReleaseBuffer(hscan->xs_vmbuffer);
+
+	if (hscan->xs_read_stream)
+		read_stream_end(hscan->xs_read_stream);
 
 	pfree(hscan);
 }
@@ -192,7 +210,14 @@ heapam_index_fetch_tuple(struct IndexFetchTableData *scan,
 		if (BufferIsValid(hscan->xs_cbuf))
 			ReleaseBuffer(hscan->xs_cbuf);
 
-		hscan->xs_cbuf = ReadBuffer(hscan->xs_base.rel, hscan->xs_blk);
+		/*
+		 * When using a read stream, the stream will already know which block
+		 * number comes next (though an assertion will verify a match below)
+		 */
+		if (hscan->xs_read_stream)
+			hscan->xs_cbuf = read_stream_next_buffer(hscan->xs_read_stream, NULL);
+		else
+			hscan->xs_cbuf = ReadBuffer(hscan->xs_base.rel, hscan->xs_blk);
 
 		/*
 		 * Prune page when it is pinned for the first time
@@ -276,6 +301,30 @@ heapam_index_fetch_tuple(struct IndexFetchTableData *scan,
  * under control when most items will never be returned by the scan anyway
  * (important for inner index scans of anti-joins and semi-joins), and the
  * need to not hold onto index leaf pages for too long.
+ *
+ * Dropping leaf page pins early
+ * -----------------------------
+ *
+ * In no event will the scan be allowed to hold onto more than one batch's
+ * leaf page pin at a time.  The primary reason for this restriction is to
+ * avoid unintended interactions with the read stream, which has its own
+ * strategy for keeping the number of pins held by the backend under control.
+ *
+ * Once we've resolved visibility for all items in a batch, we can safely drop
+ * its leaf page pin.  This is safe with respect to concurrent VACUUM because
+ * index vacuuming will block on acquiring a conflicting cleanup lock on the
+ * batch's index page due to our holding a pin on that same page.  Copying the
+ * relevant visibility map data into our local cache suffices to prevent unsafe
+ * concurrent TID recycling: if any of these TIDs point to dead heap tuples,
+ * VACUUM cannot possibly return from ambulkdelete and mark the pointed-to
+ * heap pages as all-visible.  VACUUM _can_ do so once we release the batch's
+ * pin, but that's okay; we'll be working off of cached visibility info that
+ * indicates that the dead TIDs are NOT all-visible.
+ *
+ * Note: We cannot drop the pin early when the scan uses a non-MVCC snapshot;
+ * we must delay it until all heap fetches for the loaded batch have taken
+ * place.  This is why we don't support prefetching during such scans.  See
+ * doc/src/sgml/indexam.sgml.
  *
  * Note on Memory Ordering Effects
  * -------------------------------
@@ -493,11 +542,13 @@ static pg_attribute_hot IndexScanBatch
 heapam_batch_getnext(IndexScanDesc scan, ScanDirection direction,
 					 IndexScanBatch priorBatch, BatchRingItemPos *pos)
 {
+	IndexFetchHeapData *hscan = (IndexFetchHeapData *) scan->xs_heapfetch;
 	IndexScanBatch batch = NULL;
 	BatchRingBuffer *batchringbuf PG_USED_FOR_ASSERTS_ONLY = &scan->batchringbuf;
 
 	/* XXX: we should assert that a snapshot is pushed or registered */
 	Assert(TransactionIdIsValid(RecentXmin));
+	Assert(direction == hscan->xs_read_stream_dir);
 
 	if (!priorBatch)
 	{
@@ -558,6 +609,35 @@ heapam_batch_getnext(IndexScanDesc scan, ScanDirection direction,
 
 		/* Append batch to the end of ring buffer/write it to buffer index */
 		index_scan_batch_append(scan, batch);
+
+		/*
+		 * Delay initializing stream until reading from scan's second batch.
+		 * This heuristic avoids wasting cycles on starting a read stream for
+		 * very selective index scans.  We can likely improve upon this, but
+		 * it works well enough for now.
+		 *
+		 * Also avoid prefetching during scans where we're unable to drop each
+		 * batch's buffer pin right away (non-MVCC snapshot scans).  We are
+		 * not prepared to sensibly limit the total number of buffer pins held
+		 * (read stream handles all pin resource management for us, and knows
+		 * nothing about pins held on index pages/within batches).
+		 *
+		 * Also delay creating a read stream during index-only scans that
+		 * haven't done any heap fetches yet.  We don't want to waste any
+		 * cycles on allocating a read stream until we have a demonstrated
+		 * need for perform heap fetches.
+		 */
+		if (!hscan->xs_read_stream && priorBatch && scan->MVCCScan &&
+			hscan->xs_blk != InvalidBlockNumber &&	/* for index-only scans */
+			enable_indexscan_prefetch)
+		{
+			Assert(!batchringbuf->prefetchPos.valid);
+
+			hscan->xs_read_stream =
+				read_stream_begin_relation(READ_STREAM_DEFAULT, NULL,
+										   scan->heapRelation, MAIN_FORKNUM,
+										   heapam_getnext_stream, scan, 0);
+		}
 	}
 	else
 	{
@@ -582,6 +662,32 @@ heapam_batch_getnext(IndexScanDesc scan, ScanDirection direction,
 	return batch;
 }
 
+/*
+ * Handle a change in index scan direction (at the tuple granularity).
+ *
+ * Resets the read stream, since we can't rely on scanPos continuing to agree
+ * with the blocks that read stream already consumed using prefetchPos.
+ *
+ * Note: iff the scan _continues_ in this new direction, and actually steps
+ * off scanBatch to an earlier index page, heapam_batch_getnext will deal with
+ * it.  But that might never happen; the scan might yet change direction again
+ * (or just end before returning more items).
+ */
+static pg_noinline void
+heapam_dirchange_readstream_reset(IndexFetchHeapData *hscan,
+								  ScanDirection direction,
+								  BatchRingBuffer *batchringbuf)
+{
+	/* Reset read stream state */
+	batchringbuf->prefetchPos.valid = false;
+	hscan->xs_paused = false;
+	hscan->xs_read_stream_dir = direction;
+
+	/* Reset read stream itself */
+	if (hscan->xs_read_stream)
+		read_stream_reset(hscan->xs_read_stream);
+}
+
 /* ----------------
  *		heapam_batch_getnext_tid - get next TID from batch ring buffer
  *
@@ -601,6 +707,12 @@ heapam_batch_getnext_tid(IndexScanDesc scan, IndexFetchHeapData *hscan,
 	Assert(scanPos->valid || index_scan_batch_count(scan) == 0);
 	Assert(all_visible == NULL || scan->xs_want_itup);
 
+	/* Handle resetting the read stream when scan direction changes */
+	if (hscan->xs_read_stream_dir == NoMovementScanDirection)
+		hscan->xs_read_stream_dir = direction;	/* first call */
+	else if (unlikely(hscan->xs_read_stream_dir != direction))
+		heapam_dirchange_readstream_reset(hscan, direction, batchringbuf);
+
 	/*
 	 * Check if there's an existing loaded scanBatch for us to return the next
 	 * matching item's TID/index tuple from
@@ -609,7 +721,7 @@ heapam_batch_getnext_tid(IndexScanDesc scan, IndexFetchHeapData *hscan,
 	{
 		/*
 		 * scanPos is valid, so scanBatch must already be loaded in batch ring
-		 * buffer.  We rely on that here.
+		 * buffer.  We rely on that here (can't do this with prefetchBatch).
 		 */
 		Assert(batchringbuf->headBatch == scanPos->batch);
 
@@ -654,19 +766,273 @@ heapam_batch_getnext_tid(IndexScanDesc scan, IndexFetchHeapData *hscan,
 	{
 		IndexScanBatch headBatch = index_scan_batch(scan,
 													batchringbuf->headBatch);
+		BatchRingItemPos *prefetchPos = &batchringbuf->prefetchPos;
 
 		/* free obsolescent head batch (unless it is scan's markBatch) */
 		tableam_util_free_batch(scan, headBatch);
 
+		/*
+		 * If we're about to release the batch that prefetchPos currently
+		 * points to, just invalidate prefetchPos.  We'll reinitialize it
+		 * using scanPos if and when heapam_getnext_stream is next called. (We
+		 * must avoid confusing a prefetchPos->batch that's actually before
+		 * headBatch with one that's after nextBatch due to uint8 overflow;
+		 * simplest way is to invalidate prefetchPos like this.)
+		 */
+		if (prefetchPos->valid &&
+			prefetchPos->batch == batchringbuf->headBatch)
+			prefetchPos->valid = false;
+
 		/* Remove the batch from the ring buffer */
 		batchringbuf->headBatch++;
+
+		if (hscan->xs_paused)
+		{
+			/*
+			 * The scan's read stream was paused by heapam_getnext_stream due
+			 * to exhausting all available free batch slots.  We just freed up
+			 * one such slot now, though.  Resume the read stream to re-enable
+			 * prefetching.
+			 */
+			Assert(!index_scan_batch_full(scan));
+			read_stream_resume(hscan->xs_read_stream);
+			hscan->xs_paused = false;
+		}
 	}
 
 	/* In practice scanBatch will always be the ring buffer's headBatch */
 	Assert(batchringbuf->headBatch == scanPos->batch);
+	Assert(!hscan->xs_paused);
 
 	return heapam_batch_return_tid(scan, hscan, direction, scanBatch, scanPos,
 								   all_visible);
+}
+
+/*
+ * heapam_getnext_stream
+ *		return the next block to pass to the read stream
+ *
+ * The initial batch is always loaded by heapam_batch_getnext_tid.  We don't
+ * get called until the first read_stream_next_buffer() call, when a heap
+ * block is requested from the scan's stream for the first time.
+ *
+ * The position of the read_stream is stored in prefetchPos.  It is typical for
+ * prefetchPos to consistently stay ahead of the scanPos position that's used to
+ * track the next TID to be returned to the scan by heapam_batch_getnext_tid
+ * after the first time we get called.  However, that isn't a precondition.
+ * There is a strict postcondition, though: when we return we'll always leave
+ * scanPos <= prefetchPos (except in cases where we return InvalidBlockNumber).
+ */
+static BlockNumber
+heapam_getnext_stream(ReadStream *stream, void *callback_private_data,
+					  void *per_buffer_data)
+{
+	IndexScanDesc scan = (IndexScanDesc) callback_private_data;
+	IndexFetchHeapData *hscan = (IndexFetchHeapData *) scan->xs_heapfetch;
+	BatchRingBuffer *batchringbuf = &scan->batchringbuf;
+	BatchRingItemPos *scanPos = &batchringbuf->scanPos;
+	BatchRingItemPos *prefetchPos = &batchringbuf->prefetchPos;
+	ScanDirection xs_read_stream_dir = hscan->xs_read_stream_dir;
+	IndexScanBatch prefetchBatch;
+	bool		fromScanPos = false;
+
+	/*
+	 * scanPos must always be valid when prefetching takes place.  There has
+	 * to be at least one batch, loaded as our scanBatch.  The scan direction
+	 * must be established, too.
+	 */
+	Assert(index_scan_batch_count(scan) > 0);
+	Assert(scan->MVCCScan);
+	Assert(scanPos->valid);
+	Assert(!hscan->xs_paused);
+	Assert(xs_read_stream_dir != NoMovementScanDirection);
+
+	/*
+	 * prefetchPos might not yet be valid.  It might have also fallen behind
+	 * scanPos.  Deal with both.
+	 *
+	 * If prefetchPos has not been initialized yet, that typically indicates
+	 * that this is the first call here for the entire scan.  We initialize
+	 * prefetchPos using the current scanPos, since the current scanBatch
+	 * item's TID should have its block number returned by the read stream
+	 * first.  It's likely that prefetchPos will get ahead of scanPos before
+	 * long, but that hasn't happened yet.
+	 *
+	 * It's also possible for prefetchPos to "fall behind" scanPos, at least
+	 * in a trivial sense: if many adjacent items are returned that contain
+	 * TIDs that point to the same heap block, scanPos can actually overtake
+	 * prefetchPos (prefetchPos can't advance until the scan actually calls
+	 * read_stream_next_buffer).  Reinitializing from scanPos is enough to
+	 * ensure that prefetchPos still fetches the next heap block that scanPos
+	 * will require (prefetchPos can never fall behind "by more than one group
+	 * of items that all point to the same heap block", so this is safe).
+	 *
+	 * Note: when heapam_batch_getnext_tid frees a batch that prefetchPos
+	 * points to, it'll invalidate prefetchPos for us.  This removes any
+	 * danger of prefetchPos.batch falling so far behind scanPos.batch that it
+	 * wraps around (and appears to be ahead of scanPos instead of behind it).
+	 */
+	if (!prefetchPos->valid ||
+		index_scan_pos_cmp(prefetchPos, scanPos, xs_read_stream_dir) < 0)
+	{
+		hscan->xs_prefetch_block = InvalidBlockNumber;
+		*prefetchPos = *scanPos;
+		fromScanPos = true;
+
+		/*
+		 * We must avoid holding on to any batch's buffer pin for more than an
+		 * instant, to avoid undesirable interactions with the scan's read
+		 * stream.  batchImmediateUnguard scans always get this behavior
+		 * automatically.  Other types of scans (these are all index-only
+		 * scans in practice) are made to drop their buffer pin eagerly
+		 * through a policy of always eagerly setting all the batch item's
+		 * visibility info in one go.
+		 */
+		if (scan->xs_want_itup)
+		{
+			HeapBatchData *hbatch;
+
+			/* Make heapam_batch_resolve_visibility release resources eagerly */
+			hscan->xs_vm_items = scan->maxitemsbatch;
+
+			/* Make sure that this new prefetchBatch has no resources held */
+			prefetchBatch = index_scan_batch(scan, prefetchPos->batch);
+			hbatch = heap_batch_data(prefetchBatch, scan);
+
+			/* Set visibility info not set through scanBatch */
+			heapam_batch_resolve_visibility(scan, xs_read_stream_dir,
+											prefetchBatch, hbatch,
+											prefetchPos);
+		}
+		else
+			Assert(scan->batchImmediateUnguard);
+	}
+
+	prefetchBatch = index_scan_batch(scan, prefetchPos->batch);
+	for (;;)
+	{
+		BatchMatchingItem *item;
+		BlockNumber prefetch_block;
+
+		/*
+		 * We never call amgetbatch without immediately releasing the batch's
+		 * index AM resources (which requires special care during index-only
+		 * scans).  The read stream is sensitive to buffer shortages, so we
+		 * defensively avoid anything that visibly affects the per-backend
+		 * buffer limit.
+		 */
+
+		if (fromScanPos)
+		{
+			/*
+			 * Don't increment item when prefetchPos was just initialized
+			 * using scanPos.  We'll return the scanPos item's heap block
+			 * directly on the first call here.  In other words, we'll return
+			 * the heap block for the TID passed to heapam_index_fetch_tuple
+			 * at the point where it called read_stream_next_buffer for the
+			 * first time during the scan.
+			 */
+			fromScanPos = false;
+		}
+		else if (!index_scan_pos_advance(xs_read_stream_dir,
+										 prefetchBatch, prefetchPos))
+		{
+			/*
+			 * Ran out of items from prefetchBatch.  Try to advance to the
+			 * scan's next batch.
+			 */
+			if (unlikely(index_scan_batch_full(scan)))
+			{
+				/*
+				 * Can't advance prefetchBatch because all available
+				 * batchringbuf batch slots are currently in use.
+				 *
+				 * Deal with this by momentarily pausing the read stream.
+				 * heapam_batch_getnext_tid will resume the read stream later,
+				 * though only after scanPos has consumed all remaining items
+				 * from scanBatch (at which point scanBatch will be freed,
+				 * making its slot available for reuse by a later batch).
+				 *
+				 * In practice we hardly ever need to do this.  It would be
+				 * possible to avoid the need to pause the read stream by
+				 * dynamically allocating slots, but that would add complexity
+				 * for no real benefit.
+				 */
+				hscan->xs_paused = true;
+				return read_stream_pause(stream);
+			}
+
+			prefetchBatch = heapam_batch_getnext(scan, xs_read_stream_dir,
+												 prefetchBatch, prefetchPos);
+			if (!prefetchBatch)
+			{
+				/*
+				 * Failed to load next batch, so all the batches that the scan
+				 * will ever require (barring a change in scan direction) are
+				 * now loaded
+				 */
+				return InvalidBlockNumber;
+			}
+
+			/* Position prefetchPos to the start of new prefetchBatch */
+			index_scan_pos_nextbatch(xs_read_stream_dir,
+									 prefetchBatch, prefetchPos);
+
+			if (scan->xs_want_itup)
+			{
+				HeapBatchData *hbatch = heap_batch_data(prefetchBatch, scan);
+
+				/* make sure we have visibility info for the entire batch */
+				Assert(hscan->xs_vm_items == scan->maxitemsbatch);
+				heapam_batch_resolve_visibility(scan, xs_read_stream_dir,
+												prefetchBatch, hbatch,
+												prefetchPos);
+			}
+			else
+				Assert(scan->batchImmediateUnguard);
+		}
+
+		/*
+		 * prefetchPos now points to the next item whose TID's heap block
+		 * number might need to be prefetched
+		 */
+		Assert(index_scan_batch(scan, prefetchPos->batch) == prefetchBatch);
+		Assert(prefetchPos->item >= prefetchBatch->firstItem &&
+			   prefetchPos->item <= prefetchBatch->lastItem);
+		/* scanPos is always <= prefetchPos when we return */
+		Assert(index_scan_pos_cmp(scanPos, prefetchPos, xs_read_stream_dir) <= 0);
+
+		if (scan->xs_want_itup)
+		{
+			HeapBatchData *hbatch = heap_batch_data(prefetchBatch, scan);
+
+			Assert(hbatch->visInfo[prefetchPos->item] & HEAP_BATCH_VIS_CHECKED);
+			if (hbatch->visInfo[prefetchPos->item] & HEAP_BATCH_VIS_ALL_VISIBLE)
+			{
+				/* item is known to be all-visible -- don't prefetch */
+				continue;
+			}
+		}
+
+		item = &prefetchBatch->items[prefetchPos->item];
+		prefetch_block = ItemPointerGetBlockNumber(&item->tableTid);
+
+		if (prefetch_block == hscan->xs_prefetch_block)
+		{
+			/*
+			 * prefetch_block matches the last prefetchPos item's TID's heap
+			 * block number; we must not return the same prefetch_block twice
+			 * (twice in succession)
+			 */
+			continue;
+		}
+
+		/* We have a new heap block number to return to read stream */
+		hscan->xs_prefetch_block = prefetch_block;
+		return prefetch_block;
+	}
+
+	return InvalidBlockNumber;
 }
 
 /* ----------------
