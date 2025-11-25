@@ -845,7 +845,8 @@ amgetbatch (IndexScanDesc scan,
    <function>tableam_util_free_batch</function>).  Note also that
    <function>amgetbatch</function> functions must never modify the
    <structfield>priorbatch</structfield> parameter.  The core
-   <filename>src/backend/access/nbtree/</filename> implementation provides a
+   <filename>src/backend/access/nbtree/</filename> and
+   <filename>src/backend/access/hash/</filename> implementations provide
    reference examples of the <function>amgetbatch</function> interface.
   </para>
 
@@ -921,8 +922,8 @@ amkillitemsbatch (IndexScanDesc scan,
   <para>
    While implementing <function>amkillitemsbatch</function> is optional,
    doing so is recommended for performance, as it allows future scans to skip
-   known-dead index entries.  The core index access method that currently
-   support <function>amgetbatch</function> (B-tree) implements
+   known-dead index entries.  Both core index access methods that currently
+   support <function>amgetbatch</function> (B-tree and hash) implement
    <literal>LP_DEAD</literal> marking, though third-party index access methods
    are free to choose whether to implement this feature.
    The table AM may call
@@ -965,8 +966,8 @@ amkillitemsbatch (IndexScanDesc scan,
    always safe to skip it.  Note that this LSN comparison technique requires
    the index AM to use fake (monotonically increasing) LSNs on its pages for
    relations where WAL is not generated, since real LSNs are not available in
-   that case.  See the B-tree index implementation for a reference
-   example of this technique.  An index AM that does not implement fake LSNs
+   that case.  See the B-tree and hash index implementations for reference
+   examples of this technique.  An index AM that does not implement fake LSNs
    can still provide <function>amkillitemsbatch</function>, but should simply
    do nothing when the relation does not generate WAL (i.e., when
    <function>RelationNeedsWAL()</function> is false), since the LSN comparison
@@ -993,9 +994,9 @@ amunguardbatch (IndexScanDesc scan,
    leaf page, which prevents concurrent TID recycling by
    <command>VACUUM</command>.
    Formally, an index AM may hold a different kind of interlock, or multiple
-   interlocks, in its per-batch opaque area, but in practice the built-in
-   index AM that supports <function>amgetbatch</function> &mdash; B-tree
-   &mdash; holds a single buffer pin.  See <xref linkend="index-locking"/>
+   interlocks, in its per-batch opaque area, but in practice both built-in
+   index AMs that support <function>amgetbatch</function> &mdash; B-tree and
+   hash &mdash; hold a single buffer pin.  See <xref linkend="index-locking"/>
    for details on buffer pin management during index scans.  This function
    will be called exactly once for each guarded batch.
   </para>
@@ -1065,8 +1066,8 @@ amgetbitmap (IndexScanDesc scan,
    <function>amgetbitmap</function> scans; during <function>amgetbatch</function>
    scans the <literal>priorbatch</literal> is strictly owned by the table AM
    and core code, and the index AM must never release it.  See
-   <function>_bt_next</function> for a
-   reference example.  The released batch is cached internally and reused by
+   <function>_bt_next</function> and <function>_hash_next</function> for
+   reference examples.  The released batch is cached internally and reused by
    the next <function>indexam_util_batch_alloc</function> call, avoiding
    repeated memory allocation during the bitmap scan.
   </para>
