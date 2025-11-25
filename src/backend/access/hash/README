@@ -255,28 +255,29 @@ The reader algorithm is:
 		retake the buffer content lock on new bucket
 		arrange to scan the old bucket normally and the new bucket for
          tuples which are not moved-by-split
--- then, per read request:
+-- then, per batch (page) request:
 	reacquire content lock on current page
 	step to next page if necessary (no chaining of content locks, but keep
 	the pin on the primary bucket throughout the scan)
-	save all the matching tuples from current index page into an items array
-	release pin and content lock (but if it is primary bucket page retain
-	its pin till the end of the scan)
-	get tuple from an item array
+	save all the matching tuples from current index page into a batch
+	release content lock on current page return batch to table AM (table AM
+	will drop batch's buffer pin, though primary bucket page pin is kept
+	until the end of the scan)
 -- at scan shutdown:
-	release all pins still held
+	release scan-owned pins (e.g., primary bucket page pin) as needed
 
 Holding the buffer pin on the primary bucket page for the whole scan prevents
-the reader's current-tuple pointer from being invalidated by splits or
-compactions.  (Of course, other buckets can still be split or compacted.)
+the bucket from being reorganized by splits or compactions while the scan is
+in progress.  (Of course, other buckets can still be split or compacted.)
 
-To minimize lock/unlock traffic, hash index scan always searches the entire
-hash page to identify all the matching items at once, copying their heap tuple
-IDs into backend-local storage. The heap tuple IDs are then processed while not
-holding any page lock within the index thereby, allowing concurrent insertion
-to happen on the same index page without any requirement of re-finding the
-current scan position for the reader. We do continue to hold a pin on the
-bucket page, to protect against concurrent deletions and bucket split.
+To minimize lock/unlock traffic, hash index scans always search the entire
+hash page to identify all the matching items at once, returning them in
+batches to the table AM.  The table AM processes batches while no page lock
+is held within the index, allowing concurrent insertion to happen on the
+same index page without any requirement of re-finding the current scan
+position for the reader.  The table AM controls when batch buffer pins are
+dropped.  We do continue to hold a pin on the primary bucket page, to
+protect against concurrent bucket splits.
 
 To allow for scans during a bucket split, if at the start of the scan, the
 bucket is marked as bucket-being-populated, it scan all the tuples in that
