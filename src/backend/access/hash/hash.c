@@ -113,10 +113,10 @@ hashhandler(PG_FUNCTION_ARGS)
 		.amadjustmembers = hashadjustmembers,
 		.ambeginscan = hashbeginscan,
 		.amrescan = hashrescan,
-		.amgettuple = hashgettuple,
-		.amgetbatch = NULL,
-		.amunguardbatch = NULL,
-		.amkillitemsbatch = NULL,
+		.amgettuple = NULL,
+		.amgetbatch = hashgetbatch,
+		.amunguardbatch = hashunguardbatch,
+		.amkillitemsbatch = hashkillitemsbatch,
 		.amgetbitmap = hashgetbitmap,
 		.amendscan = hashendscan,
 		.amposreset = NULL,
@@ -299,53 +299,28 @@ hashinsert(Relation rel, Datum *values, bool *isnull,
 
 
 /*
- *	hashgettuple() -- Get the next tuple in the scan.
+ *	hashgetbatch() -- Get the first or next batch of tuples in the scan
  */
-bool
-hashgettuple(IndexScanDesc scan, ScanDirection dir)
+IndexScanBatch
+hashgetbatch(IndexScanDesc scan, IndexScanBatch priorbatch, ScanDirection dir)
 {
 	HashScanOpaque so = (HashScanOpaque) scan->opaque;
-	bool		res;
 
 	/* Hash indexes are always lossy since we store only the hash code */
 	scan->xs_recheck = true;
 
-	/*
-	 * If we've already initialized this scan, we can just advance it in the
-	 * appropriate direction.  If we haven't done so yet, we call a routine to
-	 * get the first item in the scan.
-	 */
-	if (!HashScanPosIsValid(so->currPos))
-		res = _hash_first(scan, dir);
-	else
+	if (priorbatch == NULL)
 	{
-		/*
-		 * Check to see if we should kill the previously-fetched tuple.
-		 */
-		if (scan->kill_prior_tuple)
-		{
-			/*
-			 * Yes, so remember it for later. (We'll deal with all such tuples
-			 * at once right after leaving the index page or at end of scan.)
-			 * In case if caller reverses the indexscan direction it is quite
-			 * possible that the same item might get entered multiple times.
-			 * But, we don't detect that; instead, we just forget any excess
-			 * entries.
-			 */
-			if (so->killedItems == NULL)
-				so->killedItems = palloc_array(int, MaxIndexTuplesPerPage);
+		Relation	rel = scan->indexRelation;
 
-			if (so->numKilled < MaxIndexTuplesPerPage)
-				so->killedItems[so->numKilled++] = so->currPos.itemIndex;
-		}
+		_hash_dropscanbuf(rel, so);
 
-		/*
-		 * Now continue the scan.
-		 */
-		res = _hash_next(scan, dir);
+		/* Initialize the scan, and return first batch of matching items */
+		return _hash_first(scan, dir);
 	}
 
-	return res;
+	/* Return batch positioned after caller's batch (in direction 'dir') */
+	return _hash_next(scan, dir, priorbatch);
 }
 
 
@@ -355,26 +330,26 @@ hashgettuple(IndexScanDesc scan, ScanDirection dir)
 int64
 hashgetbitmap(IndexScanDesc scan, TIDBitmap *tbm)
 {
-	HashScanOpaque so = (HashScanOpaque) scan->opaque;
-	bool		res;
+	IndexScanBatch batch;
 	int64		ntids = 0;
-	HashScanPosItem *currItem;
 
-	res = _hash_first(scan, ForwardScanDirection);
+	batch = _hash_first(scan, ForwardScanDirection);
 
-	while (res)
+	while (batch != NULL)
 	{
-		currItem = &so->currPos.items[so->currPos.itemIndex];
+		for (int itemIndex = batch->firstItem;
+			 itemIndex <= batch->lastItem;
+			 itemIndex++)
+		{
+			tbm_add_tuples(tbm, &batch->items[itemIndex].tableTid, 1, true);
+			ntids++;
+		}
 
 		/*
-		 * _hash_first and _hash_next handle eliminate dead index entries
-		 * whenever scan->ignore_killed_tuples is true.  Therefore, there's
-		 * nothing to do here except add the results to the TIDBitmap.
+		 * _hash_next releases the prior batch for bitmap callers before
+		 * allocating the next one, so only one batch is ever used at a time
 		 */
-		tbm_add_tuples(tbm, &(currItem->heapTid), 1, true);
-		ntids++;
-
-		res = _hash_next(scan, ForwardScanDirection);
+		batch = _hash_next(scan, ForwardScanDirection, batch);
 	}
 
 	return ntids;
@@ -396,17 +371,16 @@ hashbeginscan(Relation rel, int nkeys, int norderbys)
 	scan = RelationGetIndexScan(rel, nkeys, norderbys);
 
 	so = (HashScanOpaque) palloc_object(HashScanOpaqueData);
-	HashScanPosInvalidate(so->currPos);
 	so->hashso_bucket_buf = InvalidBuffer;
 	so->hashso_split_bucket_buf = InvalidBuffer;
 
 	so->hashso_buc_populated = false;
 	so->hashso_buc_split = false;
 
-	so->killedItems = NULL;
-	so->numKilled = 0;
-
 	scan->opaque = so;
+	scan->maxitemsbatch = MaxIndexTuplesPerPage;
+	scan->batch_index_opaque_size = MAXALIGN(sizeof(HashBatchData));
+	scan->batch_tuples_workspace = 0;
 
 	return scan;
 }
@@ -421,17 +395,7 @@ hashrescan(IndexScanDesc scan, ScanKey scankey, int nscankeys,
 	HashScanOpaque so = (HashScanOpaque) scan->opaque;
 	Relation	rel = scan->indexRelation;
 
-	if (HashScanPosIsValid(so->currPos))
-	{
-		/* Before leaving current page, deal with any killed items */
-		if (so->numKilled > 0)
-			_hash_kill_items(scan);
-	}
-
 	_hash_dropscanbuf(rel, so);
-
-	/* set position invalid (this will cause _hash_first call) */
-	HashScanPosInvalidate(so->currPos);
 
 	/* Update scan key, if a new one is given */
 	if (scankey && scan->numberOfKeys > 0)
@@ -439,6 +403,111 @@ hashrescan(IndexScanDesc scan, ScanKey scankey, int nscankeys,
 
 	so->hashso_buc_populated = false;
 	so->hashso_buc_split = false;
+}
+
+/*
+ *	hashunguardbatch() -- Drop batch's TID recycling interlock (buffer pin)
+ *
+ * Called by the table AM when it's safe to drop the buffer pin held to
+ * prevent concurrent TID recycling by VACUUM.
+ */
+void
+hashunguardbatch(IndexScanDesc scan, IndexScanBatch batch)
+{
+	HashBatchData *hashbatch = HashBatchGetData(scan, batch);
+
+	/* Should be called exactly once iff !batchImmediateUnguard */
+	Assert(!scan->batchImmediateUnguard);
+	Assert(batch->isGuarded);
+
+	ReleaseBuffer(hashbatch->buf);
+}
+
+/*
+ *	hashkillitemsbatch() -- Mark dead items' index tuples LP_DEAD
+ */
+void
+hashkillitemsbatch(IndexScanDesc scan, IndexScanBatch batch)
+{
+	Relation	rel = scan->indexRelation;
+	HashBatchData *hashbatch = HashBatchGetData(scan, batch);
+	Buffer		buf;
+	Page		page;
+	HashPageOpaque opaque;
+	OffsetNumber offnum,
+				maxoff;
+	bool		killedsomething = false;
+	XLogRecPtr	latestlsn;
+
+	Assert(batch->numDead > 0);
+
+	buf = _hash_getbuf(rel, hashbatch->currPage, HASH_READ,
+					   LH_BUCKET_PAGE | LH_OVERFLOW_PAGE);
+
+	latestlsn = BufferGetLSNAtomic(buf);
+	Assert(batch->lsn <= latestlsn);
+	if (batch->lsn != latestlsn)
+	{
+		/* Modified, give up on hinting */
+		_hash_relbuf(rel, buf);
+		return;
+	}
+
+	page = BufferGetPage(buf);
+	opaque = HashPageGetOpaque(page);
+	maxoff = PageGetMaxOffsetNumber(page);
+
+	/* Iterate through batch->deadItems[] in index page order */
+	for (int i = 0; i < batch->numDead; i++)
+	{
+		int			itemIndex = batch->deadItems[i];
+		BatchMatchingItem *currItem = &batch->items[itemIndex];
+
+		offnum = currItem->indexOffset;
+
+		Assert(itemIndex >= batch->firstItem &&
+			   itemIndex <= batch->lastItem);
+
+		while (offnum <= maxoff)
+		{
+			ItemId		iid = PageGetItemId(page, offnum);
+			IndexTuple	ituple = (IndexTuple) PageGetItem(page, iid);
+
+			if (ItemPointerEquals(&ituple->t_tid, &currItem->tableTid))
+			{
+				if (!killedsomething)
+				{
+					/*
+					 * Use the hint bit infrastructure to check if we can
+					 * update the page while just holding a share lock. If we
+					 * are not allowed, there's no point continuing.
+					 */
+					if (!BufferBeginSetHintBits(buf))
+						goto unlock_page;
+				}
+
+				/* found the item */
+				ItemIdMarkDead(iid);
+				killedsomething = true;
+				break;			/* out of inner search loop */
+			}
+			offnum = OffsetNumberNext(offnum);
+		}
+	}
+
+	/*
+	 * Since this can be redone later if needed, mark as dirty hint. Whenever
+	 * we mark anything LP_DEAD, we also set the page's
+	 * LH_PAGE_HAS_DEAD_TUPLES flag, which is likewise just a hint.
+	 */
+	if (killedsomething)
+	{
+		opaque->hasho_flag |= LH_PAGE_HAS_DEAD_TUPLES;
+		BufferFinishSetHintBits(buf, true, true);
+	}
+
+unlock_page:
+	_hash_relbuf(rel, buf);
 }
 
 /*
@@ -450,17 +519,8 @@ hashendscan(IndexScanDesc scan)
 	HashScanOpaque so = (HashScanOpaque) scan->opaque;
 	Relation	rel = scan->indexRelation;
 
-	if (HashScanPosIsValid(so->currPos))
-	{
-		/* Before leaving current page, deal with any killed items */
-		if (so->numKilled > 0)
-			_hash_kill_items(scan);
-	}
-
 	_hash_dropscanbuf(rel, so);
 
-	if (so->killedItems != NULL)
-		pfree(so->killedItems);
 	pfree(so);
 	scan->opaque = NULL;
 }

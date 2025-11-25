@@ -845,7 +845,8 @@ amgetbatch (IndexScanDesc scan,
    <function>tableam_util_free_batch</function>).  Note also that
    <function>amgetbatch</function> functions must never modify the
    <structfield>priorbatch</structfield> parameter.  The core
-   <filename>src/backend/access/nbtree/</filename> implementation provides a
+   <filename>src/backend/access/nbtree/</filename> and
+   <filename>src/backend/access/hash/</filename> implementations provide
    reference examples of the <function>amgetbatch</function> interface.
   </para>
 
@@ -917,12 +918,12 @@ amunguardbatch (IndexScanDesc scan,
    leaf page, which prevents concurrent TID recycling by
    <command>VACUUM</command>.
    Formally, an index AM may hold a different kind of interlock, or multiple
-   interlocks, in its per-batch opaque area, but in practice the built-in
-   index AM that supports <function>amgetbatch</function> &mdash; B-tree
-   &mdash; holds a single buffer pin.  See <xref linkend="index-locking"/> for
-   details on buffer pin management during index scans.  This function will be
-   called at most once for each guarded batch; it is not called when the index
-   AM has already unguarded the batch itself (as it does when
+   interlocks, in its per-batch opaque area, but in practice both built-in
+   index AMs that support <function>amgetbatch</function> &mdash; B-tree and
+   hash &mdash; hold a single buffer pin.  See <xref linkend="index-locking"/>
+   for details on buffer pin management during index scans.  This function
+   will be called at most once for each guarded batch; it is not called when
+   the index AM has already unguarded the batch itself (as it does when
    <structfield>batchImmediateUnguard</structfield> is true, which is the
    common case).
   </para>
@@ -962,8 +963,8 @@ amkillitemsbatch (IndexScanDesc scan,
    <function>amgetbatch</function> index AMs (those that don't can leave
    the field set to <literal>NULL</literal>), but doing so is recommended for
    performance, as it allows future scans to skip known-dead index entries.
-   The core index access method that currently supports
-   <function>amgetbatch</function> (B-tree) implements
+   Both core index access methods that currently support
+   <function>amgetbatch</function> (B-tree and hash) implement
    <literal>LP_DEAD</literal> marking, though third-party index access methods
    are free to choose whether to implement this feature.  The table AM may
    call <function>tableam_util_scanpos_killitem</function> to mark dead items as
@@ -1004,7 +1005,8 @@ amkillitemsbatch (IndexScanDesc scan,
    <command>VACUUM</command> recycling table TIDs &mdash; so it would be
    unsafe to assume that index entries still point to the same heap/table
    tuples.  Since <literal>LP_DEAD</literal> marking is only an optimization
-   hint, it is always safe to skip it.  B-tree uses this approach.
+   hint, it is always safe to skip it.  Both B-tree and hash use this
+   approach.
   </para>
 
   <warning>
@@ -1012,7 +1014,7 @@ amkillitemsbatch (IndexScanDesc scan,
     This LSN comparison technique requires the index AM to use fake
     (monotonically increasing) LSNs on its pages for relations where WAL is
     not generated, since real LSNs are not available in that case.  See the
-    B-tree index implementation for a reference example of this
+    B-tree and hash index implementations for reference examples of this
     technique.  An index AM that does not implement fake LSNs can still
     provide <function>amkillitemsbatch</function>, but should simply do
     nothing when the relation does not generate WAL (i.e., when
@@ -1094,8 +1096,8 @@ amgetbitmap (IndexScanDesc scan,
    <function>amgetbitmap</function> scans; during
    <function>amgetbatch</function> scans the <literal>priorbatch</literal>
    is strictly owned by the caller (the table AM), and the index AM must
-   never release it.  See <function>_bt_next</function> for a reference
-   example.
+   never release it.  See <function>_bt_next</function> and
+   <function>_hash_next</function> for reference examples.
   </para>
 
   <para>
