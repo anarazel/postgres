@@ -18,6 +18,8 @@ env:
   CIRRUS_LOG_TIMESTAMP: true
 
   CCACHE_MAXSIZE: "250M"
+  # for per-build ccache stats, needs to be overwritten on platforms without /tmp
+  CCACHE_STATSLOG: /tmp/ccache.stats
 
   # target to test, for all but windows
   CHECK: check-world PROVE_FLAGS=$PROVE_FLAGS
@@ -140,6 +142,7 @@ task:
     su postgres <<-EOF
       set -e
       ninja -C build -j${BUILD_JOBS} ${MBUILD_TARGET}
+      ccache --show-log-stats -vvv
     EOF
   upload_caches: ccache
 
@@ -240,7 +243,12 @@ task:
         ${MESON_COMMON_FEATURES} ${MESON_FEATURES} \
         build
     EOF
-  build_script: su postgres -c 'ninja -C build -j${BUILD_JOBS} ${MBUILD_TARGET}'
+  build_script: |
+    su postgres <<-EOF
+      set -e
+      ninja -C build -j${BUILD_JOBS} ${MBUILD_TARGET}
+      ccache --show-log-stats -vvv
+    EOF
   upload_caches: ccache
 
   test_world_script: |
@@ -377,7 +385,12 @@ task:
         build
     EOF
 
-  build_script: su postgres -c 'ninja -C build -j${BUILD_JOBS} ${MBUILD_TARGET}'
+  build_script: |
+    su postgres <<-EOF
+      set -e
+      ninja -C build -j${BUILD_JOBS} ${MBUILD_TARGET}
+      ccache --show-log-stats -vvv
+    EOF
   upload_caches: ccache
 
   test_world_script: |
@@ -530,7 +543,12 @@ task:
             \
             CLANG="ccache clang"
         EOF
-      build_script: su postgres -c "make -s -j${BUILD_JOBS} world-bin"
+      build_script: |
+        su postgres <<-EOF
+          set -e
+          make -s -j${BUILD_JOBS} world-bin
+          ccache --show-log-stats -vvv
+        EOF
       upload_caches: ccache
 
       test_world_script: |
@@ -587,6 +605,7 @@ task:
           set -e
           ninja -C build -j${BUILD_JOBS} ${MBUILD_TARGET}
           ninja -C build -t missingdeps
+          ccache --show-log-stats -vvv
         EOF
 
       build_32_script: |
@@ -594,6 +613,7 @@ task:
           set -e
           ninja -C build-32 -j${BUILD_JOBS} ${MBUILD_TARGET}
           ninja -C build -t missingdeps
+          ccache --show-log-stats -vvv
         EOF
 
       upload_caches: ccache
@@ -730,7 +750,9 @@ task:
       ${MESON_COMMON_FEATURES} ${MESON_FEATURES} \
       build
 
-  build_script: ninja -C build -j${BUILD_JOBS} ${MBUILD_TARGET}
+  build_script: |
+    ninja -C build -j${BUILD_JOBS} ${MBUILD_TARGET}
+    ccache --show-log-stats -vvv
   upload_caches: ccache
 
   test_world_script: |
@@ -837,6 +859,7 @@ task:
   env:
     TEST_JOBS: 4 # higher concurrency causes occasional failures
     CCACHE_DIR: C:/msys64/ccache
+    CCACHE_STATSLOG: C:/msys64/ccache.stats
     CCACHE_MAXSIZE: "500M"
     CCACHE_SLOPPINESS: pch_defines,time_macros
     CCACHE_DEPEND: 1
@@ -872,6 +895,7 @@ task:
 
   build_script: |
     %BASH% -c "ninja -C build ${MBUILD_TARGET}"
+    %BASH% -c "ccache --show-log-stats -vvv"
 
   upload_caches: ccache
 
@@ -944,6 +968,8 @@ task:
         CC="ccache gcc" CXX="ccache g++" CLANG="ccache clang"
       make -s -j${BUILD_JOBS} clean
       time make -s -j${BUILD_JOBS} world-bin
+      ccache --show-log-stats -vvv
+      > $CCACHE_STATSLOG
 
   # gcc, cassert on, dtrace off
   always:
@@ -955,6 +981,8 @@ task:
         CC="ccache gcc" CXX="ccache g++" CLANG="ccache clang"
       make -s -j${BUILD_JOBS} clean
       time make -s -j${BUILD_JOBS} world-bin
+      ccache --show-log-stats -vvv
+      > $CCACHE_STATSLOG
 
   # clang, cassert off, dtrace off
   always:
@@ -965,6 +993,8 @@ task:
         CC="ccache clang" CXX="ccache clang++" CLANG="ccache clang"
       make -s -j${BUILD_JOBS} clean
       time make -s -j${BUILD_JOBS} world-bin
+      ccache --show-log-stats -vvv
+      > $CCACHE_STATSLOG
 
   # clang, cassert on, dtrace on
   always:
@@ -977,6 +1007,8 @@ task:
         CC="ccache clang" CXX="ccache clang++" CLANG="ccache clang"
       make -s -j${BUILD_JOBS} clean
       time make -s -j${BUILD_JOBS} world-bin
+      ccache --show-log-stats -vvv
+      > $CCACHE_STATSLOG
 
   # cross-compile to windows
   always:
@@ -989,6 +1021,8 @@ task:
         CXX="ccache x86_64-w64-mingw32ucrt-g++"
       make -s -j${BUILD_JOBS} clean
       time make -s -j${BUILD_JOBS} world-bin
+      ccache --show-log-stats -vvv -vvv
+      > $CCACHE_STATSLOG
 
   ###
   # Verify docs can be built
@@ -1001,6 +1035,8 @@ task:
         CC="ccache gcc" CXX="ccache g++" CLANG="ccache clang"
       make -s -j${BUILD_JOBS} clean
       time make -s -j${BUILD_JOBS} -C doc
+      ccache --show-log-stats -vvv
+      > $CCACHE_STATSLOG
 
   ###
   # Verify headerscheck / cpluspluscheck succeed
@@ -1016,8 +1052,12 @@ task:
         CC="ccache gcc" CXX="ccache g++" CLANG="ccache clang"
       make -s -j${BUILD_JOBS} clean
       time make -s headerscheck EXTRAFLAGS='-fmax-errors=10'
+      ccache --show-log-stats -vvv
+      > $CCACHE_STATSLOG
     headers_cpluspluscheck_script: |
       time make -s cpluspluscheck EXTRAFLAGS='-fmax-errors=10'
+      ccache --show-log-stats -vvv
+      > $CCACHE_STATSLOG
 
   always:
     upload_caches: ccache
