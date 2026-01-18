@@ -512,6 +512,7 @@ hashbulkdelete(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 	HashMetaPage cachedmetap;
 	HashBulkDeleteStreamPrivate stream_private;
 	ReadStream *stream = NULL;
+	XLogRecPtr	recptr;
 
 	tuples_removed = 0;
 	num_index_tuples = 0;
@@ -690,7 +691,6 @@ bucket_loop:
 	if (RelationNeedsWAL(rel))
 	{
 		xl_hash_update_meta_page xlrec;
-		XLogRecPtr	recptr;
 
 		xlrec.ntuples = metap->hashm_ntuples;
 
@@ -700,8 +700,11 @@ bucket_loop:
 		XLogRegisterBuffer(0, metabuf, REGBUF_STANDARD);
 
 		recptr = XLogInsert(RM_HASH_ID, XLOG_HASH_UPDATE_META_PAGE);
-		PageSetLSN(BufferGetPage(metabuf), recptr);
 	}
+	else
+		recptr = XLogGetFakeLSN(rel);
+
+	PageSetLSN(BufferGetPage(metabuf), recptr);
 
 	END_CRIT_SECTION();
 
@@ -774,6 +777,7 @@ hashbucketcleanup(Relation rel, Bucket cur_bucket, Buffer bucket_buf,
 	Buffer		buf;
 	Bucket		new_bucket PG_USED_FOR_ASSERTS_ONLY = InvalidBucket;
 	bool		bucket_dirty = false;
+	XLogRecPtr	recptr;
 
 	blkno = bucket_blkno;
 	buf = bucket_buf;
@@ -896,7 +900,6 @@ hashbucketcleanup(Relation rel, Bucket cur_bucket, Buffer bucket_buf,
 			if (RelationNeedsWAL(rel))
 			{
 				xl_hash_delete xlrec;
-				XLogRecPtr	recptr;
 
 				xlrec.clear_dead_marking = clear_dead_marking;
 				xlrec.is_primary_bucket_page = (buf == bucket_buf);
@@ -921,8 +924,11 @@ hashbucketcleanup(Relation rel, Bucket cur_bucket, Buffer bucket_buf,
 									ndeletable * sizeof(OffsetNumber));
 
 				recptr = XLogInsert(RM_HASH_ID, XLOG_HASH_DELETE);
-				PageSetLSN(BufferGetPage(buf), recptr);
 			}
+			else
+				recptr = XLogGetFakeLSN(rel);
+
+			PageSetLSN(BufferGetPage(buf), recptr);
 
 			END_CRIT_SECTION();
 		}
@@ -981,14 +987,15 @@ hashbucketcleanup(Relation rel, Bucket cur_bucket, Buffer bucket_buf,
 		/* XLOG stuff */
 		if (RelationNeedsWAL(rel))
 		{
-			XLogRecPtr	recptr;
-
 			XLogBeginInsert();
 			XLogRegisterBuffer(0, bucket_buf, REGBUF_STANDARD);
 
 			recptr = XLogInsert(RM_HASH_ID, XLOG_HASH_SPLIT_CLEANUP);
-			PageSetLSN(page, recptr);
 		}
+		else
+			recptr = XLogGetFakeLSN(rel);
+
+		PageSetLSN(page, recptr);
 
 		END_CRIT_SECTION();
 	}
