@@ -1029,6 +1029,8 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 		}
 	}
 
+	TupleDescFinalize(descriptor);
+
 	/*
 	 * For relations with table AM and partitioned tables, select access
 	 * method to use: an explicitly indicated one, or (in the case of a
@@ -1447,6 +1449,8 @@ BuildDescForRelation(const List *columns)
 
 		populate_compact_attribute(desc, attnum - 1);
 	}
+
+	TupleDescFinalize(desc);
 
 	return desc;
 }
