@@ -1706,6 +1706,7 @@ typedef struct
  *		ScanDesc		   index scan descriptor
  *		Instrument		   local index scan instrumentation
  *		SharedInfo		   parallel worker instrumentation (no leader entry)
+ *		TuplesNeeded	   tuple bound, see ExecSetTupleBound
  *
  *		ReorderQueue	   tuples that need reordering due to re-check
  *		ReachedEnd		   have we fetched all tuples from index already?
@@ -1734,6 +1735,7 @@ typedef struct IndexScanState
 	struct IndexScanDescData *iss_ScanDesc;
 	IndexScanInstrumentation *iss_Instrument;
 	SharedIndexScanInstrumentation *iss_SharedInfo;
+	int64		iss_TuplesNeeded;
 
 	/* These are needed for re-checking ORDER BY expr ordering */
 	pairingheap *iss_ReorderQueue;
@@ -1762,6 +1764,7 @@ typedef struct IndexScanState
  *		ScanDesc		   index scan descriptor
  *		Instrument		   local index scan instrumentation
  *		SharedInfo		   parallel worker instrumentation (no leader entry)
+ *		TuplesNeeded	   tuple bound, see ExecSetTupleBound
  *		TableSlot		   slot for holding tuples fetched from the table
  *		PscanLen		   size of parallel index-only scan descriptor
  *		NameCStringAttNums attnums of name typed columns to pad to NAMEDATALEN
@@ -1784,6 +1787,7 @@ typedef struct IndexOnlyScanState
 	struct IndexScanDescData *ioss_ScanDesc;
 	IndexScanInstrumentation *ioss_Instrument;
 	SharedIndexScanInstrumentation *ioss_SharedInfo;
+	int64		ioss_TuplesNeeded;
 	TupleTableSlot *ioss_TableSlot;
 	Size		ioss_PscanLen;
 	AttrNumber *ioss_NameCStringAttNums;

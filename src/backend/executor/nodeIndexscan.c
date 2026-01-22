@@ -117,6 +117,9 @@ IndexNext(IndexScanState *node)
 
 		node->iss_ScanDesc = scandesc;
 
+		/* Pass down any tuple bound */
+		scandesc->tuples_needed = node->iss_TuplesNeeded;
+
 		/*
 		 * If no run-time keys to calculate or they are ready, go ahead and
 		 * pass the scankeys to the index AM.
@@ -212,6 +215,9 @@ IndexNextWithReorder(IndexScanState *node)
 								   node->iss_NumOrderByKeys);
 
 		node->iss_ScanDesc = scandesc;
+
+		/* Pass down any tuple bound */
+		scandesc->tuples_needed = node->iss_TuplesNeeded;
 
 		/*
 		 * If no run-time keys to calculate or they are ready, go ahead and
@@ -989,6 +995,7 @@ ExecInitIndexScan(IndexScan *node, EState *estate, int eflags)
 	indexstate->iss_RuntimeKeysReady = false;
 	indexstate->iss_RuntimeKeys = NULL;
 	indexstate->iss_NumRuntimeKeys = 0;
+	indexstate->iss_TuplesNeeded = -1;
 
 	/*
 	 * build the index scan keys from the index qualification
@@ -1733,6 +1740,9 @@ ExecIndexScanInitializeDSM(IndexScanState *node,
 								 node->iss_NumOrderByKeys,
 								 piscan);
 
+	/* Pass down any tuple bound */
+	node->iss_ScanDesc->tuples_needed = node->iss_TuplesNeeded;
+
 	/*
 	 * If no run-time keys to calculate or they are ready, go ahead and pass
 	 * the scankeys to the index AM.
@@ -1796,6 +1806,9 @@ ExecIndexScanInitializeWorker(IndexScanState *node,
 								 node->iss_NumScanKeys,
 								 node->iss_NumOrderByKeys,
 								 piscan);
+
+	/* Pass down any tuple bound */
+	node->iss_ScanDesc->tuples_needed = node->iss_TuplesNeeded;
 
 	/*
 	 * If no run-time keys to calculate or they are ready, go ahead and pass

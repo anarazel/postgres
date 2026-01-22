@@ -72,6 +72,7 @@
  */
 #include "postgres.h"
 
+#include "access/relscan.h"
 #include "executor/executor.h"
 #include "executor/instrument.h"
 #include "executor/nodeAgg.h"
@@ -841,6 +842,12 @@ ExecShutdownNode_walker(PlanState *node, void *context)
  * Any negative tuples_needed value means "no limit", which should be the
  * default assumption when this is not called at all for a particular node.
  *
+ * Note: for nodes like Sort, tuples_needed is a hard limit -- the node can
+ * stop after producing exactly that many tuples.  For index scans, however,
+ * tuples_needed is only an approximation, because non-index quals may filter
+ * out some tuples.  The actual number of tuples fetched from the index may
+ * need to exceed tuples_needed to satisfy the caller's requirements.
+ *
  * Note: if this is called repeatedly on a plan tree, the exact same set
  * of nodes must be updated with the new limit each time; be careful that
  * only unchanging conditions are tested here.
@@ -977,6 +984,49 @@ ExecSetTupleBound(int64 tuples_needed, PlanState *child_node)
 		gstate->tuples_needed = tuples_needed;
 
 		ExecSetTupleBound(tuples_needed, outerPlanState(child_node));
+	}
+	else if (IsA(child_node, IndexScanState))
+	{
+		/*
+		 * If it is an IndexScan, save the tuples_needed in the state so it
+		 * can be propagated to the IndexScanDesc when the scan is started.
+		 *
+		 * Note: As with Sort, the index scan node is responsible for reacting
+		 * properly to changes to this parameter.
+		 */
+		IndexScanState *isstate = (IndexScanState *) child_node;
+
+		isstate->iss_TuplesNeeded = tuples_needed;
+
+		/* If scan already started, update the IndexScanDesc too */
+		if (isstate->iss_ScanDesc)
+			isstate->iss_ScanDesc->tuples_needed = tuples_needed;
+	}
+	else if (IsA(child_node, IndexOnlyScanState))
+	{
+		/* Same comments as for IndexScan */
+		IndexOnlyScanState *iosstate = (IndexOnlyScanState *) child_node;
+
+		iosstate->ioss_TuplesNeeded = tuples_needed;
+
+		/* If scan already started, update the IndexScanDesc too */
+		if (iosstate->ioss_ScanDesc)
+			iosstate->ioss_ScanDesc->tuples_needed = tuples_needed;
+	}
+	else if (IsA(child_node, NestLoopState))
+	{
+		/*
+		 * For NestLoop joins where each outer tuple produces at most one
+		 * output tuple, we can propagate the bound to the outer child
+		 */
+		NestLoopState *nlstate = (NestLoopState *) child_node;
+		JoinType	jointype = nlstate->js.jointype;
+
+		if (jointype == JOIN_SEMI || jointype == JOIN_ANTI ||
+			nlstate->js.single_match)
+		{
+			ExecSetTupleBound(tuples_needed, outerPlanState(child_node));
+		}
 	}
 
 	/*

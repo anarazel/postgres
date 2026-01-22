@@ -626,9 +626,14 @@ heapam_batch_getnext(IndexScanDesc scan, ScanDirection direction,
 		 * haven't done any heap fetches yet.  We don't want to waste any
 		 * cycles on allocating a read stream until we have a demonstrated
 		 * need for perform heap fetches.
+		 *
+		 * Also avoiding prefetching when the core executor passes the scan a
+		 * tuples_needed hint that indicates that the scan is likely to end
+		 * before long.
 		 */
 		if (!hscan->xs_read_stream && priorBatch && scan->MVCCScan &&
 			hscan->xs_blk != InvalidBlockNumber &&	/* for index-only scans */
+			(scan->tuples_needed == -1 || scan->tuples_needed > 20) &&
 			enable_indexscan_prefetch)
 		{
 			Assert(!batchringbuf->prefetchPos.valid);
