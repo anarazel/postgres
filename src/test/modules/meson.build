@@ -2,6 +2,7 @@
 
 subdir('brin')
 subdir('commit_ts')
+subdir('deform_bench')
 subdir('delay_execution')
 subdir('dummy_index_am')
 subdir('dummy_seclabel')

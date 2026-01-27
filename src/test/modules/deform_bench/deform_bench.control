@@ -1,0 +1,4 @@
+# deform_bench extension
+comment = 'functions for benchmarking tuple deformation'
+default_version = '1.0'
+module_pathname = '$libdir/deform_bench'
