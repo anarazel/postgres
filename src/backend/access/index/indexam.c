@@ -396,7 +396,12 @@ index_rescan(IndexScanDesc scan,
 	scan->kill_prior_tuple = false; /* for safety */
 
 	if (scan->usebatchring)
+	{
+#ifdef BATCH_CACHE_DEBUG
+		scan->batchringbuf.rescans++;
+#endif
 		index_batchscan_reset(scan);
+	}
 
 	scan->indexRelation->rd_indam->amrescan(scan, keys, nkeys,
 											orderbys, norderbys);
