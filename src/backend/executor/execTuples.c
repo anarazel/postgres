@@ -1029,23 +1029,34 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 	/* We can only fetch as many attributes as the tuple has. */
 	natts = Min(HeapTupleHeaderGetNatts(tup), natts);
 	attnum = slot->tts_nvalid;
+	values = slot->tts_values;
+	isnull = slot->tts_isnull;
 	firstNonCacheOffsetAttr = Min(tupleDesc->firstNonCachedOffAttr, natts);
 
 	if (hasnulls)
 	{
+		tp = (char *) tup +
+			MAXALIGN(offsetof(HeapTupleHeaderData, t_bits) +
+					 BITMAPLEN(HeapTupleHeaderGetNatts(tup)));
+		Assert(tp == (char *) tup + tup->t_hoff);
 		bp = tup->t_bits;
 		firstNullAttr = first_null_attr(bp, natts);
+		populate_isnull_array(bp, natts, isnull);
 		firstNonCacheOffsetAttr = Min(firstNonCacheOffsetAttr, firstNullAttr);
 	}
 	else
 	{
+		uint64	   *isnull64 = (uint64 *) isnull;
+		Size		asize = (natts + 7) >> 3;
+
+		tp = (char *) tup + MAXALIGN(offsetof(HeapTupleHeaderData, t_bits));
 		bp = NULL;
 		firstNullAttr = natts;
-	}
 
-	values = slot->tts_values;
-	isnull = slot->tts_isnull;
-	tp = (char *) tup + tup->t_hoff;
+		/* No nulls, set all isnull elements to false */
+		for (int i = 0; i < asize; i++)
+			isnull64[i] = 0;
+	}
 
 	/*
 	 * Handle the portion of the tuple that we have cached the offset for up
@@ -1065,7 +1076,6 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 #endif
 		do
 		{
-			isnull[attnum] = false;
 			cattr = TupleDescCompactAttr(tupleDesc, attnum);
 
 #ifdef USE_ASSERT_CHECKING
@@ -1074,7 +1084,9 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 			offcheck += cattr->attlen;
 #endif
 
-			values[attnum] = fetchatt(cattr, tp + cattr->attcacheoff);
+			values[attnum] = fetch_att_noerr(tp + cattr->attcacheoff,
+											 cattr->attbyval,
+											 cattr->attlen);
 		} while (++attnum < firstNonCacheOffsetAttr);
 
 		/*
@@ -1101,19 +1113,14 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 	 */
 	for (; attnum < firstNullAttr; attnum++)
 	{
-		isnull[attnum] = false;
 		cattr = TupleDescCompactAttr(tupleDesc, attnum);
 
-		/* align the offset for this attribute */
-		off = att_pointer_alignby(off,
-								  cattr->attalignby,
-								  cattr->attlen,
-								  tp + off);
-
-		values[attnum] = fetchatt(cattr, tp + off);
-
-		/* move the offset beyond this attribute */
-		off = att_addlength_pointer(off, cattr->attlen, tp + off);
+		/* align 'off', fetch the datum, and increment off beyond the datum */
+		values[attnum] = align_fetch_then_add(tp,
+											  &off,
+											  cattr->attbyval,
+											  cattr->attlen,
+											  cattr->attalignby);
 	}
 
 	/*
@@ -1122,26 +1129,20 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 	 */
 	for (; attnum < natts; attnum++)
 	{
-		if (att_isnull(attnum, bp))
+		if (isnull[attnum])
 		{
 			values[attnum] = (Datum) 0;
-			isnull[attnum] = true;
 			continue;
 		}
 
-		isnull[attnum] = false;
 		cattr = TupleDescCompactAttr(tupleDesc, attnum);
 
-		/* align the offset for this attribute */
-		off = att_pointer_alignby(off,
-								  cattr->attalignby,
-								  cattr->attlen,
-								  tp + off);
-
-		values[attnum] = fetchatt(cattr, tp + off);
-
-		/* move the offset beyond this attribute */
-		off = att_addlength_pointer(off, cattr->attlen, tp + off);
+		/* align 'off', fetch the datum, and increment off beyond the datum */
+		values[attnum] = align_fetch_then_add(tp,
+											  &off,
+											  cattr->attbyval,
+											  cattr->attlen,
+											  cattr->attalignby);
 	}
 
 	/*
@@ -1452,7 +1453,7 @@ ExecSetSlotDescriptor(TupleTableSlot *slot, /* slot to change */
 	slot->tts_values = (Datum *)
 		MemoryContextAlloc(slot->tts_mcxt, tupdesc->natts * sizeof(Datum));
 	slot->tts_isnull = (bool *)
-		MemoryContextAlloc(slot->tts_mcxt, tupdesc->natts * sizeof(bool));
+		MemoryContextAlloc(slot->tts_mcxt, MAXALIGN(tupdesc->natts * sizeof(bool)));
 }
 
 /* --------------------------------
