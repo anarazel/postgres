@@ -249,6 +249,7 @@ typedef struct IndexScanBatchData *IndexScanBatch;
 #define INDEX_SCAN_CACHE_BATCHES	2
 
 /* #define BATCH_CACHE_DEBUG */
+/* #define VM_RESOLVE_DEBUG */
 
 /*
  * State used by table AMs to manage an index scan that uses the amgetbatch
@@ -303,6 +304,17 @@ typedef struct BatchRingBuffer
 	uint64		batchesScanned; /* batches consumed by scanPos */
 	uint64		rescans;		/* number of index_rescan calls */
 	uint8		batchHighWatermark; /* max batches in ring buffer at once */
+#endif
+
+#ifdef VM_RESOLVE_DEBUG
+	/* VM resolution stats (for debugging/analysis) */
+	uint64		vmBatchesScanned;	/* total batches scanned */
+	uint64		vmResolveCalls; /* calls that did work (not early return) */
+	uint64		vmItemsChecked; /* total items checked */
+	uint64		vmItemsAllVisible;	/* items marked allVisible */
+	uint64		vmTotalBatchItems;	/* total matching items in all batches */
+	uint64		vmAllVisPerCallMin; /* min allVisible per call */
+	uint64		vmAllVisPerCallMax; /* max allVisible per call */
 #endif
 
 } BatchRingBuffer;

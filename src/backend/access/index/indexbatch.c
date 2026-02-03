@@ -102,6 +102,17 @@ index_batchscan_init(IndexScanDesc scan)
 	scan->batchringbuf.batchHighWatermark = 0;
 #endif
 
+#ifdef VM_RESOLVE_DEBUG
+	/* Initialize VM resolution stats */
+	scan->batchringbuf.vmBatchesScanned = 0;
+	scan->batchringbuf.vmResolveCalls = 0;
+	scan->batchringbuf.vmItemsChecked = 0;
+	scan->batchringbuf.vmItemsAllVisible = 0;
+	scan->batchringbuf.vmTotalBatchItems = 0;
+	scan->batchringbuf.vmAllVisPerCallMin = 0;
+	scan->batchringbuf.vmAllVisPerCallMax = 0;
+#endif
+
 	scan->usebatchring = true;
 }
 
@@ -195,6 +206,31 @@ index_batchscan_end(IndexScanDesc scan)
 							hitRate,
 							batchringbuf->batchHighWatermark)));
 		}
+	}
+#endif
+
+#ifdef VM_RESOLVE_DEBUG
+	if (!IsCatalogRelation(scan->indexRelation) &&
+		scan->batchringbuf.vmResolveCalls > 0)
+	{
+		BatchRingBuffer *buf = &scan->batchringbuf;
+		double		avgAllVisPerCall = (double) buf->vmItemsAllVisible / buf->vmResolveCalls;
+
+		ereport(WARNING,
+				(errmsg("VM resolve stats for index \"%s\":\n"
+						"  batches: %lu, total items: %lu\n"
+						"  resolve calls (did work): %lu\n"
+						"  items checked: %lu, items allVisible: %lu\n"
+						"  allVisible per call: min=%lu, max=%lu, avg=%.2f",
+						RelationGetRelationName(scan->indexRelation),
+						(unsigned long) buf->vmBatchesScanned,
+						(unsigned long) buf->vmTotalBatchItems,
+						(unsigned long) buf->vmResolveCalls,
+						(unsigned long) buf->vmItemsChecked,
+						(unsigned long) buf->vmItemsAllVisible,
+						(unsigned long) buf->vmAllVisPerCallMin,
+						(unsigned long) buf->vmAllVisPerCallMax,
+						avgAllVisPerCall)));
 	}
 #endif
 }

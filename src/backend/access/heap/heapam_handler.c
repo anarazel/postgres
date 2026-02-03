@@ -370,6 +370,10 @@ heapam_batch_resolve_visibility(IndexScanDesc scan, ScanDirection direction,
 
 	Assert(hbatch == heap_batch_data(batch, scan));
 
+#ifdef VM_RESOLVE_DEBUG
+	scan->batchringbuf.vmResolveCalls++;
+#endif
+
 	/*
 	 * We better still have the TID recycling interlock (generally a pin on
 	 * the batch's index page) -- amunguardbatch has not been called yet
@@ -424,6 +428,31 @@ heapam_batch_resolve_visibility(IndexScanDesc scan, ScanDirection direction,
 		hbatch->visInfo[setItem] = curvmheapblkflags = flags;
 		curvmheapblkno = heapblkno;
 	}
+
+#ifdef VM_RESOLVE_DEBUG
+	if (posItem != noSetItem)
+	{
+		/* Loop visited posItem..noSetItem-step; normalize to low..high */
+		int			firstChecked = Min(posItem, noSetItem - step);
+		int			lastChecked = Max(posItem, noSetItem - step);
+		int			itemsChecked = lastChecked - firstChecked + 1;
+		int			itemsAllVisible = 0;
+
+		for (int j = firstChecked; j <= lastChecked; j++)
+			if (hbatch->visInfo[j] & HEAP_BATCH_VIS_ALL_VISIBLE)
+				itemsAllVisible++;
+
+		scan->batchringbuf.vmItemsChecked += itemsChecked;
+		scan->batchringbuf.vmItemsAllVisible += itemsAllVisible;
+
+		/* Track min/max allVisible per call */
+		if (scan->batchringbuf.vmResolveCalls == 1 ||
+			(uint64) itemsAllVisible < scan->batchringbuf.vmAllVisPerCallMin)
+			scan->batchringbuf.vmAllVisPerCallMin = itemsAllVisible;
+		if ((uint64) itemsAllVisible > scan->batchringbuf.vmAllVisPerCallMax)
+			scan->batchringbuf.vmAllVisPerCallMax = itemsAllVisible;
+	}
+#endif
 
 	/*
 	 * It's safe to drop the batch's index AM resources as soon as we've
@@ -765,6 +794,11 @@ heapam_batch_getnext_tid(IndexScanDesc scan, IndexFetchHeapData *hscan,
 
 #ifdef BATCH_CACHE_DEBUG
 	batchringbuf->batchesScanned++;
+#endif
+
+#ifdef VM_RESOLVE_DEBUG
+	batchringbuf->vmBatchesScanned++;
+	batchringbuf->vmTotalBatchItems += (scanBatch->lastItem - scanBatch->firstItem + 1);
 #endif
 
 	/*
