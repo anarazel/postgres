@@ -199,6 +199,7 @@ CreateTemplateTupleDesc(int natts)
 
 	/* This will be set to the correct value by TupleDescFinalize() */
 	desc->firstNonCachedOffAttr = -1;
+	desc->firstNonGuarantedAttr = -1;
 
 	return desc;
 }
@@ -507,11 +508,17 @@ void
 TupleDescFinalize(TupleDesc tupdesc)
 {
 	int			firstNonCachedOffAttr = 0;
+	int			firstNonGuarantedAttr = tupdesc->natts;
 	int			offp = 0;
 
 	for (int i = 0; i < tupdesc->natts; i++)
 	{
 		CompactAttribute *cattr = TupleDescCompactAttr(tupdesc, i);
+
+		if (firstNonGuarantedAttr == tupdesc->natts &&
+			(cattr->attnullability != ATTNULLABLE_VALID || !cattr->attbyval ||
+			 cattr->atthasmissing || cattr->attisdropped || cattr->attlen <= 0))
+			firstNonGuarantedAttr = i;
 
 		if (cattr->attlen <= 0)
 			break;
@@ -524,6 +531,7 @@ TupleDescFinalize(TupleDesc tupdesc)
 	}
 
 	tupdesc->firstNonCachedOffAttr = firstNonCachedOffAttr;
+	tupdesc->firstNonGuarantedAttr = firstNonGuarantedAttr;
 }
 
 /*

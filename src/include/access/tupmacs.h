@@ -208,31 +208,6 @@ align_fetch_then_add(const char *tupptr, uint32 *off, bool attbyval, int attlen,
 	}
 }
 
-#ifndef HAVE__BUILTIN_CTZ
-/*
- * For returning the 0-based position of the right-most 0 bit of a uint8, or 8
- * if all bits are 1 bits.
- */
-static const uint8 pg_rightmost_zero_pos[256] = {
-	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 4,
-	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 5,
-	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 4,
-	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 6,
-	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 4,
-	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 5,
-	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 4,
-	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 7,
-	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 4,
-	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 5,
-	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 4,
-	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 6,
-	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 4,
-	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 5,
-	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 4,
-	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 8
-};
-#endif
-
 /*
  * first_null_attr
  *		Inspect a NULL bitmask from a tuple and return the 0-based attnum of the
@@ -271,12 +246,7 @@ first_null_attr(const bits8 *bits, int natts)
 	}
 
 	res = bytenum << 3;
-
-#ifdef HAVE__BUILTIN_CTZ
-	res += __builtin_ctz(~bits[bytenum]);
-#else
-	res += pg_rightmost_zero_pos[bits[bytenum]];
-#endif
+	res += pg_rightmost_one_pos32(~bits[bytenum]);
 
 	/*
 	 * Since we did no masking to mask out bits beyond natts, we may have

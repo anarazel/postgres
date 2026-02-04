@@ -1017,6 +1017,7 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 	bits8	   *bp;				/* ptr to null bitmap in tuple */
 	int			attnum;
 	int			firstNonCacheOffsetAttr;
+	int			firstNonGuarantedAttr;
 	int			firstNullAttr;
 	Datum	   *values;
 	bool	   *isnull;
@@ -1026,18 +1027,66 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 	/* Did someone forget to call TupleDescFinalize()? */
 	Assert(tupleDesc->firstNonCachedOffAttr >= 0);
 
-	/* We can only fetch as many attributes as the tuple has. */
-	natts = Min(HeapTupleHeaderGetNatts(tup), natts);
 	attnum = slot->tts_nvalid;
 	values = slot->tts_values;
 	isnull = slot->tts_isnull;
+
+	if (hasnulls)
+		tp = (char *) tup + MAXALIGN(offsetof(HeapTupleHeaderData, t_bits) +
+									 BITMAPLEN(HeapTupleHeaderGetNatts(tup)));
+	else
+		tp = (char *) tup + MAXALIGN(offsetof(HeapTupleHeaderData, t_bits));
+
+	firstNonGuarantedAttr = Min(natts, tupleDesc->firstNonGuarantedAttr);
+
+	if (TTS_OBEYS_NOT_NULL_CONSTRAINTS(slot) &&
+		attnum < firstNonGuarantedAttr)
+	{
+		do
+		{
+			cattr = TupleDescCompactAttr(tupleDesc, attnum);
+
+			/*
+			 * Technically we could support non-byval fixed-width types, but
+			 * not doing so allows us to pass true to fetch_att_noerr() which
+			 * eliminates a branch.
+			 */
+			Assert(cattr->attbyval == true);
+			values[attnum] = fetch_att_noerr(tp + cattr->attcacheoff,
+											 true,
+											 cattr->attlen);
+			attnum++;
+		} while (attnum < firstNonGuarantedAttr);
+
+		off = cattr->attcacheoff + cattr->attlen;
+
+		if (attnum == natts)
+		{
+			uint64 *isnull64 = (uint64 *) isnull;
+			Size asize = (natts + 7) >> 3;
+
+			/* No nulls, set all isnull elements to false */
+				for (int i = 0; i < asize; i++)
+					isnull64[i] = 0;
+			goto done;
+
+		}
+	}
+	else
+	{
+		/* Restore state from previous execution */
+		off = *offp;
+
+		/* We expect *offp to be set to 0 when attnum == 0 */
+		Assert(off == 0 || attnum > 0);
+	}
+
+	/* We can only fetch as many attributes as the tuple has. */
+	natts = Min(HeapTupleHeaderGetNatts(tup), natts);
 	firstNonCacheOffsetAttr = Min(tupleDesc->firstNonCachedOffAttr, natts);
 
 	if (hasnulls)
 	{
-		tp = (char *) tup +
-			MAXALIGN(offsetof(HeapTupleHeaderData, t_bits) +
-					 BITMAPLEN(HeapTupleHeaderGetNatts(tup)));
 		Assert(tp == (char *) tup + tup->t_hoff);
 		bp = tup->t_bits;
 		firstNullAttr = first_null_attr(bp, natts);
@@ -1049,7 +1098,6 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 		uint64	   *isnull64 = (uint64 *) isnull;
 		Size		asize = (natts + 7) >> 3;
 
-		tp = (char *) tup + MAXALIGN(offsetof(HeapTupleHeaderData, t_bits));
 		bp = NULL;
 		firstNullAttr = natts;
 
@@ -1065,24 +1113,9 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 	 */
 	if (attnum < firstNonCacheOffsetAttr)
 	{
-#ifdef USE_ASSERT_CHECKING
-		int			offcheck;
-
-		/* In Assert enabled builds, verify attcacheoff is correct */
-		if (attnum == 0)
-			offcheck = 0;
-		else
-			offcheck = *offp;
-#endif
 		do
 		{
 			cattr = TupleDescCompactAttr(tupleDesc, attnum);
-
-#ifdef USE_ASSERT_CHECKING
-			offcheck = att_nominal_alignby(offcheck, cattr->attalignby);
-			Assert(offcheck == cattr->attcacheoff);
-			offcheck += cattr->attlen;
-#endif
 
 			values[attnum] = fetch_att_noerr(tp + cattr->attcacheoff,
 											 cattr->attbyval,
@@ -1097,14 +1130,14 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 		Assert(cattr->attlen > 0);
 		off = cattr->attcacheoff + cattr->attlen;
 	}
-	else
-	{
-		/* Restore state from previous execution */
-		off = *offp;
+	//else
+	//{
+	//	/* Restore state from previous execution */
+	//	off = *offp;
 
-		/* We expect *offp to be set to 0 when attnum == 0 */
-		Assert(off == 0 || attnum > 0);
-	}
+	//	/* We expect *offp to be set to 0 when attnum == 0 */
+	//	Assert(off == 0 || attnum > 0);
+	//}
 
 	/*
 	 * Handle any portion of the tuple that doesn't have a fixed offset up
@@ -1145,6 +1178,7 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 											  cattr->attalignby);
 	}
 
+done:
 	/*
 	 * Save state for next execution
 	 */

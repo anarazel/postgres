@@ -146,6 +146,8 @@ typedef struct TupleDescData
 	int			tdrefcount;		/* reference count, or -1 if not counting */
 	int			firstNonCachedOffAttr;	/* index of the first att without an
 										 * attcacheoff */
+	int			firstNonGuarantedAttr; /* index of the first nullable, missing
+										* or !byval attribute. */
 	TupleConstr *constr;		/* constraints, or NULL if none */
 	/* compact_attrs[N] is the compact metadata of Attribute Number N+1 */
 	CompactAttribute compact_attrs[FLEXIBLE_ARRAY_MEMBER];

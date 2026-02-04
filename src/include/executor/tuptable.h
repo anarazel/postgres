@@ -95,6 +95,10 @@
 #define			TTS_FLAG_SHOULDFREE		(1 << 2)
 #define TTS_SHOULDFREE(slot) (((slot)->tts_flags & TTS_FLAG_SHOULDFREE) != 0)
 
+#define			TTS_FLAG_OBEYS_NOT_NUL_CONSTRAINTS		(1 << 3)
+#define TTS_OBEYS_NOT_NULL_CONSTRAINTS(slot) \
+	(((slot)->tts_flags & TTS_FLAG_OBEYS_NOT_NUL_CONSTRAINTS) != 0)
+
 /* fixed tuple descriptor */
 #define			TTS_FLAG_FIXED		(1 << 4)	/* XXX change to #3? */
 #define TTS_FIXED(slot) (((slot)->tts_flags & TTS_FLAG_FIXED) != 0)
