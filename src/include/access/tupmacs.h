@@ -29,6 +29,17 @@ att_isnull(int ATT, const bits8 *BITS)
 	return !(BITS[ATT >> 3] & (1 << (ATT & 0x07)));
 }
 
+#if defined(__clang__)
+#define pg_nounroll _Pragma("clang loop unroll(disable)")
+#define pg_novector _Pragma("clang loop vectorize(disable)")
+#elif defined(__GNUC__)
+#define pg_nounroll _Pragma("GCC unroll 0")
+#define pg_novector _Pragma("GCC novector")
+#else
+#define pg_nounroll
+#define pg_novector _Pragma("loop( no_vector )")
+#endif
+
 /*
  * populate_isnull_array
  *		Transform a tuple's null bitmap into a boolean array.
@@ -52,7 +63,7 @@ populate_isnull_array(const bits8 *bits, int natts, bool *isnull)
 	 */
 #define SPREAD_BITS_MULTIPLIER_32 0x204081U
 
-	for (int i = 0; i < nbytes; i++, isnull += 8)
+	pg_nounroll pg_novector for(int i = 0; i < nbytes; i++, isnull += 8)
 	{
 		uint64		isnull_8;
 		bits8		nullbyte = ~bits[i];
@@ -238,7 +249,7 @@ first_null_attr(const bits8 *bits, int natts)
 #endif
 
 	/* Process all bytes up to just before the byte for the natts index */
-	for (bytenum = 0; bytenum < lastByte; bytenum++)
+	pg_nounroll pg_novector for (bytenum = 0; bytenum < lastByte; bytenum++)
 	{
 		/* break if there's any NULL attrs (a 0 bit) */
 		if (bits[bytenum] != 0xFF)
