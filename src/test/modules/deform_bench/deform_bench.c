@@ -49,6 +49,8 @@ deform_bench(PG_FUNCTION_ARGS)
 
 	tupdesc = RelationGetDescr(rel);
 	slot = MakeTupleTableSlot(tupdesc, &TTSOpsBufferHeapTuple);
+	slot->tts_flags |= TTS_FLAG_OBEYS_NOT_NUL_CONSTRAINTS;
+
 	scan = table_beginscan_strat(rel, GetActiveSnapshot(), 0, NULL, true, false);
 
 	/*
