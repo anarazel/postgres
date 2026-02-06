@@ -2133,6 +2133,7 @@ common_functional_flags = [
   # Disable optimizations that assume no overflow; needed for gcc 4.3+
   '-fwrapv',
   '-fexcess-precision=standard',
+  '-Wa,-mbranches-within-32B-boundaries',
 ]
 
 cflags += cc.get_supported_arguments(common_functional_flags)
