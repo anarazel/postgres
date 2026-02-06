@@ -123,6 +123,9 @@ typedef struct TupleTableSlot
 	bool	   *tts_isnull;		/* current per-attribute isnull flags.  Array
 								 * size must always be rounded up to the next
 								 * 8 elements. */
+	uint16		tts_first_nonguaranteed;
+	uint16		tts_first_noncached;
+	CompactAttribute *cattrs;
 	MemoryContext tts_mcxt;		/* slot itself is in this context */
 	ItemPointerData tts_tid;	/* stored tuple's tid */
 	Oid			tts_tableOid;	/* table oid of tuple */

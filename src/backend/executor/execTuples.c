@@ -1319,6 +1319,10 @@ MakeTupleTableSlot(TupleDesc tupleDesc,
 			 + MAXALIGN(tupleDesc->natts * sizeof(Datum)));
 
 		PinTupleDesc(tupleDesc);
+
+		slot->cattrs = tupleDesc->compact_attrs;
+		slot->tts_first_noncached = tupleDesc->firstNonCachedOffAttr;
+		slot->tts_first_nonguaranteed = tupleDesc->firstNonGuarantedAttr;;
 	}
 
 	/*
@@ -1479,6 +1483,11 @@ ExecSetSlotDescriptor(TupleTableSlot *slot, /* slot to change */
 	 */
 	slot->tts_tupleDescriptor = tupdesc;
 	PinTupleDesc(tupdesc);
+
+	slot->tts_first_noncached = tupdesc->firstNonCachedOffAttr;
+	slot->tts_first_nonguaranteed = tupdesc->firstNonGuarantedAttr;;
+	slot->cattrs = tupdesc->compact_attrs;
+
 
 	/*
 	 * Allocate Datum/isnull arrays of the appropriate size.  These must have
