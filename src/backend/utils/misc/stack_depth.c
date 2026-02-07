@@ -108,13 +108,28 @@ check_stack_depth(void)
 bool
 stack_is_too_deep(void)
 {
+#ifndef HAVE__BUILTIN_FRAME_ADDRESS
 	char		stack_top_loc;
+#endif
 	ssize_t		stack_depth;
+	char	   *stack_address;
+
+	/*
+	 * With address sanitizer's stack-use-after-return check, stack variables
+	 * are moved to heap allocations, to allow to detect references to the
+	 * memory at a later time. That would break our stack-depth check. Luckily
+	 * __builtin_frame_address() works correctly, even under asan.
+	 */
+#ifndef HAVE__BUILTIN_FRAME_ADDRESS
+	stack_address = &stack_top_loc;
+#else
+	stack_address = (char*)__builtin_frame_address(0);
+#endif
 
 	/*
 	 * Compute distance from reference point to my local variables
 	 */
-	stack_depth = (ssize_t) (stack_base_ptr - &stack_top_loc);
+	stack_depth = (ssize_t) (stack_base_ptr - stack_address);
 
 	/*
 	 * Take abs value, since stacks grow up on some machines, down on others
