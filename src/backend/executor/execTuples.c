@@ -1565,7 +1565,7 @@ ExecStoreHeapTuple(HeapTuple tuple,
  * use the, more expensive, ExecForceStoreHeapTuple().
  * --------------------------------
  */
-TupleTableSlot *
+bool
 ExecStoreBufferHeapTuple(HeapTuple tuple,
 						 TupleTableSlot *slot,
 						 Buffer buffer)
@@ -1584,7 +1584,7 @@ ExecStoreBufferHeapTuple(HeapTuple tuple,
 
 	slot->tts_tableOid = tuple->t_tableOid;
 
-	return slot;
+	return true;
 }
 
 /*

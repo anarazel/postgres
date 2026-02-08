@@ -1065,7 +1065,7 @@ continue_page:
  * heapgettup is 1-based.
  * ----------------
  */
-static void
+static inline void
 heapgettup_pagemode(HeapScanDesc scan,
 					ScanDirection dir,
 					int nkeys,
@@ -1444,6 +1444,52 @@ heap_getnext(TableScanDesc sscan, ScanDirection direction)
 	return &scan->rs_ctup;
 }
 
+static pg_noinline bool
+heap_getnextslot_nopage(TableScanDesc sscan, ScanDirection direction, TupleTableSlot *slot)
+{
+	HeapScanDesc scan = (HeapScanDesc) sscan;
+
+	heapgettup(scan, direction, sscan->rs_nkeys, sscan->rs_key);
+
+	if (scan->rs_ctup.t_data == NULL)
+	{
+		ExecClearTuple(slot);
+		return false;
+	}
+
+	//__builtin_prefetch(scan->rs_ctup.t_data);
+
+	/*
+	 * if we get here it means we have a new current scan tuple, so point to
+	 * the proper return buffer and return the tuple.
+	 */
+
+	pgstat_count_heap_getnext(scan->rs_base.rs_rd);
+
+	return ExecStoreBufferHeapTuple(&scan->rs_ctup, slot,
+									scan->rs_cbuf);
+}
+
+static pg_noinline bool
+heap_getnextslot_skey(TableScanDesc sscan, ScanDirection direction, TupleTableSlot *slot)
+{
+	HeapScanDesc scan = (HeapScanDesc) sscan;
+
+	heapgettup_pagemode(scan, direction, sscan->rs_nkeys, sscan->rs_key);
+
+	if (scan->rs_ctup.t_data == NULL)
+	{
+		ExecClearTuple(slot);
+		return false;
+	}
+
+	pgstat_count_heap_getnext(scan->rs_base.rs_rd);
+
+	return ExecStoreBufferHeapTuple(&scan->rs_ctup, slot,
+									scan->rs_cbuf);
+}
+
+
 bool
 heap_getnextslot(TableScanDesc sscan, ScanDirection direction, TupleTableSlot *slot)
 {
@@ -1451,11 +1497,16 @@ heap_getnextslot(TableScanDesc sscan, ScanDirection direction, TupleTableSlot *s
 
 	/* Note: no locking manipulations needed */
 
-	if (sscan->rs_flags & SO_ALLOW_PAGEMODE)
-		heapgettup_pagemode(scan, direction, sscan->rs_nkeys, sscan->rs_key);
-	else
-		heapgettup(scan, direction, sscan->rs_nkeys, sscan->rs_key);
+	if (unlikely(!(sscan->rs_flags & SO_ALLOW_PAGEMODE)))
+		return heap_getnextslot_nopage(sscan, direction, slot);
+#if 1
+	if (sscan->rs_nkeys > 0)
+		return heap_getnextslot_skey(sscan, direction, slot);
 
+	heapgettup_pagemode(scan, direction, 0, NULL);
+#else
+	heapgettup_pagemode(scan, direction, sscan->rs_nkeys, sscan->rs_key);
+#endif
 	if (scan->rs_ctup.t_data == NULL)
 	{
 		ExecClearTuple(slot);
@@ -1469,9 +1520,8 @@ heap_getnextslot(TableScanDesc sscan, ScanDirection direction, TupleTableSlot *s
 
 	pgstat_count_heap_getnext(scan->rs_base.rs_rd);
 
-	ExecStoreBufferHeapTuple(&scan->rs_ctup, slot,
-							 scan->rs_cbuf);
-	return true;
+	return ExecStoreBufferHeapTuple(&scan->rs_ctup, slot,
+									scan->rs_cbuf);
 }
 
 void
