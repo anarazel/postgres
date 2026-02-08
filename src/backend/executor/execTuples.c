@@ -73,7 +73,7 @@
 static TupleDesc ExecTypeFromTLInternal(List *targetList,
 										bool skipjunk);
 static pg_attribute_always_inline void slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
-															  int natts);
+															  uint16 natts);
 static inline void tts_buffer_heap_store_tuple(TupleTableSlot *slot,
 											   HeapTuple tuple,
 											   Buffer buffer,
@@ -748,6 +748,12 @@ tts_buffer_heap_clear(TupleTableSlot *slot)
 }
 
 static void
+/*
+ * This is register starved enough that not having the frame pointer actually
+ * does speed things up (rarely the case otherwise IME). Don't think we want
+ * to do this, but it's interesting for experiments.
+ */
+//__attribute__((optimize("omit-frame-pointer")))
 tts_buffer_heap_getsomeattrs(TupleTableSlot *slot, int natts)
 {
 	BufferHeapTupleTableSlot *bslot = (BufferHeapTupleTableSlot *) slot;
@@ -1006,71 +1012,176 @@ tts_buffer_heap_store_tuple(TupleTableSlot *slot, HeapTuple tuple,
  * This is marked as always inline, so the different offp for different types
  * of slots gets optimized away.
  */
+
+/*
+ * pg_restrict is probably not worth the risk, with a bit of care about
+ * ordering of operations the compiler can do an almost as good job.
+ */
+#if 1
+#define deform_restrict pg_restrict
+#else
+#define deform_restrict
+#endif
 static pg_attribute_always_inline void
-slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
-					   int natts)
+slot_deform_heap_tuple(TupleTableSlot * deform_restrict slot, HeapTuple deform_restrict tuple, uint32 *deform_restrict offp,
+					   uint16 natts)
 {
-	CompactAttribute *cattr;
-	TupleDesc	tupleDesc = slot->tts_tupleDescriptor;
-	bool		hasnulls = HeapTupleHasNulls(tuple);
-	HeapTupleHeader tup = tuple->t_data;
-	bits8	   *bp;				/* ptr to null bitmap in tuple */
-	int			attnum;
-	int			firstNonCacheOffsetAttr;
-	int			firstNonGuarantedAttr;
-	int			firstNullAttr;
-	Datum	   *values;
-	bool	   *isnull;
-	char	   *tp;				/* ptr to tuple data */
+	CompactAttribute *cattrs;
+	CompactAttribute *deform_restrict cattr;
+	HeapTupleHeader deform_restrict tup = tuple->t_data;
+	bool		hasnulls = (tup->t_infomask & HEAP_HASNULL) != 0;
+	bits8	   *deform_restrict bp;				/* ptr to null bitmap in tuple */
+	int16		attnum;
+	uint16		firstNonCacheOffsetAttr;
+	uint16		firstNonGuarantedAttr;
+	uint16		firstNullAttr;
+	uint16		tnatts;
+	Datum	   *deform_restrict values;
+	bool	   *deform_restrict isnull;
+	char	   *deform_restrict tp;				/* ptr to tuple data */
 	uint32		off;			/* offset in tuple data */
 
 	/* Did someone forget to call TupleDescFinalize()? */
-	Assert(tupleDesc->firstNonCachedOffAttr >= 0);
+	Assert(slot->tts_first_noncached >= 0);
+
+	isnull = slot->tts_isnull;
+
+	//hasnulls=0;
+	firstNonGuarantedAttr = Min(natts, slot->tts_first_nonguaranteed);
+
+	/*
+	 * FIXME: This should be done in the slot, the branch here slows down the
+	 * single-guaranteed-column deforming case measurably.
+	 */
+	if (1 && unlikely(!TTS_OBEYS_NOT_NULL_CONSTRAINTS(slot)))
+		firstNonGuarantedAttr = 0;
+
+	firstNonCacheOffsetAttr = slot->tts_first_noncached;
+
+	if (likely(!hasnulls))
+	{
+		tp = (char *) tup + MAXALIGN(offsetof(HeapTupleHeaderData, t_bits));
+
+		/*
+		 * If we don't deform a non-guaranteed column, we don't need to ever
+		 * do HeapTupleHeaderGetNatts(). But if we do need to, we should do so
+		 * now, because a) the dependency is futher apart in time, b) the
+		 * pointer to tup does not need to be kept around.
+		 */
+		if (unlikely(natts > firstNonGuarantedAttr))
+		{
+			tnatts = HeapTupleHeaderGetNatts(tup);
+			natts = Min(natts, tnatts);
+		}
+
+		/*
+		 * Forcing everything to go through either the "guaranteed" or the
+		 * "no-nulls" loops below ensures that isnull is set where necessary.
+		 */
+		firstNullAttr = natts;
+	}
+	else
+	{
+		tnatts = HeapTupleHeaderGetNatts(tup);
+		natts = Min(natts, tnatts);
+		tp = (char *) tup + MAXALIGN(offsetof(HeapTupleHeaderData, t_bits) +
+									 BITMAPLEN(tnatts));
+
+		/*
+		 * If non-guaranteed columns are accessed, it's better to interpret
+		 * the null bitmap now, that way the compiler doesn't need to keep
+		 * things like bp in register or the stack until later.
+		 */
+		if (unlikely(natts > firstNonGuarantedAttr))
+		{
+			bp = tup->t_bits;
+			firstNullAttr = first_null_attr(bp, natts);
+			populate_isnull_array(bp, natts, isnull);
+			firstNonCacheOffsetAttr = Min(firstNonCacheOffsetAttr, firstNullAttr);
+		}
+		else
+		{
+			firstNullAttr = natts;
+		}
+	}
+
+	/* check that our calculation of hoff isn't wrong */
+	Assert(tp == (char *) tup + tup->t_hoff);
 
 	attnum = slot->tts_nvalid;
 	values = slot->tts_values;
-	isnull = slot->tts_isnull;
 
-	if (hasnulls)
-		tp = (char *) tup + MAXALIGN(offsetof(HeapTupleHeaderData, t_bits) +
-									 BITMAPLEN(HeapTupleHeaderGetNatts(tup)));
-	else
-		tp = (char *) tup + MAXALIGN(offsetof(HeapTupleHeaderData, t_bits));
+	/*
+	 * Avoiding TupleDescCompactAttr() allows to not keep a pointer to the
+	 * tupledesc around. Doing a separate check for each attribute with
+	 * assertions enabled is also just expensive, without helping - there's no
+	 * way the compact attribute changes between rounds of deformining.
+	 */
+	cattrs = slot->cattrs;
 
-	firstNonGuarantedAttr = Min(natts, tupleDesc->firstNonGuarantedAttr);
-
-	if (TTS_OBEYS_NOT_NULL_CONSTRAINTS(slot) &&
-		attnum < firstNonGuarantedAttr)
+	if (attnum < firstNonGuarantedAttr)
 	{
-		do
-		{
-			cattr = TupleDescCompactAttr(tupleDesc, attnum);
+		int attlen;
 
+		for (; attnum < firstNonGuarantedAttr; attnum++)
+		{
+			Datum *valp;
+
+			isnull[attnum] = 0;
+
+			cattr = &cattrs[attnum];
+			attlen = cattr->attlen;
+			pg_assume(attlen > 0);
 			/*
 			 * Technically we could support non-byval fixed-width types, but
 			 * not doing so allows us to pass true to fetch_att_noerr() which
 			 * eliminates a branch.
 			 */
 			Assert(cattr->attbyval == true);
-			values[attnum] = fetch_att_noerr(tp + cattr->attcacheoff,
-											 true,
-											 cattr->attlen);
-			attnum++;
-		} while (attnum < firstNonGuarantedAttr);
+			off = cattr->attcacheoff;
 
+			valp = &values[attnum];
+
+#if 1
+			/*
+			 * XXX: An attempt to reduce jumps due to the compiler trying to
+			 * share the assignment to valp. Seems to help a bit, not sure if
+			 * it's worth it.  But it does speed things up when deforming
+			 * multiple columns.
+			 */
+			if (likely(attlen == 4))
+			{
+				*(volatile Datum *)valp = Int32GetDatum(*(const int32 *)(tp+off));
+			}
+			else if (likely(attlen == 8))
+			{
+				*(volatile Datum *)valp = Int64GetDatum(*(const int64 *)(tp+off));
+			}
+			else if (likely(attlen == 1))
+			{
+				*(volatile Datum *)valp = CharGetDatum(*(const char *)(tp+off));
+			}
+			else
+			{
+				Assert(attlen == 2);
+				*(volatile Datum *)valp = Int16GetDatum(*(const int16 *)(tp+off));
+			}
+#else
+			*valp = fetch_att_noerr(tp + off,
+									true,
+									attlen);
+#endif
+		}
+
+		/* looks like otherwise the compiler makes the loop more complicated */
+#if 1
+		off = off + attlen;
+#else
 		off = cattr->attcacheoff + cattr->attlen;
+#endif
 
 		if (attnum == natts)
-		{
-			uint64 *isnull64 = (uint64 *) isnull;
-			Size asize = (natts + 7) >> 3;
-
-			/* No nulls, set all isnull elements to false */
-				for (int i = 0; i < asize; i++)
-					isnull64[i] = 0;
 			goto done;
-
-		}
 	}
 	else
 	{
@@ -1079,32 +1190,11 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 
 		/* We expect *offp to be set to 0 when attnum == 0 */
 		Assert(off == 0 || attnum > 0);
+		cattr = &cattrs[attnum];
 	}
 
 	/* We can only fetch as many attributes as the tuple has. */
-	natts = Min(HeapTupleHeaderGetNatts(tup), natts);
-	firstNonCacheOffsetAttr = Min(tupleDesc->firstNonCachedOffAttr, natts);
-
-	if (hasnulls)
-	{
-		Assert(tp == (char *) tup + tup->t_hoff);
-		bp = tup->t_bits;
-		firstNullAttr = first_null_attr(bp, natts);
-		populate_isnull_array(bp, natts, isnull);
-		firstNonCacheOffsetAttr = Min(firstNonCacheOffsetAttr, firstNullAttr);
-	}
-	else
-	{
-		uint64	   *isnull64 = (uint64 *) isnull;
-		Size		asize = (natts + 7) >> 3;
-
-		bp = NULL;
-		firstNullAttr = natts;
-
-		/* No nulls, set all isnull elements to false */
-		for (int i = 0; i < asize; i++)
-			isnull64[i] = 0;
-	}
+	firstNonCacheOffsetAttr = Min(firstNonCacheOffsetAttr, natts);
 
 	/*
 	 * Handle the portion of the tuple that we have cached the offset for up
@@ -1113,14 +1203,22 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 	 */
 	if (attnum < firstNonCacheOffsetAttr)
 	{
-		do
-		{
-			cattr = TupleDescCompactAttr(tupleDesc, attnum);
+		int attlen;
 
-			values[attnum] = fetch_att_noerr(tp + cattr->attcacheoff,
-											 cattr->attbyval,
-											 cattr->attlen);
-		} while (++attnum < firstNonCacheOffsetAttr);
+		for (; attnum < firstNonCacheOffsetAttr; attnum++)
+		{
+			Datum val;
+
+			isnull[attnum] = false;
+
+			cattr = &cattrs[attnum];
+			attlen = cattr->attlen;
+			off = cattr->attcacheoff;
+			val = fetch_att_noerr(tp + off,
+								  cattr->attbyval,
+								  attlen);
+			values[attnum] = val;
+		}
 
 		/*
 		 * Point the offset after the end of the last attribute with a cached
@@ -1128,7 +1226,7 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 		 * fixed width, so just add the attlen to the attcacheoff
 		 */
 		Assert(cattr->attlen > 0);
-		off = cattr->attcacheoff + cattr->attlen;
+		off = off + attlen;
 	}
 	//else
 	//{
@@ -1146,13 +1244,29 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 	 */
 	for (; attnum < firstNullAttr; attnum++)
 	{
-		cattr = TupleDescCompactAttr(tupleDesc, attnum);
+		int		attlen;
+
+		/*
+		 * It looks like it's faster to assign isnull here, rather than to do
+		 * in a loop above, because we need the isnull pointer anyway, for the
+		 * checks in the "remaining columns" loop below.
+		 */
+		isnull[attnum] = false;
+
+		cattr = &cattrs[attnum];
+		attlen = cattr->attlen;
+
+		/*
+		 * We don't have cstring types in heap tuples, the existance of the
+		 * call to string increase stack usage.
+		 */
+		pg_assume(attlen > 0 || attlen == -1);
 
 		/* align 'off', fetch the datum, and increment off beyond the datum */
 		values[attnum] = align_fetch_then_add(tp,
 											  &off,
 											  cattr->attbyval,
-											  cattr->attlen,
+											  attlen,
 											  cattr->attalignby);
 	}
 
@@ -1162,19 +1276,24 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 	 */
 	for (; attnum < natts; attnum++)
 	{
+		int		attlen;
+
 		if (isnull[attnum])
 		{
 			values[attnum] = (Datum) 0;
 			continue;
 		}
 
-		cattr = TupleDescCompactAttr(tupleDesc, attnum);
+		cattr = &cattrs[attnum];
+		attlen = cattr->attlen;
+		/* see prior loop */
+		pg_assume(attlen > 0 || attlen == -1);
 
 		/* align 'off', fetch the datum, and increment off beyond the datum */
 		values[attnum] = align_fetch_then_add(tp,
 											  &off,
 											  cattr->attbyval,
-											  cattr->attlen,
+											  attlen,
 											  cattr->attalignby);
 	}
 
@@ -2082,6 +2201,10 @@ slot_getsomeattrs_int(TupleTableSlot *slot, int attnum)
 	Assert(slot->tts_nvalid < attnum);	/* checked in slot_getsomeattrs */
 	Assert(attnum > 0);
 
+	/*
+	 * FIXME: Is there any reason for this to be here, rather than only doing
+	 * it only in the slot_getmissingattrs() path?
+	 */
 	if (unlikely(attnum > slot->tts_tupleDescriptor->natts))
 		elog(ERROR, "invalid attribute number %d", attnum);
 
@@ -2091,6 +2214,12 @@ slot_getsomeattrs_int(TupleTableSlot *slot, int attnum)
 	/*
 	 * If the underlying tuple doesn't have enough attributes, tuple
 	 * descriptor must have the missing attributes.
+	 *
+	 * FIXME: This should probably be done inside the getsomeattrs callback,
+	 * as having to return here adds a fair bit of overhead. For one, it
+	 * prevents the sibling call optimization, for another it requires
+	 * fetching tts_nvalid, which was just stored - triggering store
+	 * forwarding related issues.
 	 */
 	if (unlikely(slot->tts_nvalid < attnum))
 	{
