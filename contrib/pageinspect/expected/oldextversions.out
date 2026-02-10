@@ -33,7 +33,7 @@ SELECT * FROM bt_page_stats('test1_a_idx', 1);
 SELECT * FROM bt_page_items('test1_a_idx', 1);
  itemoffset | ctid  | itemlen | nulls | vars |          data           | dead | htid  | tids 
 ------------+-------+---------+-------+------+-------------------------+------+-------+------
-          1 | (0,1) |      16 | f     | f    | (a)=(72057594037927937) | f    | (0,1) | 
+          1 | (0,1) |      16 | f     | f    | 01 00 00 00 00 00 00 01 | f    | (0,1) | 
 (1 row)
 
 -- page_header() uses int instead of smallint for lower, upper, special and
