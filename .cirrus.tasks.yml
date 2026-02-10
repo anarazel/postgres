@@ -227,9 +227,6 @@ task:
     sysctl kern.corefile='/tmp/cores/%N.%P.core'
   setup_additional_packages_script: |
     #pkg install -y ...
-    pkg install -y curl
-    pkg upgrade -y libssh2 # XXX shouldn't be necessary. revisit w/ FreeBSD 14
-    pkg install -y libbacktrace
 
   # NB: Intentionally build without -Dllvm. The freebsd image size is already
   # large enough to make VM startup slow, and even without llvm freebsd

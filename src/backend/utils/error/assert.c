@@ -15,47 +15,8 @@
 #include "postgres.h"
 
 #include <unistd.h>
-#if defined(HAVE_BACKTRACE_CREATE_STATE)
-#include <backtrace.h>
-#elif defined(HAVE_EXECINFO_H)
+#ifdef HAVE_EXECINFO_H
 #include <execinfo.h>
-#endif
-
-#ifdef HAVE_BACKTRACE_CREATE_STATE
-static void
-pg_backtrace_error_callback(void *data, const char *msg, int errnum)
-{
-	char	   *errtrace = (char *) data;
-	char		buffer[1000];
-
-	memset(buffer, 0, sizeof(buffer));
-	snprintf(buffer, sizeof(buffer), "backtrace failure: msg: %s, errnum: %d\n",
-			 msg, errnum);
-
-	strcat(errtrace, buffer);
-}
-
-static int
-pg_backtrace_full_callback(void *data, uintptr_t pc,
-						   const char *filename, int lineno,
-						   const char *function)
-{
-	char	   *errtrace = (char *) data;
-	char		buffer[1000];
-
-	if (pc == 0xffffffffffffffff)
-		return 1;
-
-	memset(buffer, 0, sizeof(buffer));
-	snprintf(buffer, sizeof(buffer), "[%p] %s: %s:%d\n",
-			 (void *) pc,
-			 function ? function : "[unknown]",
-			 filename ? filename : "[unknown]", lineno);
-
-	strcat(errtrace, buffer);
-
-	return 0;
-}
 #endif
 
 /*
@@ -82,30 +43,7 @@ ExceptionalCondition(const char *conditionName,
 	fflush(stderr);
 
 	/* If we have support for it, dump a simple backtrace */
-#ifdef HAVE_BACKTRACE_CREATE_STATE
-	{
-		char		buf[5000];
-		static struct backtrace_state *state;
-
-		memset(buf, 0, sizeof(buf));
-		buf[0] = '\0';
-		state = backtrace_create_state(
-									   NULL, /* threaded = */ false,
-									   pg_backtrace_error_callback, buf);
-
-		/*
-		 * The state is long-lived and can't be freed. The error callback, if
-		 * necessary, will be called while backtrace_create_state() is
-		 * running, so it's ok to pass errtrace here.
-		 */
-		backtrace_full(state, 1,
-					   pg_backtrace_full_callback,
-					   pg_backtrace_error_callback,
-					   buf);
-		write_stderr("%s\n", buf);
-		fflush(stderr);
-	}
-#elif defined(HAVE_BACKTRACE_SYMBOLS)
+#ifdef HAVE_BACKTRACE_SYMBOLS
 	{
 		void	   *buf[100];
 		int			nframes;
