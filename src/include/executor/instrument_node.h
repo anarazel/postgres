@@ -69,6 +69,7 @@ typedef struct IndexScanInstrumentation
 	uint64		skip_count;
 	uint64		unget_count;
 	uint64		forwarded_count;
+	uint64		yield_count;
 
 	/* histograms */
 	uint64		hist_distance[DISTANCE_HISTOGRAM_SIZE]; /* distance histogram */

@@ -102,6 +102,7 @@ typedef struct ReadStreamStats
 	int64		nskips;			/* number of skipped blocks */
 	int64		nungets;		/* number of block ungets */
 	int64		nforwards;		/* number of forwarded blocks */
+	int64		nyields;		/* number of yields */
 
 	/* histograms */
 	int64		hist_distance[DISTANCE_HISTOGRAM_SIZE]; /* distance histogram */
@@ -1269,6 +1270,8 @@ read_stream_yield(ReadStream *stream)
 	read_stream_pause(stream);
 	stream->yielded = true;
 
+	stream->stats.nyields += 1;
+
 	return InvalidBlockNumber;
 }
 
@@ -1341,6 +1344,7 @@ read_stream_prefetch_stats(ReadStream *stream,
 						   uint64 *prefetch_stalls, uint64 *reset_count,
 						   uint64 *pause_count, uint64 *skip_count,
 						   uint64 *unget_count, uint64 *forwarded_count,
+						   uint64 *yield_count,
 						   uint64 **hist_distance, uint64 **hist_io_size,
 						   uint64 **hist_io_count)
 {
@@ -1352,6 +1356,7 @@ read_stream_prefetch_stats(ReadStream *stream,
 	*skip_count = stream->stats.nskips;
 	*unget_count = stream->stats.nungets;
 	*forwarded_count = stream->stats.nforwards;
+	*yield_count = stream->stats.nyields;
 
 	/* distance histogram */
 	*hist_distance = palloc0_array(uint64, DISTANCE_HISTOGRAM_SIZE);

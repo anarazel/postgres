@@ -3949,7 +3949,8 @@ show_indexprefetch_info(PlanState *planstate, ExplainState *es)
 				pause_count = 0,
 				skip_count = 0,
 				unget_count = 0,
-				forwarded_count = 0;
+				forwarded_count = 0,
+				yield_count = 0;
 	uint64	   *hist_distance = NULL;
 	uint64	   *hist_io_size = NULL;
 	uint64	   *hist_io_count = NULL;
@@ -3991,6 +3992,7 @@ show_indexprefetch_info(PlanState *planstate, ExplainState *es)
 							 &skip_count,
 							 &unget_count,
 							 &forwarded_count,
+							 &yield_count,
 							 &hist_distance,
 							 &hist_io_size,
 							 &hist_io_count);
@@ -4010,6 +4012,7 @@ show_indexprefetch_info(PlanState *planstate, ExplainState *es)
 			skip_count += winstrument->skip_count;
 			unget_count += winstrument->unget_count;
 			forwarded_count += winstrument->forwarded_count;
+			yield_count += winstrument->yield_count;
 
 			for (int j = 0; j < DISTANCE_HISTOGRAM_SIZE; j++)
 				hist_distance[j] += winstrument->hist_distance[j];
@@ -4037,6 +4040,7 @@ show_indexprefetch_info(PlanState *planstate, ExplainState *es)
 		appendStringInfo(es->str, " skipped=%" PRId64, skip_count);
 		appendStringInfo(es->str, " resets=%" PRId64, reset_count);
 		appendStringInfo(es->str, " pauses=%" PRId64, pause_count);
+		appendStringInfo(es->str, " yields=%" PRId64, yield_count);
 		appendStringInfo(es->str, " ungets=%" PRId64, unget_count);
 		appendStringInfo(es->str, " forwarded=%" PRId64, forwarded_count);
 
@@ -4152,6 +4156,7 @@ show_indexprefetch_worker_info(PlanState *planstate, ExplainState *es, int worke
 		appendStringInfo(es->str, " skipped=%" PRId64, instrument->skip_count);
 		appendStringInfo(es->str, " resets=%" PRId64, instrument->reset_count);
 		appendStringInfo(es->str, " pauses=%" PRId64, instrument->pause_count);
+		appendStringInfo(es->str, " yield=%" PRId64, instrument->yield_count);
 		appendStringInfo(es->str, " ungets=%" PRId64, instrument->unget_count);
 		appendStringInfo(es->str, " forwarded=%" PRId64, instrument->forwarded_count);
 
