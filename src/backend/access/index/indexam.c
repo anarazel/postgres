@@ -413,7 +413,8 @@ index_get_prefetch_stats(IndexScanDesc scan,
 						 uint64 *prefetch_stalls, uint64 *reset_count,
 						 uint64 *pause_count, uint64 *skip_count,
 						 uint64 *unget_count, uint64 *forwarded_count,
-						 uint64 *histogram)
+						 uint64 **hist_distance, uint64 **hist_io_size,
+						 uint64 **hist_io_count)
 {
 	/* reset everything, in case there's no read stream */
 	*prefetch_count = 0;
@@ -425,8 +426,6 @@ index_get_prefetch_stats(IndexScanDesc scan,
 	*unget_count = 0;
 	*forwarded_count = 0;
 
-	memset(histogram, 0, sizeof(uint64) * PREFETCH_HISTOGRAM_SIZE);
-
 	if (scan && ((IndexFetchHeapData *) scan->xs_heapfetch)->xs_read_stream != NULL)
 	{
 		read_stream_prefetch_stats(((IndexFetchHeapData *) scan->xs_heapfetch)->xs_read_stream,
@@ -434,7 +433,8 @@ index_get_prefetch_stats(IndexScanDesc scan,
 								   prefetch_stalls, reset_count,
 								   pause_count, skip_count,
 								   unget_count, forwarded_count,
-								   histogram);
+								   hist_distance,
+								   hist_io_size, hist_io_count);
 	}
 }
 

@@ -87,7 +87,9 @@ typedef struct InProgressIO
 } InProgressIO;
 
 /* XXX must match the histogram size in genam.h */
-#define	PREFETCH_HISTOGRAM_SIZE		16
+#define	DISTANCE_HISTOGRAM_SIZE		16		/* power-of-2 bins */
+#define	IO_SIZE_HISTOGRAM_SIZE		128		/* max io_combine_limit */
+#define	IO_COUNT_HISTOGRAM_SIZE		1000	/* max effective_io_concurrency */
 
 /* statistics tracked by the read_stream */
 typedef struct ReadStreamStats
@@ -100,7 +102,11 @@ typedef struct ReadStreamStats
 	int64		nskips;			/* number of skipped blocks */
 	int64		nungets;		/* number of block ungets */
 	int64		nforwards;		/* number of forwarded blocks */
-	int64		histogram[PREFETCH_HISTOGRAM_SIZE]; /* distance histogram */
+
+	/* histograms */
+	int64		hist_distance[DISTANCE_HISTOGRAM_SIZE]; /* distance histogram */
+	int64		hist_io_size[IO_SIZE_HISTOGRAM_SIZE];   /* IO size histogram */
+	int64		hist_io_count[IO_COUNT_HISTOGRAM_SIZE]; /* concurrent IOs histogram */
 } ReadStreamStats;
 
 /*
@@ -226,7 +232,7 @@ read_stream_update_prefetch_stats(ReadStream *stream)
 	/* we should not see a distance for other buckets */
 	Assert((hist_idx >= 0) && (hist_idx < 16));
 
-	stream->stats.histogram[hist_idx] += 1;
+	stream->stats.hist_distance[hist_idx] += 1;
 
 	stream->stats.accum += stream->distance;
 	stream->stats.count += 1;
@@ -458,6 +464,10 @@ read_stream_start_pending_read(ReadStream *stream)
 		Assert(stream->ios_in_progress < stream->max_ios);
 		stream->ios_in_progress++;
 		stream->seq_blocknum = stream->pending_read_blocknum + nblocks;
+
+		/* track info about the I/O */
+		stream->stats.hist_io_size[nblocks] += 1;
+		stream->stats.hist_io_count[stream->ios_in_progress] += 1;
 	}
 
 	/*
@@ -1334,7 +1344,8 @@ read_stream_prefetch_stats(ReadStream *stream,
 						   uint64 *prefetch_stalls, uint64 *reset_count,
 						   uint64 *pause_count, uint64 *skip_count,
 						   uint64 *unget_count, uint64 *forwarded_count,
-						   uint64 *histogram)
+						   uint64 **hist_distance, uint64 **hist_io_size,
+						   uint64 **hist_io_count)
 {
 	*prefetch_count = stream->stats.count;
 	*prefetch_accum = stream->stats.accum;
@@ -1345,8 +1356,20 @@ read_stream_prefetch_stats(ReadStream *stream,
 	*unget_count = stream->stats.nungets;
 	*forwarded_count = stream->stats.nforwards;
 
-	for (int i = 0; i < PREFETCH_HISTOGRAM_SIZE; i++)
-		histogram[i] = stream->stats.histogram[i];
+	/* distance histogram */
+	*hist_distance = palloc0_array(uint64, DISTANCE_HISTOGRAM_SIZE);
+	for (int i = 0; i < DISTANCE_HISTOGRAM_SIZE; i++)
+		(*hist_distance)[i] = stream->stats.hist_distance[i];
+
+	/* I/O size histogram */
+	*hist_io_size = palloc0_array(uint64, IO_SIZE_HISTOGRAM_SIZE);
+	for (int i = 0; i < IO_SIZE_HISTOGRAM_SIZE; i++)
+		(*hist_io_size)[i] = stream->stats.hist_io_size[i];
+
+	/* I/O count histogram */
+	*hist_io_count = palloc0_array(uint64, IO_COUNT_HISTOGRAM_SIZE);
+	for (int i = 0; i < IO_COUNT_HISTOGRAM_SIZE; i++)
+		(*hist_io_count)[i] = stream->stats.hist_io_count[i];
 }
 
 /*

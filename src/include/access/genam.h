@@ -213,7 +213,8 @@ extern void index_get_prefetch_stats(IndexScanDesc scan,
 									 uint64 *prefetch_stalls, uint64 *reset_count,
 									 uint64 *pause_count, uint64 *skip_count,
 									 uint64 *unget_count, uint64 *forwarded_count,
-									 uint64 *histogram);
+									 uint64 **hist_distance, uint64 **hist_io_size,
+									 uint64 **hist_io_count);
 
 /*
  * index access method support routines (in genam.c)

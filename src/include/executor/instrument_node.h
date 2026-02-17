@@ -44,7 +44,10 @@ typedef struct SharedAggInfo
  *	Instrumentation information for indexscans (amgettuple and amgetbitmap)
  * ---------------------
  */
-#define	PREFETCH_HISTOGRAM_SIZE		16
+/* XXX a bit annoying we have a private copy in read_stream.c too */
+#define	DISTANCE_HISTOGRAM_SIZE		16		/* power-of-2 bins */
+#define	IO_SIZE_HISTOGRAM_SIZE		128		/* max io_combine_limit */
+#define	IO_COUNT_HISTOGRAM_SIZE		1000	/* max effective_io_concurrency */
 
 typedef struct IndexScanInstrumentation
 {
@@ -66,7 +69,11 @@ typedef struct IndexScanInstrumentation
 	uint64		skip_count;
 	uint64		unget_count;
 	uint64		forwarded_count;
-	uint64		prefetch_histogram[PREFETCH_HISTOGRAM_SIZE];
+
+	/* histograms */
+	uint64		hist_distance[DISTANCE_HISTOGRAM_SIZE]; /* distance histogram */
+	uint64		hist_io_size[IO_SIZE_HISTOGRAM_SIZE];   /* IO size histogram */
+	uint64		hist_io_count[IO_COUNT_HISTOGRAM_SIZE]; /* concurrent IOs histogram */
 } IndexScanInstrumentation;
 
 /*

@@ -3950,7 +3950,9 @@ show_indexprefetch_info(PlanState *planstate, ExplainState *es)
 				skip_count = 0,
 				unget_count = 0,
 				forwarded_count = 0;
-	uint64		hist[PREFETCH_HISTOGRAM_SIZE];
+	uint64	   *hist_distance = NULL;
+	uint64	   *hist_io_size = NULL;
+	uint64	   *hist_io_count = NULL;
 
 	if (!es->analyze)
 		return;
@@ -3989,7 +3991,9 @@ show_indexprefetch_info(PlanState *planstate, ExplainState *es)
 							 &skip_count,
 							 &unget_count,
 							 &forwarded_count,
-							 hist);
+							 &hist_distance,
+							 &hist_io_size,
+							 &hist_io_count);
 
 	/* get the sum of the counters set within each and every process */
 	if (SharedInfo)
@@ -4007,15 +4011,21 @@ show_indexprefetch_info(PlanState *planstate, ExplainState *es)
 			unget_count += winstrument->unget_count;
 			forwarded_count += winstrument->forwarded_count;
 
-			for (int j = 0; j < PREFETCH_HISTOGRAM_SIZE; j++)
-				hist[j] += winstrument->prefetch_histogram[j];
+			for (int j = 0; j < DISTANCE_HISTOGRAM_SIZE; j++)
+				hist_distance[j] += winstrument->hist_distance[j];
+
+			for (int j = 0; j < IO_SIZE_HISTOGRAM_SIZE; j++)
+				hist_io_size[j] += winstrument->hist_io_size[j];
+
+			for (int j = 0; j < IO_COUNT_HISTOGRAM_SIZE; j++)
+				hist_io_count[j] += winstrument->hist_io_count[j];
 		}
 	}
 
 	/* don't print anything without prefetching */
 	if (prefetch_count > 0)
 	{
-		bool		first = true;
+		bool		first;
 
 		ExplainIndentText(es);
 		appendStringInfoString(es->str, "Prefetch:");
@@ -4032,17 +4042,52 @@ show_indexprefetch_info(PlanState *planstate, ExplainState *es)
 
 		appendStringInfoChar(es->str, '\n');
 
+		first = true;
 		ExplainIndentText(es);
-		appendStringInfoString(es->str, "          histogram ");
-		for (int i = 0; i < PREFETCH_HISTOGRAM_SIZE; i++)
+		appendStringInfoString(es->str, "          distances ");
+		for (int i = 0; i < DISTANCE_HISTOGRAM_SIZE; i++)
 		{
-			if (hist[i] == 0)
+			if (hist_distance[i] == 0)
 				continue;
 
 			if (!first)
 				appendStringInfoString(es->str, ", ");
 
-			appendStringInfo(es->str, "[%d,%d) => " INT64_FORMAT, (1 << i), (1 << (i + 1)), hist[i]);
+			appendStringInfo(es->str, "[%d,%d) => " INT64_FORMAT, (1 << i), (1 << (i + 1)), hist_distance[i]);
+
+			first = false;
+		}
+		appendStringInfoString(es->str, "\n");
+
+		first = true;
+		ExplainIndentText(es);
+		appendStringInfoString(es->str, "          I/O sizes ");
+		for (int i = 0; i < IO_SIZE_HISTOGRAM_SIZE; i++)
+		{
+			if (hist_io_size[i] == 0)
+				continue;
+
+			if (!first)
+				appendStringInfoString(es->str, ", ");
+
+			appendStringInfo(es->str, "%d => " INT64_FORMAT, i, hist_io_size[i]);
+
+			first = false;
+		}
+		appendStringInfoString(es->str, "\n");
+
+		first = true;
+		ExplainIndentText(es);
+		appendStringInfoString(es->str, "          I/O counts ");
+		for (int i = 0; i < IO_COUNT_HISTOGRAM_SIZE; i++)
+		{
+			if (hist_io_count[i] == 0)
+				continue;
+
+			if (!first)
+				appendStringInfoString(es->str, ", ");
+
+			appendStringInfo(es->str, "%d => " INT64_FORMAT, i, hist_io_count[i]);
 
 			first = false;
 		}
@@ -4113,17 +4158,51 @@ show_indexprefetch_worker_info(PlanState *planstate, ExplainState *es, int worke
 		appendStringInfoChar(es->str, '\n');
 
 		ExplainIndentText(es);
-		appendStringInfoString(es->str, "          histogram ");
-		for (int i = 0; i < PREFETCH_HISTOGRAM_SIZE; i++)
+		appendStringInfoString(es->str, "          distances ");
+		for (int i = 0; i < DISTANCE_HISTOGRAM_SIZE; i++)
 		{
-			if (instrument->prefetch_histogram[i] == 0)
+			if (instrument->hist_distance[i] == 0)
 				continue;
 
 			if (!first)
 				appendStringInfoString(es->str, ", ");
 
 			appendStringInfo(es->str, "[%d,%d) => " INT64_FORMAT, (1 << i), (1 << (i + 1)),
-							 instrument->prefetch_histogram[i]);
+							 instrument->hist_distance[i]);
+
+			first = false;
+		}
+		appendStringInfoString(es->str, "\n");
+
+		ExplainIndentText(es);
+		appendStringInfoString(es->str, "          I/O sizes ");
+		for (int i = 0; i < IO_SIZE_HISTOGRAM_SIZE; i++)
+		{
+			if (instrument->hist_io_size[i] == 0)
+				continue;
+
+			if (!first)
+				appendStringInfoString(es->str, ", ");
+
+			appendStringInfo(es->str, "%d => " INT64_FORMAT, i,
+							 instrument->hist_io_size[i]);
+
+			first = false;
+		}
+		appendStringInfoString(es->str, "\n");
+
+		ExplainIndentText(es);
+		appendStringInfoString(es->str, "          I/O counts ");
+		for (int i = 0; i < IO_COUNT_HISTOGRAM_SIZE; i++)
+		{
+			if (instrument->hist_io_count[i] == 0)
+				continue;
+
+			if (!first)
+				appendStringInfoString(es->str, ", ");
+
+			appendStringInfo(es->str, "%d => " INT64_FORMAT, i,
+							 instrument->hist_io_count[i]);
 
 			first = false;
 		}

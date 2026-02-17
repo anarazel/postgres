@@ -830,7 +830,9 @@ ExecEndIndexScan(IndexScanState *node)
 								 &winstrument->skip_count,
 								 &winstrument->unget_count,
 								 &winstrument->forwarded_count,
-								 winstrument->prefetch_histogram);
+								 (uint64 **) &winstrument->hist_distance,
+								 (uint64 **) &winstrument->hist_io_size,
+								 (uint64 **) &winstrument->hist_io_count);
 	}
 
 	/*
