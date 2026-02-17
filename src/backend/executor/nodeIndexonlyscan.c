@@ -345,6 +345,18 @@ ExecEndIndexOnlyScan(IndexOnlyScanState *node)
 		 */
 		winstrument->nsearches += node->ioss_Instrument->nsearches;
 		winstrument->nheapfetches += node->ioss_Instrument->nheapfetches;
+
+		/* collect prefetch info for this process from the read_stream */
+		index_get_prefetch_stats(indexScanDesc,
+								 &winstrument->prefetch_count,
+								 &winstrument->prefetch_accum,
+								 &winstrument->prefetch_stalls,
+								 &winstrument->reset_count,
+								 &winstrument->pause_count,
+								 &winstrument->skip_count,
+								 &winstrument->unget_count,
+								 &winstrument->forwarded_count,
+								 winstrument->prefetch_histogram);
 	}
 
 	/*

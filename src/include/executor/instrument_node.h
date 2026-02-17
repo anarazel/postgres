@@ -44,6 +44,8 @@ typedef struct SharedAggInfo
  *	Instrumentation information for indexscans (amgettuple and amgetbitmap)
  * ---------------------
  */
+#define	PREFETCH_HISTOGRAM_SIZE		16
+
 typedef struct IndexScanInstrumentation
 {
 	/* Index search count (incremented with pgstat_count_index_scan call) */
@@ -54,6 +56,17 @@ typedef struct IndexScanInstrumentation
 	 * within table AMs, though only during index-only scans)
 	 */
 	uint64		nheapfetches;
+
+	/* Prefetch instrumentation */
+	uint64		prefetch_count;
+	uint64		prefetch_accum;
+	uint64		prefetch_stalls;
+	uint64		reset_count;
+	uint64		pause_count;
+	uint64		skip_count;
+	uint64		unget_count;
+	uint64		forwarded_count;
+	uint64		prefetch_histogram[PREFETCH_HISTOGRAM_SIZE];
 } IndexScanInstrumentation;
 
 /*

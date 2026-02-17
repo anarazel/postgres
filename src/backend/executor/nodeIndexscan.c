@@ -819,6 +819,18 @@ ExecEndIndexScan(IndexScanState *node)
 		 */
 		winstrument->nsearches += node->iss_Instrument->nsearches;
 		Assert(node->iss_Instrument->nheapfetches == 0);
+
+		/* collect prefetch info for this process from the read_stream */
+		index_get_prefetch_stats(indexScanDesc,
+								 &winstrument->prefetch_count,
+								 &winstrument->prefetch_accum,
+								 &winstrument->prefetch_stalls,
+								 &winstrument->reset_count,
+								 &winstrument->pause_count,
+								 &winstrument->skip_count,
+								 &winstrument->unget_count,
+								 &winstrument->forwarded_count,
+								 winstrument->prefetch_histogram);
 	}
 
 	/*

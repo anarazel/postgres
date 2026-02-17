@@ -13,6 +13,7 @@
  */
 #include "postgres.h"
 
+#include "access/genam.h"
 #include "access/xact.h"
 #include "catalog/pg_type.h"
 #include "commands/createas.h"
@@ -136,6 +137,9 @@ static void show_memoize_info(MemoizeState *mstate, List *ancestors,
 							  ExplainState *es);
 static void show_hashagg_info(AggState *aggstate, ExplainState *es);
 static void show_indexscan_info(PlanState *planstate, ExplainState *es);
+static void show_indexprefetch_info(PlanState *planstate, ExplainState *es);
+static void show_indexprefetch_worker_info(PlanState *planstate, ExplainState *es,
+										   int worker);
 static void show_tidbitmap_info(BitmapHeapScanState *planstate,
 								ExplainState *es);
 static void show_instrumentation_count(const char *qlabel, int which,
@@ -1973,6 +1977,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
 			show_indexscan_info(planstate, es);
+			show_indexprefetch_info(planstate, es);
 			break;
 		case T_IndexOnlyScan:
 			show_scan_qual(((IndexOnlyScan *) plan)->indexqual,
@@ -1987,6 +1992,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
 			show_indexscan_info(planstate, es);
+			show_indexprefetch_info(planstate, es);
 			break;
 		case T_BitmapIndexScan:
 			show_scan_qual(((BitmapIndexScan *) plan)->indexqualorig,
@@ -2310,6 +2316,10 @@ ExplainNode(PlanState *planstate, List *ancestors,
 				show_buffer_usage(es, &instrument->bufusage);
 			if (es->wal)
 				show_wal_usage(es, &instrument->walusage);
+
+			/* show prefetch info for the given worker */
+			show_indexprefetch_worker_info(planstate, es, n);
+
 			ExplainCloseWorker(n, es);
 		}
 	}
@@ -3917,6 +3927,208 @@ show_indexscan_info(PlanState *planstate, ExplainState *es)
 		ExplainPropertyUInteger("Heap Fetches", NULL, nheapfetches, es);
 
 	ExplainPropertyUInteger("Index Searches", NULL, nsearches, es);
+}
+
+/*
+ * show_indexprefetch_info
+ *		show info about prefetching
+ *
+ * Shows summary of stats for leader and workers (if any).
+ */
+static void
+show_indexprefetch_info(PlanState *planstate, ExplainState *es)
+{
+	Plan	   *plan = planstate->plan;
+	IndexScanDesc scandesc = NULL;
+	SharedIndexScanInstrumentation *SharedInfo = NULL;
+
+	uint64		prefetch_count = 0,
+				prefetch_accum = 0,
+				prefetch_stalls = 0,
+				reset_count = 0,
+				pause_count = 0,
+				skip_count = 0,
+				unget_count = 0,
+				forwarded_count = 0;
+	uint64		hist[PREFETCH_HISTOGRAM_SIZE];
+
+	if (!es->analyze)
+		return;
+
+	/* Initialize counters with stats from the local process first */
+	switch (nodeTag(plan))
+	{
+		case T_IndexScan:
+			{
+				IndexScanState *indexstate = ((IndexScanState *) planstate);
+
+				scandesc = indexstate->iss_ScanDesc;
+				SharedInfo = indexstate->iss_SharedInfo;
+				break;
+			}
+		case T_IndexOnlyScan:
+			{
+				IndexOnlyScanState *indexstate = ((IndexOnlyScanState *) planstate);
+
+				scandesc = indexstate->ioss_ScanDesc;
+				SharedInfo = indexstate->ioss_SharedInfo;
+				break;
+			}
+		default:
+			/* other nodes don't have prefetch info */
+			return;
+	}
+
+	/* collect prefetch statistics from the read stream */
+	index_get_prefetch_stats(scandesc,
+							 &prefetch_count,
+							 &prefetch_accum,
+							 &prefetch_stalls,
+							 &reset_count,
+							 &pause_count,
+							 &skip_count,
+							 &unget_count,
+							 &forwarded_count,
+							 hist);
+
+	/* get the sum of the counters set within each and every process */
+	if (SharedInfo)
+	{
+		for (int i = 0; i < SharedInfo->num_workers; ++i)
+		{
+			IndexScanInstrumentation *winstrument = &SharedInfo->winstrument[i];
+
+			prefetch_count += winstrument->prefetch_count;
+			prefetch_accum += winstrument->prefetch_accum;
+			prefetch_stalls += winstrument->prefetch_stalls;
+			reset_count += winstrument->reset_count;
+			pause_count += winstrument->pause_count;
+			skip_count += winstrument->skip_count;
+			unget_count += winstrument->unget_count;
+			forwarded_count += winstrument->forwarded_count;
+
+			for (int j = 0; j < PREFETCH_HISTOGRAM_SIZE; j++)
+				hist[j] += winstrument->prefetch_histogram[j];
+		}
+	}
+
+	/* don't print anything without prefetching */
+	if (prefetch_count > 0)
+	{
+		bool		first = true;
+
+		ExplainIndentText(es);
+		appendStringInfoString(es->str, "Prefetch:");
+
+		appendStringInfo(es->str, " distance=%.3f",
+						 (prefetch_accum * 1.0 / prefetch_count));
+		appendStringInfo(es->str, " count=%" PRId64, prefetch_count);
+		appendStringInfo(es->str, " stalls=%" PRId64, prefetch_stalls);
+		appendStringInfo(es->str, " skipped=%" PRId64, skip_count);
+		appendStringInfo(es->str, " resets=%" PRId64, reset_count);
+		appendStringInfo(es->str, " pauses=%" PRId64, pause_count);
+		appendStringInfo(es->str, " ungets=%" PRId64, unget_count);
+		appendStringInfo(es->str, " forwarded=%" PRId64, forwarded_count);
+
+		appendStringInfoChar(es->str, '\n');
+
+		ExplainIndentText(es);
+		appendStringInfoString(es->str, "          histogram ");
+		for (int i = 0; i < PREFETCH_HISTOGRAM_SIZE; i++)
+		{
+			if (hist[i] == 0)
+				continue;
+
+			if (!first)
+				appendStringInfoString(es->str, ", ");
+
+			appendStringInfo(es->str, "[%d,%d) => " INT64_FORMAT, (1 << i), (1 << (i + 1)), hist[i]);
+
+			first = false;
+		}
+		appendStringInfoString(es->str, "\n");
+	}
+}
+
+/*
+ * show_indexprefetch_worker_info
+ *		show info about prefetching for a single worker
+ *
+ * Shows prefetching stats for a worker with a given index.
+ */
+static void
+show_indexprefetch_worker_info(PlanState *planstate, ExplainState *es, int worker)
+{
+
+	Plan	   *plan = planstate->plan;
+	SharedIndexScanInstrumentation *SharedInfo = NULL;
+	IndexScanInstrumentation *instrument;
+
+	if (!es->analyze)
+		return;
+
+	/* Initialize counters with stats from the local process first */
+	switch (nodeTag(plan))
+	{
+		case T_IndexScan:
+			{
+				IndexScanState *indexstate = ((IndexScanState *) planstate);
+
+				SharedInfo = indexstate->iss_SharedInfo;
+				break;
+			}
+		case T_IndexOnlyScan:
+			{
+				IndexOnlyScanState *indexstate = ((IndexOnlyScanState *) planstate);
+
+				SharedInfo = indexstate->ioss_SharedInfo;
+				break;
+			}
+		default:
+			/* ignore other plans */
+			return;
+	}
+
+	/* get instrumentation for the given worker */
+	instrument = &SharedInfo->winstrument[worker];
+
+	/* don't print stats if there's nothing to report */
+	if (instrument->prefetch_count > 0)
+	{
+		bool		first = true;
+
+		ExplainIndentText(es);
+		appendStringInfoString(es->str, "Prefetch:");
+
+		appendStringInfo(es->str, " distance=%.3f",
+						 (instrument->prefetch_accum * 1.0 / instrument->prefetch_count));
+		appendStringInfo(es->str, " count=%" PRId64, instrument->prefetch_count);
+		appendStringInfo(es->str, " stalls=%" PRId64, instrument->prefetch_stalls);
+		appendStringInfo(es->str, " skipped=%" PRId64, instrument->skip_count);
+		appendStringInfo(es->str, " resets=%" PRId64, instrument->reset_count);
+		appendStringInfo(es->str, " pauses=%" PRId64, instrument->pause_count);
+		appendStringInfo(es->str, " ungets=%" PRId64, instrument->unget_count);
+		appendStringInfo(es->str, " forwarded=%" PRId64, instrument->forwarded_count);
+
+		appendStringInfoChar(es->str, '\n');
+
+		ExplainIndentText(es);
+		appendStringInfoString(es->str, "          histogram ");
+		for (int i = 0; i < PREFETCH_HISTOGRAM_SIZE; i++)
+		{
+			if (instrument->prefetch_histogram[i] == 0)
+				continue;
+
+			if (!first)
+				appendStringInfoString(es->str, ", ");
+
+			appendStringInfo(es->str, "[%d,%d) => " INT64_FORMAT, (1 << i), (1 << (i + 1)),
+							 instrument->prefetch_histogram[i]);
+
+			first = false;
+		}
+		appendStringInfoString(es->str, "\n");
+	}
 }
 
 /*
