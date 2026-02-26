@@ -22,6 +22,7 @@ OBJS = \
 	mcxt.o \
 	memdebug.o \
 	portalmem.o \
+	proxy.o \
 	slab.o
 
 include $(top_srcdir)/src/backend/common.mk

@@ -10,5 +10,6 @@ backend_sources += files(
   'mcxt.c',
   'memdebug.c',
   'portalmem.c',
+  'proxy.c',
   'slab.c',
 )

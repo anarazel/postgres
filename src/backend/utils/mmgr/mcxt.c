@@ -131,6 +131,19 @@ static const MemoryContextMethods mcxt_methods[] = {
 	[MCTX_BUMP_ID].check = BumpCheck,
 #endif
 
+	/* proxy.c */
+	[MCTX_PROXY_ID].alloc = ProxyAlloc,
+	[MCTX_PROXY_ID].free_p = ProxyFree,
+	[MCTX_PROXY_ID].realloc = ProxyRealloc,
+	[MCTX_PROXY_ID].reset = ProxyReset,
+	[MCTX_PROXY_ID].delete_context = ProxyDelete,
+	[MCTX_PROXY_ID].get_chunk_context = ProxyGetChunkContext,
+	[MCTX_PROXY_ID].get_chunk_space = ProxyGetChunkSpace,
+	[MCTX_PROXY_ID].is_empty = ProxyIsEmpty,
+	[MCTX_PROXY_ID].stats = ProxyStats,
+#ifdef MEMORY_CONTEXT_CHECKING
+	[MCTX_PROXY_ID].check = ProxyCheck,
+#endif
 
 	/*
 	 * Reserved and unused IDs should have dummy entries here.  This allows us
@@ -140,7 +153,6 @@ static const MemoryContextMethods mcxt_methods[] = {
 	 */
 	BOGUS_MCTX(MCTX_1_RESERVED_GLIBC_ID),
 	BOGUS_MCTX(MCTX_2_RESERVED_GLIBC_ID),
-	BOGUS_MCTX(MCTX_8_UNUSED_ID),
 	BOGUS_MCTX(MCTX_9_UNUSED_ID),
 	BOGUS_MCTX(MCTX_10_UNUSED_ID),
 	BOGUS_MCTX(MCTX_11_UNUSED_ID),

@@ -150,6 +150,10 @@ extern MemoryContext BumpContextCreate(MemoryContext parent,
 									   Size initBlockSize,
 									   Size maxBlockSize);
 
+/* proxy.c */
+extern MemoryContext ProxyContextCreate(MemoryContext parent,
+										const char *name);
+
 /*
  * Recommended default alloc parameters, suitable for "ordinary" contexts
  * that might hold quite a lot of data.

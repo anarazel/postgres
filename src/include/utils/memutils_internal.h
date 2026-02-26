@@ -95,6 +95,22 @@ extern void BumpStats(MemoryContext context, MemoryStatsPrintFunc printfunc,
 extern void BumpCheck(MemoryContext context);
 #endif
 
+ /* These functions implement the MemoryContext API for the Proxy context. */
+extern void *ProxyAlloc(MemoryContext context, Size size, int flags);
+extern void ProxyFree(void *pointer);
+extern void *ProxyRealloc(void *pointer, Size size, int flags);
+extern void ProxyReset(MemoryContext context);
+extern void ProxyDelete(MemoryContext context);
+extern MemoryContext ProxyGetChunkContext(void *pointer);
+extern Size ProxyGetChunkSpace(void *pointer);
+extern bool ProxyIsEmpty(MemoryContext context);
+extern void ProxyStats(MemoryContext context, MemoryStatsPrintFunc printfunc,
+					   void *passthru, MemoryContextCounters *totals,
+					   bool print_to_stderr);
+#ifdef MEMORY_CONTEXT_CHECKING
+extern void ProxyCheck(MemoryContext context);
+#endif
+
 /*
  * How many extra bytes do we need to request in order to ensure that we can
  * align a pointer to 'alignto'.  Since palloc'd pointers are already aligned
@@ -128,7 +144,7 @@ typedef enum MemoryContextMethodID
 	MCTX_SLAB_ID,
 	MCTX_ALIGNED_REDIRECT_ID,
 	MCTX_BUMP_ID,
-	MCTX_8_UNUSED_ID,
+	MCTX_PROXY_ID,
 	MCTX_9_UNUSED_ID,
 	MCTX_10_UNUSED_ID,
 	MCTX_11_UNUSED_ID,

@@ -147,6 +147,7 @@ typedef struct MemoryContextData
 	 (IsA((context), AllocSetContext) || \
 	  IsA((context), SlabContext) || \
 	  IsA((context), GenerationContext) || \
-	  IsA((context), BumpContext)))
+	  IsA((context), BumpContext) || \
+	  IsA((context), ProxyContext)))
 
 #endif							/* MEMNODES_H */
