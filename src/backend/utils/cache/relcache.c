@@ -90,6 +90,8 @@
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
 
+#define RELCACHE_USE_PROXY
+
 #define RELCACHE_INIT_FILEMAGIC		0x573266	/* version ID value */
 
 /*
@@ -1493,9 +1495,14 @@ RelationInitIndexAccessInfo(Relation relation)
 	 * a context, and not just a couple of pallocs, is so that we won't leak
 	 * any subsidiary info attached to fmgr lookup records.
 	 */
+#ifdef RELCACHE_USE_PROXY
+	indexcxt = ProxyContextCreate(CacheMemoryContext,
+								  "index info");
+#else
 	indexcxt = AllocSetContextCreate(CacheMemoryContext,
 									 "index info",
 									 ALLOCSET_SMALL_SIZES);
+#endif
 	relation->rd_indexcxt = indexcxt;
 	MemoryContextCopyAndSetIdentifier(indexcxt,
 									  RelationGetRelationName(relation));
@@ -6327,9 +6334,14 @@ load_relcache_init_file(bool shared)
 			 * prepare index info context --- parameters should match
 			 * RelationInitIndexAccessInfo
 			 */
+#ifndef RELCACHE_USE_PROXY
 			indexcxt = AllocSetContextCreate(CacheMemoryContext,
 											 "index info",
 											 ALLOCSET_SMALL_SIZES);
+#else
+			indexcxt = ProxyContextCreate(CacheMemoryContext,
+										  "index info");
+#endif
 			rel->rd_indexcxt = indexcxt;
 			MemoryContextCopyAndSetIdentifier(indexcxt,
 											  RelationGetRelationName(rel));
