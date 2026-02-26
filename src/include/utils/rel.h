@@ -65,6 +65,8 @@ typedef struct RelationData
 								 * rd_replidindex) */
 	bool		rd_statvalid;	/* is rd_statlist valid? */
 
+	MemoryContext rd_cxt;
+
 	/*----------
 	 * rd_createSubid is the ID of the highest subtransaction the rel has
 	 * survived into or zero if the rel or its storage was created before the
