@@ -41,6 +41,8 @@
 #include "utils/resowner.h"
 #include "utils/syscache.h"
 
+#define CATCACHE_USE_PROXY
+
 /*
  * If a catcache invalidation is processed while we are in the middle of
  * creating a catcache entry (or list), it might apply to the entry we're
@@ -79,6 +81,8 @@ static CatCInProgress *catcache_in_progress_stack = NULL;
 #else
 #define CACHE_elog(...)
 #endif
+
+static MemoryContext CatCachesContext;
 
 /* Cache management header --- pointer is NULL until created */
 static CatCacheHeader *CacheHdr = NULL;
@@ -891,6 +895,7 @@ InitCatCache(int id,
 {
 	CatCache   *cp;
 	MemoryContext oldcxt;
+	MemoryContext cccxt;
 	int			i;
 
 	/*
@@ -913,7 +918,12 @@ InitCatCache(int id,
 	if (!CacheMemoryContext)
 		CreateCacheMemoryContext();
 
-	oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
+	if (!CatCachesContext)
+		CatCachesContext = AllocSetContextCreate(CacheMemoryContext,
+												 "CatCachesContext",
+												 ALLOCSET_SMALL_SIZES);
+
+	oldcxt = MemoryContextSwitchTo(CatCachesContext);
 
 	/*
 	 * if first time through, initialize the cache group header
@@ -929,6 +939,16 @@ InitCatCache(int id,
 #endif
 	}
 
+#ifdef CATCACHE_USE_PROXY
+	cccxt = ProxyContextCreate(CatCachesContext,
+							   "CatCache");
+#else
+	cccxt = AllocSetContextCreate(CatCachesContext,
+								  "CatCache",
+								  ALLOCSET_SMALL_SIZES);
+#endif
+	MemoryContextSwitchTo(cccxt);
+
 	/*
 	 * Allocate a new cache structure, aligning to a cacheline boundary
 	 *
@@ -936,6 +956,7 @@ InitCatCache(int id,
 	 */
 	cp = (CatCache *) palloc_aligned(sizeof(CatCache), PG_CACHE_LINE_SIZE,
 									 MCXT_ALLOC_ZERO);
+	cp->cc_context = cccxt;
 	cp->cc_bucket = palloc0(nbuckets * sizeof(dlist_head));
 
 	/*
@@ -1000,7 +1021,8 @@ RehashCatCache(CatCache *cp)
 
 	/* Allocate a new, larger, hash table. */
 	newnbuckets = cp->cc_nbuckets * 2;
-	newbucket = (dlist_head *) MemoryContextAllocZero(CacheMemoryContext, newnbuckets * sizeof(dlist_head));
+	newbucket = (dlist_head *) MemoryContextAllocZero(cp->cc_context,
+													  newnbuckets * sizeof(dlist_head));
 
 	/* Move all entries from old hash table to new. */
 	for (i = 0; i < cp->cc_nbuckets; i++)
@@ -1148,9 +1170,9 @@ CatalogCacheInitializeCache(CatCache *cache)
 	 * switch to the cache context so our allocations do not vanish at the end
 	 * of a transaction
 	 */
-	Assert(CacheMemoryContext != NULL);
+	Assert(cache->cc_context != NULL);
 
-	oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
+	oldcxt = MemoryContextSwitchTo(cache->cc_context);
 
 	/*
 	 * copy the relcache's tuple descriptor to permanent cache storage
@@ -1211,7 +1233,7 @@ CatalogCacheInitializeCache(CatCache *cache)
 		 */
 		fmgr_info_cxt(eqfunc,
 					  &cache->cc_skey[i].sk_func,
-					  CacheMemoryContext);
+					  cache->cc_context);
 
 		/* Initialize sk_attno suitably for HeapKeyTest() and heap scans */
 		cache->cc_skey[i].sk_attno = cache->cc_keyno[i];
@@ -1230,6 +1252,20 @@ CatalogCacheInitializeCache(CatCache *cache)
 	 * mark this cache fully initialized
 	 */
 	cache->cc_tupdesc = tupdesc;
+
+
+	/*
+	 * FIXME: Only setting the name for the contet here means that the
+	 * contexts have no useful name initially.
+	 *
+	 * FIXME: The name chosen here sucks, because we don't have a good way to
+	 * differentiate the names for the different catcaches on the same
+	 * relation. We could use the index name, but we don't know it yet.
+	 */
+	oldcxt = MemoryContextSwitchTo(cache->cc_context);
+	MemoryContextSetIdentifier(cache->cc_context,
+							   psprintf("%s - %d", cache->cc_relname, cache->id));
+	MemoryContextSwitchTo(oldcxt);
 }
 
 /*
@@ -2020,7 +2056,7 @@ SearchCatCacheList(CatCache *cache,
 		ResourceOwnerEnlarge(CurrentResourceOwner);
 
 		/* Now we can build the CatCList entry. */
-		oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
+		oldcxt = MemoryContextSwitchTo(cache->cc_context);
 		nmembers = list_length(ctlist);
 		cl = (CatCList *)
 			palloc(offsetof(CatCList, members) + nmembers * sizeof(CatCTup *));
@@ -2221,7 +2257,7 @@ CatalogCacheCreateEntry(CatCache *cache, HeapTuple ntp, Datum *arguments,
 			dtp = ntp;
 
 		/* Allocate memory for CatCTup and the cached tuple in one go */
-		oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
+		oldcxt = MemoryContextSwitchTo(cache->cc_context);
 
 		ct = (CatCTup *) palloc(sizeof(CatCTup) +
 								MAXIMUM_ALIGNOF + dtp->t_len);
@@ -2256,7 +2292,7 @@ CatalogCacheCreateEntry(CatCache *cache, HeapTuple ntp, Datum *arguments,
 	else
 	{
 		/* Set up keys for a negative cache entry */
-		oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
+		oldcxt = MemoryContextSwitchTo(cache->cc_context);
 		ct = palloc_object(CatCTup);
 
 		/*

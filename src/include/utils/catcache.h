@@ -44,6 +44,9 @@ typedef bool (*CCFastEqualFN) (Datum a, Datum b);
 typedef struct catcache
 {
 	int			id;				/* cache identifier --- see syscache.h */
+
+	MemoryContext cc_context;
+
 	int			cc_nbuckets;	/* # of hash buckets in this cache */
 	TupleDesc	cc_tupdesc;		/* tuple descriptor (copied from reldesc) */
 	dlist_head *cc_bucket;		/* hash buckets */
