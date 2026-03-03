@@ -214,13 +214,6 @@ read_stream_update_prefetch_stats(ReadStream *stream)
 {
 	int			hist_idx = -1;
 
-	/* distance=1 means we're not really prefetching, count it as a stall */
-	if (stream->distance == 1)
-	{
-		stream->stats.nstalls += 1;
-		return;
-	}
-
 	/* determine which bucket of the histogram the distance belongs to */
 	for (int i = 0; i < 16; i++)
 	{
@@ -1077,6 +1070,10 @@ read_stream_next_buffer(ReadStream *stream, void **per_buffer_data)
 			   &stream->buffers[oldest_buffer_index]);
 
 		needed_wait = WaitReadBuffers(&stream->ios[io_index].op);
+
+		/* distance=1 means we're not really prefetching, count it as a stall */
+		if (stream->distance == 1)
+			stream->stats.nstalls += 1;
 
 		Assert(stream->ios_in_progress > 0);
 		stream->ios_in_progress--;
