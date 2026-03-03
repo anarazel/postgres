@@ -834,6 +834,19 @@ read_stream_next_buffer(ReadStream *stream, void **per_buffer_data)
 				flags |= READ_BUFFERS_ISSUE_ADVICE;
 
 			/*
+			 * While in fast-path, execute any IO that we might encounter
+			 * synchronously. Because we are, right now, not reading ahead,
+			 * dispatching any occasional IO to workers would have the
+			 * overhead of dispatching to workers, without any realistic
+			 * chance of the IO completing before we need it. We will switch
+			 * to non-synchronous IO after this.
+			 *
+			 * XXX: Should we do so only for worker, or also io_uring? There's
+			 * not much dispatch overhead with io_uring, compared to worker...
+			 */
+			flags |= READ_BUFFERS_SYNCHRONOUSLY;
+
+			/*
 			 * Pin a buffer for the next call.  Same buffer entry, and
 			 * arbitrary I/O entry (they're all free).  We don't have to
 			 * adjust pinned_buffers because we're transferring one to caller
@@ -860,6 +873,8 @@ read_stream_next_buffer(ReadStream *stream, void **per_buffer_data)
 			stream->ios_in_progress = 1;
 			stream->ios[0].buffer_index = oldest_buffer_index;
 			stream->seq_blocknum = next_blocknum + 1;
+
+			/* FIXME: it would probably worth issuing readahead here */
 		}
 		else
 		{
