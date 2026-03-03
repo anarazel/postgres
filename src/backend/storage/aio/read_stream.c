@@ -952,22 +952,51 @@ read_stream_next_buffer(ReadStream *stream, void **per_buffer_data)
 	{
 		int16		io_index = stream->oldest_io_index;
 		int32		distance;	/* wider temporary value, clamped below */
+		bool		needed_wait;
 
 		/* Sanity check that we still agree on the buffers. */
 		Assert(stream->ios[io_index].op.buffers ==
 			   &stream->buffers[oldest_buffer_index]);
 
-		WaitReadBuffers(&stream->ios[io_index].op);
+		needed_wait = WaitReadBuffers(&stream->ios[io_index].op);
 
 		Assert(stream->ios_in_progress > 0);
 		stream->ios_in_progress--;
 		if (++stream->oldest_io_index == stream->max_ios)
 			stream->oldest_io_index = 0;
 
-		/* Look-ahead distance ramps up rapidly after we do I/O. */
-		distance = stream->distance * 2;
-		distance = Min(distance, stream->max_pinned_buffers);
-		stream->distance = distance;
+		/*
+		 * If the IO was executed synchronously, we will never see
+		 * WaitReadBuffers() block. This is particularly crucial when
+		 * effective_io_concurrency=0 is used, as all IO will be
+		 * synchronous. Without treating synchronous IO as having waited, we'd
+		 * never allow the distance to get large enough to allow for IO
+		 * combining, resulting in bad performance.
+		 */
+		if (stream->ios[io_index].op.flags & READ_BUFFERS_SYNCHRONOUSLY)
+			needed_wait = true;
+
+		/*
+		 * Have the look-ahead distance ramp up rapidly after we needed to
+		 * wait for IO. We only increase the distance when we needed to wait,
+		 * to avoid increasing the distance further than necessary, as looking
+		 * ahead too far can be costly, both due to the cost of unnecessarily
+		 * pinning many buffers and due to doing IOs that may never be
+		 * consumed if the stream is ended/reset before completion.
+		 *
+		 * If we did not need to wait, the current distance was evidently
+		 * sufficient.
+		 *
+		 * NB: May not increase the distance if we already reached the end of
+		 * the stream, as stream->distance == 0 is used to keep track of
+		 * having reached the end.
+		 */
+		if (stream->distance > 0 && needed_wait)
+		{
+			distance = stream->distance * 2;
+			distance = Min(distance, stream->max_pinned_buffers);
+			stream->distance = distance;
+		}
 
 		/*
 		 * As we needed IO, prevent distance from being reduced within our
