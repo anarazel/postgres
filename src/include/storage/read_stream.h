@@ -65,6 +65,7 @@
 
 struct ReadStream;
 typedef struct ReadStream ReadStream;
+typedef struct ReadStreamInstrumentation ReadStreamInstrumentation;
 
 /* for block_range_read_stream_cb */
 typedef struct BlockRangeReadStreamPrivate
