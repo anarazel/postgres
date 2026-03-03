@@ -1019,6 +1019,21 @@ pgaio_wref_check_done(PgAioWaitRef *iow)
 
 	am_owner = ioh->owner_procno == MyProcNumber;
 
+	/*
+	 * If the IO is not executing synchronously, allow the IO method to check
+	 * if the IO already has completed.
+	 */
+	if (pgaio_method_ops->check_one && !(ioh->flags & PGAIO_HF_SYNCHRONOUS))
+	{
+		pgaio_method_ops->check_one(ioh, ref_generation);
+
+		if (pgaio_io_was_recycled(ioh, ref_generation, &state))
+			return true;
+
+		if (state == PGAIO_HS_IDLE)
+			return true;
+	}
+
 	if (state == PGAIO_HS_COMPLETED_SHARED ||
 		state == PGAIO_HS_COMPLETED_LOCAL)
 	{
