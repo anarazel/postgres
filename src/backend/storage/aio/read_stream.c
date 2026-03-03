@@ -980,6 +980,9 @@ read_stream_next_buffer(ReadStream *stream, void **per_buffer_data)
 			stream->ios[0].buffer_index = oldest_buffer_index;
 			stream->seq_blocknum = next_blocknum + 1;
 
+			/* since we executed IO synchronously, count it as a stall */
+			stream->stats.prefetch_stalls += 1;
+
 			/* FIXME: it would probably worth issuing readahead here */
 		}
 		else
@@ -1053,8 +1056,8 @@ read_stream_next_buffer(ReadStream *stream, void **per_buffer_data)
 
 		needed_wait = WaitReadBuffers(&stream->ios[io_index].op);
 
-		/* distance=1 means we're not really prefetching, count it as a stall */
-		if (stream->distance == 1)
+		/* Count it as a stall if we need to wait for IO */
+		if (needed_wait)
 			stream->stats.prefetch_stalls += 1;
 
 		Assert(stream->ios_in_progress > 0);
