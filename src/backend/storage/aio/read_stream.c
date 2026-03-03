@@ -99,6 +99,7 @@ struct ReadStream
 	int16		forwarded_buffers;
 	int16		pinned_buffers;
 	int16		distance;
+	uint16		distance_decay_holdoff;
 	int16		initialized_buffers;
 	int16		resume_distance;
 	int			read_buffers_flags;
@@ -365,9 +366,22 @@ read_stream_start_pending_read(ReadStream *stream)
 	/* Remember whether we need to wait before returning this buffer. */
 	if (!need_wait)
 	{
-		/* Look-ahead distance decays, no I/O necessary. */
-		if (stream->distance > 1)
-			stream->distance--;
+		/*
+		 * If there currently is no IO in progress, and we have not needed to
+		 * issue IO recently, decay the look-ahead distance.  We detect if we
+		 * had to issue IO recently by having a decay holdoff that's set to
+		 * the max lookahead distance whenever we need to do IO.  This is
+		 * important to ensure we eventually reach a high enough distance to
+		 * perform IO asynchronously when starting out with a small lookahead
+		 * distance.
+		 */
+		if (stream->distance > 1 && stream->ios_in_progress == 0)
+		{
+			if (stream->distance_decay_holdoff == 0)
+				stream->distance--;
+			else
+				stream->distance_decay_holdoff--;
+		}
 	}
 	else
 	{
@@ -740,6 +754,7 @@ read_stream_begin_impl(int flags,
 	stream->seq_until_processed = InvalidBlockNumber;
 	stream->temporary = SmgrIsTemp(smgr);
 	stream->yielded = false;
+	stream->distance_decay_holdoff = 0;
 
 	/*
 	 * Skip the initial ramp-up phase if the caller says we're going to be
@@ -988,6 +1003,18 @@ read_stream_next_buffer(ReadStream *stream, void **per_buffer_data)
 		stream->ios_in_progress--;
 		if (++stream->oldest_io_index == stream->max_ios)
 			stream->oldest_io_index = 0;
+
+		/*
+		 * As we needed IO, prevent distance from being reduced within our
+		 * maximum lookahead window. This avoids having distance collapse too
+		 * quickly in workloads where most of the required blocks are cached,
+		 * but where the remaining IOs are a sufficient enough factor to cause
+		 * a substantial slowdown if executed synchronously.
+		 *
+		 * XXX: Not obvious whether we should use max_ios or
+		 * max_pinned_buffers. Or something else entirely.
+		 */
+		stream->distance_decay_holdoff = stream->max_ios;
 
 		/*
 		 * Look-ahead distance ramps up rapidly after we needed to wait for
