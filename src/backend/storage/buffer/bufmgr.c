@@ -502,7 +502,7 @@ GetPrivateRefCountEntrySlow(Buffer buffer, bool do_move)
 		free->data = data;
 		PrivateRefCountArrayKeys[ReservedRefCountSlot] = buffer;
 		/* update cache for the next lookup */
-		PrivateRefCountEntryLast = match;
+		PrivateRefCountEntryLast = ReservedRefCountSlot;
 
 		ReservedRefCountSlot = -1;
 
