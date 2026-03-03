@@ -976,24 +976,36 @@ read_stream_next_buffer(ReadStream *stream, void **per_buffer_data)
 	{
 		int16		io_index = stream->oldest_io_index;
 		int32		distance;	/* wider temporary value, clamped below */
+		bool		needed_wait;
 
 		/* Sanity check that we still agree on the buffers. */
 		Assert(stream->ios[io_index].op.buffers ==
 			   &stream->buffers[oldest_buffer_index]);
 
-		WaitReadBuffers(&stream->ios[io_index].op);
+		needed_wait = WaitReadBuffers(&stream->ios[io_index].op);
 
 		Assert(stream->ios_in_progress > 0);
 		stream->ios_in_progress--;
 		if (++stream->oldest_io_index == stream->max_ios)
 			stream->oldest_io_index = 0;
 
-		/* Look-ahead distance ramps up rapidly after we do I/O. */
-		distance = stream->distance * 2;
-		if (distance && distance < PG_INT16_MAX)
-			distance++;
-		distance = Min(distance, stream->max_pinned_buffers);
-		stream->distance = distance;
+		/*
+		 * Look-ahead distance ramps up rapidly after we needed to wait for
+		 * IO. We only increase the distance when we needed to wait, to avoid
+		 * increasing the distance further than necessary, as unnecessarily
+		 * pinning many buffers can be costly.
+		 *
+		 * NB: May not increase the distance if we reached the end of the
+		 * stream.
+		 */
+		if (stream->distance > 0 && needed_wait)
+		{
+			distance = stream->distance * 2;
+			if (distance && distance < PG_INT16_MAX)
+				distance++;
+			distance = Min(distance, stream->max_pinned_buffers);
+			stream->distance = distance;
+		}
 
 		/*
 		 * If we've reached the first block of a sequential region we're
