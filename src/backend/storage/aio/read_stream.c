@@ -72,6 +72,7 @@
 #include "postgres.h"
 
 #include "miscadmin.h"
+#include "executor/instrument_node.h"
 #include "storage/aio.h"
 #include "storage/fd.h"
 #include "storage/smgr.h"
@@ -85,30 +86,6 @@ typedef struct InProgressIO
 	int16		buffer_index;
 	ReadBuffersOperation op;
 } InProgressIO;
-
-/* XXX must match the histogram size in genam.h */
-#define	DISTANCE_HISTOGRAM_SIZE		16		/* power-of-2 bins */
-#define	IO_SIZE_HISTOGRAM_SIZE		128		/* max io_combine_limit */
-#define	IO_COUNT_HISTOGRAM_SIZE		1000	/* max effective_io_concurrency */
-
-/* statistics tracked by the read_stream */
-typedef struct ReadStreamStats
-{
-	uint64		count;			/* number of read requests */
-	uint64		accum;			/* accumulated distance (sum for all reads) */
-	int64		nstalls;		/* number of stream stalls */
-	int64		nresets;		/* number of stream resets */
-	int64		npauses;		/* number of stream pauses */
-	int64		nskips;			/* number of skipped blocks */
-	int64		nungets;		/* number of block ungets */
-	int64		nforwards;		/* number of forwarded blocks */
-	int64		nyields;		/* number of yields */
-
-	/* histograms */
-	int64		hist_distance[DISTANCE_HISTOGRAM_SIZE]; /* distance histogram */
-	int64		hist_io_size[IO_SIZE_HISTOGRAM_SIZE];   /* IO size histogram */
-	int64		hist_io_count[IO_COUNT_HISTOGRAM_SIZE]; /* concurrent IOs histogram */
-} ReadStreamStats;
 
 /*
  * State for managing a stream of reads.
@@ -132,7 +109,7 @@ struct ReadStream
 	bool		advice_enabled;
 	bool		temporary;
 	bool		yielded;
-	ReadStreamStats stats;
+	ReadStreamInstrumentation stats;
 
 	/*
 	 * One-block buffer to support 'ungetting' a block number, to resolve flow
@@ -228,8 +205,8 @@ read_stream_update_prefetch_stats(ReadStream *stream)
 
 	stream->stats.hist_distance[hist_idx] += 1;
 
-	stream->stats.accum += stream->distance;
-	stream->stats.count += 1;
+	stream->stats.prefetch_accum += stream->distance;
+	stream->stats.prefetch_count += 1;
 }
 
 /*
@@ -279,7 +256,7 @@ read_stream_unget_block(ReadStream *stream, BlockNumber blocknum)
 	stream->buffered_blocknum = blocknum;
 
 	/* remeber we put a block back */
-	stream->stats.nungets++;
+	stream->stats.unget_count++;
 }
 
 /*
@@ -445,6 +422,10 @@ read_stream_start_pending_read(ReadStream *stream)
 			else
 				stream->distance_decay_holdoff--;
 		}
+
+		/* track info about the I/O */
+		stream->stats.hist_io_size[nblocks] += 1;
+		stream->stats.hist_io_count[stream->ios_in_progress + 1] += 1;
 	}
 	else
 	{
@@ -506,7 +487,7 @@ read_stream_start_pending_read(ReadStream *stream)
 	stream->pending_read_nblocks -= nblocks;
 
 	/* remember the number of forwarded blocks */
-	stream->stats.nforwards += forwarded;
+	stream->stats.forwarded_count += forwarded;
 
 	return true;
 }
@@ -827,7 +808,7 @@ read_stream_begin_impl(int flags,
 	stream->distance_decay_holdoff = 0;
 
 	/* zero the stats */
-	memset(&stream->stats, 0, sizeof(ReadStreamStats));
+	memset(&stream->stats, 0, sizeof(ReadStreamInstrumentation));
 
 	/*
 	 * Skip the initial ramp-up phase if the caller says we're going to be
@@ -1074,7 +1055,7 @@ read_stream_next_buffer(ReadStream *stream, void **per_buffer_data)
 
 		/* distance=1 means we're not really prefetching, count it as a stall */
 		if (stream->distance == 1)
-			stream->stats.nstalls += 1;
+			stream->stats.prefetch_stalls += 1;
 
 		Assert(stream->ios_in_progress > 0);
 		stream->ios_in_progress--;
@@ -1222,7 +1203,7 @@ read_stream_next_block(ReadStream *stream, BufferAccessStrategy *strategy)
 BlockNumber
 read_stream_pause(ReadStream *stream)
 {
-	stream->stats.npauses += 1;
+	stream->stats.pause_count += 1;
 
 	stream->resume_distance = stream->distance;
 	stream->distance = 0;
@@ -1270,7 +1251,7 @@ read_stream_yield(ReadStream *stream)
 	read_stream_pause(stream);
 	stream->yielded = true;
 
-	stream->stats.nyields += 1;
+	stream->stats.yield_count += 1;
 
 	return InvalidBlockNumber;
 }
@@ -1324,7 +1305,7 @@ read_stream_reset(ReadStream *stream)
 	stream->distance = 1;
 
 	/* Remember we reset the stream */
-	stream->stats.nresets += 1;
+	stream->stats.reset_count += 1;
 }
 
 /*
@@ -1338,40 +1319,10 @@ read_stream_end(ReadStream *stream)
 }
 
 /* return the prefetch stats for the read_stream */
-void
-read_stream_prefetch_stats(ReadStream *stream,
-						   uint64 *prefetch_count, uint64 *prefetch_accum,
-						   uint64 *prefetch_stalls, uint64 *reset_count,
-						   uint64 *pause_count, uint64 *skip_count,
-						   uint64 *unget_count, uint64 *forwarded_count,
-						   uint64 *yield_count,
-						   uint64 **hist_distance, uint64 **hist_io_size,
-						   uint64 **hist_io_count)
+ReadStreamInstrumentation
+read_stream_prefetch_stats(ReadStream *stream)
 {
-	*prefetch_count = stream->stats.count;
-	*prefetch_accum = stream->stats.accum;
-	*prefetch_stalls = stream->stats.nstalls;
-	*reset_count = stream->stats.nresets;
-	*pause_count = stream->stats.npauses;
-	*skip_count = stream->stats.nskips;
-	*unget_count = stream->stats.nungets;
-	*forwarded_count = stream->stats.nforwards;
-	*yield_count = stream->stats.nyields;
-
-	/* distance histogram */
-	*hist_distance = palloc0_array(uint64, DISTANCE_HISTOGRAM_SIZE);
-	for (int i = 0; i < DISTANCE_HISTOGRAM_SIZE; i++)
-		(*hist_distance)[i] = stream->stats.hist_distance[i];
-
-	/* I/O size histogram */
-	*hist_io_size = palloc0_array(uint64, IO_SIZE_HISTOGRAM_SIZE);
-	for (int i = 0; i < IO_SIZE_HISTOGRAM_SIZE; i++)
-		(*hist_io_size)[i] = stream->stats.hist_io_size[i];
-
-	/* I/O count histogram */
-	*hist_io_count = palloc0_array(uint64, IO_COUNT_HISTOGRAM_SIZE);
-	for (int i = 0; i < IO_COUNT_HISTOGRAM_SIZE; i++)
-		(*hist_io_count)[i] = stream->stats.hist_io_count[i];
+	return stream->stats;
 }
 
 /*
@@ -1383,5 +1334,5 @@ read_stream_prefetch_stats(ReadStream *stream,
 void
 read_stream_skip_block(ReadStream *stream)
 {
-	stream->stats.nskips += 1;
+	stream->stats.skip_count += 1;
 }

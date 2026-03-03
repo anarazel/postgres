@@ -105,14 +105,7 @@ extern BlockNumber read_stream_yield(ReadStream *stream);
 extern void read_stream_reset(ReadStream *stream);
 extern void read_stream_end(ReadStream *stream);
 
-extern void read_stream_prefetch_stats(ReadStream *stream,
-									   uint64 *prefetch_count, uint64 *prefetch_accum,
-									   uint64 *prefetch_stalls, uint64 *reset_count,
-									   uint64 *pause_count, uint64 *skip_count,
-									   uint64 *unget_count, uint64 *forwarded_count,
-									   uint64 *yield_count,
-									   uint64 **hist_distance, uint64 **hist_io_size,
-									   uint64 **hist_io_count);
+extern ReadStreamInstrumentation read_stream_prefetch_stats(ReadStream *stream);
 extern void read_stream_skip_block(ReadStream *stream);
 
 #endif							/* READ_STREAM_H */

@@ -3941,19 +3941,7 @@ show_indexprefetch_info(PlanState *planstate, ExplainState *es)
 	Plan	   *plan = planstate->plan;
 	IndexScanDesc scandesc = NULL;
 	SharedIndexScanInstrumentation *SharedInfo = NULL;
-
-	uint64		prefetch_count = 0,
-				prefetch_accum = 0,
-				prefetch_stalls = 0,
-				reset_count = 0,
-				pause_count = 0,
-				skip_count = 0,
-				unget_count = 0,
-				forwarded_count = 0,
-				yield_count = 0;
-	uint64	   *hist_distance = NULL;
-	uint64	   *hist_io_size = NULL;
-	uint64	   *hist_io_count = NULL;
+	ReadStreamInstrumentation	stats;
 
 	if (!es->analyze)
 		return;
@@ -3983,19 +3971,7 @@ show_indexprefetch_info(PlanState *planstate, ExplainState *es)
 	}
 
 	/* collect prefetch statistics from the read stream */
-	index_get_prefetch_stats(scandesc,
-							 &prefetch_count,
-							 &prefetch_accum,
-							 &prefetch_stalls,
-							 &reset_count,
-							 &pause_count,
-							 &skip_count,
-							 &unget_count,
-							 &forwarded_count,
-							 &yield_count,
-							 &hist_distance,
-							 &hist_io_size,
-							 &hist_io_count);
+	stats = index_get_prefetch_stats(scandesc);
 
 	/* get the sum of the counters set within each and every process */
 	if (SharedInfo)
@@ -4004,29 +3980,29 @@ show_indexprefetch_info(PlanState *planstate, ExplainState *es)
 		{
 			IndexScanInstrumentation *winstrument = &SharedInfo->winstrument[i];
 
-			prefetch_count += winstrument->prefetch_count;
-			prefetch_accum += winstrument->prefetch_accum;
-			prefetch_stalls += winstrument->prefetch_stalls;
-			reset_count += winstrument->reset_count;
-			pause_count += winstrument->pause_count;
-			skip_count += winstrument->skip_count;
-			unget_count += winstrument->unget_count;
-			forwarded_count += winstrument->forwarded_count;
-			yield_count += winstrument->yield_count;
+			stats.prefetch_count += winstrument->stream.prefetch_count;
+			stats.prefetch_accum += winstrument->stream.prefetch_accum;
+			stats.prefetch_stalls += winstrument->stream.prefetch_stalls;
+			stats.reset_count += winstrument->stream.reset_count;
+			stats.pause_count += winstrument->stream.pause_count;
+			stats.skip_count += winstrument->stream.skip_count;
+			stats.unget_count += winstrument->stream.unget_count;
+			stats.forwarded_count += winstrument->stream.forwarded_count;
+			stats.yield_count += winstrument->stream.yield_count;
 
 			for (int j = 0; j < DISTANCE_HISTOGRAM_SIZE; j++)
-				hist_distance[j] += winstrument->hist_distance[j];
+				stats.hist_distance[j] += winstrument->stream.hist_distance[j];
 
 			for (int j = 0; j < IO_SIZE_HISTOGRAM_SIZE; j++)
-				hist_io_size[j] += winstrument->hist_io_size[j];
+				stats.hist_io_size[j] += winstrument->stream.hist_io_size[j];
 
 			for (int j = 0; j < IO_COUNT_HISTOGRAM_SIZE; j++)
-				hist_io_count[j] += winstrument->hist_io_count[j];
+				stats.hist_io_count[j] += winstrument->stream.hist_io_count[j];
 		}
 	}
 
 	/* don't print anything without prefetching */
-	if (prefetch_count > 0)
+	if (stats.prefetch_count > 0)
 	{
 		bool		first;
 
@@ -4034,15 +4010,15 @@ show_indexprefetch_info(PlanState *planstate, ExplainState *es)
 		appendStringInfoString(es->str, "Prefetch:");
 
 		appendStringInfo(es->str, " distance=%.3f",
-						 (prefetch_accum * 1.0 / prefetch_count));
-		appendStringInfo(es->str, " count=%" PRId64, prefetch_count);
-		appendStringInfo(es->str, " stalls=%" PRId64, prefetch_stalls);
-		appendStringInfo(es->str, " skipped=%" PRId64, skip_count);
-		appendStringInfo(es->str, " resets=%" PRId64, reset_count);
-		appendStringInfo(es->str, " pauses=%" PRId64, pause_count);
-		appendStringInfo(es->str, " yields=%" PRId64, yield_count);
-		appendStringInfo(es->str, " ungets=%" PRId64, unget_count);
-		appendStringInfo(es->str, " forwarded=%" PRId64, forwarded_count);
+						 (stats.prefetch_accum * 1.0 / stats.prefetch_count));
+		appendStringInfo(es->str, " count=%" PRId64, stats.prefetch_count);
+		appendStringInfo(es->str, " stalls=%" PRId64, stats.prefetch_stalls);
+		appendStringInfo(es->str, " skipped=%" PRId64, stats.skip_count);
+		appendStringInfo(es->str, " resets=%" PRId64, stats.reset_count);
+		appendStringInfo(es->str, " pauses=%" PRId64, stats.pause_count);
+		appendStringInfo(es->str, " yields=%" PRId64, stats.yield_count);
+		appendStringInfo(es->str, " ungets=%" PRId64, stats.unget_count);
+		appendStringInfo(es->str, " forwarded=%" PRId64, stats.forwarded_count);
 
 		appendStringInfoChar(es->str, '\n');
 
@@ -4051,13 +4027,14 @@ show_indexprefetch_info(PlanState *planstate, ExplainState *es)
 		appendStringInfoString(es->str, "          distances ");
 		for (int i = 0; i < DISTANCE_HISTOGRAM_SIZE; i++)
 		{
-			if (hist_distance[i] == 0)
+			if (stats.hist_distance[i] == 0)
 				continue;
 
 			if (!first)
 				appendStringInfoString(es->str, ", ");
 
-			appendStringInfo(es->str, "[%d,%d) => " INT64_FORMAT, (1 << i), (1 << (i + 1)), hist_distance[i]);
+			appendStringInfo(es->str, "[%d,%d) => " INT64_FORMAT, (1 << i), (1 << (i + 1)),
+							 stats.hist_distance[i]);
 
 			first = false;
 		}
@@ -4068,13 +4045,13 @@ show_indexprefetch_info(PlanState *planstate, ExplainState *es)
 		appendStringInfoString(es->str, "          I/O sizes ");
 		for (int i = 0; i < IO_SIZE_HISTOGRAM_SIZE; i++)
 		{
-			if (hist_io_size[i] == 0)
+			if (stats.hist_io_size[i] == 0)
 				continue;
 
 			if (!first)
 				appendStringInfoString(es->str, ", ");
 
-			appendStringInfo(es->str, "%d => " INT64_FORMAT, i, hist_io_size[i]);
+			appendStringInfo(es->str, "%d => " INT64_FORMAT, i, stats.hist_io_size[i]);
 
 			first = false;
 		}
@@ -4085,13 +4062,13 @@ show_indexprefetch_info(PlanState *planstate, ExplainState *es)
 		appendStringInfoString(es->str, "          I/O counts ");
 		for (int i = 0; i < IO_COUNT_HISTOGRAM_SIZE; i++)
 		{
-			if (hist_io_count[i] == 0)
+			if (stats.hist_io_count[i] == 0)
 				continue;
 
 			if (!first)
 				appendStringInfoString(es->str, ", ");
 
-			appendStringInfo(es->str, "%d => " INT64_FORMAT, i, hist_io_count[i]);
+			appendStringInfo(es->str, "%d => " INT64_FORMAT, i, stats.hist_io_count[i]);
 
 			first = false;
 		}
@@ -4142,7 +4119,7 @@ show_indexprefetch_worker_info(PlanState *planstate, ExplainState *es, int worke
 	instrument = &SharedInfo->winstrument[worker];
 
 	/* don't print stats if there's nothing to report */
-	if (instrument->prefetch_count > 0)
+	if (instrument->stream.prefetch_count > 0)
 	{
 		bool		first = true;
 
@@ -4150,15 +4127,15 @@ show_indexprefetch_worker_info(PlanState *planstate, ExplainState *es, int worke
 		appendStringInfoString(es->str, "Prefetch:");
 
 		appendStringInfo(es->str, " distance=%.3f",
-						 (instrument->prefetch_accum * 1.0 / instrument->prefetch_count));
-		appendStringInfo(es->str, " count=%" PRId64, instrument->prefetch_count);
-		appendStringInfo(es->str, " stalls=%" PRId64, instrument->prefetch_stalls);
-		appendStringInfo(es->str, " skipped=%" PRId64, instrument->skip_count);
-		appendStringInfo(es->str, " resets=%" PRId64, instrument->reset_count);
-		appendStringInfo(es->str, " pauses=%" PRId64, instrument->pause_count);
-		appendStringInfo(es->str, " yield=%" PRId64, instrument->yield_count);
-		appendStringInfo(es->str, " ungets=%" PRId64, instrument->unget_count);
-		appendStringInfo(es->str, " forwarded=%" PRId64, instrument->forwarded_count);
+						 (instrument->stream.prefetch_accum * 1.0 / instrument->stream.prefetch_count));
+		appendStringInfo(es->str, " count=%" PRId64, instrument->stream.prefetch_count);
+		appendStringInfo(es->str, " stalls=%" PRId64, instrument->stream.prefetch_stalls);
+		appendStringInfo(es->str, " skipped=%" PRId64, instrument->stream.skip_count);
+		appendStringInfo(es->str, " resets=%" PRId64, instrument->stream.reset_count);
+		appendStringInfo(es->str, " pauses=%" PRId64, instrument->stream.pause_count);
+		appendStringInfo(es->str, " yield=%" PRId64, instrument->stream.yield_count);
+		appendStringInfo(es->str, " ungets=%" PRId64, instrument->stream.unget_count);
+		appendStringInfo(es->str, " forwarded=%" PRId64, instrument->stream.forwarded_count);
 
 		appendStringInfoChar(es->str, '\n');
 
@@ -4166,14 +4143,14 @@ show_indexprefetch_worker_info(PlanState *planstate, ExplainState *es, int worke
 		appendStringInfoString(es->str, "          distances ");
 		for (int i = 0; i < DISTANCE_HISTOGRAM_SIZE; i++)
 		{
-			if (instrument->hist_distance[i] == 0)
+			if (instrument->stream.hist_distance[i] == 0)
 				continue;
 
 			if (!first)
 				appendStringInfoString(es->str, ", ");
 
 			appendStringInfo(es->str, "[%d,%d) => " INT64_FORMAT, (1 << i), (1 << (i + 1)),
-							 instrument->hist_distance[i]);
+							 instrument->stream.hist_distance[i]);
 
 			first = false;
 		}
@@ -4183,14 +4160,14 @@ show_indexprefetch_worker_info(PlanState *planstate, ExplainState *es, int worke
 		appendStringInfoString(es->str, "          I/O sizes ");
 		for (int i = 0; i < IO_SIZE_HISTOGRAM_SIZE; i++)
 		{
-			if (instrument->hist_io_size[i] == 0)
+			if (instrument->stream.hist_io_size[i] == 0)
 				continue;
 
 			if (!first)
 				appendStringInfoString(es->str, ", ");
 
 			appendStringInfo(es->str, "%d => " INT64_FORMAT, i,
-							 instrument->hist_io_size[i]);
+							 instrument->stream.hist_io_size[i]);
 
 			first = false;
 		}
@@ -4200,14 +4177,14 @@ show_indexprefetch_worker_info(PlanState *planstate, ExplainState *es, int worke
 		appendStringInfoString(es->str, "          I/O counts ");
 		for (int i = 0; i < IO_COUNT_HISTOGRAM_SIZE; i++)
 		{
-			if (instrument->hist_io_count[i] == 0)
+			if (instrument->stream.hist_io_count[i] == 0)
 				continue;
 
 			if (!first)
 				appendStringInfoString(es->str, ", ");
 
 			appendStringInfo(es->str, "%d => " INT64_FORMAT, i,
-							 instrument->hist_io_count[i]);
+							 instrument->stream.hist_io_count[i]);
 
 			first = false;
 		}

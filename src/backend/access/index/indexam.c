@@ -407,38 +407,20 @@ index_rescan(IndexScanDesc scan,
  * If the index scan does not use a read_stream (yet), the counters are
  * initialized to 0.
  */
-extern void
-index_get_prefetch_stats(IndexScanDesc scan,
-						 uint64 *prefetch_count, uint64 *prefetch_accum,
-						 uint64 *prefetch_stalls, uint64 *reset_count,
-						 uint64 *pause_count, uint64 *skip_count,
-						 uint64 *unget_count, uint64 *forwarded_count,
-						 uint64 *yield_count,
-						 uint64 **hist_distance, uint64 **hist_io_size,
-						 uint64 **hist_io_count)
+extern ReadStreamInstrumentation
+index_get_prefetch_stats(IndexScanDesc scan)
 {
-	/* reset everything, in case there's no read stream */
-	*prefetch_count = 0;
-	*prefetch_accum = 0;
-	*prefetch_stalls = 0;
-	*reset_count = 0;
-	*pause_count = 0;
-	*skip_count = 0;
-	*unget_count = 0;
-	*forwarded_count = 0;
-	*yield_count = 0;
+	ReadStreamInstrumentation	stats;
 
 	if (scan && ((IndexFetchHeapData *) scan->xs_heapfetch)->xs_read_stream != NULL)
 	{
-		read_stream_prefetch_stats(((IndexFetchHeapData *) scan->xs_heapfetch)->xs_read_stream,
-								   prefetch_count, prefetch_accum,
-								   prefetch_stalls, reset_count,
-								   pause_count, skip_count,
-								   unget_count, forwarded_count,
-								   yield_count,
-								   hist_distance,
-								   hist_io_size, hist_io_count);
+		return read_stream_prefetch_stats(((IndexFetchHeapData *) scan->xs_heapfetch)->xs_read_stream);
 	}
+
+	/* there's no stream, return zeros */
+	memset(&stats, 0, sizeof(ReadStreamInstrumentation));
+
+	return stats;
 }
 
 /* ----------------

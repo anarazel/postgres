@@ -49,17 +49,8 @@ typedef struct SharedAggInfo
 #define	IO_SIZE_HISTOGRAM_SIZE		128		/* max io_combine_limit */
 #define	IO_COUNT_HISTOGRAM_SIZE		1000	/* max effective_io_concurrency */
 
-typedef struct IndexScanInstrumentation
+typedef struct ReadStreamInstrumentation
 {
-	/* Index search count (incremented with pgstat_count_index_scan call) */
-	uint64		nsearches;
-
-	/*
-	 * heap blocks fetched counts (incremented by index_getnext_slot calls
-	 * within table AMs, though only during index-only scans)
-	 */
-	uint64		nheapfetches;
-
 	/* Prefetch instrumentation */
 	uint64		prefetch_count;
 	uint64		prefetch_accum;
@@ -75,6 +66,21 @@ typedef struct IndexScanInstrumentation
 	uint64		hist_distance[DISTANCE_HISTOGRAM_SIZE]; /* distance histogram */
 	uint64		hist_io_size[IO_SIZE_HISTOGRAM_SIZE];   /* IO size histogram */
 	uint64		hist_io_count[IO_COUNT_HISTOGRAM_SIZE]; /* concurrent IOs histogram */
+} ReadStreamInstrumentation;
+
+typedef struct IndexScanInstrumentation
+{
+	/* Index search count (incremented with pgstat_count_index_scan call) */
+	uint64		nsearches;
+
+	/*
+	 * heap blocks fetched counts (incremented by index_getnext_slot calls
+	 * within table AMs, though only during index-only scans)
+	 */
+	uint64		nheapfetches;
+
+	/* instrumentation from the read stream */
+	ReadStreamInstrumentation	stream;
 } IndexScanInstrumentation;
 
 /*
