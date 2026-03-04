@@ -407,7 +407,6 @@ static int
 pgaio_uring_submit(uint16 num_staged_ios, PgAioHandle **staged_ios)
 {
 	struct io_uring *uring_instance = &pgaio_my_uring_context->io_uring_ring;
-	int			in_flight_before = dclist_count(&pgaio_my_backend->in_flight_ios);
 
 	Assert(num_staged_ios <= PGAIO_SUBMIT_BATCH_SIZE);
 
@@ -423,27 +422,6 @@ pgaio_uring_submit(uint16 num_staged_ios, PgAioHandle **staged_ios)
 
 		pgaio_io_prepare_submit(ioh);
 		pgaio_uring_sq_from_io(ioh, sqe);
-
-		/*
-		 * io_uring executes IO in process context if possible. That's
-		 * generally good, as it reduces context switching. When performing a
-		 * lot of buffered IO that means that copying between page cache and
-		 * userspace memory happens in the foreground, as it can't be
-		 * offloaded to DMA hardware as is possible when using direct IO. When
-		 * executing a lot of buffered IO this causes io_uring to be slower
-		 * than worker mode, as worker mode parallelizes the copying. io_uring
-		 * can be told to offload work to worker threads instead.
-		 *
-		 * If an IO is buffered IO and we already have IOs in flight or
-		 * multiple IOs are being submitted, we thus tell io_uring to execute
-		 * the IO in the background. We don't do so for the first few IOs
-		 * being submitted as executing in this process' context has lower
-		 * latency.
-		 */
-		if (in_flight_before > 4 && (ioh->flags & PGAIO_HF_BUFFERED))
-			io_uring_sqe_set_flags(sqe, IOSQE_ASYNC);
-
-		in_flight_before++;
 	}
 
 	while (true)
@@ -707,6 +685,7 @@ static void
 pgaio_uring_sq_from_io(PgAioHandle *ioh, struct io_uring_sqe *sqe)
 {
 	struct iovec *iov;
+	size_t		io_size = 0;
 
 	switch ((PgAioOp) ioh->op)
 	{
@@ -719,6 +698,8 @@ pgaio_uring_sq_from_io(PgAioHandle *ioh, struct io_uring_sqe *sqe)
 								   iov->iov_base,
 								   iov->iov_len,
 								   ioh->op_data.read.offset);
+
+				io_size = iov->iov_len;
 			}
 			else
 			{
@@ -728,7 +709,39 @@ pgaio_uring_sq_from_io(PgAioHandle *ioh, struct io_uring_sqe *sqe)
 									ioh->op_data.read.iov_length,
 									ioh->op_data.read.offset);
 
+				for (int i = 0; i <= ioh->op_data.read.iov_length; i++, iov++)
+					io_size += iov->iov_len;
 			}
+
+
+			/*
+			 * io_uring executes IO in process context if possible. That's
+			 * generally good, as it reduces context switching. When
+			 * performing a lot of buffered IO that means that copying between
+			 * page cache and userspace memory happens in the foreground, as
+			 * it can't be offloaded to DMA hardware as is possible when using
+			 * direct IO. When executing a lot of buffered IO this causes
+			 * io_uring to be slower than worker mode, as worker mode
+			 * parallelizes the copying. io_uring can be told to offload work
+			 * to worker threads instead.
+			 *
+			 * If the IOs are small, there is no benefit from forcing things
+			 * into the background, the overhead from context switching is
+			 * higher than the gain.  Therefore we use the size of the read as
+			 * a heuristic.
+			 *
+			 * XXX: We used to not do this for the first few IOs in flight,
+			 * but now we have a heuristic preventing deeper IO queues if IOs
+			 * finish in time, which will often prevent us from ever reaching
+			 * that deep queues.  Maybe there's a better way?
+			 *
+			 * XXX: Need to evaluate the number of blocks when IOSQE_ASYNC
+			 * starts to make sense.
+			 */
+			if (io_size >= (BLCKSZ * 4) &&
+				(ioh->flags & PGAIO_HF_BUFFERED))
+				io_uring_sqe_set_flags(sqe, IOSQE_ASYNC);
+
 			break;
 
 		case PGAIO_OP_WRITEV:
