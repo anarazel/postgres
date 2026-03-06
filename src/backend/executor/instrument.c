@@ -141,29 +141,14 @@ void
 InstrInitNode(NodeInstrumentation *instr, int instrument_options)
 {
 	memset(instr, 0, sizeof(NodeInstrumentation));
-	instr->need_bufusage = (instrument_options & INSTRUMENT_BUFFERS) != 0;
-	instr->need_walusage = (instrument_options & INSTRUMENT_WAL) != 0;
-	instr->need_timer = (instrument_options & INSTRUMENT_TIMER) != 0;
+	InstrStart(&instr->instr);
 }
 
 /* Entry to a plan node */
 void
 InstrStartNode(NodeInstrumentation *instr)
 {
-	if (instr->need_timer)
-	{
-		if (!INSTR_TIME_IS_ZERO(instr->starttime))
-			elog(ERROR, "InstrStartNode called twice in a row");
-		else
-			INSTR_TIME_SET_CURRENT(instr->starttime);
-	}
-
-	/* save buffer usage totals at node entry, if needed */
-	if (instr->need_bufusage)
-		instr->bufusage_start = pgBufferUsage;
-
-	if (instr->need_walusage)
-		instr->walusage_start = pgWalUsage;
+	InstrStart(&instr->instr);
 }
 
 /* Exit from a plan node */
@@ -171,31 +156,11 @@ void
 InstrStopNode(NodeInstrumentation *instr, double nTuples)
 {
 	double		save_tuplecount = instr->tuplecount;
-	instr_time	endtime;
 
 	/* count the returned tuples */
 	instr->tuplecount += nTuples;
 
-	/* let's update the time only if the timer was requested */
-	if (instr->need_timer)
-	{
-		if (INSTR_TIME_IS_ZERO(instr->starttime))
-			elog(ERROR, "InstrStopNode called without start");
-
-		INSTR_TIME_SET_CURRENT(endtime);
-		INSTR_TIME_ACCUM_DIFF(instr->counter, endtime, instr->starttime);
-
-		INSTR_TIME_SET_ZERO(instr->starttime);
-	}
-
-	/* Add delta of buffer usage since entry to node's totals */
-	if (instr->need_bufusage)
-		BufferUsageAccumDiff(&instr->bufusage,
-							 &pgBufferUsage, &instr->bufusage_start);
-
-	if (instr->need_walusage)
-		WalUsageAccumDiff(&instr->walusage,
-						  &pgWalUsage, &instr->walusage_start);
+	InstrStop(&instr->instr);
 
 	/* Is this the first tuple of this cycle? */
 	if (!instr->running)
@@ -230,18 +195,18 @@ InstrEndLoop(NodeInstrumentation *instr)
 	if (!instr->running)
 		return;
 
-	if (!INSTR_TIME_IS_ZERO(instr->starttime))
+	if (!INSTR_TIME_IS_ZERO(instr->instr.starttime))
 		elog(ERROR, "InstrEndLoop called on running node");
 
 	/* Accumulate per-cycle statistics into totals */
 	INSTR_TIME_ADD(instr->startup, instr->firsttuple);
-	INSTR_TIME_ADD(instr->total, instr->counter);
+	INSTR_TIME_ADD(instr->instr.total, instr->counter);
 	instr->ntuples += instr->tuplecount;
 	instr->nloops += 1;
 
 	/* Reset for next cycle (if any) */
 	instr->running = false;
-	INSTR_TIME_SET_ZERO(instr->starttime);
+	INSTR_TIME_SET_ZERO(instr->instr.starttime);
 	INSTR_TIME_SET_ZERO(instr->counter);
 	INSTR_TIME_SET_ZERO(instr->firsttuple);
 	instr->tuplecount = 0;
@@ -264,7 +229,7 @@ InstrAggNode(NodeInstrumentation *dst, NodeInstrumentation *add)
 
 	dst->tuplecount += add->tuplecount;
 	INSTR_TIME_ADD(dst->startup, add->startup);
-	INSTR_TIME_ADD(dst->total, add->total);
+	INSTR_TIME_ADD(dst->instr.total, add->instr.total);
 	dst->ntuples += add->ntuples;
 	dst->ntuples2 += add->ntuples2;
 	dst->nloops += add->nloops;
@@ -272,10 +237,10 @@ InstrAggNode(NodeInstrumentation *dst, NodeInstrumentation *add)
 	dst->nfiltered2 += add->nfiltered2;
 
 	/* Add delta of buffer usage since entry to node's totals */
-	if (dst->need_bufusage)
+	if (dst->instr.need_bufusage)
 		BufferUsageAdd(&dst->bufusage, &add->bufusage);
 
-	if (dst->need_walusage)
+	if (dst->instr.need_walusage)
 		WalUsageAdd(&dst->walusage, &add->walusage);
 }
 

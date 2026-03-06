@@ -1835,7 +1835,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 	{
 		double		nloops = planstate->instrument->nloops;
 		double		startup_ms = INSTR_TIME_GET_MILLISEC(planstate->instrument->startup) / nloops;
-		double		total_ms = INSTR_TIME_GET_MILLISEC(planstate->instrument->total) / nloops;
+		double		total_ms = INSTR_TIME_GET_MILLISEC(planstate->instrument->instr.total) / nloops;
 		double		rows = planstate->instrument->ntuples / nloops;
 
 		if (es->format == EXPLAIN_FORMAT_TEXT)
@@ -1901,7 +1901,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			if (nloops <= 0)
 				continue;
 			startup_ms = INSTR_TIME_GET_MILLISEC(instrument->startup) / nloops;
-			total_ms = INSTR_TIME_GET_MILLISEC(instrument->total) / nloops;
+			total_ms = INSTR_TIME_GET_MILLISEC(instrument->instr.total) / nloops;
 			rows = instrument->ntuples / nloops;
 
 			ExplainOpenWorker(n, es);

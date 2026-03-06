@@ -102,22 +102,16 @@ typedef struct TriggerInstrumentation
  */
 typedef struct NodeInstrumentation
 {
-	/* Parameters set at node creation: */
-	bool		need_timer;		/* true if we need timer data */
-	bool		need_bufusage;	/* true if we need buffer usage data */
-	bool		need_walusage;	/* true if we need WAL usage data */
+	Instrumentation instr;		/* standard resource tracking */
+
 	bool		async_mode;		/* true if node is in async mode */
 	/* Info about current plan cycle: */
 	bool		running;		/* true if we've completed first tuple */
-	instr_time	starttime;		/* start time of current iteration of node */
 	instr_time	counter;		/* accumulated runtime for this node */
 	instr_time	firsttuple;		/* time for first tuple of this cycle */
 	double		tuplecount;		/* # of tuples emitted so far this cycle */
-	BufferUsage bufusage_start; /* buffer usage at start */
-	WalUsage	walusage_start; /* WAL usage at start */
 	/* Accumulated statistics across all completed cycles: */
 	instr_time	startup;		/* total startup time */
-	instr_time	total;			/* total time */
 	double		ntuples;		/* total tuples produced */
 	double		ntuples2;		/* secondary node-specific tuple counter */
 	double		nloops;			/* # of run cycles for this node */
