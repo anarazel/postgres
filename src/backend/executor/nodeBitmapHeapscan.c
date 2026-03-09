@@ -315,6 +315,7 @@ ExecEndBitmapHeapScan(BitmapHeapScanState *node)
 	if (node->sinstrument != NULL && IsParallelWorker())
 	{
 		BitmapHeapScanInstrumentation *si;
+		TableScanStats stats;
 
 		Assert(ParallelWorkerNumber < node->sinstrument->num_workers);
 		si = &node->sinstrument->sinstrument[ParallelWorkerNumber];
@@ -328,6 +329,17 @@ ExecEndBitmapHeapScan(BitmapHeapScanState *node)
 		 */
 		si->exact_pages += node->stats.exact_pages;
 		si->lossy_pages += node->stats.lossy_pages;
+
+		/* collect prefetch info for this process from the read_stream */
+		if ((stats = table_scan_stats(node->ss.ss_currentScanDesc)) != NULL)
+		{
+			si->stream.prefetch_count += stats->prefetch_count;
+			si->stream.distance_sum += stats->distance_sum;
+			si->stream.stall_count += stats->stall_count;
+			si->stream.io_count += stats->io_count;
+			si->stream.io_nblocks += stats->io_nblocks;
+			si->stream.io_in_progress += stats->io_in_progress;
+		}
 	}
 
 	/*

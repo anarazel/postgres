@@ -117,6 +117,27 @@ typedef struct ParallelBlockTableScanWorkerData
 typedef struct ParallelBlockTableScanWorkerData *ParallelBlockTableScanWorker;
 
 /*
+ * Generic prefetch stats for table scans.
+ */
+typedef struct TableScanStatsData
+{
+	/* number of prefetch requests */
+	uint64		prefetch_count;
+
+	/* total of prefetch distances */
+	uint64		distance_sum;
+
+	/* number of stalled reads (waiting for I/O) */
+	uint64		stall_count;
+
+	/* I/O stats */
+	uint64		io_count;		/* number of I/Os */
+	uint64		io_nblocks;		/* sum of blocks for all I/Os */
+	uint64		io_in_progress;	/* sum of in-progress I/Os */
+} TableScanStatsData;
+typedef struct TableScanStatsData *TableScanStats;
+
+/*
  * Base class for fetches from a table via an index. This is the base-class
  * for such scans, which needs to be embedded in the respective struct for
  * individual AMs.

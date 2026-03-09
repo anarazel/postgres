@@ -287,6 +287,30 @@ heapam_index_fetch_tuple(struct IndexFetchTableData *scan,
 	return got_heap_tuple;
 }
 
+static TableScanStats
+heap_index_stats(IndexFetchTableData *scan)
+{
+	ReadStreamInstrumentation stats;
+	IndexFetchHeapData *hscan = (IndexFetchHeapData *) scan;
+	TableScanStats res;
+
+	if (!hscan || !hscan->xs_read_stream)
+		return NULL;
+
+	stats = read_stream_prefetch_stats(hscan->xs_read_stream);
+
+	res = palloc0(sizeof(TableScanStatsData));
+
+	res->prefetch_count = stats.prefetch_count;
+	res->distance_sum = stats.distance_sum;
+	res->stall_count = stats.stall_count;
+	res->io_count = stats.io_count;
+	res->io_nblocks = stats.io_nblocks;
+	res->io_in_progress = stats.io_in_progress;
+
+	return res;
+}
+
 /*
  * heapam_batch_resolve_visibility
  *		Obtain visibility information for a TID from caller's batch.
@@ -3859,6 +3883,7 @@ static const TableAmRoutine heapam_methods = {
 
 	.scan_set_tidrange = heap_set_tidrange,
 	.scan_getnextslot_tidrange = heap_getnextslot_tidrange,
+	.scan_stats = heap_scan_stats,
 
 	.parallelscan_estimate = table_block_parallelscan_estimate,
 	.parallelscan_initialize = table_block_parallelscan_initialize,
@@ -3873,6 +3898,7 @@ static const TableAmRoutine heapam_methods = {
 	.index_only_getnext_slot = heapam_index_only_getnext_slot,
 	.index_only_batch_getnext_slot = heapam_index_only_batch_getnext_slot,
 	.index_fetch_tuple = heapam_index_fetch_tuple,
+	.index_stats = heap_index_stats,
 
 	.tuple_insert = heapam_tuple_insert,
 	.tuple_insert_speculative = heapam_tuple_insert_speculative,

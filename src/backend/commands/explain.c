@@ -13,6 +13,8 @@
  */
 #include "postgres.h"
 
+#include "access/genam.h"
+#include "access/tableam.h"
 #include "access/xact.h"
 #include "catalog/pg_type.h"
 #include "commands/createas.h"
@@ -137,8 +139,15 @@ static void show_memoize_info(MemoizeState *mstate, List *ancestors,
 							  ExplainState *es);
 static void show_hashagg_info(AggState *aggstate, ExplainState *es);
 static void show_indexscan_info(PlanState *planstate, ExplainState *es);
+static void show_indexscan_prefetch_info(PlanState *planstate,
+										 ExplainState *es);
 static void show_tidbitmap_info(BitmapHeapScanState *planstate,
 								ExplainState *es);
+static void show_scan_prefetch_info(ScanState *planstate,
+									ExplainState *es);
+static void show_prefetch_worker_info(PlanState *planstate,
+									  ExplainState *es,
+									  int worker);
 static void show_instrumentation_count(const char *qlabel, int which,
 									   PlanState *planstate, ExplainState *es);
 static void show_foreignscan_info(ForeignScanState *fsstate, ExplainState *es);
@@ -1975,6 +1984,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
 			show_indexscan_info(planstate, es);
+			show_indexscan_prefetch_info(planstate, es);
 			break;
 		case T_IndexOnlyScan:
 			show_scan_qual(((IndexOnlyScan *) plan)->indexqual,
@@ -1989,6 +1999,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
 			show_indexscan_info(planstate, es);
+			show_indexscan_prefetch_info(planstate, es);
 			break;
 		case T_BitmapIndexScan:
 			show_scan_qual(((BitmapIndexScan *) plan)->indexqualorig,
@@ -2006,6 +2017,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
 			show_tidbitmap_info((BitmapHeapScanState *) planstate, es);
+			show_scan_prefetch_info((ScanState *) planstate, es);
 			break;
 		case T_SampleScan:
 			show_tablesample(((SampleScan *) plan)->tablesample,
@@ -2024,6 +2036,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 										   planstate, es);
 			if (IsA(plan, CteScan))
 				show_ctescan_info(castNode(CteScanState, planstate), es);
+			show_scan_prefetch_info((ScanState *) planstate, es);
 			break;
 		case T_Gather:
 			{
@@ -2312,6 +2325,10 @@ ExplainNode(PlanState *planstate, List *ancestors,
 				show_buffer_usage(es, &instrument->bufusage);
 			if (es->wal)
 				show_wal_usage(es, &instrument->walusage);
+
+			/* show prefetch info for the given worker */
+			show_prefetch_worker_info(planstate, es, n);
+
 			ExplainCloseWorker(n, es);
 		}
 	}
@@ -3922,6 +3939,130 @@ show_indexscan_info(PlanState *planstate, ExplainState *es)
 }
 
 /*
+ * show_indexscan_prefetch_info
+ *		show info about prefetching
+ *
+ * Shows summary of stats for leader and workers (if any).
+ */
+static void
+show_indexscan_prefetch_info(PlanState *planstate, ExplainState *es)
+{
+	Plan	   *plan = planstate->plan;
+	IndexScanDesc scandesc = NULL;
+	SharedIndexScanInstrumentation *SharedInfo = NULL;
+	TableScanStatsData	stats;
+	TableScanStats		leader_stats;
+
+	if (!es->analyze)
+		return;
+
+	/* Initialize counters with stats from the local process first */
+	switch (nodeTag(plan))
+	{
+		case T_IndexScan:
+			{
+				IndexScanState *indexstate = ((IndexScanState *) planstate);
+
+				scandesc = indexstate->iss_ScanDesc;
+				SharedInfo = indexstate->iss_SharedInfo;
+				break;
+			}
+		case T_IndexOnlyScan:
+			{
+				IndexOnlyScanState *indexstate = ((IndexOnlyScanState *) planstate);
+
+				scandesc = indexstate->ioss_ScanDesc;
+				SharedInfo = indexstate->ioss_SharedInfo;
+				break;
+			}
+		default:
+			/* other nodes don't have prefetch info */
+			return;
+	}
+
+	/* scan not started, no prefetch stats */
+	if (!scandesc || !scandesc->xs_heapfetch)
+		return;
+
+	/*
+	 * Get stats from the leader process, initialize the summary, otherwise
+	 * reset the counters to zeros.
+	 */
+	leader_stats = table_index_stats(scandesc->xs_heapfetch);
+	if (leader_stats)
+	{
+		memcpy(&stats, leader_stats, sizeof(TableScanStatsData));
+	}
+	else
+	{
+		memset(&stats, 0, sizeof(TableScanStatsData));
+	}
+
+	/* get the sum of the counters set within each and every process */
+	if (SharedInfo)
+	{
+		for (int i = 0; i < SharedInfo->num_workers; ++i)
+		{
+			IndexScanInstrumentation *winstrument = &SharedInfo->winstrument[i];
+
+			stats.prefetch_count += winstrument->stream.prefetch_count;
+			stats.distance_sum += winstrument->stream.distance_sum;
+			stats.stall_count += winstrument->stream.stall_count;
+			stats.io_count += winstrument->stream.io_count;
+			stats.io_nblocks += winstrument->stream.io_nblocks;
+			stats.io_in_progress += winstrument->stream.io_in_progress;
+		}
+	}
+
+	/* don't print anything without prefetching */
+	if (stats.prefetch_count > 0)
+	{
+		if (es->format == EXPLAIN_FORMAT_TEXT)
+		{
+			ExplainIndentText(es);
+
+			appendStringInfoString(es->str, "Prefetch:");
+			appendStringInfo(es->str, " distance=%.3f",
+							 (stats.distance_sum * 1.0 / stats.prefetch_count));
+			appendStringInfo(es->str, " count=%" PRIu64, stats.prefetch_count);
+			appendStringInfo(es->str, " stalls=%" PRIu64, stats.stall_count);
+
+			if (stats.io_count > 0)
+			{
+				appendStringInfo(es->str, " ios=%" PRIu64, stats.io_count);
+				appendStringInfo(es->str, " size=%.3f", (stats.io_nblocks * 1.0 / stats.io_count));
+				appendStringInfo(es->str, " inprogress=%.3f", (stats.io_in_progress * 1.0 / stats.io_count));
+			}
+
+			appendStringInfoChar(es->str, '\n');
+		}
+		else
+		{
+			ExplainOpenGroup("Prefetch", "Prefetch", true, es);
+
+			ExplainPropertyFloat("Average Distance", NULL,
+								 (stats.distance_sum * 1.0 / stats.prefetch_count), 3, es);
+			ExplainPropertyUInteger("Prefetch Count", NULL,
+									stats.prefetch_count, es);
+			ExplainPropertyUInteger("Stalls", NULL,
+									stats.stall_count, es);
+
+			if (stats.io_count > 0)
+			{
+				ExplainPropertyUInteger("IO count", NULL,
+										stats.io_count, es);
+				ExplainPropertyFloat("Average Size", NULL,
+									 (stats.io_nblocks * 1.0 / stats.io_count), 3, es);
+				ExplainPropertyFloat("IO in-progress", NULL,
+									 (stats.io_in_progress * 1.0 / stats.io_count), 3, es);
+			}
+
+			ExplainCloseGroup("Prefetch", "Prefetch", true, es);
+		}
+	}
+}
+
+/*
  * Show exact/lossy pages for a BitmapHeapScan node
  */
 static void
@@ -3984,6 +4125,251 @@ show_tidbitmap_info(BitmapHeapScanState *planstate, ExplainState *es)
 
 			if (es->workers_state)
 				ExplainCloseWorker(n, es);
+		}
+	}
+}
+
+/*
+ * show_scan_prefetch_info
+ *		show info about prefetching for a seq/bitmap scan
+ *
+ * Shows summary of stats for leader and workers (if any).
+ */
+static void
+show_scan_prefetch_info(ScanState *planstate, ExplainState *es)
+{
+	Plan	   *plan = planstate->ps.plan;
+	TableScanStats	leader_stats;
+	TableScanStatsData	stats;
+
+	if (!es->analyze)
+		return;
+
+	/* scan not started, no prefetch stats */
+	if (!(planstate && planstate->ss_currentScanDesc))
+		return;
+
+	/* collect prefetch statistics from the read stream */
+	leader_stats = table_scan_stats(planstate->ss_currentScanDesc);
+
+	if (leader_stats)
+	{
+		memcpy(&stats, leader_stats, sizeof(TableScanStatsData));
+	}
+	else
+	{
+		memset(&stats, 0, sizeof(TableScanStatsData));
+	}
+
+	/* Initialize counters with stats from the local process first */
+	switch (nodeTag(plan))
+	{
+		case T_SeqScan:
+			{
+				SharedSeqScanInstrumentation *sinstrument
+					= ((SeqScanState *) planstate)->sinstrument;
+
+				/* get the sum of the counters set within each and every process */
+				if (sinstrument)
+				{
+					for (int i = 0; i < sinstrument->num_workers; ++i)
+					{
+						SeqScanInstrumentation *winstrument = &sinstrument->sinstrument[i];
+
+						stats.prefetch_count += winstrument->stream.prefetch_count;
+						stats.distance_sum += winstrument->stream.distance_sum;
+						stats.stall_count += winstrument->stream.stall_count;
+						stats.io_count += winstrument->stream.io_count;
+						stats.io_nblocks += winstrument->stream.io_nblocks;
+						stats.io_in_progress += winstrument->stream.io_in_progress;
+					}
+				}
+
+				break;
+			}
+		case T_BitmapHeapScan:
+			{
+				SharedBitmapHeapInstrumentation *sinstrument
+					= ((BitmapHeapScanState *) planstate)->sinstrument;
+
+				/* get the sum of the counters set within each and every process */
+				if (sinstrument)
+				{
+					for (int i = 0; i < sinstrument->num_workers; ++i)
+					{
+						BitmapHeapScanInstrumentation *winstrument = &sinstrument->sinstrument[i];
+
+						stats.prefetch_count += winstrument->stream.prefetch_count;
+						stats.distance_sum += winstrument->stream.distance_sum;
+						stats.stall_count += winstrument->stream.stall_count;
+						stats.io_count += winstrument->stream.io_count;
+						stats.io_nblocks += winstrument->stream.io_nblocks;
+						stats.io_in_progress += winstrument->stream.io_in_progress;
+					}
+				}
+
+				break;
+			}
+		default:
+			/* ignore other plans */
+			return;
+	}
+
+	/* don't print anything without prefetching */
+	if (stats.prefetch_count > 0)
+	{
+		if (es->format == EXPLAIN_FORMAT_TEXT)
+		{
+			ExplainIndentText(es);
+
+			appendStringInfoString(es->str, "Prefetch:");
+			appendStringInfo(es->str, " distance=%.3f",
+							 (stats.distance_sum * 1.0 / stats.prefetch_count));
+			appendStringInfo(es->str, " count=%" PRIu64, stats.prefetch_count);
+			appendStringInfo(es->str, " stalls=%" PRIu64, stats.stall_count);
+
+			if (stats.io_count > 0)
+			{
+				appendStringInfo(es->str, " ios=%" PRIu64, stats.io_count);
+				appendStringInfo(es->str, " size=%.3f", (stats.io_nblocks * 1.0 / stats.io_count));
+				appendStringInfo(es->str, " inprogress=%.3f", (stats.io_in_progress * 1.0 / stats.io_count));
+			}
+
+			appendStringInfoChar(es->str, '\n');
+		}
+		else
+		{
+			ExplainOpenGroup("Prefetch", "Prefetch", true, es);
+
+			ExplainPropertyFloat("Average Distance", NULL,
+								 (stats.distance_sum * 1.0 / stats.prefetch_count), 3, es);
+			ExplainPropertyUInteger("Prefetch Count", NULL,
+									stats.prefetch_count, es);
+			ExplainPropertyUInteger("Stalls", NULL,
+									stats.stall_count, es);
+
+			if (stats.io_count > 0)
+			{
+				ExplainPropertyUInteger("IO count", NULL,
+										stats.io_count, es);
+				ExplainPropertyFloat("Average Size", NULL,
+									 (stats.io_nblocks * 1.0 / stats.io_count), 3, es);
+				ExplainPropertyFloat("IO in-progress", NULL,
+									 (stats.io_in_progress * 1.0 / stats.io_count), 3, es);
+			}
+
+			ExplainCloseGroup("Prefetch", "Prefetch", true, es);
+		}
+	}
+}
+
+/*
+ * show_prefetch_worker_info
+ *		show info about prefetching for a single worker
+ *
+ * Shows prefetching stats for a parallel scan worker.
+ */
+static void
+show_prefetch_worker_info(PlanState *planstate, ExplainState *es, int worker)
+{
+	Plan	   *plan = planstate->plan;
+	ReadStreamInstrumentation *stats = NULL;
+
+	if (!es->analyze)
+		return;
+
+	/* get instrumentation for the given worker */
+	switch (nodeTag(plan))
+	{
+		case T_IndexScan:
+			{
+				IndexScanState *indexstate = ((IndexScanState *) planstate);
+				SharedIndexScanInstrumentation *sinstrument = indexstate->iss_SharedInfo;
+				IndexScanInstrumentation *instrument = &sinstrument->winstrument[worker];
+
+				stats = &instrument->stream;
+
+				break;
+			}
+		case T_IndexOnlyScan:
+			{
+				IndexOnlyScanState *indexstate = ((IndexOnlyScanState *) planstate);
+				SharedIndexScanInstrumentation *sinstrument = indexstate->ioss_SharedInfo;
+				IndexScanInstrumentation *instrument = &sinstrument->winstrument[worker];
+
+				stats = &instrument->stream;
+
+				break;
+			}
+		case T_BitmapHeapScan:
+			{
+				BitmapHeapScanState *state = ((BitmapHeapScanState *) planstate);
+				SharedBitmapHeapInstrumentation *sinstrument = state->sinstrument;
+				BitmapHeapScanInstrumentation *instrument = &sinstrument->sinstrument[worker];
+
+				stats = &instrument->stream;
+
+				break;
+			}
+		case T_SeqScan:
+			{
+				SeqScanState *state = ((SeqScanState *) planstate);
+				SharedSeqScanInstrumentation *sinstrument = state->sinstrument;
+				SeqScanInstrumentation *instrument = &sinstrument->sinstrument[worker];
+
+				stats = &instrument->stream;
+
+				break;
+			}
+		default:
+			/* ignore other plans */
+			return;
+	}
+
+	/* don't print stats if there's nothing to report */
+	if (stats->prefetch_count > 0)
+	{
+		if (es->format == EXPLAIN_FORMAT_TEXT)
+		{
+			ExplainIndentText(es);
+
+			appendStringInfoString(es->str, "Prefetch:");
+			appendStringInfo(es->str, " distance=%.3f",
+							 (stats->distance_sum * 1.0 / stats->prefetch_count));
+			appendStringInfo(es->str, " count=%" PRIu64, stats->prefetch_count);
+			appendStringInfo(es->str, " stalls=%" PRIu64, stats->stall_count);
+
+			if (stats->io_count > 0)
+			{
+				appendStringInfo(es->str, " ios=%" PRIu64, stats->io_count);
+				appendStringInfo(es->str, " size=%.3f", (stats->io_nblocks * 1.0 / stats->io_count));
+				appendStringInfo(es->str, " inprogress=%.3f", (stats->io_in_progress * 1.0 / stats->io_count));
+			}
+
+			appendStringInfoChar(es->str, '\n');
+		}
+		else
+		{
+			ExplainOpenGroup("Prefetch", "Prefetch", true, es);
+
+			ExplainPropertyFloat("Average Distance", NULL,
+								 (stats->distance_sum * 1.0 / stats->prefetch_count), 3, es);
+			ExplainPropertyUInteger("Prefetch Count", NULL,
+									stats->prefetch_count, es);
+			ExplainPropertyUInteger("Stalls", NULL,
+									stats->stall_count, es);
+
+			if (stats->io_count > 0)
+			{
+				ExplainPropertyUInteger("IO count", NULL,
+										stats->io_count, es);
+				ExplainPropertyFloat("Average Size", NULL,
+									 (stats->io_nblocks * 1.0 / stats->io_count), 3, es);
+				ExplainPropertyFloat("IO in-progress", NULL,
+									 (stats->io_in_progress * 1.0 / stats->io_count), 3, es);
+			}
+
+			ExplainCloseGroup("Prefetch", "Prefetch", true, es);
 		}
 	}
 }
