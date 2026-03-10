@@ -122,10 +122,11 @@ typedef struct IndexFetchHeapData
 	IndexFetchTableData xs_base;	/* AM independent part of the descriptor */
 
 	/*
-	 * Current heap buffer in scan, if any. NB: if xs_cbuf is not
-	 * InvalidBuffer, we hold a pin on that buffer.
+	 * Current heap buffer in scan (and its block number), if any.  NB: if
+	 * xs_blk is not InvalidBlockNumber, we hold a pin in xs_cbuf.
 	 */
 	Buffer		xs_cbuf;
+	BlockNumber xs_blk;
 
 	/* For visibility map checks (index-only scans and on-access pruning) */
 	Buffer		xs_vmbuffer;
