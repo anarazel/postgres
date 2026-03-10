@@ -86,6 +86,7 @@ heapam_index_fetch_begin(Relation rel)
 
 	hscan->xs_base.rel = rel;
 	hscan->xs_cbuf = InvalidBuffer;
+	hscan->xs_blk = InvalidBlockNumber;
 	hscan->xs_vmbuffer = InvalidBuffer;
 
 	return &hscan->xs_base;
@@ -107,6 +108,7 @@ heapam_index_fetch_reset(IndexFetchTableData *scan)
 		ReleaseBuffer(hscan->xs_vmbuffer);
 		hscan->xs_vmbuffer = InvalidBuffer;
 	}
+	hscan->xs_blk = InvalidBlockNumber;
 }
 
 static void
@@ -132,23 +134,28 @@ heapam_index_fetch_tuple(struct IndexFetchTableData *scan,
 
 	Assert(TTS_IS_BUFFERTUPLE(slot));
 
-	/* We can skip the buffer-switching logic if we're in mid-HOT chain. */
-	if (!*call_again)
+	/* We can skip the buffer-switching logic if we're on the same page. */
+	if (hscan->xs_blk != ItemPointerGetBlockNumber(tid))
 	{
-		/* Switch to correct buffer if we don't have it already */
-		Buffer		prev_buf = hscan->xs_cbuf;
+		Assert(!*call_again);
 
-		hscan->xs_cbuf = ReleaseAndReadBuffer(hscan->xs_cbuf,
-											  hscan->xs_base.rel,
-											  ItemPointerGetBlockNumber(tid));
+		/* Remember this buffer's block number for next time */
+		hscan->xs_blk = ItemPointerGetBlockNumber(tid);
+
+		if (BufferIsValid(hscan->xs_cbuf))
+			ReleaseBuffer(hscan->xs_cbuf);
+
+		hscan->xs_cbuf = ReadBuffer(hscan->xs_base.rel, hscan->xs_blk);
 
 		/*
-		 * Prune page, but only if we weren't already on this page
+		 * Prune page when it is pinned for the first time
 		 */
-		if (prev_buf != hscan->xs_cbuf)
-			heap_page_prune_opt(hscan->xs_base.rel, hscan->xs_cbuf,
-								&hscan->xs_vmbuffer);
+		heap_page_prune_opt(hscan->xs_base.rel, hscan->xs_cbuf,
+							&hscan->xs_vmbuffer);
 	}
+
+	Assert(BufferGetBlockNumber(hscan->xs_cbuf) == hscan->xs_blk);
+	Assert(hscan->xs_blk == ItemPointerGetBlockNumber(tid));
 
 	/* Obtain share-lock on the buffer so we can examine visibility */
 	LockBuffer(hscan->xs_cbuf, BUFFER_LOCK_SHARE);
