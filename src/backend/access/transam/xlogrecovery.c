@@ -1961,6 +1961,18 @@ ApplyWalRecord(XLogReaderState *xlogreader, XLogRecord *record, TimeLineID *repl
 	/* Now apply the WAL record itself */
 	GetRmgr(record->xl_rmid).rm_redo(xlogreader);
 
+	for (int block_id = 0; block_id <= xlogreader->record->max_block_id; block_id++)
+	{
+		DecodedBkpBlock *blk = &xlogreader->record->blocks[block_id];
+
+		if (!blk->in_use)
+			continue;
+		if (!blk->used_existence)
+			elog(PANIC, "did not check block reference %d during replay", block_id);
+		if (blk->has_image && !blk->used_read)
+			elog(PANIC, "did not read block reference %d during replay", block_id);
+	}
+
 	/*
 	 * After redo, check whether the backup pages associated with the WAL
 	 * record are consistent with the existing pages. This check is done only

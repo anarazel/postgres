@@ -27,6 +27,7 @@
 #include "storage/fd.h"
 #include "storage/smgr.h"
 #include "utils/hsearch.h"
+#include "utils/memutils.h"
 #include "utils/rel.h"
 
 
@@ -357,6 +358,18 @@ XLogReadBufferForRedoExtended(XLogReaderState *record,
 		/* Caller specified a bogus block_id */
 		elog(PANIC, "failed to locate backup block with ID %d in WAL record",
 			 block_id);
+	}
+
+	{
+		DecodedBkpBlock *blk = &record->record->blocks[block_id];
+
+		if (blk->used_read)
+		{
+			elog(PANIC, "multiple read references to block %u", block_id);
+		}
+
+		blk->used_read = 1;
+		blk->used_existence = 1;
 	}
 
 	/*

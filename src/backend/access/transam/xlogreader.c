@@ -1713,6 +1713,7 @@ DecodeXLogRecord(XLogReaderState *state,
 	decoded->main_data = NULL;
 	decoded->main_data_len = 0;
 	decoded->max_block_id = -1;
+
 	ptr = (char *) record;
 	ptr += SizeOfXLogRecord;
 	remaining = record->xl_tot_len - SizeOfXLogRecord;
@@ -1762,7 +1763,11 @@ DecodeXLogRecord(XLogReaderState *state,
 
 			/* mark any intervening block IDs as not in use */
 			for (int i = decoded->max_block_id + 1; i < block_id; ++i)
+			{
 				decoded->blocks[i].in_use = false;
+				decoded->blocks[i].used_existence = false;
+				decoded->blocks[i].used_read = false;
+			}
 
 			if (block_id <= decoded->max_block_id)
 			{
@@ -1776,6 +1781,9 @@ DecodeXLogRecord(XLogReaderState *state,
 
 			blk = &decoded->blocks[block_id];
 			blk->in_use = true;
+			blk->used_existence = false;
+			blk->used_read = false;
+
 			blk->apply_image = false;
 
 			COPY_HEADER_FIELD(&fork_flags, sizeof(uint8));

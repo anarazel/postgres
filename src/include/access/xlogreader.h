@@ -145,7 +145,13 @@ typedef struct
 	bool		has_data;
 	char	   *data;
 	uint16		data_len;
+
+	bool		used_existence;
+	bool		used_read;
 } DecodedBkpBlock;
+
+
+typedef struct Bitmapset Bitmapset;
 
 /*
  * The decoded contents of a record.  This occupies a contiguous region of
@@ -416,11 +422,37 @@ extern bool DecodeXLogRecord(XLogReaderState *state,
 #define XLogRecHasAnyBlockRefs(decoder) ((decoder)->record->max_block_id >= 0)
 #define XLogRecMaxBlockId(decoder) ((decoder)->record->max_block_id)
 #define XLogRecGetBlock(decoder, i) (&(decoder)->record->blocks[(i)])
-#define XLogRecHasBlockRef(decoder, block_id)			\
-	(((decoder)->record->max_block_id >= (block_id)) &&	\
-	 ((decoder)->record->blocks[block_id].in_use))
-#define XLogRecHasBlockImage(decoder, block_id)		\
-	((decoder)->record->blocks[block_id].has_image)
+
+static inline bool
+XLogRecHasBlockRef(XLogReaderState *state, uint8 block_id)
+{
+	bool has_ref = false;
+
+	if (state->record->max_block_id >= block_id &&
+		state->record->blocks[block_id].in_use)
+	{
+		state->record->blocks[block_id].used_existence = 1;
+		has_ref = true;
+	}
+
+	return has_ref;
+}
+
+static inline bool
+XLogRecHasBlockImage(XLogReaderState *state, uint8 block_id)
+{
+	bool has_image = false;
+
+	if (state->record->max_block_id >= block_id &&
+		state->record->blocks[block_id].in_use)
+	{
+		state->record->blocks[block_id].used_existence = 1;
+		has_image = state->record->blocks[block_id].has_image;
+	}
+
+	return has_image;
+}
+
 #define XLogRecBlockImageApply(decoder, block_id)		\
 	((decoder)->record->blocks[block_id].apply_image)
 #define XLogRecHasBlockData(decoder, block_id)		\
