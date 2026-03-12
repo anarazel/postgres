@@ -199,6 +199,41 @@ visibilitymap_clear_locked(Relation rel, BlockNumber heapBlk, Buffer vmbuf, uint
 	return cleared;
 }
 
+bool
+visibilitymap_clear_redo(BlockNumber heapBlk,
+						 Buffer vmbuf, uint8 flags,
+						 XLogRecPtr lsn)
+{
+	BlockNumber mapBlock = HEAPBLK_TO_MAPBLOCK(heapBlk);
+	int			mapByte = HEAPBLK_TO_MAPBYTE(heapBlk);
+	int			mapOffset = HEAPBLK_TO_OFFSET(heapBlk);
+	uint8		mask = flags << mapOffset;
+	Page		page;
+	char	   *map;
+	bool		cleared = false;
+
+	BufferIsLockedByMeInMode(vmbuf, BUFFER_LOCK_EXCLUSIVE);
+
+	/* FIXME: This should probably just be an assertion */
+	if (!BufferIsValid(vmbuf) || BufferGetBlockNumber(vmbuf) != mapBlock)
+		elog(ERROR, "wrong buffer passed to visibilitymap_clear_redo");
+
+	page = BufferGetPage(vmbuf);
+	map = PageGetContents(page);
+
+	if (map[mapByte] & mask)
+	{
+		map[mapByte] &= ~mask;
+
+		MarkBufferDirty(vmbuf);
+		cleared = true;
+	}
+
+	PageSetLSN(page, lsn);
+
+	return cleared;
+}
+
 /*
  *	visibilitymap_pin - pin a map page for setting a bit
  *

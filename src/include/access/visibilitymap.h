@@ -31,6 +31,10 @@ extern bool visibilitymap_clear(Relation rel, BlockNumber heapBlk,
 								Buffer vmbuf, uint8 flags);
 extern bool visibilitymap_clear_locked(Relation rel, BlockNumber heapBlk,
 									   Buffer vmbuf, uint8 flags);
+extern bool visibilitymap_clear_redo(BlockNumber heapBlk,
+									 Buffer vmbuf, uint8 flags,
+									 XLogRecPtr lsn);
+
 extern void visibilitymap_pin(Relation rel, BlockNumber heapBlk,
 							  Buffer *vmbuf);
 extern bool visibilitymap_pin_ok(BlockNumber heapBlk, Buffer vmbuf);

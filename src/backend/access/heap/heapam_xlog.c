@@ -440,15 +440,14 @@ heap_xlog_delete(XLogReaderState *record)
 	 * The visibility map may need to be fixed even if the heap page is
 	 * already up-to-date.
 	 */
-	if (xlrec->flags & XLH_DELETE_ALL_VISIBLE_CLEARED)
+	if ((xlrec->flags & XLH_DELETE_ALL_VISIBLE_CLEARED))
 	{
-		Relation	reln = CreateFakeRelcacheEntry(target_locator);
-		Buffer		vmbuffer = InvalidBuffer;
+		Buffer		vmbuffer;
 
-		visibilitymap_pin(reln, blkno, &vmbuffer);
-		visibilitymap_clear(reln, blkno, vmbuffer, VISIBILITYMAP_VALID_BITS);
-		ReleaseBuffer(vmbuffer);
-		FreeFakeRelcacheEntry(reln);
+		if (XLogReadBufferForRedo(record, 1, &vmbuffer) == BLK_NEEDS_REDO)
+			visibilitymap_clear_redo(blkno, vmbuffer, VISIBILITYMAP_VALID_BITS,
+									 lsn);
+		UnlockReleaseBuffer(vmbuffer);
 	}
 
 	if (XLogReadBufferForRedo(record, 0, &buffer) == BLK_NEEDS_REDO)
@@ -527,15 +526,14 @@ heap_xlog_insert(XLogReaderState *record)
 	 * The visibility map may need to be fixed even if the heap page is
 	 * already up-to-date.
 	 */
-	if (xlrec->flags & XLH_INSERT_ALL_VISIBLE_CLEARED)
+	if ((xlrec->flags & XLH_INSERT_ALL_VISIBLE_CLEARED))
 	{
-		Relation	reln = CreateFakeRelcacheEntry(target_locator);
-		Buffer		vmbuffer = InvalidBuffer;
+		Buffer		vmbuffer;
 
-		visibilitymap_pin(reln, blkno, &vmbuffer);
-		visibilitymap_clear(reln, blkno, vmbuffer, VISIBILITYMAP_VALID_BITS);
-		ReleaseBuffer(vmbuffer);
-		FreeFakeRelcacheEntry(reln);
+		if (XLogReadBufferForRedo(record, 1, &vmbuffer) == BLK_NEEDS_REDO)
+			visibilitymap_clear_redo(blkno, vmbuffer, VISIBILITYMAP_VALID_BITS,
+									 lsn);
+		UnlockReleaseBuffer(vmbuffer);
 	}
 
 	/*
@@ -633,7 +631,6 @@ heap_xlog_multi_insert(XLogReaderState *record)
 	int			i;
 	bool		isinit = (XLogRecGetInfo(record) & XLOG_HEAP_INIT_PAGE) != 0;
 	XLogRedoAction action;
-	Buffer		vmbuffer = InvalidBuffer;
 
 	/*
 	 * Insertion doesn't overwrite MVCC data, so no conflict processing is
@@ -648,18 +645,23 @@ heap_xlog_multi_insert(XLogReaderState *record)
 			 (xlrec->flags & XLH_INSERT_ALL_FROZEN_SET)));
 
 	/*
-	 * The visibility map may need to be fixed even if the heap page is
-	 * already up-to-date.
+	 * If required, clear the VM first, to prevent all-visible temporarily
+	 * being set for a heap page that's not all visible anymore.
+	 *
+	 * If it were possible for XLH_INSERT_ALL_VISIBLE_CLEARED and
+	 * XLH_INSERT_ALL_FROZEN_SET to be present in the same record, doing the
+	 * XLogReadBufferForRedo() before the PageSetAllVisible() below would be a
+	 * problem, as it'd violate the rule about there never beeing a page in
+	 * the VM that's not marked as all visible on the page level.
 	 */
 	if (xlrec->flags & XLH_INSERT_ALL_VISIBLE_CLEARED)
 	{
-		Relation	reln = CreateFakeRelcacheEntry(rlocator);
+		Buffer		vmbuffer;
 
-		visibilitymap_pin(reln, blkno, &vmbuffer);
-		visibilitymap_clear(reln, blkno, vmbuffer, VISIBILITYMAP_VALID_BITS);
-		ReleaseBuffer(vmbuffer);
-		vmbuffer = InvalidBuffer;
-		FreeFakeRelcacheEntry(reln);
+		if (XLogReadBufferForRedo(record, 1, &vmbuffer) == BLK_NEEDS_REDO)
+			visibilitymap_clear_redo(blkno, vmbuffer, VISIBILITYMAP_VALID_BITS,
+									 lsn);
+		UnlockReleaseBuffer(vmbuffer);
 	}
 
 	if (isinit)
@@ -751,7 +753,7 @@ heap_xlog_multi_insert(XLogReaderState *record)
 	buffer = InvalidBuffer;
 
 	/*
-	 * Read and update the visibility map (VM) block.
+	 * Read and update the visibility map (VM) block to set it frozen.
 	 *
 	 * We must always redo VM changes, even if the corresponding heap page
 	 * update was skipped due to the LSN interlock. Each VM block covers
@@ -772,28 +774,31 @@ heap_xlog_multi_insert(XLogReaderState *record)
 	 * same approach is taken when replaying xl_heap_visible records (see
 	 * heap_xlog_visible()).
 	 */
-	if ((xlrec->flags & XLH_INSERT_ALL_FROZEN_SET) &&
-		XLogReadBufferForRedoExtended(record, 1, RBM_ZERO_ON_ERROR, false,
-									  &vmbuffer) == BLK_NEEDS_REDO)
+	if ((xlrec->flags & XLH_INSERT_ALL_FROZEN_SET))
 	{
-		Page		vmpage = BufferGetPage(vmbuffer);
+		Buffer		vmbuffer;
 
-		/* initialize the page if it was read as zeros */
-		if (PageIsNew(vmpage))
-			PageInit(vmpage, BLCKSZ, 0);
+		if (XLogReadBufferForRedoExtended(record, 1, RBM_ZERO_ON_ERROR, false,
+										  &vmbuffer) == BLK_NEEDS_REDO)
+		{
+			Page		vmpage = BufferGetPage(vmbuffer);
 
-		visibilitymap_set_vmbits(blkno,
-								 vmbuffer,
-								 VISIBILITYMAP_ALL_VISIBLE |
-								 VISIBILITYMAP_ALL_FROZEN,
-								 rlocator);
+			/* initialize the page if it was read as zeros */
+			if (PageIsNew(vmpage))
+				PageInit(vmpage, BLCKSZ, 0);
 
-		Assert(BufferIsDirty(vmbuffer));
-		PageSetLSN(vmpage, lsn);
-	}
+			visibilitymap_set_vmbits(blkno,
+									 vmbuffer,
+									 VISIBILITYMAP_ALL_VISIBLE |
+									 VISIBILITYMAP_ALL_FROZEN,
+									 rlocator);
 
-	if (BufferIsValid(vmbuffer))
+			Assert(BufferIsDirty(vmbuffer));
+			PageSetLSN(vmpage, lsn);
+		}
+
 		UnlockReleaseBuffer(vmbuffer);
+	}
 
 	/*
 	 * If the page is running low on free space, update the FSM as well.
@@ -859,16 +864,44 @@ heap_xlog_update(XLogReaderState *record, bool hot_update)
 	/*
 	 * The visibility map may need to be fixed even if the heap page is
 	 * already up-to-date.
+	 *
+	 * This is a tad more complicated than some other similar routines,
+	 * because we may need to unset VM bits for the old block and the new
+	 * block, and blocks pages may be the same. If the old and new block are
+	 * different they still may be covered by the same VM block.
+	 *
+	 * Since we are just clearing VM bits, we unconditionally do so before
+	 * touching the heap page(s), as it is always safe to not have VM bits set
+	 * even if the page is all visible/frozen.
 	 */
 	if (xlrec->flags & XLH_UPDATE_OLD_ALL_VISIBLE_CLEARED)
 	{
-		Relation	reln = CreateFakeRelcacheEntry(rlocator);
 		Buffer		vmbuffer = InvalidBuffer;
 
-		visibilitymap_pin(reln, oldblk, &vmbuffer);
-		visibilitymap_clear(reln, oldblk, vmbuffer, VISIBILITYMAP_VALID_BITS);
-		ReleaseBuffer(vmbuffer);
-		FreeFakeRelcacheEntry(reln);
+		if (XLogReadBufferForRedo(record, 2, &vmbuffer) == BLK_NEEDS_REDO)
+		{
+			visibilitymap_clear_redo(oldblk, vmbuffer, VISIBILITYMAP_VALID_BITS,
+									 lsn);
+			if ((xlrec->flags & XLH_UPDATE_NEW_ALL_VISIBLE_CLEARED) &&
+				!XLogRecHasBlockRef(record, 3))
+				visibilitymap_clear_redo(newblk, vmbuffer, VISIBILITYMAP_VALID_BITS,
+										 lsn);
+		}
+		UnlockReleaseBuffer(vmbuffer);
+	}
+
+	if ((xlrec->flags & XLH_UPDATE_NEW_ALL_VISIBLE_CLEARED) &&
+		XLogRecHasBlockRef(record, 3))
+	{
+		Buffer		vmbuffer = InvalidBuffer;
+
+		if (XLogReadBufferForRedo(record, 3, &vmbuffer) == BLK_NEEDS_REDO)
+		{
+			elog(WARNING, "vmbuff 3");
+			visibilitymap_clear_redo(newblk, vmbuffer, VISIBILITYMAP_VALID_BITS,
+									 lsn);
+		}
+		UnlockReleaseBuffer(vmbuffer);
 	}
 
 	/*
@@ -939,21 +972,6 @@ heap_xlog_update(XLogReaderState *record, bool hot_update)
 	}
 	else
 		newaction = XLogReadBufferForRedo(record, 0, &nbuffer);
-
-	/*
-	 * The visibility map may need to be fixed even if the heap page is
-	 * already up-to-date.
-	 */
-	if (xlrec->flags & XLH_UPDATE_NEW_ALL_VISIBLE_CLEARED)
-	{
-		Relation	reln = CreateFakeRelcacheEntry(rlocator);
-		Buffer		vmbuffer = InvalidBuffer;
-
-		visibilitymap_pin(reln, newblk, &vmbuffer);
-		visibilitymap_clear(reln, newblk, vmbuffer, VISIBILITYMAP_VALID_BITS);
-		ReleaseBuffer(vmbuffer);
-		FreeFakeRelcacheEntry(reln);
-	}
 
 	/* Deal with new tuple */
 	if (newaction == BLK_NEEDS_REDO)
@@ -1143,18 +1161,15 @@ heap_xlog_lock(XLogReaderState *record)
 	if (xlrec->flags & XLH_LOCK_ALL_FROZEN_CLEARED)
 	{
 		RelFileLocator rlocator;
-		Buffer		vmbuffer = InvalidBuffer;
+		Buffer		vmbuffer;
 		BlockNumber block;
-		Relation	reln;
 
 		XLogRecGetBlockTag(record, 0, &rlocator, NULL, &block);
-		reln = CreateFakeRelcacheEntry(rlocator);
 
-		visibilitymap_pin(reln, block, &vmbuffer);
-		visibilitymap_clear(reln, block, vmbuffer, VISIBILITYMAP_ALL_FROZEN);
-
-		ReleaseBuffer(vmbuffer);
-		FreeFakeRelcacheEntry(reln);
+		if (XLogReadBufferForRedo(record, 1, &vmbuffer) == BLK_NEEDS_REDO)
+			visibilitymap_clear_redo(block, vmbuffer, VISIBILITYMAP_VALID_BITS,
+									 lsn);
+		UnlockReleaseBuffer(vmbuffer);
 	}
 
 	if (XLogReadBufferForRedo(record, 0, &buffer) == BLK_NEEDS_REDO)
@@ -1219,18 +1234,15 @@ heap_xlog_lock_updated(XLogReaderState *record)
 	if (xlrec->flags & XLH_LOCK_ALL_FROZEN_CLEARED)
 	{
 		RelFileLocator rlocator;
-		Buffer		vmbuffer = InvalidBuffer;
+		Buffer		vmbuffer;
 		BlockNumber block;
-		Relation	reln;
 
 		XLogRecGetBlockTag(record, 0, &rlocator, NULL, &block);
-		reln = CreateFakeRelcacheEntry(rlocator);
 
-		visibilitymap_pin(reln, block, &vmbuffer);
-		visibilitymap_clear(reln, block, vmbuffer, VISIBILITYMAP_ALL_FROZEN);
-
-		ReleaseBuffer(vmbuffer);
-		FreeFakeRelcacheEntry(reln);
+		if (XLogReadBufferForRedo(record, 1, &vmbuffer) == BLK_NEEDS_REDO)
+			visibilitymap_clear_redo(block, vmbuffer, VISIBILITYMAP_VALID_BITS,
+									 lsn);
+		UnlockReleaseBuffer(vmbuffer);
 	}
 
 	if (XLogReadBufferForRedo(record, 0, &buffer) == BLK_NEEDS_REDO)
