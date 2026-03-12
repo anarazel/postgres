@@ -59,7 +59,8 @@
 static HeapTuple heap_prepare_insert(Relation relation, HeapTuple tup,
 									 TransactionId xid, CommandId cid, int options);
 static XLogRecPtr log_heap_update(Relation reln, Buffer oldbuf,
-								  Buffer newbuf, HeapTuple oldtup,
+								  Buffer vmbuffer_old, Buffer newbuf,
+								  Buffer vmbuffer_new, HeapTuple oldtup,
 								  HeapTuple newtup, HeapTuple old_key_tuple,
 								  bool all_visible_cleared, bool new_all_visible_cleared);
 #ifdef USE_ASSERT_CHECKING
@@ -2197,10 +2198,12 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 	if (PageIsAllVisible(BufferGetPage(buffer)))
 	{
 		all_visible_cleared = true;
+
+		LockBuffer(vmbuffer, BUFFER_LOCK_EXCLUSIVE);
 		PageClearAllVisible(BufferGetPage(buffer));
-		visibilitymap_clear(relation,
-							ItemPointerGetBlockNumber(&(heaptup->t_self)),
-							vmbuffer, VISIBILITYMAP_VALID_BITS);
+		visibilitymap_clear_locked(relation,
+								   ItemPointerGetBlockNumber(&(heaptup->t_self)),
+								   vmbuffer, VISIBILITYMAP_VALID_BITS);
 	}
 
 	/*
@@ -2290,12 +2293,22 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 		/* filtering by origin on a row level is much more efficient */
 		XLogSetRecordFlags(XLOG_INCLUDE_ORIGIN);
 
+		if (all_visible_cleared)
+			XLogRegisterBuffer(1, vmbuffer, 0);
+
 		recptr = XLogInsert(RM_HEAP_ID, info);
 
 		PageSetLSN(page, recptr);
+
+		if (all_visible_cleared)
+			PageSetLSN(BufferGetPage(vmbuffer), recptr);
 	}
 
 	END_CRIT_SECTION();
+
+	/* release VM lock first, it covers many heap blocks */
+	if (all_visible_cleared)
+		LockBuffer(vmbuffer, BUFFER_LOCK_UNLOCK);
 
 	UnlockReleaseBuffer(buffer);
 	if (vmbuffer != InvalidBuffer)
@@ -2570,10 +2583,12 @@ heap_multi_insert(Relation relation, TupleTableSlot **slots, int ntuples,
 		if (PageIsAllVisible(page) && !(options & HEAP_INSERT_FROZEN))
 		{
 			all_visible_cleared = true;
+
+			LockBuffer(vmbuffer, BUFFER_LOCK_EXCLUSIVE);
 			PageClearAllVisible(page);
-			visibilitymap_clear(relation,
-								BufferGetBlockNumber(buffer),
-								vmbuffer, VISIBILITYMAP_VALID_BITS);
+			visibilitymap_clear_locked(relation,
+									   BufferGetBlockNumber(buffer),
+									   vmbuffer, VISIBILITYMAP_VALID_BITS);
 		}
 		else if (all_frozen_set)
 		{
@@ -2701,7 +2716,7 @@ heap_multi_insert(Relation relation, TupleTableSlot **slots, int ntuples,
 			XLogBeginInsert();
 			XLogRegisterData(xlrec, tupledata - scratch.data);
 			XLogRegisterBuffer(0, buffer, REGBUF_STANDARD | bufflags);
-			if (all_frozen_set)
+			if (all_frozen_set || all_visible_cleared)
 				XLogRegisterBuffer(1, vmbuffer, 0);
 
 			XLogRegisterBufData(0, tupledata, totaldatalen);
@@ -2712,7 +2727,7 @@ heap_multi_insert(Relation relation, TupleTableSlot **slots, int ntuples,
 			recptr = XLogInsert(RM_HEAP2_ID, info);
 
 			PageSetLSN(page, recptr);
-			if (all_frozen_set)
+			if (all_frozen_set || all_visible_cleared)
 			{
 				Assert(BufferIsDirty(vmbuffer));
 				PageSetLSN(BufferGetPage(vmbuffer), recptr);
@@ -2721,7 +2736,7 @@ heap_multi_insert(Relation relation, TupleTableSlot **slots, int ntuples,
 
 		END_CRIT_SECTION();
 
-		if (all_frozen_set)
+		if (all_frozen_set || all_visible_cleared)
 			LockBuffer(vmbuffer, BUFFER_LOCK_UNLOCK);
 
 		UnlockReleaseBuffer(buffer);
@@ -3121,9 +3136,10 @@ l1:
 	if (PageIsAllVisible(page))
 	{
 		all_visible_cleared = true;
+		LockBuffer(vmbuffer, BUFFER_LOCK_EXCLUSIVE);
 		PageClearAllVisible(page);
-		visibilitymap_clear(relation, BufferGetBlockNumber(buffer),
-							vmbuffer, VISIBILITYMAP_VALID_BITS);
+		visibilitymap_clear_locked(relation, BufferGetBlockNumber(buffer),
+								   vmbuffer, VISIBILITYMAP_VALID_BITS);
 	}
 
 	/* store transaction information of xact deleting the tuple */
@@ -3204,12 +3220,22 @@ l1:
 		/* filtering by origin on a row level is much more efficient */
 		XLogSetRecordFlags(XLOG_INCLUDE_ORIGIN);
 
+		if (all_visible_cleared)
+			XLogRegisterBuffer(1, vmbuffer, 0);
+
 		recptr = XLogInsert(RM_HEAP_ID, XLOG_HEAP_DELETE);
 
 		PageSetLSN(page, recptr);
+
+		if (all_visible_cleared)
+			PageSetLSN(BufferGetPage(vmbuffer), recptr);
 	}
 
 	END_CRIT_SECTION();
+
+	/* release VM lock first, it covers many heap blocks */
+	if (all_visible_cleared)
+		LockBuffer(vmbuffer, BUFFER_LOCK_UNLOCK);
 
 	LockBuffer(buffer, BUFFER_LOCK_UNLOCK);
 
@@ -3941,10 +3967,15 @@ l2:
 		 * overhead would be unchanged, that doesn't seem necessarily
 		 * worthwhile.
 		 */
-		if (PageIsAllVisible(page) &&
-			visibilitymap_clear(relation, block, vmbuffer,
-								VISIBILITYMAP_ALL_FROZEN))
-			cleared_all_frozen = true;
+		if (PageIsAllVisible(page))
+		{
+			LockBuffer(vmbuffer, BUFFER_LOCK_EXCLUSIVE);
+			if (visibilitymap_clear_locked(relation, block, vmbuffer,
+										   VISIBILITYMAP_ALL_FROZEN))
+				cleared_all_frozen = true;
+			else
+				LockBuffer(vmbuffer, BUFFER_LOCK_UNLOCK);
+		}
 
 		MarkBufferDirty(buffer);
 
@@ -3963,11 +3994,22 @@ l2:
 			xlrec.flags =
 				cleared_all_frozen ? XLH_LOCK_ALL_FROZEN_CLEARED : 0;
 			XLogRegisterData(&xlrec, SizeOfHeapLock);
+
+			if (cleared_all_frozen)
+				XLogRegisterBuffer(1, vmbuffer, 0);
+
 			recptr = XLogInsert(RM_HEAP_ID, XLOG_HEAP_LOCK);
 			PageSetLSN(page, recptr);
+
+			if (cleared_all_frozen)
+				PageSetLSN(BufferGetPage(vmbuffer), recptr);
 		}
 
 		END_CRIT_SECTION();
+
+		/* release VM lock first, it covers many heap blocks */
+		if (cleared_all_frozen)
+			LockBuffer(vmbuffer, BUFFER_LOCK_UNLOCK);
 
 		LockBuffer(buffer, BUFFER_LOCK_UNLOCK);
 
@@ -4171,16 +4213,19 @@ l2:
 	if (PageIsAllVisible(BufferGetPage(buffer)))
 	{
 		all_visible_cleared = true;
+		LockBuffer(vmbuffer, BUFFER_LOCK_EXCLUSIVE);
 		PageClearAllVisible(BufferGetPage(buffer));
-		visibilitymap_clear(relation, BufferGetBlockNumber(buffer),
-							vmbuffer, VISIBILITYMAP_VALID_BITS);
+		visibilitymap_clear_locked(relation, BufferGetBlockNumber(buffer),
+								   vmbuffer, VISIBILITYMAP_VALID_BITS);
 	}
 	if (newbuf != buffer && PageIsAllVisible(BufferGetPage(newbuf)))
 	{
 		all_visible_cleared_new = true;
+		if (vmbuffer != vmbuffer_new)
+			LockBuffer(vmbuffer_new, BUFFER_LOCK_EXCLUSIVE);
 		PageClearAllVisible(BufferGetPage(newbuf));
-		visibilitymap_clear(relation, BufferGetBlockNumber(newbuf),
-							vmbuffer_new, VISIBILITYMAP_VALID_BITS);
+		visibilitymap_clear_locked(relation, BufferGetBlockNumber(newbuf),
+								   vmbuffer_new, VISIBILITYMAP_VALID_BITS);
 	}
 
 	if (newbuf != buffer)
@@ -4202,8 +4247,10 @@ l2:
 			log_heap_new_cid(relation, heaptup);
 		}
 
-		recptr = log_heap_update(relation, buffer,
-								 newbuf, &oldtup, heaptup,
+		recptr = log_heap_update(relation,
+								 buffer, vmbuffer,
+								 newbuf, vmbuffer_new,
+								 &oldtup, heaptup,
 								 old_key_tuple,
 								 all_visible_cleared,
 								 all_visible_cleared_new);
@@ -4212,9 +4259,21 @@ l2:
 			PageSetLSN(BufferGetPage(newbuf), recptr);
 		}
 		PageSetLSN(BufferGetPage(buffer), recptr);
+
+		if (all_visible_cleared)
+			PageSetLSN(BufferGetPage(vmbuffer), recptr);
+		if (all_visible_cleared_new && vmbuffer != vmbuffer_new)
+			PageSetLSN(BufferGetPage(vmbuffer_new), recptr);
+
 	}
 
 	END_CRIT_SECTION();
+
+	/* release VM locks first, they cover many heap blocks */
+	if (all_visible_cleared)
+		LockBuffer(vmbuffer, BUFFER_LOCK_UNLOCK);
+	if (all_visible_cleared_new && vmbuffer != vmbuffer_new)
+		LockBuffer(vmbuffer_new, BUFFER_LOCK_UNLOCK);
 
 	if (newbuf != buffer)
 		LockBuffer(newbuf, BUFFER_LOCK_UNLOCK);
@@ -5263,10 +5322,15 @@ failed:
 		tuple->t_data->t_ctid = *tid;
 
 	/* Clear only the all-frozen bit on visibility map if needed */
-	if (PageIsAllVisible(page) &&
-		visibilitymap_clear(relation, block, vmbuffer,
-							VISIBILITYMAP_ALL_FROZEN))
-		cleared_all_frozen = true;
+	if (PageIsAllVisible(page))
+	{
+		LockBuffer(vmbuffer, BUFFER_LOCK_EXCLUSIVE);
+		if (visibilitymap_clear_locked(relation, block, vmbuffer,
+									   VISIBILITYMAP_ALL_FROZEN))
+			cleared_all_frozen = true;
+		else
+			LockBuffer(vmbuffer, BUFFER_LOCK_UNLOCK);
+	}
 
 
 	MarkBufferDirty(*buffer);
@@ -5298,14 +5362,24 @@ failed:
 		xlrec.flags = cleared_all_frozen ? XLH_LOCK_ALL_FROZEN_CLEARED : 0;
 		XLogRegisterData(&xlrec, SizeOfHeapLock);
 
+		if (cleared_all_frozen)
+			XLogRegisterBuffer(1, vmbuffer, 0);
+
 		/* we don't decode row locks atm, so no need to log the origin */
 
 		recptr = XLogInsert(RM_HEAP_ID, XLOG_HEAP_LOCK);
 
 		PageSetLSN(page, recptr);
+
+		if (cleared_all_frozen)
+			PageSetLSN(BufferGetPage(vmbuffer), recptr);
 	}
 
 	END_CRIT_SECTION();
+
+	/* release VM lock first, it covers many heap blocks */
+	if (cleared_all_frozen)
+		LockBuffer(vmbuffer, BUFFER_LOCK_UNLOCK);
 
 	result = TM_Ok;
 
@@ -6017,10 +6091,15 @@ l4:
 								  xid, mode, false,
 								  &new_xmax, &new_infomask, &new_infomask2);
 
-		if (PageIsAllVisible(BufferGetPage(buf)) &&
-			visibilitymap_clear(rel, block, vmbuffer,
-								VISIBILITYMAP_ALL_FROZEN))
-			cleared_all_frozen = true;
+		if (PageIsAllVisible(BufferGetPage(buf)))
+		{
+			LockBuffer(vmbuffer, BUFFER_LOCK_EXCLUSIVE);
+			if (visibilitymap_clear_locked(rel, block, vmbuffer,
+										   VISIBILITYMAP_ALL_FROZEN))
+				cleared_all_frozen = true;
+			else
+				LockBuffer(vmbuffer, BUFFER_LOCK_UNLOCK);
+		}
 
 		START_CRIT_SECTION();
 
@@ -6051,12 +6130,22 @@ l4:
 
 			XLogRegisterData(&xlrec, SizeOfHeapLockUpdated);
 
+			if (cleared_all_frozen)
+				XLogRegisterBuffer(1, vmbuffer, 0);
+
 			recptr = XLogInsert(RM_HEAP2_ID, XLOG_HEAP2_LOCK_UPDATED);
 
 			PageSetLSN(page, recptr);
+
+			if (cleared_all_frozen)
+				PageSetLSN(BufferGetPage(vmbuffer), recptr);
 		}
 
 		END_CRIT_SECTION();
+
+		/* release VM lock first, it covers many heap blocks */
+		if (cleared_all_frozen)
+			LockBuffer(vmbuffer, BUFFER_LOCK_UNLOCK);
 
 next:
 		/* if we find the end of update chain, we're done. */
@@ -8922,8 +9011,9 @@ log_heap_visible(Relation rel, Buffer heap_buffer, Buffer vm_buffer,
  * have modified the buffer(s) and marked them dirty.
  */
 static XLogRecPtr
-log_heap_update(Relation reln, Buffer oldbuf,
-				Buffer newbuf, HeapTuple oldtup, HeapTuple newtup,
+log_heap_update(Relation reln, Buffer oldbuf, Buffer vmbuffer_old,
+				Buffer newbuf, Buffer vmbuffer_new,
+				HeapTuple oldtup, HeapTuple newtup,
 				HeapTuple old_key_tuple,
 				bool all_visible_cleared, bool new_all_visible_cleared)
 {
@@ -9128,6 +9218,11 @@ log_heap_update(Relation reln, Buffer oldbuf,
 		XLogRegisterData((char *) old_key_tuple->t_data + SizeofHeapTupleHeader,
 						 old_key_tuple->t_len - SizeofHeapTupleHeader);
 	}
+
+	if (all_visible_cleared)
+		XLogRegisterBuffer(2, vmbuffer_old, 0);
+	if (new_all_visible_cleared && vmbuffer_old != vmbuffer_new)
+		XLogRegisterBuffer(3, vmbuffer_new, 0);
 
 	/* filtering by origin on a row level is much more efficient */
 	XLogSetRecordFlags(XLOG_INCLUDE_ORIGIN);

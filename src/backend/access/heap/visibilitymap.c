@@ -133,12 +133,37 @@ static Buffer vm_extend(Relation rel, BlockNumber vm_nblocks);
 /*
  *	visibilitymap_clear - clear specified bits for one page in visibility map
  *
- * You must pass a buffer containing the correct map page to this function.
- * Call visibilitymap_pin first to pin the right one. This function doesn't do
- * any I/O.  Returns true if any bits have been cleared and false otherwise.
+ * This function likely can never be used correctly, as the caller needs to
+ * include the VM buffer in the WAL record, which requires the VM buffer to be
+ * locked for longer.  The function is retained solely for backpatchability.
  */
 bool
 visibilitymap_clear(Relation rel, BlockNumber heapBlk, Buffer vmbuf, uint8 flags)
+{
+	bool		cleared = false;
+
+	LockBuffer(vmbuf, BUFFER_LOCK_EXCLUSIVE);
+
+	cleared = visibilitymap_clear_locked(rel, heapBlk, vmbuf, flags);
+
+	LockBuffer(vmbuf, BUFFER_LOCK_UNLOCK);
+
+	return cleared;
+}
+
+/*
+ *	visibilitymap_clear_locked - clear specified bits for one page in visibility map
+ *
+ * You must pass a buffer containing the correct map page to this function,
+ * which already needs to be locked exclusively.
+ *
+ * Call visibilitymap_pin first to pin the right one. This function doesn't do
+ * any I/O.
+ *
+ * Returns true if any bits have been cleared and false otherwise.
+ */
+bool
+visibilitymap_clear_locked(Relation rel, BlockNumber heapBlk, Buffer vmbuf, uint8 flags)
 {
 	BlockNumber mapBlock = HEAPBLK_TO_MAPBLOCK(heapBlk);
 	int			mapByte = HEAPBLK_TO_MAPBYTE(heapBlk);
@@ -151,14 +176,16 @@ visibilitymap_clear(Relation rel, BlockNumber heapBlk, Buffer vmbuf, uint8 flags
 	Assert(flags & VISIBILITYMAP_VALID_BITS);
 	Assert(flags != VISIBILITYMAP_ALL_VISIBLE);
 
+	BufferIsLockedByMeInMode(vmbuf, BUFFER_LOCK_EXCLUSIVE);
+
 #ifdef TRACE_VISIBILITYMAP
 	elog(DEBUG1, "vm_clear %s %d", RelationGetRelationName(rel), heapBlk);
 #endif
 
+	/* FIXME: This should probably just be an assertion */
 	if (!BufferIsValid(vmbuf) || BufferGetBlockNumber(vmbuf) != mapBlock)
 		elog(ERROR, "wrong buffer passed to visibilitymap_clear");
 
-	LockBuffer(vmbuf, BUFFER_LOCK_EXCLUSIVE);
 	map = PageGetContents(BufferGetPage(vmbuf));
 
 	if (map[mapByte] & mask)
@@ -168,8 +195,6 @@ visibilitymap_clear(Relation rel, BlockNumber heapBlk, Buffer vmbuf, uint8 flags
 		MarkBufferDirty(vmbuf);
 		cleared = true;
 	}
-
-	LockBuffer(vmbuf, BUFFER_LOCK_UNLOCK);
 
 	return cleared;
 }
