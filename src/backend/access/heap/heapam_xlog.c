@@ -361,7 +361,6 @@ heap_xlog_visible(XLogReaderState *record)
 									  &vmbuffer) == BLK_NEEDS_REDO)
 	{
 		Page		vmpage = BufferGetPage(vmbuffer);
-		Relation	reln;
 		uint8		vmbits;
 
 		/* initialize the page if it was read as zeros */
@@ -371,21 +370,11 @@ heap_xlog_visible(XLogReaderState *record)
 		/* remove VISIBILITYMAP_XLOG_* */
 		vmbits = xlrec->flags & VISIBILITYMAP_VALID_BITS;
 
-		/*
-		 * XLogReadBufferForRedoExtended locked the buffer. But
-		 * visibilitymap_set will handle locking itself.
-		 */
-		LockBuffer(vmbuffer, BUFFER_LOCK_UNLOCK);
-
-		reln = CreateFakeRelcacheEntry(rlocator);
-
-		visibilitymap_set(reln, blkno, InvalidBuffer, lsn, vmbuffer,
-						  xlrec->snapshotConflictHorizon, vmbits);
-
-		ReleaseBuffer(vmbuffer);
-		FreeFakeRelcacheEntry(reln);
+		visibilitymap_set_vmbits(blkno, vmbuffer, vmbits, rlocator);
+		PageSetLSN(vmpage, lsn);
 	}
-	else if (BufferIsValid(vmbuffer))
+
+	if (BufferIsValid(vmbuffer))
 		UnlockReleaseBuffer(vmbuffer);
 }
 
