@@ -41,9 +41,45 @@ typedef struct SharedAggInfo
 
 
 /* ---------------------
- *	Instrumentation information for indexscans (amgettuple and amgetbitmap)
+ *	Instrumentation
  * ---------------------
  */
+typedef struct ReadStreamInstrumentation
+{
+	/* number of prefetch requests */
+	uint64		prefetch_count;
+
+	/* total of prefetch distances */
+	uint64		distance_sum;
+
+	/* number of stalled reads (waiting for I/O) */
+	uint64		stall_count;
+
+	/* I/O stats */
+	uint64		io_count;		/* number of I/Os */
+	uint64		io_nblocks;		/* sum of blocks for all I/Os */
+	uint64		io_in_progress;	/* sum of in-progress I/Os */
+} ReadStreamInstrumentation;
+
+
+/* ---------------------
+ *	Instrumentation information for sequential scans
+ * ---------------------
+ */
+typedef struct SeqScanInstrumentation
+{
+	ReadStreamInstrumentation	stream;
+} SeqScanInstrumentation;
+
+/*
+ * Shared memory container for per-worker information
+ */
+typedef struct SharedSeqScanInstrumentation
+{
+	int			num_workers;
+	SeqScanInstrumentation sinstrument[FLEXIBLE_ARRAY_MEMBER];
+} SharedSeqScanInstrumentation;
+
 typedef struct IndexScanInstrumentation
 {
 	/* Index search count (incremented with pgstat_count_index_scan call) */
@@ -71,6 +107,7 @@ typedef struct BitmapHeapScanInstrumentation
 {
 	uint64		exact_pages;
 	uint64		lossy_pages;
+	ReadStreamInstrumentation	stream;
 } BitmapHeapScanInstrumentation;
 
 /*

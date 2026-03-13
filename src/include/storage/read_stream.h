@@ -65,6 +65,7 @@
 
 struct ReadStream;
 typedef struct ReadStream ReadStream;
+typedef struct ReadStreamInstrumentation ReadStreamInstrumentation;
 
 /* for block_range_read_stream_cb */
 typedef struct BlockRangeReadStreamPrivate
@@ -103,5 +104,7 @@ extern BlockNumber read_stream_pause(ReadStream *stream);
 extern void read_stream_resume(ReadStream *stream);
 extern void read_stream_reset(ReadStream *stream);
 extern void read_stream_end(ReadStream *stream);
+
+extern ReadStreamInstrumentation read_stream_prefetch_stats(ReadStream *stream);
 
 #endif							/* READ_STREAM_H */

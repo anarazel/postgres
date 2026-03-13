@@ -1416,6 +1416,30 @@ heap_endscan(TableScanDesc sscan)
 	pfree(scan);
 }
 
+TableScanStats
+heap_scan_stats(TableScanDesc sscan)
+{
+	HeapScanDesc scan = (HeapScanDesc) sscan;
+	ReadStreamInstrumentation stats;
+	TableScanStats res;
+
+	if (!scan->rs_read_stream)
+		return NULL;
+
+	stats = read_stream_prefetch_stats(scan->rs_read_stream);
+
+	res = palloc0(sizeof(TableScanStatsData));
+
+	res->prefetch_count = stats.prefetch_count;
+	res->distance_sum = stats.distance_sum;
+	res->stall_count = stats.stall_count;
+	res->io_count = stats.io_count;
+	res->io_nblocks = stats.io_nblocks;
+	res->io_in_progress = stats.io_in_progress;
+
+	return res;
+}
+
 HeapTuple
 heap_getnext(TableScanDesc sscan, ScanDirection direction)
 {

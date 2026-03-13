@@ -2650,6 +2650,7 @@ static const TableAmRoutine heapam_methods = {
 
 	.scan_set_tidrange = heap_set_tidrange,
 	.scan_getnextslot_tidrange = heap_getnextslot_tidrange,
+	.scan_stats = heap_scan_stats,
 
 	.parallelscan_estimate = table_block_parallelscan_estimate,
 	.parallelscan_initialize = table_block_parallelscan_initialize,
