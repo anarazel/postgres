@@ -89,9 +89,10 @@ select explain_filter('explain (analyze, buffers, format text) select * from int
                                          explain_filter                                          
 -------------------------------------------------------------------------------------------------
  Seq Scan on int8_tbl i8  (cost=N.N..N.N rows=N width=N) (actual time=N.N..N.N rows=N.N loops=N)
+   Prefetch: distance=N.N count=N stalls=N ios=N size=N.N inprogress=N.N
  Planning Time: N.N ms
  Execution Time: N.N ms
-(3 rows)
+(4 rows)
 
 select explain_filter('explain (analyze, buffers, format xml) select * from int8_tbl i8');
                      explain_filter                     
@@ -113,6 +114,14 @@ select explain_filter('explain (analyze, buffers, format xml) select * from int8
        <Actual-Rows>N.N</Actual-Rows>                  +
        <Actual-Loops>N</Actual-Loops>                  +
        <Disabled>false</Disabled>                      +
+       <Prefetch>                                      +
+         <Average-Distance>N.N</Average-Distance>      +
+         <Prefetch-Count>N</Prefetch-Count>            +
+         <Stalls>N</Stalls>                            +
+         <IO-count>N</IO-count>                        +
+         <Average-Size>N.N</Average-Size>              +
+         <IO-in-progress>N.N</IO-in-progress>          +
+       </Prefetch>                                     +
        <Shared-Hit-Blocks>N</Shared-Hit-Blocks>        +
        <Shared-Read-Blocks>N</Shared-Read-Blocks>      +
        <Shared-Dirtied-Blocks>N</Shared-Dirtied-Blocks>+
@@ -162,6 +171,13 @@ select explain_filter('explain (analyze, serialize, buffers, format yaml) select
      Actual Rows: N.N         +
      Actual Loops: N          +
      Disabled: false          +
+     Prefetch:                +
+       Average Distance: N.N  +
+       Prefetch Count: N      +
+       Stalls: N              +
+       IO count: N            +
+       Average Size: N.N      +
+       IO in-progress: N.N    +
      Shared Hit Blocks: N     +
      Shared Read Blocks: N    +
      Shared Dirtied Blocks: N +
@@ -310,6 +326,14 @@ select explain_filter('explain (analyze, buffers, format json) select * from int
        "Actual Rows": N.N,          +
        "Actual Loops": N,           +
        "Disabled": false,           +
+       "Prefetch": {                +
+         "Average Distance": N.N,   +
+         "Prefetch Count": N,       +
+         "Stalls": N,               +
+         "IO count": N,             +
+         "Average Size": N.N,       +
+         "IO in-progress": N.N      +
+       },                           +
        "Shared Hit Blocks": N,      +
        "Shared Read Blocks": N,     +
        "Shared Dirtied Blocks": N,  +
@@ -445,6 +469,14 @@ select explain_filter('explain (memory, analyze, format json) select * from int8
        "Actual Rows": N.N,         +
        "Actual Loops": N,          +
        "Disabled": false,          +
+       "Prefetch": {               +
+         "Average Distance": N.N,  +
+         "Prefetch Count": N,      +
+         "Stalls": N,              +
+         "IO count": N,            +
+         "Average Size": N.N,      +
+         "IO in-progress": N.N     +
+       },                          +
        "Shared Hit Blocks": N,     +
        "Shared Read Blocks": N,    +
        "Shared Dirtied Blocks": N, +
@@ -568,6 +600,14 @@ select jsonb_pretty(
                              ],                             +
                              "Schema": "public",            +
                              "Disabled": false,             +
+                             "Prefetch": {                  +
+                                 "Stalls": 0,               +
+                                 "IO count": 0,             +
+                                 "Average Size": 0.0,       +
+                                 "IO in-progress": 0.0,     +
+                                 "Prefetch Count": 0,       +
+                                 "Average Distance": 0.0    +
+                             },                             +
                              "Node Type": "Seq Scan",       +
                              "Plan Rows": 0,                +
                              "Plan Width": 0,               +
@@ -757,19 +797,21 @@ select explain_filter('explain (analyze,serialize text,buffers,timing off) selec
                                   explain_filter                                   
 -----------------------------------------------------------------------------------
  Seq Scan on int8_tbl i8  (cost=N.N..N.N rows=N width=N) (actual rows=N.N loops=N)
+   Prefetch: distance=N.N count=N stalls=N ios=N size=N.N inprogress=N.N
  Planning Time: N.N ms
  Serialization: output=NkB  format=text
  Execution Time: N.N ms
-(4 rows)
+(5 rows)
 
 select explain_filter('explain (analyze,serialize binary,buffers,timing) select * from int8_tbl i8');
                                          explain_filter                                          
 -------------------------------------------------------------------------------------------------
  Seq Scan on int8_tbl i8  (cost=N.N..N.N rows=N width=N) (actual time=N.N..N.N rows=N.N loops=N)
+   Prefetch: distance=N.N count=N stalls=N ios=N size=N.N inprogress=N.N
  Planning Time: N.N ms
  Serialization: time=N.N ms  output=NkB  format=binary
  Execution Time: N.N ms
-(4 rows)
+(5 rows)
 
 -- this tests an edge case where we have no data to return
 select explain_filter('explain (analyze,buffers off,serialize) create temp table explain_temp as select * from int8_tbl i8');

@@ -4011,7 +4011,7 @@ show_scan_prefetch_info(ScanState *planstate, ExplainState *es)
 	TableScanStats	leader_stats;
 	TableScanStatsData	stats;
 
-	if (!es->analyze)
+	if (!es->analyze || !es->buffers)
 		return;
 
 	/* scan not started, no prefetch stats */
