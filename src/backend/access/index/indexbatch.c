@@ -562,17 +562,7 @@ indexam_util_batch_unlock(IndexScanDesc scan, IndexScanBatch batch, Buffer buf)
 		 * Non-immediate-unguard scans retain the pin; the table AM will call
 		 * amunguardbatch to drop the interlock when ready.
 		 */
-		batch->lsn = BufferGetLSNAtomic(buf);
-		if (scan->batchImmediateUnguard)
-		{
-			/* drop both the lock and the pin */
-			UnlockReleaseBuffer(buf);
-		}
-		else
-		{
-			/* just drop the lock (hold on to interlock pin) */
-			UnlockBuffer(buf);
-		}
+		batch->lsn = UnlockBufferGetLSN(buf, scan->batchImmediateUnguard);
 	}
 	else
 	{

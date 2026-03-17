@@ -5526,6 +5526,53 @@ UnlockReleaseBuffer(Buffer buffer)
 }
 
 /*
+ * UnlockBufferGetLSN
+ *		Read a buffer's LSN, then unlock the buffer.  Optionally release the
+ *		pin too.
+ *
+ * This combines the functionality of BufferGetLSNAtomic() with
+ * UnlockReleaseBuffer, with the option of not releasing buffer pin.
+ *
+ * Used to unlock a buffer lock (and possibly to release its pin) when held on
+ * an index page.  This is needed frequently enough to justify specialization.
+ */
+XLogRecPtr
+UnlockBufferGetLSN(Buffer buffer, bool release)
+{
+	BufferDesc *buf_hdr;
+	Page		page;
+	XLogRecPtr	lsn;
+
+	Assert(BufferIsValid(buffer));
+	Assert(BufferIsPinned(buffer));
+
+	if (BufferIsLocal(buffer))
+	{
+		buf_hdr = GetLocalBufferDescriptor(-buffer - 1);
+		page = (Page) LocalBufHdrGetBlock(buf_hdr);
+		lsn = PageGetLSN(page);
+		if (release)
+			UnpinLocalBuffer(buffer);
+		return lsn;
+	}
+
+	buf_hdr = GetBufferDescriptor(buffer - 1);
+	page = (Page) BufHdrGetBlock(buf_hdr);
+
+#ifdef PG_HAVE_8BYTE_SINGLE_COPY_ATOMICITY
+	lsn = PageGetLSN(page);
+#else
+	lsn = BufferGetLSNAtomic(buffer);
+#endif
+
+	BufferLockUnlock(buffer, buf_hdr);
+	if (release)
+		UnpinBuffer(buf_hdr);
+
+	return lsn;
+}
+
+/*
  * IncrBufferRefCount
  *		Increment the pin count on a buffer that we have *already* pinned
  *		at least once.
