@@ -106,6 +106,17 @@ typedef struct SharedSeqScanInstrumentation
 	SeqScanInstrumentation sinstrument[FLEXIBLE_ARRAY_MEMBER];
 } SharedSeqScanInstrumentation;
 
+typedef struct TidRangeScanInstrumentation
+{
+	TableScanInstrumentation		stats;
+} TidRangeScanInstrumentation;
+
+typedef struct SharedTidRangeScanInstrumentation
+{
+	int			num_workers;
+	TidRangeScanInstrumentation sinstrument[FLEXIBLE_ARRAY_MEMBER];
+} SharedTidRangeScanInstrumentation;
+
 typedef struct IndexScanInstrumentation
 {
 	/* Index search count (incremented with pgstat_count_index_scan call) */
