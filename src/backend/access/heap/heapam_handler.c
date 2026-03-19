@@ -824,6 +824,7 @@ heapam_index_only_getnext_slot(IndexScanDesc scan, ScanDirection direction,
 				heap_continue = false;
 
 	Assert(scan->xs_want_itup);
+	Assert(scan->xs_visited_pages_limit == 0);
 
 	for (;;)
 	{
@@ -906,6 +907,9 @@ heapam_index_only_batch_getnext_slot(IndexScanDesc scan, ScanDirection direction
 	ItemPointer tid;
 	bool		all_visible,
 				heap_continue = false;
+	BlockNumber last_visited_block = InvalidBlockNumber;
+	uint8		n_visited_pages = 0,
+				xs_visited_pages_limit = scan->xs_visited_pages_limit;
 
 	Assert(scan->xs_want_itup);
 
@@ -936,7 +940,25 @@ heapam_index_only_batch_getnext_slot(IndexScanDesc scan, ScanDirection direction
 				scan->instrument->nheapfetches++;
 
 			if (!heapam_index_fetch_heap(scan, slot, &heap_continue, true))
+			{
+				/*
+				 * No visible tuple.  If caller set a visited-pages limit
+				 * (only selfuncs.c does this), count distinct heap pages and
+				 * give up once we've visited too many.
+				 */
+				if (unlikely(xs_visited_pages_limit > 0))
+				{
+					Assert(hscan->xs_blk == ItemPointerGetBlockNumber(tid));
+
+					if (hscan->xs_blk != last_visited_block)
+					{
+						last_visited_block = hscan->xs_blk;
+						if (++n_visited_pages > xs_visited_pages_limit)
+							return false;	/* give up */
+					}
+				}
 				continue;		/* no visible tuple, try next index entry */
+			}
 
 			ExecClearTuple(slot);
 
