@@ -1233,8 +1233,13 @@ static pg_attribute_always_inline void
 heapam_index_consider_prefetching(IndexScanDesc scan,
 								  IndexFetchHeapData *hscan)
 {
+	IOStats *stats = NULL;
+
 	Assert(!hscan->xs_read_stream);
 	Assert(!scan->batchringbuf.prefetchPos.valid);
+
+	if (scan->instrument)
+		stats = &scan->instrument->io;
 
 	if (scan->MVCCScan && enable_indexscan_prefetch &&
 		hscan->xs_blk != InvalidBlockNumber)	/* for index-only scans */
@@ -1242,7 +1247,7 @@ heapam_index_consider_prefetching(IndexScanDesc scan,
 			read_stream_begin_relation(READ_STREAM_DEFAULT, NULL,
 									   scan->heapRelation, MAIN_FORKNUM,
 									   heapam_index_prefetch_next_block,
-									   scan, 0, NULL);
+									   scan, 0, stats);
 	/* else don't start a read stream for prefetching (not yet, at least) */
 }
 
