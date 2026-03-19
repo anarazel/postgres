@@ -124,6 +124,7 @@ typedef struct IndexScanInstrumentation
 
 	/* Table tuples fetched count (incremented during index-only scans) */
 	uint64		ntabletuplefetches;
+	IOStats		io;
 } IndexScanInstrumentation;
 
 /*
