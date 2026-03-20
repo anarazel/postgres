@@ -1055,6 +1055,33 @@ pgaio_wref_check_done(PgAioWaitRef *iow)
 	return false;
 }
 
+void
+pgaio_wref_discard_result(PgAioWaitRef *iow)
+{
+	uint64		ref_generation;
+	bool		am_owner;
+	PgAioHandle *ioh;
+	PgAioHandleState state;
+
+	ioh = pgaio_io_from_wref(iow, &ref_generation);
+
+	am_owner = ioh->owner_procno == MyProcNumber;
+
+	if (!am_owner)
+		elog(ERROR, "not you");
+
+	if (pgaio_io_was_recycled(ioh, ref_generation, &state))
+		return;
+
+	pgaio_debug_io(DEBUG2, ioh,
+				   "discarding result %p",
+				   ioh->report_return);
+
+	if (ioh->resowner)
+		pgaio_io_release_resowner(&ioh->resowner_node, false);
+}
+
+
 
 
 /* --------------------------------------------------------------------------------
