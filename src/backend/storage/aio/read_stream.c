@@ -1040,6 +1040,16 @@ read_stream_next_buffer(ReadStream *stream, void **per_buffer_data)
 
 		needed_wait = WaitReadBuffers(&stream->ios[io_index].op);
 
+		/*
+		 * If the IO was executed synchronously, we will never see
+		 * WaitReadBuffers() block. When effective_io_concurrency=0 is used,
+		 * all IO will be synchronous. Without treating synchronous IO as
+		 * having waited, we'd never allow the distance to increase large
+		 * enough to allow for IO combining. Bad perf results.
+		 */
+		if (stream->ios[io_index].op.flags & READ_BUFFERS_SYNCHRONOUSLY)
+			needed_wait = true;
+
 		/* Count it as a stall if we need to wait for IO */
 		if (needed_wait)
 			stream->stats.stall_count += 1;
