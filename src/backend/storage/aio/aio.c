@@ -594,6 +594,16 @@ pgaio_io_was_recycled(PgAioHandle *ioh, uint64 ref_generation, PgAioHandleState 
 }
 
 /*
+ * Whether we need to wait via the IO method. Don't check via the IO method if
+ * the issuing backend is executing the IO synchronously.
+ */
+static bool
+pgaio_io_needs_wait_one(PgAioHandle *ioh)
+{
+	return pgaio_method_ops->wait_one && !(ioh->flags & PGAIO_HF_SYNCHRONOUS);
+}
+
+/*
  * Wait for IO to complete. External code should never use this, outside of
  * the AIO subsystem waits are only allowed via pgaio_wref_wait().
  */
@@ -632,23 +642,38 @@ pgaio_io_wait(PgAioHandle *ioh, uint64 ref_generation)
 				elog(ERROR, "IO in wrong state: %d", state);
 				break;
 
-			case PGAIO_HS_SUBMITTED:
+			case PGAIO_HS_DEFINED:
+			case PGAIO_HS_STAGED:
 
 				/*
-				 * If we need to wait via the IO method, do so now. Don't
-				 * check via the IO method if the issuing backend is executing
-				 * the IO synchronously.
+				 * The owner hasn't submitted the IO yet. If we need to wait
+				 * via the IO method, wait for submission, giving this backend
+				 * the chance to call ->wait_one().
 				 */
-				if (pgaio_method_ops->wait_one && !(ioh->flags & PGAIO_HF_SYNCHRONOUS))
+				if (pgaio_io_needs_wait_one(ioh))
+				{
+					PgAioBackend *backend = &pgaio_ctl->backend_state[ioh->owner_procno];
+
+					ConditionVariablePrepareToSleep(&backend->submit_cv);
+					while (!pgaio_io_was_recycled(ioh, ref_generation, &state) &&
+						   (state == PGAIO_HS_DEFINED ||
+							state == PGAIO_HS_STAGED))
+						ConditionVariableSleep(&backend->submit_cv, WAIT_EVENT_AIO_IO_SUBMIT);
+					ConditionVariableCancelSleep();
+					continue;
+				}
+				pg_fallthrough;
+
+			case PGAIO_HS_SUBMITTED:
+
+				/* If we need to wait via the IO method, do so now. */
+				if (pgaio_io_needs_wait_one(ioh))
 				{
 					pgaio_method_ops->wait_one(ioh, ref_generation);
 					continue;
 				}
 				pg_fallthrough;
 
-				/* waiting for owner to submit */
-			case PGAIO_HS_DEFINED:
-			case PGAIO_HS_STAGED:
 				/* waiting for reaper to complete */
 				/* fallthrough */
 			case PGAIO_HS_COMPLETED_IO:
@@ -1222,6 +1247,15 @@ pgaio_submit_staged(void)
 	Assert(total_submitted == did_submit);
 
 	pgaio_my_backend->num_staged_ios = 0;
+
+	/*
+	 * Wake any backend that started waiting for any of these IOs before
+	 * submission, if it is necessary to call ->wait_one() to guarantee
+	 * progress with the configured IO method.  On its side, pgaio_io_wait()
+	 * only waits for submit_cv on IO methods needing that.
+	 */
+	if (pgaio_method_ops->wait_one)
+		ConditionVariableBroadcast(&pgaio_my_backend->submit_cv);
 
 	pgaio_debug(DEBUG4,
 				"aio: submitted %d IOs",
