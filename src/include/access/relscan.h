@@ -16,6 +16,7 @@
 
 #include "access/htup_details.h"
 #include "access/itup.h"
+#include "access/sdir.h"
 #include "nodes/tidbitmap.h"
 #include "port/atomics.h"
 #include "storage/relfilelocator.h"
@@ -24,6 +25,7 @@
 
 
 struct ParallelTableScanDescData;
+struct TupleTableSlot;
 
 /*
  * Generic descriptor for table scans. This is the base-class for table scans,
@@ -117,12 +119,13 @@ typedef struct ParallelBlockTableScanWorkerData *ParallelBlockTableScanWorker;
 /*
  * Base class for fetches from a table via an index. This is the base-class
  * for such scans, which needs to be embedded in the respective struct for
- * individual AMs.
+ * individual table AMs.
+ *
+ * This is essentially the table AM specific portion of IndexScanDescData,
+ * accessed through its xs_heapfetch field.
  */
 typedef struct IndexFetchTableData
 {
-	Relation	rel;
-
 	/*
 	 * Bitmask of ScanOptions affecting the relation. No SO_INTERNAL_FLAGS are
 	 * permitted.
@@ -166,10 +169,10 @@ typedef struct IndexScanDescData
 	struct IndexScanInstrumentation *instrument;
 
 	/*
-	 * In an index-only scan, a successful amgettuple call must fill either
-	 * xs_itup (and xs_itupdesc) or xs_hitup (and xs_hitupdesc) to provide the
-	 * data returned by the scan.  It can fill both, in which case the heap
-	 * format will be used.
+	 * In an index-only scan, a successful table_index_getnext_slot call must
+	 * fill either xs_itup (and xs_itupdesc) or xs_hitup (and xs_hitupdesc) to
+	 * provide the data returned by the scan.  It can fill both, in which case
+	 * the heap format will be used.
 	 */
 	IndexTuple	xs_itup;		/* index tuple returned by AM */
 	struct TupleDescData *xs_itupdesc;	/* rowtype descriptor of xs_itup */
@@ -180,6 +183,14 @@ typedef struct IndexScanDescData
 	bool		xs_heap_continue;	/* T if must keep walking, potential
 									 * further results */
 	IndexFetchTableData *xs_heapfetch;
+
+	/*
+	 * Resolved table_index_getnext_slot callback, which is set by
+	 * table_index_fetch_begin at the start of amgettuple scans
+	 */
+	bool		(*xs_getnext_slot) (struct IndexScanDescData *scan,
+									ScanDirection direction,
+									struct TupleTableSlot *slot);
 
 	bool		xs_recheck;		/* T means scan keys must be rechecked */
 
@@ -194,6 +205,13 @@ typedef struct IndexScanDescData
 	bool	   *xs_orderbynulls;
 	bool		xs_recheckorderby;
 
+	/*
+	 * An approximate limit on the amount of work, measured in pages touched,
+	 * imposed on the index scan.  The default, 0, means no limit.  Used by
+	 * selfuncs.c to bound the cost of get_actual_variable_endpoint().
+	 */
+	uint8		xs_visited_pages_limit;
+
 	/* parallel index scan information, in shared memory */
 	struct ParallelIndexScanDescData *parallel_scan;
 } IndexScanDescData;
@@ -207,8 +225,6 @@ typedef struct ParallelIndexScanDescData
 	Size		ps_offset_am;	/* Offset to am-specific structure */
 	char		ps_snapshot_data[FLEXIBLE_ARRAY_MEMBER];
 }			ParallelIndexScanDescData;
-
-struct TupleTableSlot;
 
 /* Struct for storage-or-index scans of system tables */
 typedef struct SysScanDescData

@@ -128,8 +128,8 @@ typedef struct IndexFetchHeapData
 	Buffer		xs_cbuf;
 	BlockNumber xs_blk;
 
-	/* Current heap block's corresponding page in the visibility map */
-	Buffer		xs_vmbuffer;
+	/* For visibility map checks (index-only scans and on-access pruning) */
+	Buffer		xs_vmbuffer;	/* visibility map buffer */
 } IndexFetchHeapData;
 
 /* Result codes for HeapTupleSatisfiesVacuum */
@@ -430,16 +430,15 @@ extern TransactionId heap_index_delete_tuples(Relation rel,
 											  TM_IndexDeleteOp *delstate);
 
 /* in heap/heapam_indexscan.c */
-extern IndexFetchTableData *heapam_index_fetch_begin(Relation rel, uint32 flags);
-extern void heapam_index_fetch_reset(IndexFetchTableData *scan);
-extern void heapam_index_fetch_end(IndexFetchTableData *scan);
+extern bool heapam_fetch_tid(Relation rel, ItemPointer tid, Snapshot snapshot,
+							 TupleTableSlot *slot, bool *all_dead);
+extern IndexFetchTableData *heapam_index_fetch_begin(IndexScanDesc scan,
+													 uint32 flags);
+extern void heapam_index_fetch_reset(IndexScanDesc scan);
+extern void heapam_index_fetch_end(IndexScanDesc scan);
 extern bool heap_hot_search_buffer(ItemPointer tid, Relation relation,
 								   Buffer buffer, Snapshot snapshot, HeapTuple heapTuple,
 								   bool *all_dead, bool first_call);
-extern bool heapam_index_fetch_tuple(struct IndexFetchTableData *scan,
-									 ItemPointer tid, Snapshot snapshot,
-									 TupleTableSlot *slot, bool *heap_continue,
-									 bool *all_dead);
 
 /* in heap/pruneheap.c */
 extern void heap_page_prune_opt(Relation relation, Buffer buffer,

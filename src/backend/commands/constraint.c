@@ -105,23 +105,14 @@ unique_key_recheck(PG_FUNCTION_ARGS)
 	 * removed.
 	 */
 	tmptid = checktid;
+	if (!table_fetch_tid(trigdata->tg_relation, &tmptid, SnapshotSelf,
+						 slot, NULL))
 	{
-		IndexFetchTableData *scan = table_index_fetch_begin(trigdata->tg_relation,
-															SO_NONE);
-		bool		call_again = false;
-
-		if (!table_index_fetch_tuple(scan, &tmptid, SnapshotSelf, slot,
-									 &call_again, NULL))
-		{
-			/*
-			 * All rows referenced by the index entry are dead, so skip the
-			 * check.
-			 */
-			ExecDropSingleTupleTableSlot(slot);
-			table_index_fetch_end(scan);
-			return PointerGetDatum(NULL);
-		}
-		table_index_fetch_end(scan);
+		/*
+		 * All rows referenced by the index entry are dead, so skip the check
+		 */
+		ExecDropSingleTupleTableSlot(slot);
+		return PointerGetDatum(NULL);
 	}
 
 	/*
@@ -168,9 +159,8 @@ unique_key_recheck(PG_FUNCTION_ARGS)
 		/*
 		 * Note: this is not a real insert; it is a check that the index entry
 		 * that has already been inserted is unique.  Passing the tuple's tid
-		 * (i.e. unmodified by table_index_fetch_tuple()) is correct even if
-		 * the row is now dead, because that is the TID the index will know
-		 * about.
+		 * (i.e. unmodified by table_fetch_tid()) is correct even if the row
+		 * is now dead, because that is the TID the index will know about.
 		 */
 		index_insert(indexRel, values, isnull, &checktid,
 					 trigdata->tg_relation, UNIQUE_CHECK_EXISTING,
