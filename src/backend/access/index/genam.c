@@ -126,6 +126,8 @@ RelationGetIndexScan(Relation indexRelation, int nkeys, int norderbys)
 	scan->xs_hitup = NULL;
 	scan->xs_hitupdesc = NULL;
 
+	scan->xs_visited_pages_limit = 0;
+
 	return scan;
 }
 
@@ -454,7 +456,7 @@ systable_beginscan(Relation heapRelation,
 				elog(ERROR, "column is not in index");
 		}
 
-		sysscan->iscan = index_beginscan(heapRelation, irel,
+		sysscan->iscan = index_beginscan(heapRelation, irel, false,
 										 snapshot, NULL, nkeys, 0,
 										 SO_NONE);
 		index_rescan(sysscan->iscan, idxkey, nkeys, NULL, 0);
@@ -518,7 +520,8 @@ systable_getnext(SysScanDesc sysscan)
 
 	if (sysscan->irel)
 	{
-		if (index_getnext_slot(sysscan->iscan, ForwardScanDirection, sysscan->slot))
+		if (table_index_getnext_slot(sysscan->iscan, ForwardScanDirection,
+									 sysscan->slot))
 		{
 			bool		shouldFree;
 
@@ -716,7 +719,7 @@ systable_beginscan_ordered(Relation heapRelation,
 	if (TransactionIdIsValid(CheckXidAlive))
 		bsysscan = true;
 
-	sysscan->iscan = index_beginscan(heapRelation, indexRelation,
+	sysscan->iscan = index_beginscan(heapRelation, indexRelation, false,
 									 snapshot, NULL, nkeys, 0,
 									 SO_NONE);
 	index_rescan(sysscan->iscan, idxkey, nkeys, NULL, 0);
@@ -736,7 +739,7 @@ systable_getnext_ordered(SysScanDesc sysscan, ScanDirection direction)
 	HeapTuple	htup = NULL;
 
 	Assert(sysscan->irel);
-	if (index_getnext_slot(sysscan->iscan, direction, sysscan->slot))
+	if (table_index_getnext_slot(sysscan->iscan, direction, sysscan->slot))
 		htup = ExecFetchSlotHeapTuple(sysscan->slot, false, NULL);
 
 	/* See notes in systable_getnext */

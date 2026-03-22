@@ -34,7 +34,6 @@
 #include "access/relscan.h"
 #include "access/tableam.h"
 #include "access/tupdesc.h"
-#include "access/visibilitymap.h"
 #include "catalog/pg_type.h"
 #include "executor/executor.h"
 #include "executor/instrument.h"
@@ -42,7 +41,6 @@
 #include "executor/nodeIndexscan.h"
 #include "miscadmin.h"
 #include "storage/bufmgr.h"
-#include "storage/predicate.h"
 #include "utils/builtins.h"
 #include "utils/rel.h"
 
@@ -66,7 +64,6 @@ IndexOnlyNext(IndexOnlyScanState *node)
 	ScanDirection direction;
 	IndexScanDesc scandesc;
 	TupleTableSlot *slot;
-	ItemPointer tid;
 
 	/*
 	 * extract necessary information from index scan node
@@ -91,7 +88,7 @@ IndexOnlyNext(IndexOnlyScanState *node)
 		 * parallel.
 		 */
 		scandesc = index_beginscan(node->ss.ss_currentRelation,
-								   node->ioss_RelationDesc,
+								   node->ioss_RelationDesc, true,
 								   estate->es_snapshot,
 								   node->ioss_Instrument,
 								   node->ioss_NumScanKeys,
@@ -100,11 +97,7 @@ IndexOnlyNext(IndexOnlyScanState *node)
 								   SO_HINT_REL_READ_ONLY : SO_NONE);
 
 		node->ioss_ScanDesc = scandesc;
-
-
-		/* Set it up for index-only scan */
-		node->ioss_ScanDesc->xs_want_itup = true;
-		node->ioss_VMBuffer = InvalidBuffer;
+		Assert(node->ioss_ScanDesc->xs_want_itup);
 
 		/*
 		 * If no run-time keys to calculate or they are ready, go ahead and
@@ -121,77 +114,10 @@ IndexOnlyNext(IndexOnlyScanState *node)
 	/*
 	 * OK, now that we have what we need, fetch the next tuple.
 	 */
-	while ((tid = index_getnext_tid(scandesc, direction)) != NULL)
+	while (table_index_getnext_slot(scandesc, direction,
+									node->ioss_TableSlot))
 	{
-		bool		tuple_from_heap = false;
-
 		CHECK_FOR_INTERRUPTS();
-
-		/*
-		 * We can skip the heap fetch if the TID references a heap page on
-		 * which all tuples are known visible to everybody.  In any case,
-		 * we'll use the index tuple not the heap tuple as the data source.
-		 *
-		 * Note on Memory Ordering Effects: visibilitymap_get_status does not
-		 * lock the visibility map buffer, and therefore the result we read
-		 * here could be slightly stale.  However, it can't be stale enough to
-		 * matter.
-		 *
-		 * We need to detect clearing a VM bit due to an insert right away,
-		 * because the tuple is present in the index page but not visible. The
-		 * reading of the TID by this scan (using a shared lock on the index
-		 * buffer) is serialized with the insert of the TID into the index
-		 * (using an exclusive lock on the index buffer). Because the VM bit
-		 * is cleared before updating the index, and locking/unlocking of the
-		 * index page acts as a full memory barrier, we are sure to see the
-		 * cleared bit if we see a recently-inserted TID.
-		 *
-		 * Deletes do not update the index page (only VACUUM will clear out
-		 * the TID), so the clearing of the VM bit by a delete is not
-		 * serialized with this test below, and we may see a value that is
-		 * significantly stale. However, we don't care about the delete right
-		 * away, because the tuple is still visible until the deleting
-		 * transaction commits or the statement ends (if it's our
-		 * transaction). In either case, the lock on the VM buffer will have
-		 * been released (acting as a write barrier) after clearing the bit.
-		 * And for us to have a snapshot that includes the deleting
-		 * transaction (making the tuple invisible), we must have acquired
-		 * ProcArrayLock after that time, acting as a read barrier.
-		 *
-		 * It's worth going through this complexity to avoid needing to lock
-		 * the VM buffer, which could cause significant contention.
-		 */
-		if (!VM_ALL_VISIBLE(scandesc->heapRelation,
-							ItemPointerGetBlockNumber(tid),
-							&node->ioss_VMBuffer))
-		{
-			/*
-			 * Rats, we have to visit the heap to check visibility.
-			 */
-			InstrCountTuples2(node, 1);
-			if (!index_fetch_heap(scandesc, node->ioss_TableSlot))
-				continue;		/* no visible tuple, try next index entry */
-
-			ExecClearTuple(node->ioss_TableSlot);
-
-			/*
-			 * Only MVCC snapshots are supported here, so there should be no
-			 * need to keep following the HOT chain once a visible entry has
-			 * been found.  If we did want to allow that, we'd need to keep
-			 * more state to remember not to call index_getnext_tid next time.
-			 */
-			if (scandesc->xs_heap_continue)
-				elog(ERROR, "non-MVCC snapshots are not supported in index-only scans");
-
-			/*
-			 * Note: at this point we are holding a pin on the heap page, as
-			 * recorded in scandesc->xs_cbuf.  We could release that pin now,
-			 * but it's not clear whether it's a win to do so.  The next index
-			 * entry might require a visit to the same heap page.
-			 */
-
-			tuple_from_heap = true;
-		}
 
 		/*
 		 * Fill the scan tuple slot with data from the index.  This might be
@@ -241,16 +167,6 @@ IndexOnlyNext(IndexOnlyScanState *node)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("lossy distance functions are not supported in index-only scans")));
-
-		/*
-		 * If we didn't access the heap, then we'll need to take a predicate
-		 * lock explicitly, as if we had.  For now we do that at page level.
-		 */
-		if (!tuple_from_heap)
-			PredicateLockPage(scandesc->heapRelation,
-							  ItemPointerGetBlockNumber(tid),
-							  estate->es_snapshot);
-
 		return slot;
 	}
 
@@ -410,13 +326,6 @@ ExecEndIndexOnlyScan(IndexOnlyScanState *node)
 	indexRelationDesc = node->ioss_RelationDesc;
 	indexScanDesc = node->ioss_ScanDesc;
 
-	/* Release VM buffer pin, if any. */
-	if (node->ioss_VMBuffer != InvalidBuffer)
-	{
-		ReleaseBuffer(node->ioss_VMBuffer);
-		node->ioss_VMBuffer = InvalidBuffer;
-	}
-
 	/*
 	 * When ending a parallel worker, copy the statistics gathered by the
 	 * worker back into shared memory so that it can be picked up by the main
@@ -436,6 +345,7 @@ ExecEndIndexOnlyScan(IndexOnlyScanState *node)
 		 * which will have a new IndexOnlyScanState and zeroed stats.
 		 */
 		winstrument->nsearches += node->ioss_Instrument->nsearches;
+		winstrument->ntabletuplefetches += node->ioss_Instrument->ntabletuplefetches;
 	}
 
 	/*
@@ -792,15 +702,14 @@ ExecIndexOnlyScanInitializeDSM(IndexOnlyScanState *node,
 
 	node->ioss_ScanDesc =
 		index_beginscan_parallel(node->ss.ss_currentRelation,
-								 node->ioss_RelationDesc,
+								 node->ioss_RelationDesc, true,
 								 node->ioss_Instrument,
 								 node->ioss_NumScanKeys,
 								 node->ioss_NumOrderByKeys,
 								 piscan,
 								 ScanRelIsReadOnly(&node->ss) ?
 								 SO_HINT_REL_READ_ONLY : SO_NONE);
-	node->ioss_ScanDesc->xs_want_itup = true;
-	node->ioss_VMBuffer = InvalidBuffer;
+	Assert(node->ioss_ScanDesc->xs_want_itup);
 
 	/*
 	 * If no run-time keys to calculate or they are ready, go ahead and pass
@@ -860,14 +769,14 @@ ExecIndexOnlyScanInitializeWorker(IndexOnlyScanState *node,
 
 	node->ioss_ScanDesc =
 		index_beginscan_parallel(node->ss.ss_currentRelation,
-								 node->ioss_RelationDesc,
+								 node->ioss_RelationDesc, true,
 								 node->ioss_Instrument,
 								 node->ioss_NumScanKeys,
 								 node->ioss_NumOrderByKeys,
 								 piscan,
 								 ScanRelIsReadOnly(&node->ss) ?
 								 SO_HINT_REL_READ_ONLY : SO_NONE);
-	node->ioss_ScanDesc->xs_want_itup = true;
+	Assert(node->ioss_ScanDesc->xs_want_itup);
 
 	/*
 	 * If no run-time keys to calculate or they are ready, go ahead and pass

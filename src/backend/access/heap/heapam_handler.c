@@ -657,8 +657,8 @@ heapam_relation_copy_for_cluster(Relation OldHeap, Relation NewHeap,
 
 		tableScan = NULL;
 		heapScan = NULL;
-		indexScan = index_beginscan(OldHeap, OldIndex, SnapshotAny, NULL, 0, 0,
-									SO_NONE);
+		indexScan = index_beginscan(OldHeap, OldIndex, false, SnapshotAny,
+									NULL, 0, 0, SO_NONE);
 		index_rescan(indexScan, NULL, 0, NULL, 0);
 	}
 	else
@@ -696,7 +696,8 @@ heapam_relation_copy_for_cluster(Relation OldHeap, Relation NewHeap,
 
 		if (indexScan != NULL)
 		{
-			if (!index_getnext_slot(indexScan, ForwardScanDirection, slot))
+			if (!table_index_getnext_slot(indexScan, ForwardScanDirection,
+										  slot))
 				break;
 
 			/* Since we used no scan keys, should never need to recheck */
@@ -2556,7 +2557,6 @@ static const TableAmRoutine heapam_methods = {
 	.index_fetch_begin = heapam_index_fetch_begin,
 	.index_fetch_reset = heapam_index_fetch_reset,
 	.index_fetch_end = heapam_index_fetch_end,
-	.index_fetch_tuple = heapam_index_fetch_tuple,
 
 	.tuple_insert = heapam_tuple_insert,
 	.tuple_insert_speculative = heapam_tuple_insert_speculative,
@@ -2566,6 +2566,7 @@ static const TableAmRoutine heapam_methods = {
 	.tuple_update = heapam_tuple_update,
 	.tuple_lock = heapam_tuple_lock,
 
+	.fetch_tid = heapam_fetch_tid,
 	.tuple_fetch_row_version = heapam_fetch_row_version,
 	.tuple_get_latest_tid = heap_get_latest_tid,
 	.tuple_tid_valid = heapam_tuple_tid_valid,

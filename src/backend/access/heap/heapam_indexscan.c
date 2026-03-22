@@ -14,10 +14,35 @@
  */
 #include "postgres.h"
 
+#include "access/amapi.h"
 #include "access/heapam.h"
 #include "access/relscan.h"
+#include "access/visibilitymap.h"
 #include "storage/predicate.h"
+#include "utils/pgstat_internal.h"
 
+
+static bool heapam_index_plain_amgettuple_next(IndexScanDesc scan,
+											   ScanDirection direction,
+											   TupleTableSlot *slot);
+static bool heapam_index_only_amgettuple_next(IndexScanDesc scan,
+											  ScanDirection direction,
+											  TupleTableSlot *slot);
+static pg_attribute_always_inline bool heapam_index_fetch_tuple_impl(Relation rel,
+																	 IndexFetchHeapData *hscan,
+																	 ItemPointer tid,
+																	 Snapshot snapshot,
+																	 TupleTableSlot *slot,
+																	 bool *heap_continue,
+																	 bool *all_dead);
+static pg_attribute_always_inline bool heapam_index_getnext_slot(IndexScanDesc scan,
+																 ScanDirection direction,
+																 TupleTableSlot *slot,
+																 bool index_only);
+static pg_attribute_always_inline bool heapam_index_fetch_heap(IndexScanDesc scan,
+															   IndexFetchHeapData *hscan,
+															   TupleTableSlot *slot,
+															   bool *heap_continue);
 
 /* ------------------------------------------------------------------------
  * Index Scan Callbacks for heap AM
@@ -25,22 +50,27 @@
  */
 
 IndexFetchTableData *
-heapam_index_fetch_begin(Relation rel, uint32 flags)
+heapam_index_fetch_begin(IndexScanDesc scan, uint32 flags)
 {
 	IndexFetchHeapData *hscan = palloc0_object(IndexFetchHeapData);
 
-	hscan->xs_base.rel = rel;
 	hscan->xs_base.flags = flags;
 	hscan->xs_cbuf = InvalidBuffer;
 	hscan->xs_vmbuffer = InvalidBuffer;
+
+	/* Resolve which getnext_slot implementation to use for this scan */
+	if (scan->xs_want_itup)
+		scan->xs_getnext_slot = heapam_index_only_amgettuple_next;
+	else
+		scan->xs_getnext_slot = heapam_index_plain_amgettuple_next;
 
 	return &hscan->xs_base;
 }
 
 void
-heapam_index_fetch_reset(IndexFetchTableData *scan)
+heapam_index_fetch_reset(IndexScanDesc scan)
 {
-	IndexFetchHeapData *hscan = (IndexFetchHeapData *) scan;
+	IndexFetchHeapData *hscan = (IndexFetchHeapData *) scan->xs_heapfetch;
 
 	if (BufferIsValid(hscan->xs_cbuf))
 	{
@@ -56,9 +86,9 @@ heapam_index_fetch_reset(IndexFetchTableData *scan)
 }
 
 void
-heapam_index_fetch_end(IndexFetchTableData *scan)
+heapam_index_fetch_end(IndexScanDesc scan)
 {
-	IndexFetchHeapData *hscan = (IndexFetchHeapData *) scan;
+	IndexFetchHeapData *hscan = (IndexFetchHeapData *) scan->xs_heapfetch;
 
 	heapam_index_fetch_reset(scan);
 
@@ -227,14 +257,76 @@ heap_hot_search_buffer(ItemPointer tid, Relation relation, Buffer buffer,
 	return false;
 }
 
+/*
+ * Simple, single-shot TID lookup for constraint enforcement code (unique
+ * checks and similar).  This is essentially just a heap_hot_search_buffer
+ * wrapper.
+ *
+ * This isn't actually related to index scans, but keeping it near
+ * heap_hot_search_buffer may help the compiler generate better code.
+ */
 bool
-heapam_index_fetch_tuple(struct IndexFetchTableData *scan,
-						 ItemPointer tid,
-						 Snapshot snapshot,
-						 TupleTableSlot *slot,
-						 bool *heap_continue, bool *all_dead)
+heapam_fetch_tid(Relation rel, ItemPointer tid, Snapshot snapshot,
+				 TupleTableSlot *slot, bool *all_dead)
 {
-	IndexFetchHeapData *hscan = (IndexFetchHeapData *) scan;
+	BufferHeapTupleTableSlot *bslot = (BufferHeapTupleTableSlot *) slot;
+	Buffer		buf;
+	bool		found;
+
+	Assert(TTS_IS_BUFFERTUPLE(slot));
+
+	buf = ReadBuffer(rel, ItemPointerGetBlockNumber(tid));
+
+	LockBuffer(buf, BUFFER_LOCK_SHARE);
+	found = heap_hot_search_buffer(tid, rel, buf, snapshot,
+								   &bslot->base.tupdata, all_dead, true);
+	bslot->base.tupdata.t_self = *tid;
+	LockBuffer(buf, BUFFER_LOCK_UNLOCK);
+
+	if (found)
+	{
+		slot->tts_tableOid = RelationGetRelid(rel);
+		ExecStorePinnedBufferHeapTuple(&bslot->base.tupdata, slot,
+									   buf);
+	}
+	else
+		ReleaseBuffer(buf);
+
+	return found;
+}
+
+/* table_index_getnext_slot callback: amgettuple, plain index scan */
+static pg_attribute_hot bool
+heapam_index_plain_amgettuple_next(IndexScanDesc scan,
+								   ScanDirection direction,
+								   TupleTableSlot *slot)
+{
+	Assert(!scan->xs_want_itup);
+	Assert(scan->indexRelation->rd_indam->amgettuple != NULL);
+
+	return heapam_index_getnext_slot(scan, direction, slot, false);
+}
+
+/* table_index_getnext_slot callback: amgettuple, index-only scan */
+static pg_attribute_hot bool
+heapam_index_only_amgettuple_next(IndexScanDesc scan,
+								  ScanDirection direction,
+								  TupleTableSlot *slot)
+{
+	Assert(scan->xs_want_itup);
+	Assert(scan->indexRelation->rd_indam->amgettuple != NULL);
+
+	return heapam_index_getnext_slot(scan, direction, slot, true);
+}
+
+static pg_attribute_always_inline bool
+heapam_index_fetch_tuple_impl(Relation rel,
+							  IndexFetchHeapData *hscan,
+							  ItemPointer tid,
+							  Snapshot snapshot,
+							  TupleTableSlot *slot,
+							  bool *heap_continue, bool *all_dead)
+{
 	BufferHeapTupleTableSlot *bslot = (BufferHeapTupleTableSlot *) slot;
 	bool		got_heap_tuple;
 
@@ -246,23 +338,21 @@ heapam_index_fetch_tuple(struct IndexFetchTableData *scan,
 		/* Switch to correct buffer if we don't have it already */
 		Buffer		prev_buf = hscan->xs_cbuf;
 
-		hscan->xs_cbuf = ReleaseAndReadBuffer(hscan->xs_cbuf,
-											  hscan->xs_base.rel,
+		hscan->xs_cbuf = ReleaseAndReadBuffer(hscan->xs_cbuf, rel,
 											  ItemPointerGetBlockNumber(tid));
 
 		/*
 		 * Prune page, but only if we weren't already on this page
 		 */
 		if (prev_buf != hscan->xs_cbuf)
-			heap_page_prune_opt(hscan->xs_base.rel, hscan->xs_cbuf,
-								&hscan->xs_vmbuffer,
+			heap_page_prune_opt(rel, hscan->xs_cbuf, &hscan->xs_vmbuffer,
 								hscan->xs_base.flags & SO_HINT_REL_READ_ONLY);
 	}
 
 	/* Obtain share-lock on the buffer so we can examine visibility */
 	LockBuffer(hscan->xs_cbuf, BUFFER_LOCK_SHARE);
 	got_heap_tuple = heap_hot_search_buffer(tid,
-											hscan->xs_base.rel,
+											rel,
 											hscan->xs_cbuf,
 											snapshot,
 											&bslot->base.tupdata,
@@ -279,7 +369,7 @@ heapam_index_fetch_tuple(struct IndexFetchTableData *scan,
 		 */
 		*heap_continue = !IsMVCCLikeSnapshot(snapshot);
 
-		slot->tts_tableOid = RelationGetRelid(scan->rel);
+		slot->tts_tableOid = RelationGetRelid(rel);
 		ExecStoreBufferHeapTuple(&bslot->base.tupdata, slot, hscan->xs_cbuf);
 	}
 	else
@@ -289,4 +379,172 @@ heapam_index_fetch_tuple(struct IndexFetchTableData *scan,
 	}
 
 	return got_heap_tuple;
+}
+
+/*
+ * Common implementation for both heapam_index_*_getnext_slot variants.
+ *
+ * The result is true if a tuple satisfying the scan keys and the snapshot was
+ * found, false otherwise.  The tuple is stored in the specified slot.
+ *
+ * On success, resources (like buffer pins) are likely to be held, and will be
+ * dropped by a future call here (or by a later call to heapam_index_fetch_end
+ * through index_endscan).
+ *
+ * The index_only parameter is a compile-time constant at each call site,
+ * allowing the compiler to specialize the code for each variant.
+ */
+static pg_attribute_always_inline bool
+heapam_index_getnext_slot(IndexScanDesc scan, ScanDirection direction,
+						  TupleTableSlot *slot, bool index_only)
+{
+	IndexFetchHeapData *hscan = (IndexFetchHeapData *) scan->xs_heapfetch;
+	bool	   *heap_continue = &scan->xs_heap_continue;
+	bool		all_visible = false;
+	BlockNumber last_visited_block = InvalidBlockNumber;
+	uint8		n_visited_pages = 0;
+	ItemPointer tid = NULL;
+
+	for (;;)
+	{
+		if (!*heap_continue)
+		{
+			/* Get the next TID from the index */
+			tid = index_getnext_tid(scan, direction);
+
+			/* If we're out of index entries, we're done */
+			if (tid == NULL)
+				break;
+
+			/* For index-only scans, check the visibility map */
+			if (index_only)
+				all_visible = VM_ALL_VISIBLE(scan->heapRelation,
+											 ItemPointerGetBlockNumber(tid),
+											 &hscan->xs_vmbuffer);
+		}
+
+		Assert(ItemPointerIsValid(&scan->xs_heaptid));
+
+		if (index_only)
+		{
+			/*
+			 * We can skip the heap fetch if the TID references a heap page on
+			 * which all tuples are known visible to everybody.  In any case,
+			 * we'll use the index tuple not the heap tuple as the data
+			 * source.
+			 */
+			if (!all_visible)
+			{
+				/*
+				 * Rats, we have to visit the heap to check visibility.
+				 */
+				if (scan->instrument)
+					scan->instrument->ntabletuplefetches++;
+
+				if (!heapam_index_fetch_heap(scan, hscan, slot,
+											 heap_continue))
+				{
+					/*
+					 * No visible tuple.  If caller set a visited-pages limit
+					 * (only selfuncs.c does this), count distinct heap pages
+					 * and give up once we've visited too many.
+					 */
+					if (unlikely(scan->xs_visited_pages_limit > 0))
+					{
+						BlockNumber blk = ItemPointerGetBlockNumber(tid);
+
+						if (blk != last_visited_block)
+						{
+							last_visited_block = blk;
+							if (++n_visited_pages > scan->xs_visited_pages_limit)
+								return false;	/* give up */
+						}
+					}
+					continue;	/* no visible tuple, try next index entry */
+				}
+
+				/* We don't actually need the heap tuple for anything */
+				ExecClearTuple(slot);
+
+				/*
+				 * Only MVCC snapshots are supported with standard index-only
+				 * scans, so there should be no need to keep following the HOT
+				 * chain once a visible entry has been found.  Other callers
+				 * (currently only selfuncs.c) use SnapshotNonVacuumable, and
+				 * want us to assume that just having one visible tuple in the
+				 * hot chain is always good enough.
+				 */
+				Assert(!(*heap_continue && IsMVCCSnapshot(scan->xs_snapshot)));
+			}
+			else
+			{
+				/*
+				 * We didn't access the heap, so we'll need to take a
+				 * predicate lock explicitly, as if we had.  For now we do
+				 * that at page level.
+				 */
+				PredicateLockPage(scan->heapRelation,
+								  ItemPointerGetBlockNumber(tid),
+								  scan->xs_snapshot);
+			}
+
+			/*
+			 * Return matching index tuple now set in scan->xs_itup (or return
+			 * matching heap tuple now set in scan->xs_hitup)
+			 */
+			return true;
+		}
+		else
+		{
+			/*
+			 * Fetch the next (or only) visible heap tuple for this index
+			 * entry.  If we don't find anything, loop around and grab the
+			 * next TID from the index.
+			 */
+			if (heapam_index_fetch_heap(scan, hscan, slot, heap_continue))
+				return true;
+		}
+	}
+
+	return false;
+}
+
+/*
+ * Get the scan's next heap tuple.
+ *
+ * The result is a visible heap tuple associated with the index TID most
+ * recently fetched by our caller in scan->xs_heaptid, or NULL if no more
+ * matching tuples exist.  (There can be more than one matching tuple because
+ * of HOT chains, although when using an MVCC snapshot it should be impossible
+ * for more than one such tuple to exist.)
+ *
+ * On success, the buffer containing the heap tup is pinned.  The pin must be
+ * dropped elsewhere.
+ */
+static pg_attribute_always_inline bool
+heapam_index_fetch_heap(IndexScanDesc scan, IndexFetchHeapData *hscan,
+						TupleTableSlot *slot, bool *heap_continue)
+{
+	bool		all_dead = false;
+	bool		found;
+
+	found = heapam_index_fetch_tuple_impl(scan->heapRelation, hscan,
+										  &scan->xs_heaptid,
+										  scan->xs_snapshot, slot,
+										  heap_continue, &all_dead);
+
+	if (found)
+		pgstat_count_heap_fetch(scan->indexRelation);
+
+	/*
+	 * If we scanned a whole HOT chain and found only dead tuples, tell index
+	 * AM to kill its entry for that TID (this will take effect in the next
+	 * amgettuple call, in index_getnext_tid).  We do not do this when in
+	 * recovery because it may violate MVCC to do so.  See comments in
+	 * RelationGetIndexScan().
+	 */
+	if (!scan->xactStartedInRecovery)
+		scan->kill_prior_tuple = all_dead;
+
+	return found;
 }
