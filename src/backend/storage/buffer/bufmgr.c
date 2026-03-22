@@ -8312,7 +8312,7 @@ MarkDirtyAllUnpinnedBuffers(int32 *buffers_dirtied,
  * replaced while IO is ongoing.
  */
 static pg_attribute_always_inline void
-buffer_stage_common(PgAioHandle *ioh, bool is_write, bool is_temp)
+buffer_stage_common(PgAioHandle *ioh, uint8 cb_data, bool is_write, bool is_temp)
 {
 	uint64	   *io_data;
 	uint8		handle_data_len;
@@ -8411,7 +8411,23 @@ buffer_stage_common(PgAioHandle *ioh, bool is_write, bool is_temp)
 		 * keeps track.
 		 */
 		if (!is_temp)
+		{
 			ResourceOwnerForgetBufferIO(CurrentResourceOwner, buffer);
+
+			/*
+			 * A backend might have started waiting for the IO using the
+			 * buffer's condition variable, but once the IO is submitted, it
+			 * should wait via the AIO subsystem, as a waiter might need to
+			 * complete the IO.
+			 *
+			 * However, doing broadcasts is not free, so we like to avoid it
+			 * when not necessary. If the IO is being executed synchronously,
+			 * this backend will always end up signalling the IOCV without
+			 * further waiting, therefore avoid doing so here.
+			 */
+			if (!(cb_data & READ_BUFFERS_SYNCHRONOUSLY))
+				ConditionVariableBroadcast(BufferDescriptorGetIOCV(buf_hdr));
+		}
 	}
 }
 
@@ -8907,7 +8923,7 @@ buffer_readv_report(PgAioResult result, const PgAioTargetData *td,
 static void
 shared_buffer_readv_stage(PgAioHandle *ioh, uint8 cb_data)
 {
-	buffer_stage_common(ioh, false, false);
+	buffer_stage_common(ioh, cb_data, false, false);
 }
 
 static PgAioResult
@@ -8958,7 +8974,7 @@ shared_buffer_readv_complete_local(PgAioHandle *ioh, PgAioResult prior_result,
 static void
 local_buffer_readv_stage(PgAioHandle *ioh, uint8 cb_data)
 {
-	buffer_stage_common(ioh, false, true);
+	buffer_stage_common(ioh, cb_data, false, true);
 }
 
 static PgAioResult
