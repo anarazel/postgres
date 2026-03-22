@@ -199,6 +199,7 @@ ABI_compatibility:
 Section: ClassName - WaitEventIO
 
 AIO_IO_COMPLETION	"Waiting for another process to complete IO."
+AIO_IO_SUBMIT	"Waiting for another process to submit IO."
 AIO_IO_URING_SUBMIT	"Waiting for IO submission via io_uring."
 AIO_IO_URING_EXECUTION	"Waiting for IO execution via io_uring."
 BASEBACKUP_READ	"Waiting for base backup to read from a file."

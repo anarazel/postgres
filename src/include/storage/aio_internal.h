@@ -215,6 +215,13 @@ typedef struct PgAioBackend
 	PgAioHandle *staged_ios[PGAIO_SUBMIT_BATCH_SIZE];
 
 	/*
+	 * Other backends sometimes need to wait for the owning backend to submit.
+	 * The per-IO CV would work for that purpose, but a per-backend CV allows
+	 * for just one broadcast per submitted batch.
+	 */
+	ConditionVariable submit_cv;
+
+	/*
 	 * List of in-flight IOs. Also contains IOs that aren't strictly speaking
 	 * in-flight anymore, but have been waited-for and completed by another
 	 * backend. Once this backend sees such an IO it'll be reclaimed.
