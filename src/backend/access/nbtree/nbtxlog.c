@@ -1095,15 +1095,15 @@ btree_mask(char *pagedata, BlockNumber blkno)
 		/*
 		 * In btree leaf pages, it is possible to modify the LP_FLAGS without
 		 * emitting any WAL record. Hence, mask the line pointer flags. See
-		 * _bt_killitems(), _bt_check_unique() for details.
+		 * btkillitemsbatch(), _bt_check_unique() for details.
 		 */
 		mask_lp_flags(page);
 	}
 
 	/*
 	 * BTP_HAS_GARBAGE is just an un-logged hint bit. So, mask it. See
-	 * _bt_delete_or_dedup_one_page(), _bt_killitems(), and _bt_check_unique()
-	 * for details.
+	 * _bt_delete_or_dedup_one_page(), btkillitemsbatch(), and
+	 * _bt_check_unique() for details.
 	 */
 	maskopaq->btpo_flags &= ~BTP_HAS_GARBAGE;
 

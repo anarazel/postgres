@@ -43,7 +43,7 @@
 /* Whether we are looking for plain indexscan, bitmap scan, or either */
 typedef enum
 {
-	ST_INDEXSCAN,				/* must support amgettuple */
+	ST_INDEXSCAN,				/* must support amgettuple or amgetbatch */
 	ST_BITMAPSCAN,				/* must support amgetbitmap */
 	ST_ANYSCAN,					/* either is okay */
 } ScanTypeControl;
@@ -747,7 +747,7 @@ get_index_paths(PlannerInfo *root, RelOptInfo *rel,
 	{
 		IndexPath  *ipath = (IndexPath *) lfirst(lc);
 
-		if (index->amhasgettuple)
+		if (index->amcanplainscan)
 			add_path(rel, (Path *) ipath);
 
 		if (index->amhasgetbitmap &&
@@ -835,7 +835,7 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 	switch (scantype)
 	{
 		case ST_INDEXSCAN:
-			if (!index->amhasgettuple)
+			if (!index->amcanplainscan)
 				return NIL;
 			break;
 		case ST_BITMAPSCAN:

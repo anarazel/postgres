@@ -5,4 +5,5 @@ backend_sources += files(
   'amvalidate.c',
   'genam.c',
   'indexam.c',
+  'indexbatch.c',
 )

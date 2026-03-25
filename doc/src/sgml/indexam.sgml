@@ -167,10 +167,12 @@ typedef struct IndexAmRoutine
     ambeginscan_function ambeginscan;
     amrescan_function amrescan;
     amgettuple_function amgettuple;     /* can be NULL */
+    amgetbatch_function amgetbatch; /* can be NULL */
+    amunguardbatch_function amunguardbatch; /* can be NULL */
+    amkillitemsbatch_function amkillitemsbatch;	/* can be NULL */
     amgetbitmap_function amgetbitmap;   /* can be NULL */
     amendscan_function amendscan;
-    ammarkpos_function ammarkpos;       /* can be NULL */
-    amrestrpos_function amrestrpos;     /* can be NULL */
+    amposreset_function amposreset; /* can be NULL */
 
     /* interface functions to support parallel index scans */
     amestimateparallelscan_function amestimateparallelscan;    /* can be NULL */
@@ -676,8 +678,38 @@ ambeginscan (Relation indexRelation,
    <emphasis>must</emphasis> create this struct by calling
    <function>RelationGetIndexScan()</function>.  In most cases
    <function>ambeginscan</function> does little beyond making that call and perhaps
-   acquiring locks;
+   acquiring locks and initializing standard <structname>IndexScanDesc</structname> fields;
    the interesting parts of index-scan startup are in <function>amrescan</function>.
+   Index access methods that use the <function>amgetbatch</function> interface
+   must also set the following fields in the scan descriptor:
+   <itemizedlist>
+    <listitem>
+     <para>
+      <literal>scan-&gt;maxitemsbatch</literal>: the maximum number of items
+      that can appear in a single batch (typically derived from the index page
+      size, e.g., <literal>MaxIndexTuplesPerPage</literal>).
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      <literal>scan-&gt;batch_index_opaque_size</literal>: the
+      <function>MAXALIGN</function>'d size of the index AM's per-batch opaque
+      area.  Each batch allocation reserves this much space immediately before
+      the <structname>IndexScanBatchData</structname> pointer, for use by the
+      index AM to store per-page navigation state (e.g., batch index page's
+      buffer pin and sibling page links).
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      <literal>scan-&gt;batch_tuples_workspace</literal>: the size in bytes
+      of the per-batch tuple storage workspace used for index-only scans
+      (typically <literal>BLCKSZ</literal>), or 0 if the index AM does not
+      support index-only scans.  The workspace is accessible via
+      <structfield>batch-&gt;currTuples</structfield>.
+     </para>
+    </listitem>
+   </itemizedlist>
   </para>
 
   <para>
@@ -749,6 +781,264 @@ amgettuple (IndexScanDesc scan,
    <structfield>amgettuple</structfield> field in its <structname>IndexAmRoutine</structname>
    struct must be set to NULL.
   </para>
+  <note>
+   <para>
+    As of <productname>PostgreSQL</productname> version 19, mark/restore of
+    scan positions is only supported for scans that use the
+    <function>amgetbatch</function> interface.
+    <function>amgettuple</function> scans do not support mark/restore.  The
+    mark/restore implementation lives in the table AM, through its
+    <function>table_index_fetch_markpos</function> and
+    <function>table_index_fetch_restrpos</function> implementations.
+   </para>
+  </note>
+
+  <para>
+<programlisting>
+IndexScanBatch
+amgetbatch (IndexScanDesc scan,
+            IndexScanBatch priorbatch,
+            ScanDirection direction);
+</programlisting>
+   Return the next batch of index tuples in the given scan, moving in the
+   given direction (forward or backward in the index).  Returns an instance of
+   <type>IndexScanBatch</type> with index tuples loaded, or
+   <literal>NULL</literal> if there are no more index tuples in the given
+   scan direction.
+  </para>
+
+  <para>
+   The <function>amgetbatch</function> interface is an alternative to
+   <function>amgettuple</function> that returns matching index entries in batches
+   rather than one at a time.  By returning all matching index entries from a
+   single index page together, the table AM gains visibility into which table
+   blocks will be needed in the near future.
+  </para>
+
+  <para>
+   The table AM passes <literal>priorbatch</literal> to indicate where the
+   index AM should continue scanning from (or <literal>NULL</literal> on the
+   first call for the scan).  The index AM uses information from
+   <literal>priorbatch</literal> to determine which index page to read next.
+   Unlike <function>amgettuple</function>, where the index AM maintains its
+   own scan position, with <function>amgetbatch</function> it is the caller
+   that controls the progress of the scan through the index.  The caller
+   will typically pass the most recently returned batch, but this is not
+   guaranteed &mdash; for example, following the restoration of a marked
+   position, an earlier batch may be passed instead.
+  </para>
+
+  <para>
+   A batch returned by <function>amgetbatch</function> is associated with an
+   index page containing at least one matching item/tuple.  A buffer
+   pin can be held onto by the table AM as an interlock against concurrent TID
+   recycling by <command>VACUUM</command>.  The table AM drops this interlock
+   by calling <function>amunguardbatch</function> when it is safe to do so.
+   See <xref linkend="index-locking"/> for details on buffer pin management
+   during index scans.
+  </para>
+
+  <para>
+   A <type>IndexScanBatch</type> that is returned by
+   <function>amgetbatch</function> is no longer managed by the access method.
+   It is up to the table AM caller to decide when it should be freed (via
+   <function>tableam_util_free_batch</function>).  Note also that
+   <function>amgetbatch</function> functions must never modify the
+   <structfield>priorbatch</structfield> parameter.  The core
+   <filename>src/backend/access/nbtree/</filename> implementation provides a
+   reference examples of the <function>amgetbatch</function> interface.
+  </para>
+
+  <para>
+   The same caveats described for <function>amgettuple</function> apply here
+   too: an entry in the returned batch means only that the index contains
+   an entry that matches the scan keys, not that the tuple necessarily still
+   exists in the heap or will pass the caller's snapshot test.
+  </para>
+
+  <para>
+   Index access methods using <function>amgetbatch</function> must set
+   <literal>scan-&gt;xs_recheck</literal> to indicate whether rechecking of
+   scan keys is required, in the same way as <function>amgettuple</function>
+   does. However, <literal>scan-&gt;xs_recheck</literal> must be set consistently
+   for an entire scan rather than varying on a per-tuple basis. This is a key
+   difference from <function>amgettuple</function>, which can set
+   <literal>scan-&gt;xs_recheck</literal> independently for each tuple it returns.
+   Index access methods that require granular control over
+   <literal>scan-&gt;xs_recheck</literal> must use the <function>amgettuple</function>
+   interface instead of <function>amgetbatch</function>.
+  </para>
+
+  <para>
+   Similarly, the <function>amgetbatch</function> interface does not currently
+   support index-only scans that return data in the form of a
+   <structname>HeapTuple</structname> pointer.  Index-only scans work by
+   copying <structname>IndexTuple</structname> records from index pages into a
+   local buffer associated with each batch.  <literal>xs_itupdesc</literal>
+   works in the same way as already described for <function>amgettuple</function>.
+   The index access method must not set the <literal>scan-&gt;xs_itup</literal>
+   field itself.
+   With <function>amgettuple</function>, the index AM sets
+   <literal>scan-&gt;xs_hitup</literal> to point to a reconstructed
+   <structname>HeapTuple</structname> whose lifetime extends until the next
+   <function>amgettuple</function> call &mdash; only one tuple is valid at a
+   time.  With <function>amgetbatch</function>, multiple batches are held open
+   simultaneously and items are consumed asynchronously by the table AM, so
+   there is no equivalent single-tuple lifetime for per-item
+   <structname>HeapTuple</structname> pointers.  The batch infrastructure
+   provides per-batch storage for <structname>IndexTuple</structname> copies,
+   but has no analogous mechanism for <structname>HeapTuple</structname> data
+   (used by some index AMs for reconstructed tuples that might not fit in
+   <structname>IndexTuple</structname> format).  This limitation could be
+   addressed in a future version of <productname>PostgreSQL</productname>.
+  </para>
+
+  <para>
+   The index access method must provide either <function>amgetbatch</function>
+   or <function>amgettuple</function>, but not both.
+  </para>
+
+  <para>
+   The <function>amgetbatch</function> function need only be provided if the
+   access method supports <quote>plain</quote> index scans.  If it doesn't,
+   the <function>amgetbatch</function> field in its
+   <structname>IndexAmRoutine</structname> struct must be set to NULL.
+  </para>
+
+  <para>
+<programlisting>
+void
+amunguardbatch (IndexScanDesc scan,
+                IndexScanBatch batch);
+</programlisting>
+   Called by the table AM (via
+   <function>tableam_util_unguard_batch</function>) when it is safe to drop
+   the TID recycling interlock that the index AM holds on the batch's index
+   leaf page, which prevents concurrent TID recycling by
+   <command>VACUUM</command>.
+   Formally, an index AM may hold a different kind of interlock, or multiple
+   interlocks, in its per-batch opaque area, but in practice the built-in
+   index AM that supports <function>amgetbatch</function> &mdash; B-tree
+   &mdash; holds a single buffer pin.  See <xref linkend="index-locking"/> for
+   details on buffer pin management during index scans.  This function will be
+   called at most once for each guarded batch; it is not called when the index
+   AM has already unguarded the batch itself (as it does when
+   <structfield>batchImmediateUnguard</structfield> is true, which is the
+   common case).
+  </para>
+
+  <note>
+   <para>
+    The index AM may choose to retain its own buffer pins when this serves an
+    internal purpose (for example, maintaining a descent stack of pinned index
+    pages for reuse across <function>amgetbatch</function> calls).  However,
+    any scheme that retains buffer pins managed by the index AM must be sure
+    to free the pins at an opportune point (at a minimum whenever
+    <function>amendscan</function> is called, and typically when
+    <function>amrescan</function> is called).  It must also keep the number of
+    retained pins fixed and small.
+   </para>
+  </note>
+
+  <para>
+   The <function>amunguardbatch</function> function is required for any index
+   access method that provides <function>amgetbatch</function>.
+  </para>
+
+  <para>
+<programlisting>
+void
+amkillitemsbatch (IndexScanDesc scan,
+                  IndexScanBatch batch);
+</programlisting>
+   Called by the table AM when it has finished processing a batch that
+   contains dead items, to set <literal>LP_DEAD</literal> bits in the batch's
+   index page.  The batch's index page will not be locked by the caller; the
+   index AM must acquire and release its own lock (and pin) on the index page.
+  </para>
+
+  <para>
+   Implementing <function>amkillitemsbatch</function> is optional for
+   <function>amgetbatch</function> index AMs (those that don't can leave
+   the field set to <literal>NULL</literal>), but doing so is recommended for
+   performance, as it allows future scans to skip known-dead index entries.
+   The core index access method that currently supports
+   <function>amgetbatch</function> (B-tree) implements
+   <literal>LP_DEAD</literal> marking, though third-party index access methods
+   are free to choose whether to implement this feature.  The table AM may
+   call <function>tableam_util_scanpos_killitem</function> to mark dead items as
+   the scan progresses.  If the batch contains any such dead items, the batch's
+   <structfield>deadItems</structfield> array will have been sorted and
+   deduplicated before <function>amkillitemsbatch</function> is called, with
+   item offsets appearing in ascending order (that is, in index page order,
+   which is also batch order) and no offset appearing more than once.  Index
+   access methods can rely on this ordering when processing dead items: the
+   <structfield>deadItems</structfield> array can be walked in lockstep with
+   the index page's item pointers, since both are in ascending page offset
+   number order.  This also means the table AM need not call
+   <function>tableam_util_scanpos_killitem</function> in any particular order.
+  </para>
+
+  <note>
+   <para>
+    Index access methods using <function>amgettuple</function> rely on the
+    <structfield>kill_prior_tuple</structfield> mechanism instead to mark dead
+    tuples; the <filename>src/backend/access/gist/</filename> implementation
+    provides a reference example.
+   </para>
+  </note>
+
+  <para>
+   When implementing <function>amkillitemsbatch</function>, the index AM
+   must verify that the index page has not been modified since the batch was
+   originally read.  The standard way to do this is to call
+   <function>indexam_util_batch_unlock</function> during
+   <function>amgetbatch</function>, which releases the index page lock and
+   saves the page LSN in
+   the batch's <structfield>lsn</structfield> field.  Later, within
+   <function>amkillitemsbatch</function>, the index AM re-reads the page,
+   compares the current page LSN against
+   <structfield>batch-&gt;lsn</structfield>, and gives up on setting
+   <literal>LP_DEAD</literal> bits if the LSN has advanced.  An advanced LSN
+   indicates that the page was modified &mdash; possibly by
+   <command>VACUUM</command> recycling table TIDs &mdash; so it would be
+   unsafe to assume that index entries still point to the same heap/table
+   tuples.  Since <literal>LP_DEAD</literal> marking is only an optimization
+   hint, it is always safe to skip it.  B-tree uses this approach.
+  </para>
+
+  <warning>
+   <para>
+    This LSN comparison technique requires the index AM to use fake
+    (monotonically increasing) LSNs on its pages for relations where WAL is
+    not generated, since real LSNs are not available in that case.  See the
+    B-tree index implementation for a reference example of this
+    technique.  An index AM that does not implement fake LSNs can still
+    provide <function>amkillitemsbatch</function>, but should simply do
+    nothing when the relation does not generate WAL (i.e., when
+    <function>RelationNeedsWAL()</function> is false), since the LSN
+    comparison would be unreliable.
+   </para>
+  </warning>
+
+  <tip>
+   <para>
+    Index AMs are not obligated to use
+    <function>indexam_util_batch_unlock</function> &mdash; they can implement
+    their own equivalent, and are free to use the batch
+    <structfield>lsn</structfield> field in whatever way they deem necessary
+   </para>
+  </tip>
+
+  <para>
+   This LSN-based verification means that the table AM need not consider
+   whether unguarding a batch could introduce TID recycling hazards for a
+   subsequent <function>amkillitemsbatch</function> call.  The hazards are the
+   same in both cases, but since <function>amkillitemsbatch</function>
+   independently verifies the page LSN and can always safely give up on
+   setting <literal>LP_DEAD</literal> bits, correctness is obvious without any
+   coupling between the two.
+  </para>
 
   <para>
 <programlisting>
@@ -768,8 +1058,8 @@ amgetbitmap (IndexScanDesc scan,
    itself, and therefore callers recheck both the scan conditions and the
    partial index predicate (if any) for recheckable tuples.  That might not
    always be true, however.
-   <function>amgetbitmap</function> and
-   <function>amgettuple</function> cannot be used in the same index scan; there
+   Only one of <function>amgetbitmap</function>, <function>amgetbatch</function>,
+   or <function>amgettuple</function> can be used in any given index scan; there
    are other restrictions too when using <function>amgetbitmap</function>, as explained
    in <xref linkend="index-scanning"/>.
   </para>
@@ -779,6 +1069,39 @@ amgetbitmap (IndexScanDesc scan,
    method supports <quote>bitmap</quote> index scans.  If it doesn't, the
    <structfield>amgetbitmap</structfield> field in its <structname>IndexAmRoutine</structname>
    struct must be set to NULL.
+  </para>
+
+  <para>
+   Index access methods that support <function>amgetbatch</function> will
+   typically also support <function>amgetbitmap</function>, and almost all of
+   the index AM's internal scanning code is shared between the two paths.  The
+   main difference is that during <function>amgetbitmap</function> only one
+   batch is allocated at a time (via <function>indexam_util_batch_alloc</function>),
+   unlike <function>amgetbatch</function> where the table AM manages several
+   batches in a dedicated batch ring buffer data structure.
+  </para>
+
+  <para>
+   The only change needed to maintain this invariant is a single call to
+   <function>indexam_util_batch_release</function> at the point where the
+   scan moves between index pages, conditional on the scan's
+   <structfield>usebatchring</structfield> field being false (indicating a
+   bitmap index scan).  The index AM releases its prior batch
+   just as it is about to generate the next batch &mdash; the same point
+   where it extracts navigation state (such as sibling-page links) from
+   <literal>priorbatch</literal>.  No other changes to the index AM's
+   scanning logic are needed.  This early release is specific to
+   <function>amgetbitmap</function> scans; during
+   <function>amgetbatch</function> scans the <literal>priorbatch</literal>
+   is strictly owned by the caller (the table AM), and the index AM must
+   never release it.  See <function>_bt_next</function> for a reference
+   example.
+  </para>
+
+  <para>
+   The released batch is cached internally and reused by the next
+   <function>indexam_util_batch_alloc</function> call, avoiding repeated
+   memory allocation during the bitmap scan.
   </para>
 
   <para>
@@ -795,32 +1118,52 @@ amendscan (IndexScanDesc scan);
   <para>
 <programlisting>
 void
-ammarkpos (IndexScanDesc scan);
+amposreset (IndexScanDesc scan,
+            IndexScanBatch batch);
 </programlisting>
-   Mark current scan position.  The access method need only support one
-   remembered scan position per scan.
+   Notify the index AM that the table AM is about to change the scan's
+   logical position in a way that may invalidate index AM state that
+   independently tracks the scan's progress.  This callback is invoked when
+   the table AM is about to process a batch in a different direction than
+   was used when the batch was originally returned by
+   <function>amgetbatch</function>, and also when a marked scan position is
+   about to be restored.  Some index AMs maintain internal state that
+   advances in lockstep with the scan under the soft assumption that the scan
+   direction will not change.  Such state may fall behind the scan's true
+   position without harm (simply reading the next index page will allow the
+   state to <quote>catch up</quote>), but must never get ahead of it.  When
+   the scan direction changes or a marked position is restored, the assumption
+   is violated, so the index AM must reset the state to a safe starting point
+   for the new direction.  For example, B-tree uses this callback to reset its
+   <literal>ScalarArrayOpExpr</literal> array keys to their initial positions
+   for the new scan direction.
   </para>
 
   <para>
-   The <function>ammarkpos</function> function need only be provided if the access
-   method supports ordered scans.  If it doesn't,
-   the <structfield>ammarkpos</structfield> field in its <structname>IndexAmRoutine</structname>
-   struct may be set to NULL.
+   When <function>amposreset</function> is called due to a cross-batch
+   direction change, the core system will have already flipped the batch's
+   <structfield>dir</structfield> field to reflect the new scan direction
+   before making the call.  The index AM should use this updated direction
+   when resetting any state that depends on knowing which way the scan is
+   proceeding.  When called to restore a marked position, the batch's
+   <structfield>dir</structfield> is not modified; it retains the direction
+   from when the batch was originally returned.  In both cases, the batch
+   passed to <function>amposreset</function> is the batch that will next be
+   passed to <function>amgetbatch</function> as its
+   <literal>priorbatch</literal>.  Note in particular that the
+   <literal>priorbatch</literal>.<structfield>dir</structfield> field is
+   guaranteed to have the same scan direction as when
+   <function>amposreset</function> was called.
   </para>
 
   <para>
-<programlisting>
-void
-amrestrpos (IndexScanDesc scan);
-</programlisting>
-   Restore the scan to the most recently marked position.
-  </para>
-
-  <para>
-   The <function>amrestrpos</function> function need only be provided if the access
-   method supports ordered scans.  If it doesn't,
-   the <structfield>amrestrpos</structfield> field in its <structname>IndexAmRoutine</structname>
-   struct may be set to NULL.
+   Index access methods that have private state which must be reset when the
+   scan position changes must provide an <function>amposreset</function>
+   implementation.  Index AMs with no such state may set
+   <structfield>amposreset</structfield> to NULL.  The
+   <function>amposreset</function> function can only be provided when the
+   access method supports ordered scans through the
+   <function>amgetbatch</function> interface.
   </para>
 
   <para>
@@ -975,6 +1318,8 @@ amtranslatecmptype (CompareType cmptype, Oid opfamily, Oid opcintype);
        Access methods that always return entries in the natural ordering
        of their data (such as btree) should set
        <structfield>amcanorder</structfield> to true.
+       Both <function>amgetbatch</function> and <function>amgettuple</function>
+       scans support this capability.
        Currently, such access methods must use btree-compatible strategy
        numbers for their equality and ordering operators.
       </para>
@@ -994,34 +1339,41 @@ amtranslatecmptype (CompareType cmptype, Oid opfamily, Oid opcintype);
   </para>
 
   <para>
-   The <function>amgettuple</function> function has a <literal>direction</literal> argument,
+   Note that <function>amgetbatch</function> scans do not currently support
+   ordering operators.  The core executor expects <function>amgettuple</function>
+   to set <structfield>xs_orderbyvals</structfield> for each returned tuple,
+   but there is currently no mechanism to associate per-item ordering values
+   with individual items within a batch.  This would require an additional
+   layer of indirection that does not yet exist, but could be added in a
+   future version of <productname>PostgreSQL</productname>.
+  </para>
+
+  <para>
+   The <function>amgetbatch</function> function has a <literal>direction</literal> argument,
    which can be either <literal>ForwardScanDirection</literal> (the normal case)
    or  <literal>BackwardScanDirection</literal>.  If the first call after
    <function>amrescan</function> specifies <literal>BackwardScanDirection</literal>, then the
-   set of matching index entries is to be scanned back-to-front rather than in
-   the normal front-to-back direction, so <function>amgettuple</function> must return
-   the last matching tuple in the index, rather than the first one as it
-   normally would.  (This will only occur for access
-   methods that set <structfield>amcanorder</structfield> to true.)  After the
-   first call, <function>amgettuple</function> must be prepared to advance the scan in
+   returned batch must be the batch containing the last matching item(s),
+   rather than the batch containing the first matching item(s).
+   <function>amgetbatch</function> must be prepared to advance the scan in
    either direction from the most recently returned entry.  (But if
    <structfield>amcanbackward</structfield> is false, all subsequent
    calls will have the same direction as the first one.)
   </para>
 
   <para>
-   Access methods that support ordered scans must support <quote>marking</quote> a
-   position in a scan and later returning to the marked position.  The same
-   position might be restored multiple times.  However, only one position need
-   be remembered per scan; a new <function>ammarkpos</function> call overrides the
-   previously marked position.  An access method that does not support ordered
-   scans need not provide <function>ammarkpos</function> and <function>amrestrpos</function>
-   functions in <structname>IndexAmRoutine</structname>; set those pointers to NULL
-   instead.
+   All <function>amgetbatch</function> index AMs inherently support
+   mark/restore of scan positions (<function>amgettuple</function> index AMs
+   do not).  The mark/restore implementation lives in the table AM and works
+   with any <function>amgetbatch</function> implementation.  Index AMs that
+   maintain internal state which tracks the scan's progress must provide an
+   <function>amposreset</function> callback to be notified when the scan's
+   logical position changes unexpectedly, such as during mark/restore; see
+   <xref linkend="index-functions"/> for details.
   </para>
 
   <para>
-   Both the scan position and the mark position (if any) must be maintained
+   The scan position (if any) must be maintained by the table AM and index AM
    consistently in the face of concurrent insertions or deletions in the
    index.  It is OK if a freshly-inserted entry is not returned by a scan that
    would have found the entry if it had existed when the scan started, or for
@@ -1040,15 +1392,17 @@ amtranslatecmptype (CompareType cmptype, Oid opfamily, Oid opcintype);
    which the index returns the actual data not just the TID of the heap tuple.
    This will only avoid I/O if the visibility map shows that the TID is on an
    all-visible page; else the heap tuple must be visited anyway to check
-   MVCC visibility.  But that is no concern of the access method's.
+   MVCC visibility.  But that is no concern of the index access method's.
   </para>
 
   <para>
-   Instead of using <function>amgettuple</function>, an index scan can be done with
-   <function>amgetbitmap</function> to fetch all tuples in one call.  This can be
-   noticeably more efficient than <function>amgettuple</function> because it allows
-   avoiding lock/unlock cycles within the access method.  In principle
-   <function>amgetbitmap</function> should have the same effects as repeated
+   Instead of using <function>amgetbatch</function> or
+   <function>amgettuple</function>, an index scan can be done with
+   <function>amgetbitmap</function> to fetch all tuples in one call.  This can
+   be noticeably more efficient than with an <quote>ordered</quote> scan
+   because it allows efficient sequential access to table AM pages containing
+   matches.  In principle <function>amgetbitmap</function> should have the
+   same effects as repeated <function>amgetbatch</function> or
    <function>amgettuple</function> calls, but we impose several restrictions to
    simplify matters.  First of all, <function>amgetbitmap</function> returns all
    tuples at once and marking or restoring scan positions isn't
@@ -1059,15 +1413,15 @@ amtranslatecmptype (CompareType cmptype, Oid opfamily, Oid opcintype);
    Also, there is no provision for index-only scans with
    <function>amgetbitmap</function>, since there is no way to return the contents of
    index tuples.
-   Finally, <function>amgetbitmap</function>
-   does not guarantee any locking of the returned tuples, with implications
-   spelled out in <xref linkend="index-locking"/>.
+   Finally, <function>amgetbitmap</function> does not hold any index page pins
+   after it returns (similarly to <function>amgetbatch</function> scans with
+   an MVCC snapshot), as described in <xref linkend="index-locking"/>.
   </para>
 
   <para>
    Note that it is permitted for an access method to implement only
-   <function>amgetbitmap</function> and not <function>amgettuple</function>, or vice versa,
-   if its internal implementation is unsuited to one API or the other.
+   <function>amgetbitmap</function> and not <function>amgetbatch</function>/<function>amgettuple</function>,
+   or vice versa, if its internal implementation is unsuited to one API or the other.
   </para>
 
  </sect1>
@@ -1123,11 +1477,17 @@ amtranslatecmptype (CompareType cmptype, Oid opfamily, Oid opcintype);
      </listitem>
      <listitem>
       <para>
-       An index scan must maintain a pin
-       on the index page holding the item last returned by
-       <function>amgettuple</function>, and <function>ambulkdelete</function> cannot delete
-       entries from pages that are pinned by other backends.  The need
-       for this rule is explained below.
+       A pin must be held on any index page whose items might still need to
+       be followed, and <function>ambulkdelete</function> must acquire a
+       cleanup lock on each index page, which will block if any other
+       backend holds a pin on that page.
+       For <function>amgettuple</function> scans, the index access method
+       manages this pin directly.
+       For <function>amgetbatch</function> scans, the index AM holds a buffer
+       pin on each batch's index leaf page (in its per-batch opaque area),
+       while the table AM controls when the interlock is dropped via
+       <function>amunguardbatch</function>.
+       The need for this rule is explained below.
       </para>
      </listitem>
     </itemizedlist>
@@ -1138,39 +1498,94 @@ amtranslatecmptype (CompareType cmptype, Oid opfamily, Oid opcintype);
    <command>VACUUM</command>.
    This creates no serious problems if that item
    number is still unused when the reader reaches it, since an empty
-   item slot will be ignored by <function>heap_fetch()</function>.  But what if a
+   item slot will simply be treated as not-visible.  But what if a
    third backend has already re-used the item slot for something else?
    When using an MVCC-compliant snapshot, there is no problem because
    the new occupant of the slot is certain to be too new to pass the
    snapshot test.  However, with a non-MVCC-compliant snapshot (such as
    <literal>SnapshotAny</literal>), it would be possible to accept and return
-   a row that does not in fact match the scan keys.  We could defend
-   against this scenario by requiring the scan keys to be rechecked
-   against the heap row in all cases, but that is too expensive.  Instead,
-   we use a pin on an index page as a proxy to indicate that the reader
-   might still be <quote>in flight</quote> from the index entry to the matching
-   heap entry.  Making <function>ambulkdelete</function> block on such a pin ensures
-   that <command>VACUUM</command> cannot delete the heap entry before the reader
-   is done with it.  This solution costs little in run time, and adds blocking
-   overhead only in the rare cases where there actually is a conflict.
+   a wholly unrelated row (one that does not necessarily satisfy the scan
+   keys).  We can optionally use a pin on an index page as a proxy to indicate
+   that the reader might still be <quote>in flight</quote> from the index
+   entry to the matching heap entry.  Making <function>ambulkdelete</function>
+   block on such a pin ensures that <command>VACUUM</command> cannot delete
+   the heap entry before the reader is done with it.  This solution costs
+   little in run time, and adds blocking overhead only in the rare cases where
+   there actually is a conflict.  For plain index scans that use an
+   MVCC-compliant snapshot, holding the pin is unnecessary because the scan
+   will always visit the heap page, where the snapshot itself will reject any
+   recycled TID's new occupant.  (Index-only scans are a special case, as
+   discussed below.)
   </para>
 
   <para>
-   This solution requires that index scans be <quote>synchronous</quote>: we have
-   to fetch each heap tuple immediately after scanning the corresponding index
-   entry.  This is expensive for a number of reasons.  An
-   <quote>asynchronous</quote> scan in which we collect many TIDs from the index,
-   and only visit the heap tuples sometime later, requires much less index
-   locking overhead and can allow a more efficient heap access pattern.
-   Per the above analysis, we must use the synchronous approach for
-   non-MVCC-compliant snapshots, but an asynchronous scan is workable
-   for a query using an MVCC snapshot.
+   This solution requires that <function>amgettuple</function> index scans be
+   <quote>synchronous</quote>: the table AM must fetch each heap tuple
+   immediately after scanning the corresponding index entry.  This is
+   expensive for a number of reasons.  The
+   <function>amgetbatch</function> interface, by contrast, was designed to
+   allow scans to be <quote>asynchronous</quote>.
   </para>
 
   <para>
-   In an <function>amgetbitmap</function> index scan, the access method does not
-   keep an index pin on any of the returned tuples.  Therefore
-   it is only safe to use such scans with MVCC-compliant snapshots.
+   Whether a batch's TID recycling interlock (typically an index page buffer
+   pin) is dropped immediately or deferred is controlled by a generic,
+   scan-level policy that is determined when the scan is opened &mdash; it is
+   not under the control of either the index AM or the table AM.  The scan's
+   <structfield>batchImmediateUnguard</structfield> flag encodes this policy.
+   It is set based on two criteria that are known to the core scan machinery:
+   whether the scan uses an MVCC-compliant snapshot, and whether it is an
+   index-only scan.  Specifically,
+   <structfield>batchImmediateUnguard</structfield> is true when the scan uses
+   an MVCC snapshot and is <emphasis>not</emphasis> an index-only scan.
+  </para>
+
+  <para>
+   When <structfield>batchImmediateUnguard</structfield> is true, the
+   interlock is dropped inside
+   <function>indexam_util_batch_unlock</function> (before the batch is even
+   returned to the table AM), because a plain index scan with an MVCC
+   snapshot will always visit the heap page, where the MVCC visibility check
+   is authoritative &mdash; even if <command>VACUUM</command> recycles a TID,
+   the new occupant cannot pass the snapshot test.
+  </para>
+
+  <para>
+   When <structfield>batchImmediateUnguard</structfield> is false, the
+   interlock is retained until the table AM explicitly calls
+   <function>amunguardbatch</function>, because the scan cannot rely on that
+   heap page MVCC backstop.  For non-MVCC scans, there is no MVCC snapshot to
+   reject a recycled TID's new occupant at all.  For index-only scans, even
+   with an MVCC snapshot, the scan typically avoids visiting the heap page
+   altogether (using the visibility map instead), so the MVCC check that would
+   catch a recycled TID usually never runs.  In both cases the interlock on
+   the index page is what prevents <command>VACUUM</command> from recycling
+   TIDs while the scan is still in flight.
+  </para>
+
+  <para>
+   When <structfield>batchImmediateUnguard</structfield> is false, the table
+   AM decides <emphasis>when</emphasis> to call
+   <function>amunguardbatch</function>; the index AM decides
+   <emphasis>what</emphasis> to release.  When
+   <structfield>batchImmediateUnguard</structfield> is true, the index AM
+   drops the interlock itself (inside
+   <function>indexam_util_batch_unlock</function>), and
+   <function>amunguardbatch</function> is never called.
+  </para>
+
+  <para>
+   Similarly, an <function>amgetbitmap</function> index scan is inherently
+   asynchronous: all matching TIDs are collected into a bitmap before any heap
+   access begins.  Such scans therefore require an MVCC-compliant snapshot,
+   and there is no need for the access method to hold index page pins.
+  </para>
+
+  <para>
+   Index access methods that use <function>amgettuple</function> must manage
+   pin lifetime themselves, since there is no table AM intermediary (unlike
+   with <function>amgetbatch</function>).  The index AM must hold a pin on the
+   current index page until the scan moves to a different page or ends.
   </para>
 
   <para>

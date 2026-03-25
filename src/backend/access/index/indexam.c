@@ -13,7 +13,7 @@
  * INTERFACE ROUTINES
  *		index_open		- open an index relation by relation OID
  *		index_close		- close an index relation
- *		index_beginscan - start a scan of an index with amgettuple
+ *		index_beginscan - start a scan of an index with amgetbatch/amgettuple
  *		index_beginscan_bitmap - start a scan of an index with amgetbitmap
  *		index_rescan	- restart a scan of an index
  *		index_endscan	- end a scan
@@ -278,6 +278,7 @@ index_beginscan_internal(Relation indexRelation, Relation heapRelation,
 	scan->xs_temp_snap = temp_snap;
 
 	scan->xs_snapshot = snapshot;
+	scan->MVCCScan = IsMVCCLikeSnapshot(snapshot);
 	scan->instrument = instrument;
 
 	/*
@@ -289,6 +290,7 @@ index_beginscan_internal(Relation indexRelation, Relation heapRelation,
 		scan->heapRelation = heapRelation;
 		scan->xs_want_itup = index_only_scan;
 		scan->xs_heap_continue = false;
+		scan->batchImmediateUnguard = (scan->MVCCScan && !index_only_scan);
 
 		/* prepare to fetch index matches from table */
 		scan->xs_heapfetch = table_index_fetch_begin(scan, flags);
@@ -297,11 +299,19 @@ index_beginscan_internal(Relation indexRelation, Relation heapRelation,
 		Assert(scan->xs_getnext_slot != NULL);
 	}
 
+	/*
+	 * Bitmap index scans should never use a batch ring buffer (though can use
+	 * the scan's batch cache).  Plain index scans (and index-only scans)
+	 * should only use a batch ring buffer with an amgetbatch index AM.
+	 */
+	Assert(!scan->xs_heapfetch ? !scan->usebatchring :
+		   (indexRelation->rd_indam->amgetbatch != NULL) == scan->usebatchring);
+
 	return scan;
 }
 
 /*
- * index_beginscan - start a scan of an index with amgettuple
+ * index_beginscan - start a scan of an index with amgetbatch/amgettuple
  *
  * Caller must be holding suitable locks on the heap and the index.
  */
@@ -395,7 +405,21 @@ index_endscan(IndexScanDesc scan)
 	SCAN_CHECKS;
 	CHECK_SCAN_PROCEDURE(amendscan);
 
-	/* Release resources (like buffer pins) from table accesses */
+	/*
+	 * amgetbitmap scans of an index AM that supports amgetbatch make limited
+	 * use of the scan's batch cache.  Check for that.
+	 */
+	if (!scan->usebatchring && scan->batchcache[0] != NULL)
+	{
+		Assert(scan->xs_heapfetch == NULL);
+		Assert(scan->indexRelation->rd_indam->amgetbatch != NULL);
+		pfree(index_scan_batch_base(scan, scan->batchcache[0]));
+	}
+
+	/*
+	 * Release resources (like buffer pins and batch ring buffer) held by
+	 * table AM for index scan
+	 */
 	if (scan->xs_heapfetch)
 	{
 		table_index_fetch_end(scan);
@@ -423,24 +447,24 @@ void
 index_markpos(IndexScanDesc scan)
 {
 	SCAN_CHECKS;
-	CHECK_SCAN_PROCEDURE(ammarkpos);
+	CHECK_SCAN_PROCEDURE(amgetbatch);
 
-	scan->indexRelation->rd_indam->ammarkpos(scan);
+	table_index_fetch_markpos(scan);
 }
 
 /* ----------------
  *		index_restrpos	- restore a scan position
  *
- * NOTE: this only restores the internal scan state of the index AM.  See
+ * NOTE: this only restores the batch positional state of the table AM.  See
  * comments for ExecRestrPos().
  *
  * NOTE: For heap, in the presence of HOT chains, mark/restore only works
  * correctly if the scan's snapshot is MVCC-safe; that ensures that there's at
  * most one returnable tuple in each HOT chain, and so restoring the prior
- * state at the granularity of the index AM is sufficient.  Since the only
- * current user of mark/restore functionality is nodeMergejoin.c, this
- * effectively means that merge-join plans only work for MVCC snapshots.  This
- * could be fixed if necessary, but for now it seems unimportant.
+ * state at the scan item granularity is sufficient.  Since the only current
+ * user of mark/restore functionality is nodeMergejoin.c, this effectively
+ * means that merge-join plans only work for MVCC snapshots.  This could be
+ * fixed if necessary, but for now it seems unimportant.
  * ----------------
  */
 void
@@ -449,16 +473,11 @@ index_restrpos(IndexScanDesc scan)
 	Assert(IsMVCCLikeSnapshot(scan->xs_snapshot));
 
 	SCAN_CHECKS;
-	CHECK_SCAN_PROCEDURE(amrestrpos);
+	CHECK_SCAN_PROCEDURE(amgetbatch);
 
-	/* reset table AM state for restoring the marked position */
-	if (scan->xs_heapfetch)
-		table_index_fetch_reset(scan);
-
-	scan->kill_prior_tuple = false; /* for safety */
 	scan->xs_heap_continue = false;
 
-	scan->indexRelation->rd_indam->amrestrpos(scan);
+	table_index_fetch_restrpos(scan);
 }
 
 /*
@@ -632,6 +651,7 @@ index_getnext_tid(IndexScanDesc scan, ScanDirection direction)
 
 	SCAN_CHECKS;
 	CHECK_SCAN_PROCEDURE(amgettuple);
+	Assert(!scan->usebatchring);
 
 	/* XXX: we should assert that a snapshot is pushed or registered */
 	Assert(TransactionIdIsValid(RecentXmin));

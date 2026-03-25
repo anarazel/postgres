@@ -429,7 +429,7 @@ ExecSupportsMarkRestore(Path *pathnode)
 		case T_IndexOnlyScan:
 
 			/*
-			 * Not all index types support mark/restore.
+			 * Not all index types support restoring a mark
 			 */
 			return castNode(IndexPath, pathnode)->indexinfo->amcanmarkpos;
 
