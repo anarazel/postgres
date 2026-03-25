@@ -43,6 +43,7 @@ tableam_util_batchscan_init(IndexScanDesc scan)
 	Assert(scan->indexRelation->rd_indam->amgetbatch != NULL);
 
 	scan->batchringbuf.scanPos.valid = false;
+	scan->batchringbuf.prefetchPos.valid = false;
 	scan->batchringbuf.markPos.valid = false;
 
 	scan->batchringbuf.markBatch = NULL;
@@ -64,16 +65,16 @@ extern void tableam_util_unguard_batch(IndexScanDesc scan, IndexScanBatch batch)
 /*
  * Fetch the next batch of matching items for the scan (or the first).
  *
- * Called when caller's current batch (passed to us as priorBatch) has no more
- * matching items in the given scan direction.  Caller passes a NULL
- * priorBatch on the first call here for the scan.
+ * Called when caller's current scanBatch/prefetchBatch (passed to us as
+ * priorBatch) has no more matching items in the given scan direction.  Caller
+ * passes a NULL priorBatch on the first call here for the scan.
  *
  * Returns the next batch to be processed by caller in the given scan
  * direction, or NULL when there are no more matches in that direction.
  *
  * This is where batches are appended to the scan's ring buffer.  We don't
  * free any batches here, though; that is left up to the caller.  The caller
- * is also responsible for advancing their position.
+ * is also responsible for advancing their scanPos/prefetchPos position.
  */
 static pg_attribute_always_inline IndexScanBatch
 tableam_util_fetch_next_batch(IndexScanDesc scan, ScanDirection direction,

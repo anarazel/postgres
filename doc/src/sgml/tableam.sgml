@@ -130,6 +130,14 @@ my_tableam_handler(PG_FUNCTION_ARGS)
  </para>
 
  <para>
+  Table access methods can support ordered index scans using the
+  <function>amgetbatch</function> interface. See also
+  <xref linkend="index-scanning-batches"/> for details on interfacing with
+  <function>amgetbatch</function> index access methods, and managing the
+  scan's position.
+ </para>
+
+ <para>
   For crash safety, an AM can use postgres' <link
   linkend="wal"><acronym>WAL</acronym></link>, or a custom implementation.
   If <acronym>WAL</acronym> is chosen, either <link

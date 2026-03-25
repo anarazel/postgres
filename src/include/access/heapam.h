@@ -135,6 +135,19 @@ typedef struct IndexFetchHeapData
 	/* Plain index scan xs_lastinblock optimization */
 	bool		xs_lastinblock; /* last TID on this block in current batch? */
 
+	/*
+	 * Read stream state for prefetching (only used during amgetbatch scans).
+	 *
+	 * The read stream moves ahead of the scan's current position using its
+	 * own prefetching position (per conventions supported by indexbatch.c).
+	 * The read stream is allocated early in the scan, and reset on rescan
+	 * (and when the scan direction changes).
+	 */
+	bool		xs_paused;		/* paused until next batch is read? */
+	ScanDirection xs_read_stream_dir;	/* index scan direction */
+	BlockNumber xs_prefetch_block;	/* last block returned to xs_read_stream */
+	ReadStream *xs_read_stream; /* prefetching read stream */
+
 } IndexFetchHeapData;
 
 /*
