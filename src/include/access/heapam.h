@@ -129,8 +129,38 @@ typedef struct IndexFetchHeapData
 	BlockNumber xs_blk;
 
 	/* For visibility map checks (index-only scans and on-access pruning) */
-	Buffer		xs_vmbuffer;
+	Buffer		xs_vmbuffer;	/* visibility map buffer */
+	int			xs_vm_items;	/* # items to resolve visibility info for */
+
 } IndexFetchHeapData;
+
+/*
+ * Per-batch data private to the heap table AM.
+ *
+ * Stored at a negative offset from the IndexScanBatch pointer, in the
+ * fixed-size table AM opaque area of each batch allocation.
+ */
+typedef struct HeapBatchData
+{
+	uint8	   *visInfo;		/* per-item visibility flags, or NULL */
+} HeapBatchData;
+
+/*
+ * Per-item visibility flags stored in HeapBatchData.visInfo array
+ */
+#define HEAP_BATCH_VIS_CHECKED		0x01	/* checked item in VM? */
+#define HEAP_BATCH_VIS_ALL_VISIBLE	0x02	/* block is known all-visible? */
+
+/*
+ * Access the heap-private fixed-size data from the beginning of an allocated
+ * IndexScanBatch, using caller's IndexScanBatch pointer
+ */
+static inline HeapBatchData *
+heap_batch_data(IndexScanDesc scan, IndexScanBatch batch)
+{
+	/* heapam's fixed-size space is at the start of the palloc'd area */
+	return (HeapBatchData *) index_scan_batch_base(scan, batch);
+}
 
 /* Result codes for HeapTupleSatisfiesVacuum */
 typedef enum
@@ -432,8 +462,13 @@ extern TransactionId heap_index_delete_tuples(Relation rel,
 /* in heap/heapam_indexscan.c */
 extern IndexFetchTableData *heapam_index_fetch_begin(IndexScanDesc scan,
 													  uint32 flags);
+extern void heapam_index_fetch_batch_init(IndexScanDesc scan,
+										  IndexScanBatch batch,
+										  bool new_alloc);
 extern void heapam_index_fetch_reset(IndexScanDesc scan);
 extern void heapam_index_fetch_end(IndexScanDesc scan);
+extern void heapam_index_fetch_markpos(IndexScanDesc scan);
+extern void heapam_index_fetch_restrpos(IndexScanDesc scan);
 extern bool heap_hot_search_buffer(ItemPointer tid, Relation relation,
 								   Buffer buffer, Snapshot snapshot, HeapTuple heapTuple,
 								   bool *all_dead, bool first_call);

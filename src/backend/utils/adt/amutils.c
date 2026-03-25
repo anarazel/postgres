@@ -363,10 +363,11 @@ indexam_property(FunctionCallInfo fcinfo,
 				PG_RETURN_BOOL(routine->amclusterable);
 
 			case AMPROP_INDEX_SCAN:
-				PG_RETURN_BOOL(routine->amgettuple ? true : false);
+				PG_RETURN_BOOL(routine->amgettuple != NULL ||
+							   routine->amgetbatch != NULL);
 
 			case AMPROP_BITMAP_SCAN:
-				PG_RETURN_BOOL(routine->amgetbitmap ? true : false);
+				PG_RETURN_BOOL(routine->amgetbitmap != NULL);
 
 			case AMPROP_BACKWARD_SCAN:
 				PG_RETURN_BOOL(routine->amcanbackward);
@@ -392,7 +393,8 @@ indexam_property(FunctionCallInfo fcinfo,
 			PG_RETURN_BOOL(routine->amcanmulticol);
 
 		case AMPROP_CAN_EXCLUDE:
-			PG_RETURN_BOOL(routine->amgettuple ? true : false);
+			PG_RETURN_BOOL(routine->amgettuple != NULL ||
+						   routine->amgetbatch != NULL);
 
 		case AMPROP_CAN_INCLUDE:
 			PG_RETURN_BOOL(routine->amcaninclude);

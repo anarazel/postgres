@@ -452,10 +452,11 @@ typedef struct TableAmRoutine
 	 * flags is a bitmask of ScanOptions affecting underlying table scan
 	 * behavior. See scan_begin() for more information on passing these.
 	 *
-	 * Callback is responsible for setting IndexScanDesc.xs_getnext_slot to
-	 * the appropriate slot-based callback.  Tuples can then be fetched via
-	 * table_index_getnext_slot().  No separate slot-based callback exists in
-	 * this struct!
+	 * Callback is responsible for initializing the scan's batch ring buffer
+	 * (when the scan's index AM supports the amgetbatch interface), and for
+	 * setting IndexScanDesc.xs_getnext_slot to the appropriate slot-based
+	 * callback.  Tuples can then be fetched via table_index_getnext_slot().
+	 * No separate slot-based callback exists in this struct!
 	 *
 	 * In principle a single general-purpose callback (stored here) would
 	 * suffice, but using specialized variants allows the table AM to provide
@@ -467,9 +468,30 @@ typedef struct TableAmRoutine
 	 * columns do not change, need to return the current/correct version of
 	 * the tuple that is visible to the snapshot, even if the tid points to an
 	 * older version of the tuple.
+	 *
+	 * Callback also initializes the batch_opaque_size and batch_per_item_size
+	 * fields in the returned struct, to let the core code know how much
+	 * memory will be required in the opaque table AM portions of each batch
+	 * allocation (during amgetbatch index scans).  Table AMs can store things
+	 * like per-item visibility information in each allocated batch.  See
+	 * relscan.h for details.
 	 */
 	struct IndexFetchTableData *(*index_fetch_begin) (IndexScanDesc scan,
 													  uint32 flags);
+
+	/*
+	 * Initialize table AM's per-batch opaque area within a batch allocation.
+	 *
+	 * Called by indexam_util_batch_alloc for each new or recycled batch.
+	 * Table AMs should set up its opaque area (at a negative offset from the
+	 * batch pointer) and any trailing per-item data (e.g. visibility flags).
+	 *
+	 * 'new_alloc' is true for freshly palloc'd batches, false for batches
+	 * recycled from the cache.
+	 */
+	void		(*index_fetch_batch_init) (IndexScanDesc scan,
+										   IndexScanBatch batch,
+										   bool new_alloc);
 
 	/*
 	 * Reset index scan for a rescan.  Resets table-owned resources.
@@ -480,6 +502,16 @@ typedef struct TableAmRoutine
 	 * Release resources and deallocate index scan state.
 	 */
 	void		(*index_fetch_end) (IndexScanDesc scan);
+
+	/*
+	 * Mark the current scan position so it can be restored later
+	 */
+	void		(*index_fetch_markpos) (IndexScanDesc scan);
+
+	/*
+	 * Restore a previously marked scan position
+	 */
+	void		(*index_fetch_restrpos) (IndexScanDesc scan);
 
 	/* ------------------------------------------------------------------------
 	 * Callbacks for non-modifying operations on individual tuples
@@ -1275,6 +1307,28 @@ table_index_fetch_reset(IndexScanDesc scan)
 }
 
 /*
+ * Mark the current scan position so it can be restored later
+ */
+static inline void
+table_index_fetch_markpos(IndexScanDesc scan)
+{
+	Assert(scan->xs_heapfetch);
+
+	scan->heapRelation->rd_tableam->index_fetch_markpos(scan);
+}
+
+/*
+ * Restore a previously marked scan position
+ */
+static inline void
+table_index_fetch_restrpos(IndexScanDesc scan)
+{
+	Assert(scan->xs_heapfetch);
+
+	scan->heapRelation->rd_tableam->index_fetch_restrpos(scan);
+}
+
+/*
  * Release resources and deallocate index fetch held in the scan's underlying
  * IndexFetchTableData.
  */
@@ -1284,6 +1338,21 @@ table_index_fetch_end(IndexScanDesc scan)
 	Assert(scan->xs_heapfetch);
 
 	scan->heapRelation->rd_tableam->index_fetch_end(scan);
+}
+
+/*
+ * Initialize table AM's per-batch opaque area within a batch allocation.
+ *
+ * Called by indexam_util_batch_alloc for each new or recycled batch.
+ */
+static inline void
+table_index_fetch_batch_init(IndexScanDesc scan, IndexScanBatch batch,
+							 bool new_alloc)
+{
+	Assert(scan->xs_heapfetch);
+
+	scan->heapRelation->rd_tableam->index_fetch_batch_init(scan, batch,
+														   new_alloc);
 }
 
 /*

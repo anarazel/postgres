@@ -836,6 +836,7 @@ IsIndexUsableForReplicaIdentityFull(Relation idxrel, AttrMap *attrmap)
 {
 	AttrNumber	keycol;
 	oidvector  *indclass;
+	const IndexAmRoutine *amroutine;
 
 	/* The index must not be a partial index */
 	if (!heap_attisnull(idxrel->rd_indextuple, Anum_pg_index_indpred, NULL))
@@ -887,10 +888,12 @@ IsIndexUsableForReplicaIdentityFull(Relation idxrel, AttrMap *attrmap)
 		return false;
 
 	/*
-	 * The given index access method must implement "amgettuple", which will
-	 * be used later to fetch the tuples.  See RelationFindReplTupleByIndex().
+	 * The given index access method must implement "amgettuple" or
+	 * "amgetbatch", which will be used later to fetch the tuples.  See
+	 * RelationFindReplTupleByIndex().
 	 */
-	if (GetIndexAmRoutineByAmId(idxrel->rd_rel->relam, false)->amgettuple == NULL)
+	amroutine = GetIndexAmRoutineByAmId(idxrel->rd_rel->relam, false);
+	if (amroutine->amgettuple == NULL && amroutine->amgetbatch == NULL)
 		return false;
 
 	return true;

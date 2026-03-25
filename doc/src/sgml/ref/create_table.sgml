@@ -1173,12 +1173,13 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
      </para>
 
      <para>
-      The access method must support <literal>amgettuple</literal> (see <xref
-      linkend="indexam"/>); at present this means <acronym>GIN</acronym>
-      cannot be used.  Although it's allowed, there is little point in using
-      B-tree or hash indexes with an exclusion constraint, because this
-      does nothing that an ordinary unique constraint doesn't do better.
-      So in practice the access method will always be <acronym>GiST</acronym> or
+      The access method must support either <literal>amgettuple</literal>
+      or <literal>amgetbatch</literal> (see <xref linkend="indexam"/>); at
+      present this means <acronym>GIN</acronym> cannot be used.  Although
+      it's allowed, there is little point in using B-tree or hash indexes
+      with an exclusion constraint, because this does nothing that an
+      ordinary unique constraint doesn't do better.  So in practice the
+      access method will always be <acronym>GiST</acronym> or
       <acronym>SP-GiST</acronym>.
      </para>
 

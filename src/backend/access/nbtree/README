@@ -179,18 +179,15 @@ hold on to the pin (used when reading from the leaf page) until _after_
 they're done visiting the heap (for TIDs from pinned leaf page) prevents
 concurrent TID recycling.  VACUUM cannot get a conflicting cleanup lock
 until the index scan is totally finished processing its leaf page.
+This is required by any index AM that implements the amgetbatch
+interface.  (See also, doc/src/sgml/indexam.sgml).
 
-This approach is fairly coarse, so we avoid it whenever possible.  In
-practice most index scans won't hold onto their pin, and so won't block
-VACUUM.  These index scans must deal with TID recycling directly, which is
-more complicated and not always possible.  See later section on making
-concurrent TID recycling safe.
-
-Opportunistic index tuple deletion performs almost the same page-level
-modifications while only holding an exclusive lock.  This is safe because
-there is no question of TID recycling taking place later on -- only VACUUM
-can make TIDs recyclable.  See also simple deletion and bottom-up
-deletion, below.
+Opportunistic index tuple deletion performs the same page-level
+modifications as VACUUM, while only holding an exclusive lock.  This is
+safe because there is no question of TID recycling taking place -- only
+VACUUM can make TIDs recyclable.  In other words, VACUUM's cleanup lock
+serves to protect non-MVCC snapshot scans from concurrent TID recycling
+hazards; it doesn't protect the B-Tree structure itself.
 
 Because a pin is not always held, and a page can be split even while
 someone does hold a pin on it, it is possible that an indexscan will
@@ -440,54 +437,6 @@ whenever it is subsequently taken from the FSM for reuse.  The deleted
 page's contents will be overwritten by the split operation (it will become
 the new right sibling page).
 
-Making concurrent TID recycling safe
-------------------------------------
-
-As explained in the earlier section about deleting index tuples during
-VACUUM, we implement a locking protocol that allows individual index scans
-to avoid concurrent TID recycling.  Index scans opt-out (and so drop their
-leaf page pin when visiting the heap) whenever it's safe to do so, though.
-Dropping the pin early is useful because it avoids blocking progress by
-VACUUM.  This is particularly important with index scans used by cursors,
-since idle cursors sometimes stop for relatively long periods of time.  In
-extreme cases, a client application may hold on to an idle cursors for
-hours or even days.  Blocking VACUUM for that long could be disastrous.
-
-Index scans that don't hold on to a buffer pin are protected by holding an
-MVCC snapshot instead.  This more limited interlock prevents wrong answers
-to queries, but it does not prevent concurrent TID recycling itself (only
-holding onto the leaf page pin while accessing the heap ensures that).
-
-Index-only scans can never drop their buffer pin, since they are unable to
-tolerate having a referenced TID become recyclable.  Index-only scans
-typically just visit the visibility map (not the heap proper), and so will
-not reliably notice that any stale TID reference (for a TID that pointed
-to a dead-to-all heap item at first) was concurrently marked LP_UNUSED in
-the heap by VACUUM.  This could easily allow VACUUM to set the whole heap
-page to all-visible in the visibility map immediately afterwards.  An MVCC
-snapshot is only sufficient to avoid problems during plain index scans
-because they must access granular visibility information from the heap
-proper.  A plain index scan will even recognize LP_UNUSED items in the
-heap (items that could be recycled but haven't been just yet) as "not
-visible" -- even when the heap page is generally considered all-visible.
-
-LP_DEAD setting of index tuples by the kill_prior_tuple optimization
-(described in full in simple deletion, below) is also more complicated for
-index scans that drop their leaf page pins.  We must be careful to avoid
-LP_DEAD-marking any new index tuple that looks like a known-dead index
-tuple because it happens to share the same TID, following concurrent TID
-recycling.  It's just about possible that some other session inserted a
-new, unrelated index tuple, on the same leaf page, which has the same
-original TID.  It would be totally wrong to LP_DEAD-set this new,
-unrelated index tuple.
-
-We handle this kill_prior_tuple race condition by having affected index
-scans conservatively assume that any change to the leaf page at all
-implies that it was reached by btbulkdelete in the interim period when no
-buffer pin was held.  This is implemented by not setting any LP_DEAD bits
-on the leaf page at all when the page's LSN has changed.  (This is why we
-implement "fake" LSNs for unlogged index relations.)
-
 Fastpath For Index Insertion
 ----------------------------
 
@@ -734,7 +683,7 @@ of readers could still move right to recover if we didn't couple
 same-level locks), but we prefer to be conservative here.
 
 During recovery all index scans start with ignore_killed_tuples = false
-and we never set kill_prior_tuple. We do this because the oldest xmin
+and we never LP_DEAD-mark tuples. We do this because the oldest xmin
 on the standby server can be older than the oldest xmin on the primary
 server, which means tuples can be marked LP_DEAD even when they are
 still visible on the standby. We don't WAL log tuple LP_DEAD bits, but
@@ -756,9 +705,8 @@ non-MVCC scans is not required on standby nodes. We still get a full
 cleanup lock when replaying VACUUM records during recovery, but recovery
 does not need to lock every leaf page (only those leaf pages that have
 items to delete) -- that's sufficient to avoid breaking index-only scans
-during recovery (see section above about making TID recycling safe). That
-leaves concern only for plain index scans. (XXX: Not actually clear why
-this is totally unnecessary during recovery.)
+during recovery. That leaves concern only for plain index scans.
+(XXX: Not actually clear why this is totally unnecessary during recovery.)
 
 MVCC snapshot plain index scans are always safe, for the same reasons that
 they're safe during original execution.  HeapTupleSatisfiesToast() doesn't

@@ -2555,8 +2555,11 @@ static const TableAmRoutine heapam_methods = {
 	.parallelscan_reinitialize = table_block_parallelscan_reinitialize,
 
 	.index_fetch_begin = heapam_index_fetch_begin,
+	.index_fetch_batch_init = heapam_index_fetch_batch_init,
 	.index_fetch_reset = heapam_index_fetch_reset,
 	.index_fetch_end = heapam_index_fetch_end,
+	.index_fetch_markpos = heapam_index_fetch_markpos,
+	.index_fetch_restrpos = heapam_index_fetch_restrpos,
 
 	.tuple_insert = heapam_tuple_insert,
 	.tuple_insert_speculative = heapam_tuple_insert_speculative,

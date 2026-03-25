@@ -89,6 +89,8 @@ RelationGetIndexScan(Relation indexRelation, int nkeys, int norderbys)
 	scan->xs_snapshot = InvalidSnapshot;	/* caller must initialize this */
 	scan->numberOfKeys = nkeys;
 	scan->numberOfOrderBys = norderbys;
+	scan->usebatchring = false; /* set later for amgetbatch callers */
+	memset(&scan->batchcache, 0, sizeof(scan->batchcache));
 
 	/*
 	 * We allocate key workspace here, but it won't get filled until amrescan.
@@ -126,6 +128,9 @@ RelationGetIndexScan(Relation indexRelation, int nkeys, int norderbys)
 	scan->xs_hitup = NULL;
 	scan->xs_hitupdesc = NULL;
 
+	scan->batch_index_opaque_size = 0;
+	scan->batch_tuples_workspace = 0;
+	scan->batch_table_offset = 0;
 	scan->xs_visited_pages_limit = 0;
 
 	return scan;
