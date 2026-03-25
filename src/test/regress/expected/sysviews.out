@@ -166,6 +166,7 @@ select name, setting from pg_settings where name like 'enable%';
  enable_incremental_sort        | on
  enable_indexonlyscan           | on
  enable_indexscan               | on
+ enable_indexscan_prefetch      | on
  enable_material                | on
  enable_memoize                 | on
  enable_mergejoin               | on
@@ -180,7 +181,7 @@ select name, setting from pg_settings where name like 'enable%';
  enable_seqscan                 | on
  enable_sort                    | on
  enable_tidscan                 | on
-(25 rows)
+(26 rows)
 
 -- There are always wait event descriptions for various types.  InjectionPoint
 -- may be present or absent, depending on history since last postmaster start.
