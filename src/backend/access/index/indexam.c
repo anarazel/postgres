@@ -384,7 +384,7 @@ index_rescan(IndexScanDesc scan,
 	Assert(nkeys == scan->numberOfKeys);
 	Assert(norderbys == scan->numberOfOrderBys);
 
-	/* Release resources (like buffer pins) from table accesses */
+	/* reset table AM state for rescan */
 	if (scan->xs_heapfetch)
 		table_index_fetch_reset(scan);
 
@@ -461,7 +461,7 @@ index_restrpos(IndexScanDesc scan)
 	SCAN_CHECKS;
 	CHECK_SCAN_PROCEDURE(amrestrpos);
 
-	/* release resources (like buffer pins) from table accesses */
+	/* reset table AM state for restoring the marked position */
 	if (scan->xs_heapfetch)
 		table_index_fetch_reset(scan);
 
@@ -660,7 +660,7 @@ index_getnext_tid(IndexScanDesc scan, ScanDirection direction)
 	/* If we're out of index entries, we're done */
 	if (!found)
 	{
-		/* release resources (like buffer pins) from table accesses */
+		/* reset table AM state */
 		if (scan->xs_heapfetch)
 			table_index_fetch_reset(scan);
 
