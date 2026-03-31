@@ -467,7 +467,7 @@ read_stream_should_look_ahead(ReadStream *stream)
 		return false;
 
 	/* If the callback has signaled end-of-stream, we're done */
-	if (stream->readahead_distance == 0)
+	if (stream->readahead_distance <= 0)
 		return false;
 
 	/* never pin more buffers than allowed */
@@ -522,7 +522,7 @@ read_stream_should_issue_now(ReadStream *stream)
 	 * If the callback has signaled end-of-stream, start the pending read
 	 * immediately. There is no further potential for IO combining.
 	 */
-	if (stream->readahead_distance == 0)
+	if (stream->readahead_distance <= 0)
 		return true;
 
 	/*
@@ -635,7 +635,7 @@ read_stream_look_ahead(ReadStream *stream)
 	 * stream.  In the worst case we can always make progress one buffer at a
 	 * time.
 	 */
-	Assert(stream->pinned_buffers > 0 || stream->readahead_distance == 0);
+	Assert(stream->pinned_buffers > 0 || stream->readahead_distance <= 0);
 
 	if (stream->batch_mode)
 		pgaio_exit_batchmode();
@@ -1025,7 +1025,7 @@ read_stream_next_buffer(ReadStream *stream, void **per_buffer_data)
 		Assert(stream->oldest_buffer_index == stream->next_buffer_index);
 
 		/* End of stream reached?  */
-		if (stream->readahead_distance == 0)
+		if (stream->readahead_distance <= 0)
 			return InvalidBuffer;
 
 		/*
@@ -1039,7 +1039,7 @@ read_stream_next_buffer(ReadStream *stream, void **per_buffer_data)
 		/* End of stream reached? */
 		if (stream->pinned_buffers == 0)
 		{
-			Assert(stream->readahead_distance == 0);
+			Assert(stream->readahead_distance <= 0);
 			return InvalidBuffer;
 		}
 	}
@@ -1066,7 +1066,27 @@ read_stream_next_buffer(ReadStream *stream, void **per_buffer_data)
 		Assert(stream->ios[io_index].op.buffers ==
 			   &stream->buffers[oldest_buffer_index]);
 
-		needed_wait = WaitReadBuffers(&stream->ios[io_index].op);
+		/*
+		 * If the stream has been reset, don't even wait for the IO, just
+		 * discard it.
+		 */
+		if (stream->readahead_distance < 0)
+		{
+			if (pgaio_wref_valid(&stream->ios[io_index].op.io_wref) &&
+				!stream->ios[io_index].op.foreign_io)
+			{
+				pgaio_wref_discard_result(&stream->ios[io_index].op.io_wref);
+				pgaio_wref_clear(&stream->ios[io_index].op.io_wref);
+			}
+			else
+				WaitReadBuffers(&stream->ios[io_index].op);
+
+			needed_wait = false;
+		}
+		else
+		{
+			needed_wait = WaitReadBuffers(&stream->ios[io_index].op);
+		}
 
 		Assert(stream->ios_in_progress > 0);
 		stream->ios_in_progress--;
@@ -1297,8 +1317,8 @@ read_stream_reset(ReadStream *stream)
 	Buffer		buffer;
 
 	/* Stop looking ahead. */
-	stream->readahead_distance = 0;
-	stream->combine_distance = 0;
+	stream->readahead_distance = -1;
+	stream->combine_distance = -1;
 
 	/* Forget buffered block number and fast path state. */
 	stream->buffered_blocknum = InvalidBlockNumber;

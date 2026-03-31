@@ -328,6 +328,7 @@ extern int	pgaio_wref_get_id(PgAioWaitRef *iow);
 extern void pgaio_wref_wait(PgAioWaitRef *iow);
 extern bool pgaio_wref_check_done(PgAioWaitRef *iow);
 
+extern void pgaio_wref_discard_result(PgAioWaitRef *iow);
 
 
 /* --------------------------------------------------------------------------------
