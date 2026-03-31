@@ -33,6 +33,9 @@ setup
     FOR ln IN EXECUTE $1 LOOP
       -- Ignore hash memory usage because it varies depending on the system
       CONTINUE WHEN (ln ~ 'Memory Usage');
+      -- Ignore prefetch and I/O because it varies depending on the system
+      CONTINUE WHEN (ln ~ 'Prefetch');
+      CONTINUE WHEN (ln ~ 'I/O');
       RETURN NEXT ln;
     END LOOP;
   END;
@@ -165,7 +168,7 @@ step "pa_merge2a"
 step "explain_pa_merge2a"
 {
   SELECT explain_filter($$
-  EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF)
+  EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF, IO OFF)
   MERGE INTO pa_target t
   USING (SELECT 1 as key, 'pa_merge2a' as val) s
   ON s.key = t.key

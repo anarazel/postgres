@@ -4079,6 +4079,24 @@ show_scan_io_usage(ScanState *planstate, ExplainState *es)
 	/* Add stats collected by the workers. */
 	switch (nodeTag(plan))
 	{
+		case T_SeqScan:
+			{
+				SharedSeqScanInstrumentation *sinstrument
+					= ((SeqScanState *) planstate)->sinstrument;
+
+				/* get the sum of the counters set within each and every process */
+				if (sinstrument)
+				{
+					for (int i = 0; i < sinstrument->num_workers; ++i)
+					{
+						SeqScanInstrumentation *winstrument = &sinstrument->sinstrument[i];
+
+						AccumulateIOStats(&stats, &winstrument->stats.io);
+					}
+				}
+
+				break;
+			}
 		case T_BitmapHeapScan:
 			{
 				SharedBitmapHeapInstrumentation *sinstrument
@@ -4126,6 +4144,16 @@ show_io_usage(PlanState *planstate, ExplainState *es, int worker)
 	/* get instrumentation for the given worker */
 	switch (nodeTag(plan))
 	{
+		case T_SeqScan:
+			{
+				SeqScanState *state = ((SeqScanState *) planstate);
+				SharedSeqScanInstrumentation *sinstrument = state->sinstrument;
+				SeqScanInstrumentation *instrument = &sinstrument->sinstrument[worker];
+
+				stats = &instrument->stats.io;
+
+				break;
+			}
 		case T_BitmapHeapScan:
 			{
 				BitmapHeapScanState *state = ((BitmapHeapScanState *) planstate);

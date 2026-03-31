@@ -250,9 +250,9 @@ ExecParallelEstimate(PlanState *planstate, ExecParallelEstimateContext *e)
 	switch (nodeTag(planstate))
 	{
 		case T_SeqScanState:
-			if (planstate->plan->parallel_aware)
-				ExecSeqScanEstimate((SeqScanState *) planstate,
-									e->pcxt);
+			/* even when not parallel-aware, for EXPLAIN ANALYZE */
+			ExecSeqScanEstimate((SeqScanState *) planstate,
+								e->pcxt);
 			break;
 		case T_IndexScanState:
 			/* even when not parallel-aware, for EXPLAIN ANALYZE */
@@ -484,9 +484,9 @@ ExecParallelInitializeDSM(PlanState *planstate,
 	switch (nodeTag(planstate))
 	{
 		case T_SeqScanState:
-			if (planstate->plan->parallel_aware)
-				ExecSeqScanInitializeDSM((SeqScanState *) planstate,
-										 d->pcxt);
+			/* even when not parallel-aware, for EXPLAIN ANALYZE */
+			ExecSeqScanInitializeDSM((SeqScanState *) planstate,
+									 d->pcxt);
 			break;
 		case T_IndexScanState:
 			/* even when not parallel-aware, for EXPLAIN ANALYZE */
@@ -1125,6 +1125,9 @@ ExecParallelRetrieveInstrumentation(PlanState *planstate,
 		case T_BitmapHeapScanState:
 			ExecBitmapHeapRetrieveInstrumentation((BitmapHeapScanState *) planstate);
 			break;
+		case T_SeqScanState:
+			ExecSeqScanRetrieveInstrumentation((SeqScanState *) planstate);
+			break;
 		default:
 			break;
 	}
@@ -1363,8 +1366,8 @@ ExecParallelInitializeWorker(PlanState *planstate, ParallelWorkerContext *pwcxt)
 	switch (nodeTag(planstate))
 	{
 		case T_SeqScanState:
-			if (planstate->plan->parallel_aware)
-				ExecSeqScanInitializeWorker((SeqScanState *) planstate, pwcxt);
+			/* even when not parallel-aware, for EXPLAIN ANALYZE */
+			ExecSeqScanInitializeWorker((SeqScanState *) planstate, pwcxt);
 			break;
 		case T_IndexScanState:
 			/* even when not parallel-aware, for EXPLAIN ANALYZE */
