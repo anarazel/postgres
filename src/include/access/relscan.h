@@ -25,6 +25,8 @@
 
 struct ParallelTableScanDescData;
 
+struct TableScanInstrumentation;
+
 /*
  * Generic descriptor for table scans. This is the base-class for table scans,
  * which needs to be embedded in the scans of individual AMs.
@@ -64,6 +66,11 @@ typedef struct TableScanDescData
 
 	struct ParallelTableScanDescData *rs_parallel;	/* parallel scan
 													 * information */
+
+	/*
+	 * Instrumentation counters maintained by all table AMs.
+	 */
+	struct TableScanInstrumentation *rs_instrument;
 } TableScanDescData;
 typedef struct TableScanDescData *TableScanDesc;
 

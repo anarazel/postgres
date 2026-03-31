@@ -2192,7 +2192,8 @@ brin_vacuum_scan(Relation idxrel, BufferAccessStrategy strategy)
 										MAIN_FORKNUM,
 										block_range_read_stream_cb,
 										&p,
-										0);
+										0,
+										NULL);
 
 	/*
 	 * Scan the index in physical order, and clean up any possible mess in

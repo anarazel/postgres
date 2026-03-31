@@ -146,7 +146,8 @@ statapprox_heap(Relation rel, output_type *stat)
 										MAIN_FORKNUM,
 										statapprox_heap_read_stream_next,
 										&p,
-										0);
+										0,
+										NULL);
 
 	for (;;)
 	{

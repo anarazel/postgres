@@ -8,7 +8,7 @@ step flush: SELECT FROM pg_stat_force_next_flush();
 step disable_seq: SET enable_seqscan = false;
 step disable_bitmap: SET enable_bitmapscan = false;
 step measure: UPDATE counter SET heap_accesses = (SELECT heap_blks_read + heap_blks_hit FROM pg_statio_all_tables WHERE relname = 'kill_prior_tuple');
-step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
+step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF, IO OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
 QUERY PLAN                                                                            
 --------------------------------------------------------------------------------------
 Index Scan using kill_prior_tuple_btree on kill_prior_tuple (actual rows=1.00 loops=1)
@@ -24,7 +24,7 @@ t
 (1 row)
 
 step measure: UPDATE counter SET heap_accesses = (SELECT heap_blks_read + heap_blks_hit FROM pg_statio_all_tables WHERE relname = 'kill_prior_tuple');
-step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
+step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF, IO OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
 QUERY PLAN                                                                            
 --------------------------------------------------------------------------------------
 Index Scan using kill_prior_tuple_btree on kill_prior_tuple (actual rows=1.00 loops=1)
@@ -42,7 +42,7 @@ t
 step delete: DELETE FROM kill_prior_tuple;
 step flush: SELECT FROM pg_stat_force_next_flush();
 step measure: UPDATE counter SET heap_accesses = (SELECT heap_blks_read + heap_blks_hit FROM pg_statio_all_tables WHERE relname = 'kill_prior_tuple');
-step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
+step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF, IO OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
 QUERY PLAN                                                                            
 --------------------------------------------------------------------------------------
 Index Scan using kill_prior_tuple_btree on kill_prior_tuple (actual rows=0.00 loops=1)
@@ -58,7 +58,7 @@ t
 (1 row)
 
 step measure: UPDATE counter SET heap_accesses = (SELECT heap_blks_read + heap_blks_hit FROM pg_statio_all_tables WHERE relname = 'kill_prior_tuple');
-step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
+step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF, IO OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
 QUERY PLAN                                                                            
 --------------------------------------------------------------------------------------
 Index Scan using kill_prior_tuple_btree on kill_prior_tuple (actual rows=0.00 loops=1)
@@ -84,7 +84,7 @@ step flush: SELECT FROM pg_stat_force_next_flush();
 step disable_seq: SET enable_seqscan = false;
 step disable_bitmap: SET enable_bitmapscan = false;
 step measure: UPDATE counter SET heap_accesses = (SELECT heap_blks_read + heap_blks_hit FROM pg_statio_all_tables WHERE relname = 'kill_prior_tuple');
-step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
+step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF, IO OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
 QUERY PLAN                                                                           
 -------------------------------------------------------------------------------------
 Index Scan using kill_prior_tuple_gist on kill_prior_tuple (actual rows=1.00 loops=1)
@@ -100,7 +100,7 @@ t
 (1 row)
 
 step measure: UPDATE counter SET heap_accesses = (SELECT heap_blks_read + heap_blks_hit FROM pg_statio_all_tables WHERE relname = 'kill_prior_tuple');
-step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
+step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF, IO OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
 QUERY PLAN                                                                           
 -------------------------------------------------------------------------------------
 Index Scan using kill_prior_tuple_gist on kill_prior_tuple (actual rows=1.00 loops=1)
@@ -118,7 +118,7 @@ t
 step delete: DELETE FROM kill_prior_tuple;
 step flush: SELECT FROM pg_stat_force_next_flush();
 step measure: UPDATE counter SET heap_accesses = (SELECT heap_blks_read + heap_blks_hit FROM pg_statio_all_tables WHERE relname = 'kill_prior_tuple');
-step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
+step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF, IO OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
 QUERY PLAN                                                                           
 -------------------------------------------------------------------------------------
 Index Scan using kill_prior_tuple_gist on kill_prior_tuple (actual rows=0.00 loops=1)
@@ -134,7 +134,7 @@ t
 (1 row)
 
 step measure: UPDATE counter SET heap_accesses = (SELECT heap_blks_read + heap_blks_hit FROM pg_statio_all_tables WHERE relname = 'kill_prior_tuple');
-step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
+step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF, IO OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
 QUERY PLAN                                                                           
 -------------------------------------------------------------------------------------
 Index Scan using kill_prior_tuple_gist on kill_prior_tuple (actual rows=0.00 loops=1)
@@ -161,7 +161,7 @@ step flush: SELECT FROM pg_stat_force_next_flush();
 step disable_seq: SET enable_seqscan = false;
 step disable_bitmap: SET enable_bitmapscan = false;
 step measure: UPDATE counter SET heap_accesses = (SELECT heap_blks_read + heap_blks_hit FROM pg_statio_all_tables WHERE relname = 'kill_prior_tuple');
-step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
+step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF, IO OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
 QUERY PLAN                                                                           
 -------------------------------------------------------------------------------------
 Index Scan using kill_prior_tuple_gist on kill_prior_tuple (actual rows=1.00 loops=1)
@@ -177,7 +177,7 @@ t
 (1 row)
 
 step measure: UPDATE counter SET heap_accesses = (SELECT heap_blks_read + heap_blks_hit FROM pg_statio_all_tables WHERE relname = 'kill_prior_tuple');
-step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
+step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF, IO OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
 QUERY PLAN                                                                           
 -------------------------------------------------------------------------------------
 Index Scan using kill_prior_tuple_gist on kill_prior_tuple (actual rows=1.00 loops=1)
@@ -195,7 +195,7 @@ t
 step delete: DELETE FROM kill_prior_tuple;
 step flush: SELECT FROM pg_stat_force_next_flush();
 step measure: UPDATE counter SET heap_accesses = (SELECT heap_blks_read + heap_blks_hit FROM pg_statio_all_tables WHERE relname = 'kill_prior_tuple');
-step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
+step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF, IO OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
 QUERY PLAN                                                                           
 -------------------------------------------------------------------------------------
 Index Scan using kill_prior_tuple_gist on kill_prior_tuple (actual rows=0.00 loops=1)
@@ -211,7 +211,7 @@ t
 (1 row)
 
 step measure: UPDATE counter SET heap_accesses = (SELECT heap_blks_read + heap_blks_hit FROM pg_statio_all_tables WHERE relname = 'kill_prior_tuple');
-step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
+step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF, IO OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
 QUERY PLAN                                                                           
 -------------------------------------------------------------------------------------
 Index Scan using kill_prior_tuple_gist on kill_prior_tuple (actual rows=0.00 loops=1)
@@ -237,7 +237,7 @@ step flush: SELECT FROM pg_stat_force_next_flush();
 step disable_seq: SET enable_seqscan = false;
 step disable_bitmap: SET enable_bitmapscan = false;
 step measure: UPDATE counter SET heap_accesses = (SELECT heap_blks_read + heap_blks_hit FROM pg_statio_all_tables WHERE relname = 'kill_prior_tuple');
-step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
+step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF, IO OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
 QUERY PLAN                                                                           
 -------------------------------------------------------------------------------------
 Index Scan using kill_prior_tuple_hash on kill_prior_tuple (actual rows=1.00 loops=1)
@@ -253,7 +253,7 @@ t
 (1 row)
 
 step measure: UPDATE counter SET heap_accesses = (SELECT heap_blks_read + heap_blks_hit FROM pg_statio_all_tables WHERE relname = 'kill_prior_tuple');
-step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
+step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF, IO OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
 QUERY PLAN                                                                           
 -------------------------------------------------------------------------------------
 Index Scan using kill_prior_tuple_hash on kill_prior_tuple (actual rows=1.00 loops=1)
@@ -271,7 +271,7 @@ t
 step delete: DELETE FROM kill_prior_tuple;
 step flush: SELECT FROM pg_stat_force_next_flush();
 step measure: UPDATE counter SET heap_accesses = (SELECT heap_blks_read + heap_blks_hit FROM pg_statio_all_tables WHERE relname = 'kill_prior_tuple');
-step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
+step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF, IO OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
 QUERY PLAN                                                                           
 -------------------------------------------------------------------------------------
 Index Scan using kill_prior_tuple_hash on kill_prior_tuple (actual rows=0.00 loops=1)
@@ -287,7 +287,7 @@ t
 (1 row)
 
 step measure: UPDATE counter SET heap_accesses = (SELECT heap_blks_read + heap_blks_hit FROM pg_statio_all_tables WHERE relname = 'kill_prior_tuple');
-step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
+step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF, IO OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
 QUERY PLAN                                                                           
 -------------------------------------------------------------------------------------
 Index Scan using kill_prior_tuple_hash on kill_prior_tuple (actual rows=0.00 loops=1)
@@ -312,7 +312,7 @@ step flush: SELECT FROM pg_stat_force_next_flush();
 step disable_seq: SET enable_seqscan = false;
 step disable_bitmap: SET enable_bitmapscan = false;
 step measure: UPDATE counter SET heap_accesses = (SELECT heap_blks_read + heap_blks_hit FROM pg_statio_all_tables WHERE relname = 'kill_prior_tuple');
-step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
+step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF, IO OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
 QUERY PLAN                                                                             
 ---------------------------------------------------------------------------------------
 Index Scan using kill_prior_tuple_hash on kill_prior_tuple (actual rows=408.00 loops=1)
@@ -328,7 +328,7 @@ t
 (1 row)
 
 step measure: UPDATE counter SET heap_accesses = (SELECT heap_blks_read + heap_blks_hit FROM pg_statio_all_tables WHERE relname = 'kill_prior_tuple');
-step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
+step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF, IO OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
 QUERY PLAN                                                                             
 ---------------------------------------------------------------------------------------
 Index Scan using kill_prior_tuple_hash on kill_prior_tuple (actual rows=408.00 loops=1)
@@ -346,7 +346,7 @@ t
 step delete: DELETE FROM kill_prior_tuple;
 step flush: SELECT FROM pg_stat_force_next_flush();
 step measure: UPDATE counter SET heap_accesses = (SELECT heap_blks_read + heap_blks_hit FROM pg_statio_all_tables WHERE relname = 'kill_prior_tuple');
-step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
+step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF, IO OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
 QUERY PLAN                                                                           
 -------------------------------------------------------------------------------------
 Index Scan using kill_prior_tuple_hash on kill_prior_tuple (actual rows=0.00 loops=1)
@@ -362,7 +362,7 @@ t
 (1 row)
 
 step measure: UPDATE counter SET heap_accesses = (SELECT heap_blks_read + heap_blks_hit FROM pg_statio_all_tables WHERE relname = 'kill_prior_tuple');
-step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
+step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF, IO OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
 QUERY PLAN                                                                           
 -------------------------------------------------------------------------------------
 Index Scan using kill_prior_tuple_hash on kill_prior_tuple (actual rows=0.00 loops=1)
@@ -389,7 +389,7 @@ step disable_seq: SET enable_seqscan = false;
 step delete: DELETE FROM kill_prior_tuple;
 step flush: SELECT FROM pg_stat_force_next_flush();
 step measure: UPDATE counter SET heap_accesses = (SELECT heap_blks_read + heap_blks_hit FROM pg_statio_all_tables WHERE relname = 'kill_prior_tuple');
-step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
+step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF, IO OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
 QUERY PLAN                                                                
 --------------------------------------------------------------------------
 Bitmap Heap Scan on kill_prior_tuple (actual rows=0.00 loops=1)           
@@ -408,7 +408,7 @@ t
 (1 row)
 
 step measure: UPDATE counter SET heap_accesses = (SELECT heap_blks_read + heap_blks_hit FROM pg_statio_all_tables WHERE relname = 'kill_prior_tuple');
-step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
+step access: EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF, IO OFF) SELECT * FROM kill_prior_tuple WHERE key = 1;
 QUERY PLAN                                                                
 --------------------------------------------------------------------------
 Bitmap Heap Scan on kill_prior_tuple (actual rows=0.00 loops=1)           

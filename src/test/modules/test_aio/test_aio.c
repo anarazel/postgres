@@ -895,7 +895,8 @@ read_stream_for_blocks(PG_FUNCTION_ARGS)
 										MAIN_FORKNUM,
 										read_stream_for_blocks_cb,
 										&stream_data,
-										0);
+										0,
+										NULL);
 
 	for (int i = 0; i < stream_data.nblocks; i++)
 	{

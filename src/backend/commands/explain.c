@@ -13,6 +13,8 @@
  */
 #include "postgres.h"
 
+#include "access/genam.h"
+#include "access/tableam.h"
 #include "access/xact.h"
 #include "catalog/pg_type.h"
 #include "commands/createas.h"
@@ -139,6 +141,11 @@ static void show_hashagg_info(AggState *aggstate, ExplainState *es);
 static void show_indexsearches_info(PlanState *planstate, ExplainState *es);
 static void show_tidbitmap_info(BitmapHeapScanState *planstate,
 								ExplainState *es);
+static void show_scan_io_usage(ScanState *planstate,
+							   ExplainState *es);
+static void show_io_usage(PlanState *planstate,
+						  ExplainState *es,
+						  int worker);
 static void show_instrumentation_count(const char *qlabel, int which,
 									   PlanState *planstate, ExplainState *es);
 static void show_foreignscan_info(ForeignScanState *fsstate, ExplainState *es);
@@ -2009,6 +2016,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
 			show_tidbitmap_info((BitmapHeapScanState *) planstate, es);
+			show_scan_io_usage((ScanState *) planstate, es);
 			break;
 		case T_SampleScan:
 			show_tablesample(((SampleScan *) plan)->tablesample,
@@ -2027,6 +2035,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 										   planstate, es);
 			if (IsA(plan, CteScan))
 				show_ctescan_info(castNode(CteScanState, planstate), es);
+			show_scan_io_usage((ScanState *) planstate, es);
 			break;
 		case T_Gather:
 			{
@@ -2297,8 +2306,8 @@ ExplainNode(PlanState *planstate, List *ancestors,
 	if (es->wal && planstate->instrument)
 		show_wal_usage(es, &planstate->instrument->walusage);
 
-	/* Prepare per-worker buffer/WAL usage */
-	if (es->workers_state && (es->buffers || es->wal) && es->verbose)
+	/* Prepare per-worker buffer/WAL/IO usage */
+	if (es->workers_state && (es->buffers || es->wal || es->io) && es->verbose)
 	{
 		WorkerInstrumentation *w = planstate->worker_instrument;
 
@@ -2315,6 +2324,9 @@ ExplainNode(PlanState *planstate, List *ancestors,
 				show_buffer_usage(es, &instrument->bufusage);
 			if (es->wal)
 				show_wal_usage(es, &instrument->walusage);
+			if (es->io)
+				show_io_usage(planstate, es, n);
+
 			ExplainCloseWorker(n, es);
 		}
 	}
@@ -3983,6 +3995,145 @@ show_tidbitmap_info(BitmapHeapScanState *planstate, ExplainState *es)
 				ExplainCloseWorker(n, es);
 		}
 	}
+}
+
+static void
+print_io_usage(ExplainState *es, IOStats *stats)
+{
+	/* don't print stats if there's nothing to report */
+	if (stats->prefetch_count > 0)
+	{
+		if (es->format == EXPLAIN_FORMAT_TEXT)
+		{
+			/* prefetch distance info */
+			ExplainIndentText(es);
+			appendStringInfo(es->str, "Prefetch: avg=%.2f max=%d capacity=%d\n",
+							 (stats->distance_sum * 1.0 / stats->prefetch_count),
+							 stats->distance_max,
+							 stats->distance_capacity);
+
+			/* prefetch I/O info (only if there were actual I/Os) */
+			if (stats->io_count > 0)
+			{
+				ExplainIndentText(es);
+				appendStringInfo(es->str, "I/O: count=%" PRIu64 " waits=%" PRIu64
+								 " size=%.2f inprogress=%.2f\n",
+								 stats->io_count, stats->wait_count,
+								 (stats->io_nblocks * 1.0 / stats->io_count),
+								 (stats->io_in_progress * 1.0 / stats->io_count));
+			}
+		}
+		else
+		{
+			ExplainPropertyFloat("Average Prefetch Distance", NULL,
+								 (stats->distance_sum * 1.0 / stats->prefetch_count), 3, es);
+			ExplainPropertyInteger("Max Prefetch Distance", NULL,
+								   stats->distance_max, es);
+			ExplainPropertyInteger("Prefetch Capacity", NULL,
+								   stats->distance_capacity, es);
+
+			ExplainPropertyUInteger("I/O Count", NULL,
+									stats->io_count, es);
+			ExplainPropertyUInteger("I/O Waits", NULL,
+									stats->wait_count, es);
+			ExplainPropertyFloat("Average I/O Size", NULL,
+								 (stats->io_nblocks * 1.0 / Max(1, stats->io_count)), 3, es);
+			ExplainPropertyFloat("Average I/Os In Progress", NULL,
+								 (stats->io_in_progress * 1.0 / Max(1, stats->io_count)), 3, es);
+		}
+	}
+}
+
+/*
+ * show_scan_io_usage
+ *		show info about prefetching for a seq/bitmap scan
+ *
+ * Shows summary of stats for leader and workers (if any).
+ */
+static void
+show_scan_io_usage(ScanState *planstate, ExplainState *es)
+{
+	Plan	   *plan = planstate->ps.plan;
+	IOStats		stats;
+
+	if (!es->io)
+		return;
+
+	/* scan not started or no prefetch stats */
+	if (!(planstate &&
+		  planstate->ss_currentScanDesc &&
+		  planstate->ss_currentScanDesc->rs_instrument))
+		return;
+
+	/* Initialize counters with stats from the local process first */
+	switch (nodeTag(plan))
+	{
+		case T_BitmapHeapScan:
+			{
+				SharedBitmapHeapInstrumentation *sinstrument
+				= ((BitmapHeapScanState *) planstate)->sinstrument;
+
+				/* collect prefetch statistics from the read stream */
+				stats = planstate->ss_currentScanDesc->rs_instrument->io;
+
+				/*
+				 * get the sum of the counters set within each and every
+				 * process
+				 */
+				if (sinstrument)
+				{
+					for (int i = 0; i < sinstrument->num_workers; ++i)
+					{
+						BitmapHeapScanInstrumentation *winstrument = &sinstrument->sinstrument[i];
+
+						AccumulateIOStats(&stats, &winstrument->stats.io);
+					}
+				}
+
+				break;
+			}
+		default:
+			/* ignore other plans */
+			return;
+	}
+
+	print_io_usage(es, &stats);
+}
+
+/*
+ * show_io_usage
+ *		show info about I/O prefetching for a single worker
+ *
+ * Shows prefetching stats for a parallel scan worker.
+ */
+static void
+show_io_usage(PlanState *planstate, ExplainState *es, int worker)
+{
+	Plan	   *plan = planstate->plan;
+	IOStats    *stats = NULL;
+
+	if (!es->io)
+		return;
+
+	/* get instrumentation for the given worker */
+	switch (nodeTag(plan))
+	{
+		case T_BitmapHeapScan:
+			{
+				BitmapHeapScanState *state = ((BitmapHeapScanState *) planstate);
+				SharedBitmapHeapInstrumentation *sinstrument = state->sinstrument;
+				BitmapHeapScanInstrumentation *instrument = &sinstrument->sinstrument[worker];
+
+				stats = &instrument->stats.io;
+
+				break;
+			}
+		default:
+			/* ignore other plans */
+			return;
+	}
+
+	print_io_usage(es, stats);
 }
 
 /*

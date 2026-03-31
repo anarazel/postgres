@@ -799,7 +799,8 @@ ginvacuumcleanup(IndexVacuumInfo *info, IndexBulkDeleteResult *stats)
 										MAIN_FORKNUM,
 										block_range_read_stream_cb,
 										&p,
-										0);
+										0,
+										NULL);
 
 	for (blkno = GIN_ROOT_BLKNO; blkno < npages; blkno++)
 	{

@@ -1199,6 +1199,7 @@ heap_beginscan(Relation relation, Snapshot snapshot,
 	scan->rs_base.rs_nkeys = nkeys;
 	scan->rs_base.rs_flags = flags;
 	scan->rs_base.rs_parallel = parallel_scan;
+	scan->rs_base.rs_instrument = NULL;
 	scan->rs_strategy = NULL;	/* set in initscan */
 	scan->rs_cbuf = InvalidBuffer;
 
@@ -1268,6 +1269,12 @@ heap_beginscan(Relation relation, Snapshot snapshot,
 
 	scan->rs_read_stream = NULL;
 
+	/* allocate instrumentation */
+	if (flags & SO_SCAN_INSTRUMENT)
+		scan->rs_base.rs_instrument = palloc0_object(TableScanInstrumentation);
+	else
+		scan->rs_base.rs_instrument = NULL;
+
 	/*
 	 * Set up a read stream for sequential scans and TID range scans. This
 	 * should be done after initscan() because initscan() allocates the
@@ -1297,7 +1304,9 @@ heap_beginscan(Relation relation, Snapshot snapshot,
 														  MAIN_FORKNUM,
 														  cb,
 														  scan,
-														  0);
+														  0,
+														  (scan->rs_base.rs_instrument) ?
+														  &scan->rs_base.rs_instrument->io : NULL);
 	}
 	else if (scan->rs_base.rs_flags & SO_TYPE_BITMAPSCAN)
 	{
@@ -1308,7 +1317,9 @@ heap_beginscan(Relation relation, Snapshot snapshot,
 														  MAIN_FORKNUM,
 														  bitmapheap_stream_read_next,
 														  scan,
-														  sizeof(TBMIterateResult));
+														  sizeof(TBMIterateResult),
+														  (scan->rs_base.rs_instrument) ?
+														  &scan->rs_base.rs_instrument->io : NULL);
 	}
 
 	scan->rs_vmbuffer = InvalidBuffer;

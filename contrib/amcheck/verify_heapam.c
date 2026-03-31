@@ -477,7 +477,8 @@ verify_heapam(PG_FUNCTION_ARGS)
 										MAIN_FORKNUM,
 										stream_cb,
 										stream_data,
-										0);
+										0,
+										NULL);
 
 	while ((ctx.buffer = read_stream_next_buffer(stream, NULL)) != InvalidBuffer)
 	{

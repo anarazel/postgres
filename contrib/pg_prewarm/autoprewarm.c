@@ -628,7 +628,8 @@ autoprewarm_database_main(Datum main_arg)
 												p.forknum,
 												apw_read_stream_next_block,
 												&p,
-												0);
+												0,
+												NULL);
 
 			/*
 			 * Loop until we've prewarmed all the blocks from this fork. The
