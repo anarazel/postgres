@@ -85,7 +85,7 @@ select explain_filter('explain (analyze, buffers off, io off, verbose) select * 
  Execution Time: N.N ms
 (4 rows)
 
-select explain_filter('explain (analyze, buffers, format text) select * from int8_tbl i8');
+select explain_filter('explain (analyze, buffers, io off, format text) select * from int8_tbl i8');
                                          explain_filter                                          
 -------------------------------------------------------------------------------------------------
  Seq Scan on int8_tbl i8  (cost=N.N..N.N rows=N width=N) (actual time=N.N..N.N rows=N.N loops=N)
@@ -119,6 +119,13 @@ explain_filter
       <Actual-Rows>N.N</Actual-Rows>
       <Actual-Loops>N</Actual-Loops>
       <Disabled>false</Disabled>
+      <Average-Prefetch-Distance>N.N</Average-Prefetch-Distance>
+      <Max-Prefetch-Distance>N</Max-Prefetch-Distance>
+      <Prefetch-Capacity>N</Prefetch-Capacity>
+      <I-O-Count>N</I-O-Count>
+      <I-O-Waits>N</I-O-Waits>
+      <Average-I-O-Size>N.N</Average-I-O-Size>
+      <Average-I-Os-In-Progress>N.N</Average-I-Os-In-Progress>
       <Shared-Hit-Blocks>N</Shared-Hit-Blocks>
       <Shared-Read-Blocks>N</Shared-Read-Blocks>
       <Shared-Dirtied-Blocks>N</Shared-Dirtied-Blocks>
@@ -166,6 +173,13 @@ explain_filter
     Actual Rows: N.N
     Actual Loops: N
     Disabled: false
+    Average Prefetch Distance: N.N
+    Max Prefetch Distance: N
+    Prefetch Capacity: N
+    I/O Count: N
+    I/O Waits: N
+    Average I/O Size: N.N
+    Average I/Os In Progress: N.N
     Shared Hit Blocks: N
     Shared Read Blocks: N
     Shared Dirtied Blocks: N
@@ -286,7 +300,7 @@ select explain_filter('explain verbose select sum(unique1) over w1, sum(unique2)
 -- Check output including I/O timings.  These fields are conditional
 -- but always set in JSON format, so check them only in this case.
 set track_io_timing = on;
-select explain_filter('explain (analyze, buffers, format json) select * from int8_tbl i8');
+select explain_filter('explain (analyze, buffers, io off, format json) select * from int8_tbl i8');
            explain_filter            
 -------------------------------------
  [                                  +
@@ -421,7 +435,7 @@ select explain_filter('explain (memory, summary, format yaml) select * from int8
    Planning Time: N.N
 (1 row)
 
-select explain_filter('explain (memory, analyze, format json) select * from int8_tbl i8');
+select explain_filter('explain (memory, analyze, io off, format json) select * from int8_tbl i8');
            explain_filter           
 ------------------------------------
  [                                 +
@@ -524,7 +538,7 @@ set parallel_tuple_cost=0;
 set min_parallel_table_scan_size=0;
 set max_parallel_workers_per_gather=4;
 select jsonb_pretty(
-  explain_filter_to_json('explain (analyze, verbose, buffers, format json)
+  explain_filter_to_json('explain (analyze, verbose, buffers, io off, format json)
                          select * from tenk1 order by tenthous')
   -- remove "Workers" node of the Seq Scan plan node
   #- '{0,Plan,Plans,0,Plans,0,Workers}'
@@ -749,7 +763,7 @@ select explain_filter('explain (analyze,buffers off,io off,serialize) select * f
  Execution Time: N.N ms
 (4 rows)
 
-select explain_filter('explain (analyze,serialize text,buffers,timing off) select * from int8_tbl i8');
+select explain_filter('explain (analyze,serialize text,buffers,io off,timing off) select * from int8_tbl i8');
                                   explain_filter                                   
 -----------------------------------------------------------------------------------
  Seq Scan on int8_tbl i8  (cost=N.N..N.N rows=N width=N) (actual rows=N.N loops=N)
@@ -758,7 +772,7 @@ select explain_filter('explain (analyze,serialize text,buffers,timing off) selec
  Execution Time: N.N ms
 (4 rows)
 
-select explain_filter('explain (analyze,serialize binary,buffers,timing) select * from int8_tbl i8');
+select explain_filter('explain (analyze,serialize binary,buffers,io off,timing) select * from int8_tbl i8');
                                          explain_filter                                          
 -------------------------------------------------------------------------------------------------
  Seq Scan on int8_tbl i8  (cost=N.N..N.N rows=N width=N) (actual time=N.N..N.N rows=N.N loops=N)

@@ -553,13 +553,13 @@ begin;
 create function list_part_fn(int) returns int as $$ begin return $1; end;$$ language plpgsql stable;
 
 -- Ensure pruning works using a stable function containing no Vars
-explain (analyze, costs off, summary off, timing off, buffers off) select * from list_part where a = list_part_fn(1);
+explain (analyze, costs off, summary off, timing off, buffers off, io off) select * from list_part where a = list_part_fn(1);
 
 -- Ensure pruning does not take place when the function has a Var parameter
-explain (analyze, costs off, summary off, timing off, buffers off) select * from list_part where a = list_part_fn(a);
+explain (analyze, costs off, summary off, timing off, buffers off, io off) select * from list_part where a = list_part_fn(a);
 
 -- Ensure pruning does not take place when the expression contains a Var.
-explain (analyze, costs off, summary off, timing off, buffers off) select * from list_part where a = list_part_fn(1) + a;
+explain (analyze, costs off, summary off, timing off, buffers off, io off) select * from list_part where a = list_part_fn(1) + a;
 
 rollback;
 
@@ -582,7 +582,7 @@ declare
     ln text;
 begin
     for ln in
-        execute format('explain (analyze, costs off, summary off, timing off, buffers off) %s',
+        execute format('explain (analyze, costs off, summary off, timing off, buffers off, io off) %s',
             $1)
     loop
         ln := regexp_replace(ln, 'Workers Launched: \d+', 'Workers Launched: N');
@@ -669,7 +669,7 @@ reset min_parallel_table_scan_size;
 reset max_parallel_workers_per_gather;
 
 -- Test run-time partition pruning with an initplan
-explain (analyze, costs off, summary off, timing off, buffers off)
+explain (analyze, costs off, summary off, timing off, buffers off, io off)
 select * from ab where a = (select max(a) from lprt_a) and b = (select max(a)-1 from lprt_a);
 
 -- Test run-time partition pruning with UNION ALL parents
@@ -697,7 +697,7 @@ union all
 ) ab where a = $1 and b = (select -10);
 
 -- Ensure the xy_1 subplan is not pruned.
-explain (analyze, costs off, summary off, timing off, buffers off) execute ab_q6(1);
+explain (analyze, costs off, summary off, timing off, buffers off, io off) execute ab_q6(1);
 
 -- Ensure we see just the xy_1 row.
 execute ab_q6(100);
@@ -752,10 +752,10 @@ insert into tprt values (10), (20), (501), (502), (505), (1001), (4500);
 set enable_hashjoin = off;
 set enable_mergejoin = off;
 
-explain (analyze, costs off, summary off, timing off, buffers off)
+explain (analyze, costs off, summary off, timing off, buffers off, io off)
 select * from tbl1 join tprt on tbl1.col1 > tprt.col1;
 
-explain (analyze, costs off, summary off, timing off, buffers off)
+explain (analyze, costs off, summary off, timing off, buffers off, io off)
 select * from tbl1 join tprt on tbl1.col1 = tprt.col1;
 
 select tbl1.col1, tprt.col1 from tbl1
@@ -768,10 +768,10 @@ order by tbl1.col1, tprt.col1;
 
 -- Multiple partitions
 insert into tbl1 values (1001), (1010), (1011);
-explain (analyze, costs off, summary off, timing off, buffers off)
+explain (analyze, costs off, summary off, timing off, buffers off, io off)
 select * from tbl1 inner join tprt on tbl1.col1 > tprt.col1;
 
-explain (analyze, costs off, summary off, timing off, buffers off)
+explain (analyze, costs off, summary off, timing off, buffers off, io off)
 select * from tbl1 inner join tprt on tbl1.col1 = tprt.col1;
 
 select tbl1.col1, tprt.col1 from tbl1
@@ -785,7 +785,7 @@ order by tbl1.col1, tprt.col1;
 -- Last partition
 delete from tbl1;
 insert into tbl1 values (4400);
-explain (analyze, costs off, summary off, timing off, buffers off)
+explain (analyze, costs off, summary off, timing off, buffers off, io off)
 select * from tbl1 join tprt on tbl1.col1 < tprt.col1;
 
 select tbl1.col1, tprt.col1 from tbl1
@@ -795,7 +795,7 @@ order by tbl1.col1, tprt.col1;
 -- No matching partition
 delete from tbl1;
 insert into tbl1 values (10000);
-explain (analyze, costs off, summary off, timing off, buffers off)
+explain (analyze, costs off, summary off, timing off, buffers off, io off)
 select * from tbl1 join tprt on tbl1.col1 = tprt.col1;
 
 select tbl1.col1, tprt.col1 from tbl1
@@ -917,7 +917,7 @@ create table mc3p2 partition of mc3p
   for values from (2, minvalue, minvalue) to (3, maxvalue, maxvalue);
 insert into mc3p values (0, 1, 1), (1, 1, 1), (2, 1, 1);
 
-explain (analyze, costs off, summary off, timing off, buffers off)
+explain (analyze, costs off, summary off, timing off, buffers off, io off)
 select * from mc3p where a < 3 and abs(b) = 1;
 
 --
@@ -927,12 +927,12 @@ select * from mc3p where a < 3 and abs(b) = 1;
 --
 prepare ps1 as
   select * from mc3p where a = $1 and abs(b) < (select 3);
-explain (analyze, costs off, summary off, timing off, buffers off)
+explain (analyze, costs off, summary off, timing off, buffers off, io off)
 execute ps1(1);
 deallocate ps1;
 prepare ps2 as
   select * from mc3p where a <= $1 and abs(b) < (select 3);
-explain (analyze, costs off, summary off, timing off, buffers off)
+explain (analyze, costs off, summary off, timing off, buffers off, io off)
 execute ps2(1);
 deallocate ps2;
 
@@ -946,10 +946,10 @@ create table boolp (a bool) partition by list (a);
 create table boolp_t partition of boolp for values in('t');
 create table boolp_f partition of boolp for values in('f');
 
-explain (analyze, costs off, summary off, timing off, buffers off)
+explain (analyze, costs off, summary off, timing off, buffers off, io off)
 select * from boolp where a = (select value from boolvalues where value);
 
-explain (analyze, costs off, summary off, timing off, buffers off)
+explain (analyze, costs off, summary off, timing off, buffers off, io off)
 select * from boolp where a = (select value from boolvalues where not value);
 
 drop table boolp;

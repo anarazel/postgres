@@ -89,9 +89,22 @@ AccumulateIOStats(IOStats *dst, IOStats *src)
 }
 
 /* ---------------------
- *	Instrumentation information for indexscans (amgettuple and amgetbitmap)
+ *	Instrumentation information for sequential scans
  * ---------------------
  */
+typedef struct SeqScanInstrumentation
+{
+	TableScanInstrumentation		stats;
+} SeqScanInstrumentation;
+
+/*
+ * Shared memory container for per-worker information
+ */
+typedef struct SharedSeqScanInstrumentation
+{
+	int			num_workers;
+	SeqScanInstrumentation sinstrument[FLEXIBLE_ARRAY_MEMBER];
+} SharedSeqScanInstrumentation;
 
 typedef struct IndexScanInstrumentation
 {
