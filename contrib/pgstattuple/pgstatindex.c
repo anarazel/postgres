@@ -296,7 +296,8 @@ pgstatindex_impl(Relation rel, FunctionCallInfo fcinfo)
 										MAIN_FORKNUM,
 										block_range_read_stream_cb,
 										&p,
-										0);
+										0,
+										NULL);
 
 	for (blkno = startblk; blkno < nblocks; blkno++)
 	{
@@ -685,7 +686,8 @@ pgstathashindex(PG_FUNCTION_ARGS)
 										MAIN_FORKNUM,
 										block_range_read_stream_cb,
 										&p,
-										0);
+										0,
+										NULL);
 
 	for (blkno = startblk; blkno < nblocks; blkno++)
 	{

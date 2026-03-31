@@ -45,7 +45,7 @@ step measure { UPDATE counter SET heap_accesses = (SELECT heap_blks_read + heap_
 
 step result { SELECT ((heap_blks_read + heap_blks_hit - counter.heap_accesses) > 0) AS has_new_heap_accesses FROM counter, pg_statio_all_tables WHERE relname = 'kill_prior_tuple'; }
 
-step access { EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF) SELECT * FROM kill_prior_tuple WHERE key = 1; }
+step access { EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF, IO OFF) SELECT * FROM kill_prior_tuple WHERE key = 1; }
 
 step delete { DELETE FROM kill_prior_tuple; }
 

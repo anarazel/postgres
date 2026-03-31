@@ -609,7 +609,8 @@ hashbulkdelete(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 										MAIN_FORKNUM,
 										hash_bulkdelete_read_stream_cb,
 										&stream_private,
-										0);
+										0,
+										NULL);
 
 bucket_loop:
 	while (cur_bucket <= cur_maxbucket)

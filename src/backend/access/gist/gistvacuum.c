@@ -223,7 +223,8 @@ gistvacuumscan(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 										MAIN_FORKNUM,
 										block_range_read_stream_cb,
 										&p,
-										0);
+										0,
+										NULL);
 	for (;;)
 	{
 		/* Get the current relation length */
