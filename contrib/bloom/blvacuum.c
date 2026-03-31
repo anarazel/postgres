@@ -71,7 +71,8 @@ blbulkdelete(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 										MAIN_FORKNUM,
 										block_range_read_stream_cb,
 										&p,
-										0);
+										0,
+										NULL);
 
 	for (blkno = BLOOM_HEAD_BLKNO; blkno < npages; blkno++)
 	{
@@ -224,7 +225,8 @@ blvacuumcleanup(IndexVacuumInfo *info, IndexBulkDeleteResult *stats)
 										MAIN_FORKNUM,
 										block_range_read_stream_cb,
 										&p,
-										0);
+										0,
+										NULL);
 
 	for (blkno = BLOOM_HEAD_BLKNO; blkno < npages; blkno++)
 	{

@@ -1242,7 +1242,7 @@ heapam_index_consider_prefetching(IndexScanDesc scan,
 			read_stream_begin_relation(READ_STREAM_DEFAULT, NULL,
 									   scan->heapRelation, MAIN_FORKNUM,
 									   heapam_index_prefetch_next_block,
-									   scan, 0);
+									   scan, 0, NULL);
 	/* else don't start a read stream for prefetching (not yet, at least) */
 }
 

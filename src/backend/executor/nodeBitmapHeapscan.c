@@ -104,6 +104,7 @@ BitmapTableScanSetup(BitmapHeapScanState *node)
 	TBMIterator tbmiterator = {0};
 	ParallelBitmapHeapState *pstate = node->pstate;
 	dsa_area   *dsa = node->ss.ps.state->es_query_dsa;
+	EState	   *estate = node->ss.ps.state;
 
 	if (!pstate)
 	{
@@ -144,13 +145,20 @@ BitmapTableScanSetup(BitmapHeapScanState *node)
 	 */
 	if (!node->ss.ss_currentScanDesc)
 	{
+		uint32		flags = SO_NONE;
+
+		if (ScanRelIsReadOnly(&node->ss))
+			flags |= SO_HINT_REL_READ_ONLY;
+
+		if (estate->es_instrument)
+			flags |= SO_SCAN_INSTRUMENT;
+
 		node->ss.ss_currentScanDesc =
 			table_beginscan_bm(node->ss.ss_currentRelation,
 							   node->ss.ps.state->es_snapshot,
 							   0,
 							   NULL,
-							   ScanRelIsReadOnly(&node->ss) ?
-							   SO_HINT_REL_READ_ONLY : SO_NONE);
+							   flags);
 	}
 
 	node->ss.ss_currentScanDesc->st.rs_tbmiterator = tbmiterator;
@@ -330,6 +338,14 @@ ExecEndBitmapHeapScan(BitmapHeapScanState *node)
 		 */
 		si->exact_pages += node->stats.exact_pages;
 		si->lossy_pages += node->stats.lossy_pages;
+
+		/* collect prefetch info for this process from the read_stream */
+		if (node->ss.ss_currentScanDesc &&
+			node->ss.ss_currentScanDesc->rs_instrument)
+		{
+			AccumulateIOStats(&si->stats.io,
+							  &node->ss.ss_currentScanDesc->rs_instrument->io);
+		}
 	}
 
 	/*
