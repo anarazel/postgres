@@ -210,6 +210,8 @@ typedef struct PTIterationArray
 struct TBMSharedIterator
 {
 	TBMSharedIteratorState *state;	/* shared state */
+	size_t		nextpage;
+	size_t		npages;
 	PTEntryArray *ptbase;		/* pagetable element array */
 	PTIterationArray *ptpages;	/* sorted exact page index list */
 	PTIterationArray *ptchunks; /* sorted lossy page index list */
@@ -1065,6 +1067,25 @@ tbm_shared_iterate(TBMSharedIterator *iterator, TBMIterateResult *tbmres)
 	if (iterator->ptchunks != NULL)
 		idxchunks = iterator->ptchunks->index;
 
+
+	if (iterator->npages > 0)
+	{
+		PagetableEntry *page;
+
+		page = &ptbase[idxpages[iterator->nextpage]];
+
+		iterator->nextpage++;
+		iterator->npages--;
+
+		tbmres->internal_page = page;
+		tbmres->blockno = page->blockno;
+		tbmres->lossy = false;
+		tbmres->recheck = page->recheck;
+
+		return true;
+	}
+
+
 	/* Acquire the LWLock before accessing the shared members */
 	LWLockAcquire(&istate->lock, LW_EXCLUSIVE);
 
@@ -1116,15 +1137,31 @@ tbm_shared_iterate(TBMSharedIterator *iterator, TBMIterateResult *tbmres)
 
 	if (istate->spageptr < istate->npages)
 	{
-		PagetableEntry *page = &ptbase[idxpages[istate->spageptr]];
+		PagetableEntry *page;
+
+		if (istate->spageptr + 16 < istate->npages)
+		{
+			iterator->npages = 16;
+			iterator->nextpage = istate->spageptr;
+			istate->spageptr += 16;
+		}
+		else
+		{
+			iterator->npages = 1;
+			iterator->nextpage = istate->spageptr;
+			istate->spageptr += 1;
+		}
+
+		LWLockRelease(&istate->lock);
+
+		page = &ptbase[idxpages[iterator->nextpage]];
+		iterator->nextpage++;
+		iterator->npages--;
 
 		tbmres->internal_page = page;
 		tbmres->blockno = page->blockno;
 		tbmres->lossy = false;
 		tbmres->recheck = page->recheck;
-		istate->spageptr++;
-
-		LWLockRelease(&istate->lock);
 
 		return true;
 	}
@@ -1480,6 +1517,9 @@ tbm_attach_shared_iterate(dsa_area *dsa, dsa_pointer dp)
 		iterator->ptpages = dsa_get_address(dsa, istate->spages);
 	if (istate->nchunks)
 		iterator->ptchunks = dsa_get_address(dsa, istate->schunks);
+
+	iterator->npages = 0;
+	iterator->nextpage = 0;
 
 	return iterator;
 }
