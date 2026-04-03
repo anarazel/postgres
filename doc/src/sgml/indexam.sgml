@@ -1128,14 +1128,21 @@ amposreset (IndexScanDesc scan,
             IndexScanBatch batch);
 </programlisting>
    Notify the index AM that the table AM is about to change the scan's
-   logical position in a way that requires the index AM to reset any state
-   that independently tracks the scan's progress.  For example, B-tree must
-   reset the array keys used by <literal>ScalarArrayOpExpr</literal> qual
-   evaluation when the scan position changes.  This callback is invoked when
+   logical position in a way that may invalidate index AM state that
+   independently tracks the scan's progress.  This callback is invoked when
    the table AM is about to process a batch in a different direction than
    was used when the batch was originally returned by
    <function>amgetbatch</function>, and also when a marked scan position is
-   about to be restored.
+   about to be restored.  Some index AMs maintain internal state that
+   advances in lockstep with the scan under the soft assumption that the scan
+   direction will not change.  Such state may fall behind the scan's true
+   position without harm (simply reading the next index page will allow the
+   state to <quote>catch up</quote>), but must never get ahead of it.  When
+   the scan direction changes or a marked position is restored, the assumption
+   is violated, so the index AM must reset the state to a safe starting point
+   for the new direction.  For example, B-tree uses this callback to reset its
+   <literal>ScalarArrayOpExpr</literal> array keys to their initial positions
+   for the new scan direction.
   </para>
 
   <para>
@@ -1147,21 +1154,19 @@ amposreset (IndexScanDesc scan,
    proceeding.  When called to restore a marked position, the batch's
    <structfield>dir</structfield> is not modified; it retains the direction
    from when the batch was originally returned.  In both cases, the batch
-   passed to <function>amposreset</function> is the batch that will be used
-   to continue the scan.
+   passed to <function>amposreset</function> is the batch that will next be
+   passed to <function>amgetbatch</function> as its
+   <literal>priorbatch</literal>.
   </para>
 
   <para>
    Index access methods that have private state which must be reset when the
    scan position changes must provide an <function>amposreset</function>
    implementation.  Index AMs with no such state may set
-   <structfield>amposreset</structfield> to NULL.
-   The <function>amposreset</function> function can only be provided when the
-   access method supports ordered scans through the <function>amgetbatch</function>
-   interface.  (Note that when <structfield>amcanbackward</structfield> is
-   false, the scan direction cannot change, so
-   <function>amposreset</function> will only be called due to mark/restore
-   in that case.)
+   <structfield>amposreset</structfield> to NULL.  The
+   <function>amposreset</function> function can only be provided when the
+   access method supports ordered scans through the
+   <function>amgetbatch</function> interface.
   </para>
 
   <para>
