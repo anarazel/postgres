@@ -106,7 +106,7 @@ heapam_index_fetch_begin(IndexScanDesc scan, uint32 flags)
 	Assert(hscan->xs_read_stream_dir == NoMovementScanDirection);
 	Assert(hscan->xs_read_stream == NULL);
 
-	/* Resolve which getnext_slot implementation to use for this scan */
+	/* Resolve which xs_getnext_slot implementation to use for this scan */
 	if (scan->indexRelation->rd_indam->amgetbatch != NULL)
 	{
 		/* amgetbatch index AM */
