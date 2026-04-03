@@ -937,8 +937,8 @@ amkillitemsbatch (IndexScanDesc scan,
    which is also batch order) and no offset appearing more than once.  Index
    access methods can rely on this ordering when processing dead items: the
    <structfield>deadItems</structfield> array can be walked in lockstep with
-   the index page's item pointers, since both are in ascending offset order.
-   This also means the table AM need not call
+   the index page's item pointers, since both are in ascending page offset
+   number order.  This also means the table AM need not call
    <function>tableam_util_scanpos_killitem</function> in any particular order.
   </para>
 
