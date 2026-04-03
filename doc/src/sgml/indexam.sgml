@@ -936,12 +936,13 @@ amunguardbatch (IndexScanDesc scan,
     The index AM may choose to retain its own buffer pins when this serves an
     internal purpose (for example, maintaining a descent stack of pinned index
     pages for reuse across <function>amgetbatch</function> calls).  However,
-    any scheme that retains buffer pins managed by the index AM must be sure to
-    free the pins at an opportune point (for example when <function>amrescan</function>
-    and/or <function>amendscan</function> are called).  It must also keep the
-    number of retained pins fixed and small, to avoid exhausting the backend's
-    buffer pin limit (which is shared with the table AM's read stream for
-    index scan prefetching).
+    any scheme that retains buffer pins managed by the index AM must be sure
+    to free the pins at an opportune point (at a minimum whenever
+    <function>amendscan</function> is called, and typically when
+    <function>amrescan</function> is called).  It must also keep the number of
+    retained pins fixed and small, to avoid exhausting the backend's buffer
+    pin limit (which is shared with the table AM's read stream for index scan
+    prefetching).
    </para>
   </note>
 
