@@ -892,8 +892,7 @@ amgetbatch (IndexScanDesc scan,
    <structname>HeapTuple</structname> pointers.  The batch infrastructure
    provides per-batch storage for <structname>IndexTuple</structname> copies,
    but has no analogous mechanism for <structname>HeapTuple</structname> data
-   (used by index AMs such as <acronym>GiST</acronym> and
-   <acronym>SP-GiST</acronym> for reconstructed tuples that might not fit in
+   (used by some index AMs for reconstructed tuples that might not fit in
    <structname>IndexTuple</structname> format).  This limitation could be
    addressed in a future version of <productname>PostgreSQL</productname>.
   </para>
@@ -923,14 +922,14 @@ amkillitemsbatch (IndexScanDesc scan,
   </para>
 
   <para>
-   While implementing <function>amkillitemsbatch</function> is optional,
-   doing so is recommended for performance, as it allows future scans to skip
-   known-dead index entries.  Both core index access methods that currently
-   support <function>amgetbatch</function> (B-tree and hash) implement
+   While implementing <function>amkillitemsbatch</function> is optional for
+   <function>amgetbatch</function> index AMs, doing so is recommended for
+   performance, as it allows future scans to skip known-dead index entries.
+   Both core index access methods that currently support
+   <function>amgetbatch</function> (B-tree and hash) implement
    <literal>LP_DEAD</literal> marking, though third-party index access methods
-   are free to choose whether to implement this feature.
-   The table AM may call
-   <function>tableam_util_scanpos_killitem</function> to mark dead items as
+   are free to choose whether to implement this feature.  The table AM may
+   call <function>tableam_util_scanpos_killitem</function> to mark dead items as
    the scan progresses.  If the batch contains any such dead items, the batch's
    <structfield>deadItems</structfield> array will have been sorted and
    deduplicated before <function>amkillitemsbatch</function> is called, with
