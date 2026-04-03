@@ -1396,9 +1396,9 @@ amtranslatecmptype (CompareType cmptype, Oid opfamily, Oid opcintype);
     <structfield>batchringbuf</structfield>, including creating, resetting,
     and ending the batch ring buffer within the appropriate table AM
     callbacks, and managing positional state and TID recycling interlocking
-    (that is, determining when to unguard each batch by releasing its index
-    page buffer pin).  Index access methods should not access or manipulate
-    these fields.  See the
+    (that is, determining when to unguard each batch, which will typically
+    release an index page buffer pin associated with the batch).  Index access
+    methods should not access or manipulate these fields.  See the
     <filename>src/backend/access/heap/heapam_indexscan.c</filename>
     implementation for a reference example.
    </para>
