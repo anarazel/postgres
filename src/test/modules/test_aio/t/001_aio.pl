@@ -15,6 +15,10 @@ use TestAio;
 my @methods = TestAio::supported_io_methods();
 my %nodes;
 
+# Putting it inline makes perltidy do ugly things
+my $count_my_aios_query =
+  'SELECT count(*) FROM pg_aios WHERE pid = pg_backend_pid()';
+
 
 ###
 # Create and configure one instance for each io_method
@@ -1616,6 +1620,61 @@ INSERT INTO tmp_ok SELECT generate_series(1, 5000);
 			qq|SELECT blockoff, blocknum, io_reqd and not foreign_io, nblocks FROM read_buffers('$table', 1, 3)|,
 			qr/^0\|1\|t\|2\n2\|3\|f\|1$/,
 			qr/^$/);
+
+
+		###
+		# Test that abandoning IO works and that it does not cause issues.
+		###
+
+		# Test that even after abandoning IO we do wait for the IOs at the end
+		# of the statement.
+		$psql_a->query_safe(qq|SET io_combine_limit=2|);
+		$psql_a->query_safe(qq|SELECT evict_rel('$table')|);
+		psql_like(
+			$io_method,
+			$psql_a,
+			"$persistency: read buffers & abandon it",
+			qq|SELECT abandoned, count(*) FROM read_buffers('$table', 0, 6, abandon_after => 2) GROUP BY 1 ORDER BY 1|,
+			qr/^f\|1\nt\|2$/,
+			qr/^$/);
+		# Due to the end-of-statement wait there should be no IOs anymore
+		is($psql_a->query_safe($count_my_aios_query), 0,
+			"$io_method: $persistency: abandoned IO completed by end of statement"
+		);
+
+		# Test that after abandoning IO buffer access still works.
+		#
+		# First test that by just issuing another read_buffers() in the same
+		# statement (so that the abandoned IOs aren't waited-for during
+		# end-of-statement resowner handling).
+		$psql_a->query_safe(qq|SELECT evict_rel('$table')|);
+		psql_like(
+			$io_method,
+			$psql_a,
+			"$persistency: read buffers & abandon it & read again",
+			qq|
+			   SELECT SUM(nblocks) FROM read_buffers('$table', 0, 4, abandon_after => 2)
+			   UNION ALL
+			   SELECT SUM(nblocks) FROM read_buffers('$table', 0, 4)
+			   |,
+			qr/^4\n4$/,
+			qr/^$/);
+
+		# Now test that a plain SELECT needing buffers affected by abandoned
+		# IO work
+		$psql_a->query_safe(qq|SELECT evict_rel('$table')|);
+		psql_like(
+			$io_method,
+			$psql_a,
+			"$persistency: read buffers & abandon it & read again via SELECT",
+			qq|
+			   SELECT SUM(nblocks) FROM read_buffers('$table', 0, 4, abandon_after => 2)
+			   UNION ALL
+			   SELECT SUM(data) FROM $table WHERE data < 1000
+			   |,
+			qr/^4\n499500$/,
+			qr/^$/);
+		$psql_a->query_safe(qq|RESET io_combine_limit|);
 	}
 
 	# The remaining tests don't make sense for temp tables, as they are
@@ -1836,6 +1895,54 @@ read_buffers('$table', 0, 4)|,
 	);
 	$psql_a->{stdout} = '';
 
+
+	###
+	# Test that abandoning IO actually avoids waiting for IO.
+	###
+
+	# Testing not waiting only works if the IO method doesn't execute IO
+	# synchronously, which is why we fundamentally can't test with
+	# io_method=sync. Furthermore we need to work around io_method=io_uring
+	# potentially executing the IO synchronously - we can do so by making the
+	# IOs big enough (c.f. pgaio_uring_should_use_async()).
+	#
+	# To make the test reliable we have to abandon all IOs, as waiting for
+	# some IOs could lead to also consuming the completion of the IO that will
+	# trigger a wait in the completion.
+	if ($io_method ne 'sync')
+	{
+		$psql_a->query_safe(qq|SELECT evict_rel('$table')|);
+		$psql_a->query_safe(qq|SET io_combine_limit=5|);
+		$psql_b->query_safe(
+			qq/SELECT inj_io_completion_wait(
+		   relfilenode=>pg_relation_filenode('$table'),
+		   blockno=>4);/);
+		ok(1,
+			"$io_method: $persistency: configure wait in completion of block 4"
+		);
+
+		# Need to end the wait in the completion before the statement is over,
+		# otherwise we'll wait during resowner cleanup at the end of the
+		# statement.
+		psql_like(
+			$io_method,
+			$psql_a,
+			"$persistency: read buffers abandoning blocked IO avoids wait",
+			qq|
+			   SELECT count(*) > 0 FROM read_buffers('$table', 0, 10, abandon_after => 0) WHERE abandoned
+			   UNION ALL
+			   SELECT count(*) > 0 FROM pg_aios WHERE pid = pg_backend_pid()
+			   UNION ALL
+			   SELECT inj_io_completion_continue() IS NOT NULL
+			|,
+			qr/^t\nt\nt$/,
+			qr/^$/);
+		is($psql_a->query_safe($count_my_aios_query), 0,
+			"$io_method: $persistency: abandoned IO is completed at end of statement"
+		);
+
+		$psql_a->query_safe(qq|RESET io_combine_limit|);
+	}
 
 	$psql_a->quit();
 	$psql_b->quit();
