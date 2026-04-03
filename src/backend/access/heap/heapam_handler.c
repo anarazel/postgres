@@ -657,8 +657,8 @@ heapam_relation_copy_for_cluster(Relation OldHeap, Relation NewHeap,
 
 		tableScan = NULL;
 		heapScan = NULL;
-		indexScan = index_beginscan(OldHeap, OldIndex, false, SnapshotAny,
-									NULL, 0, 0, SO_NONE);
+		indexScan = index_beginscan(OldHeap, OldIndex, false,
+									SnapshotAny, NULL, 0, 0, SO_NONE);
 		index_rescan(indexScan, NULL, 0, NULL, 0);
 	}
 	else

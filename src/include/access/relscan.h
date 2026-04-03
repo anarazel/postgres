@@ -192,7 +192,7 @@ typedef struct BatchMatchingItem
  * the batch pointer to the true allocation base.  The indexbatch.c utilities
  * pfree a batch by passing pfree a pointer returned by index_scan_batch_base.
  * We rely on the assumption that batches have a fixed layout for the duration
- * of an index scan (since batches are cached for reuse).
+ * of an index scan (batches are cached for reuse to avoid palloc churn).
  *
  * The table AM can overlay a small fixed-size struct at the start of the
  * allocated space, which it accesses using a index_scan_batch_base shim
