@@ -978,7 +978,7 @@ typedef struct BTBatchData
  * (this is often the same priorbatch passed to btgetbatch by core code).
  *
  * If we are doing an index-only scan, we save the entire IndexTuple for each
- * matched item, otherwise only its heap TID and offset.  Posting list tuples
+ * matched item, otherwise only its table TID and offset.  Posting list tuples
  * store a "base" tuple once, allowing the same key to be used for each TID in
  * the posting list.
  */

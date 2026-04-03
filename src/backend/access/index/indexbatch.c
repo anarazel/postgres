@@ -485,7 +485,7 @@ indexam_util_batch_unlock(IndexScanDesc scan, IndexScanBatch batch, Buffer buf)
 
 		/*
 		 * Have to set batch->lsn so that amkillitemsbatch has a way to detect
-		 * when concurrent heap TID recycling by VACUUM might have taken
+		 * when concurrent table TID recycling by VACUUM might have taken
 		 * place.  It'll only be safe to set any index tuple LP_DEAD bits when
 		 * the page LSN hasn't advanced.
 		 *

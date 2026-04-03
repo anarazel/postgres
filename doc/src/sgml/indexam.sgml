@@ -960,7 +960,7 @@ amkillitemsbatch (IndexScanDesc scan,
    <structfield>batch-&gt;lsn</structfield>, and give up on setting
    <literal>LP_DEAD</literal> bits if the LSN has advanced.  An advanced LSN
    indicates that the page was modified &mdash; possibly by
-   <command>VACUUM</command> recycling heap TIDs &mdash; so it would be unsafe
+   <command>VACUUM</command> recycling table TIDs &mdash; so it would be unsafe
    to assume that index entries still point to the same heap tuples.  Since
    <literal>LP_DEAD</literal> marking is only an optimization hint, it is
    always safe to skip it.  Note that this LSN comparison technique requires
