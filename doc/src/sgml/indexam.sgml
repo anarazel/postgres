@@ -783,13 +783,13 @@ amgettuple (IndexScanDesc scan,
   </para>
   <note>
    <para>
-    As of <productname>PostgreSQL</productname> version 19, position marking
-    and restoration of index scans is no longer managed by the index AM; it is
-    handled by the table AM, through its
-    <function>table_index_fetch_markpos</function> and
-    <function>table_index_fetch_restrpos</function> implementations.  This
-    requires that the underlying index AM support the
+    As of <productname>PostgreSQL</productname> version 19, mark/restore of
+    scan positions is only supported for scans that use the
     <function>amgetbatch</function> interface.
+    <function>amgettuple</function> scans do not support mark/restore.  The
+    mark/restore implementation lives in the table AM, through its
+    <function>table_index_fetch_markpos</function> and
+    <function>table_index_fetch_restrpos</function> implementations.
    </para>
   </note>
 
