@@ -1366,15 +1366,13 @@ amtranslatecmptype (CompareType cmptype, Oid opfamily, Oid opcintype);
   </para>
 
   <para>
-   Scans using the <function>amgetbatch</function> interface support
-   <quote>marking</quote> a position in a scan and later returning to the
-   marked position.  The table AM manages this through its
-   <function>table_index_fetch_markpos</function> and
-   <function>table_index_fetch_restrpos</function> implementations.  When
-   restoring a mark, the table AM will also call the index AM's
-   <function>amposreset</function> callback to invalidate any index AM state
-   that independently tracks the progress of the scan (such as array key
-   state).  See the description of <function>amposreset</function> in
+   All <function>amgetbatch</function> index AMs inherently support
+   mark/restore of scan positions (the mark/restore implementation lives
+   in the table AM and works with any <function>amgetbatch</function>
+   implementation).  Index AMs that maintain internal state which tracks
+   the scan's progress must provide an <function>amposreset</function>
+   callback to be notified when the scan's logical position changes
+   unexpectedly, such as during mark/restore; see
    <xref linkend="index-functions"/> for details.
   </para>
 
