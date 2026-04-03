@@ -995,34 +995,22 @@ amkillitemsbatch (IndexScanDesc scan,
 
   <para>
    When implementing <function>amkillitemsbatch</function>, the index AM
-   should verify that the index page has not been modified since the batch was
-   originally read.  The batch's <structfield>lsn</structfield> field records
-   the page LSN at the time the index page lock was released by
-   <function>indexam_util_batch_unlock</function> (set automatically by the
-   core code, though index AMs whose TID recycling interlock is not just a
-   buffer pin are not obligated to use
-   <function>indexam_util_batch_unlock</function> &mdash; they can implement
-   their own equivalent, and are free to use the batch
-   <structfield>lsn</structfield> field in whatever way they deem
-   necessary).  The index AM should
-   re-read the page, compare the current page LSN against
-   <structfield>batch-&gt;lsn</structfield>, and give up on setting
+   must verify that the index page has not been modified since the batch was
+   originally read.  The standard way to do this is to call
+   <function>indexam_util_batch_unlock</function> during
+   <function>amgetbatch</function>, which releases the index page lock and
+   saves the page LSN in
+   the batch's <structfield>lsn</structfield> field.  Later, within
+   <function>amkillitemsbatch</function>, the index AM re-reads the page,
+   compares the current page LSN against
+   <structfield>batch-&gt;lsn</structfield>, and gives up on setting
    <literal>LP_DEAD</literal> bits if the LSN has advanced.  An advanced LSN
    indicates that the page was modified &mdash; possibly by
-   <command>VACUUM</command> recycling table TIDs &mdash; so it would be unsafe
-   to assume that index entries still point to the same heap tuples.  Since
-   <literal>LP_DEAD</literal> marking is only an optimization hint, it is
-   always safe to skip it.
-  </para>
-
-  <para>
-   This LSN-based verification means that the table AM need not consider
-   whether unguarding a batch could introduce TID recycling hazards for a
-   subsequent <function>amkillitemsbatch</function> call.  The hazards are
-   the same in both cases, but since
-   <function>amkillitemsbatch</function> independently verifies the page LSN
-   and can always safely give up on setting <literal>LP_DEAD</literal> bits,
-   correctness is obvious without any coupling between the two.
+   <command>VACUUM</command> recycling table TIDs &mdash; so it would be
+   unsafe to assume that index entries still point to the same heap/table
+   tuples.  Since <literal>LP_DEAD</literal> marking is only an optimization
+   hint, it is always safe to skip it.  Both B-tree and hash use this
+   approach.
   </para>
 
   <warning>
@@ -1039,6 +1027,24 @@ amkillitemsbatch (IndexScanDesc scan,
    </para>
   </warning>
 
+  <tip>
+   <para>
+    Index AMs are not obligated to use
+    <function>indexam_util_batch_unlock</function> &mdash; they can implement
+    their own equivalent, and are free to use the batch
+    <structfield>lsn</structfield> field in whatever way they deem necessary
+   </para>
+  </tip>
+
+  <para>
+   This LSN-based verification means that the table AM need not consider
+   whether unguarding a batch could introduce TID recycling hazards for a
+   subsequent <function>amkillitemsbatch</function> call.  The hazards are the
+   same in both cases, but since <function>amkillitemsbatch</function>
+   independently verifies the page LSN and can always safely give up on
+   setting <literal>LP_DEAD</literal> bits, correctness is obvious without any
+   coupling between the two.
+  </para>
 
   <para>
 <programlisting>
