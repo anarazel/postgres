@@ -1566,9 +1566,11 @@ amtranslatecmptype (CompareType cmptype, Oid opfamily, Oid opcintype);
    block on such a pin ensures that <command>VACUUM</command> cannot delete
    the heap entry before the reader is done with it.  This solution costs
    little in run time, and adds blocking overhead only in the rare cases where
-   there actually is a conflict.  When the scan uses an MVCC-compliant
-   snapshot, holding the pin is unnecessary because the snapshot itself will
-   reject any recycled TID's new occupant (see below).
+   there actually is a conflict.  For plain index scans that use an
+   MVCC-compliant snapshot, holding the pin is unnecessary because the scan
+   will always visit the heap page, where the snapshot itself will reject any
+   recycled TID's new occupant.  (Index-only scans are a special case, as
+   discussed below.)
   </para>
 
   <para>
@@ -1584,7 +1586,7 @@ amtranslatecmptype (CompareType cmptype, Oid opfamily, Oid opcintype);
    all scans end up being asynchronous in practice, but the interface is
    designed to allow it.  Per the above analysis, we must use the synchronous
    approach for non-MVCC-compliant snapshots, but an asynchronous scan is
-   workable for a query using an MVCC snapshot.
+   workable for plain index scans that use an MVCC snapshot.
   </para>
 
   <para>
@@ -1606,24 +1608,41 @@ amtranslatecmptype (CompareType cmptype, Oid opfamily, Oid opcintype);
    whether the scan uses an MVCC-compliant snapshot, and whether it is an
    index-only scan.  Specifically,
    <structfield>batchImmediateUnguard</structfield> is true when the scan uses
-   an MVCC snapshot and is <emphasis>not</emphasis> an index-only scan.  When
-   <structfield>batchImmediateUnguard</structfield> is true, the interlock is
-   dropped inside <function>indexam_util_batch_unlock</function> (before the
-   batch is even returned to the table AM), because a plain index scan with an
-   MVCC snapshot will always visit the heap page, where the MVCC visibility
-   check is authoritative &mdash; even if <command>VACUUM</command> recycles a
-   TID, the new occupant cannot pass the snapshot test.  When it is false, the
+   an MVCC snapshot and is <emphasis>not</emphasis> an index-only scan.
+  </para>
+
+  <para>
+   When <structfield>batchImmediateUnguard</structfield> is true, the
+   interlock is dropped inside
+   <function>indexam_util_batch_unlock</function> (before the batch is even
+   returned to the table AM), because a plain index scan with an MVCC
+   snapshot will always visit the heap page, where the MVCC visibility check
+   is authoritative &mdash; even if <command>VACUUM</command> recycles a TID,
+   the new occupant cannot pass the snapshot test.
+  </para>
+
+  <para>
+   When <structfield>batchImmediateUnguard</structfield> is false, the
    interlock is retained until the table AM explicitly calls
    <function>amunguardbatch</function>, because the scan cannot rely on that
-   heap page MVCC backstop.  For non-MVCC scans, there is no MVCC snapshot to
+   heap-page MVCC backstop.  For non-MVCC scans, there is no MVCC snapshot to
    reject a recycled TID's new occupant at all.  For index-only scans, even
    with an MVCC snapshot, the scan typically avoids visiting the heap page
    altogether (using the visibility map instead), so the MVCC check that would
    catch a recycled TID usually never runs.  In both cases the interlock on
    the index page is what prevents <command>VACUUM</command> from recycling
-   TIDs while the scan is still in flight.  In all cases, the table AM decides
-   <emphasis>when</emphasis> to call <function>amunguardbatch</function>; the
-   index AM decides <emphasis>what</emphasis> to release.
+   TIDs while the scan is still in flight.
+  </para>
+
+  <para>
+   When <structfield>batchImmediateUnguard</structfield> is false, the table
+   AM decides <emphasis>when</emphasis> to call
+   <function>amunguardbatch</function>; the index AM decides
+   <emphasis>what</emphasis> to release.  When
+   <structfield>batchImmediateUnguard</structfield> is true, the index AM
+   drops the interlock itself (inside
+   <function>indexam_util_batch_unlock</function>), and
+   <function>amunguardbatch</function> is never called.
   </para>
 
   <para>
