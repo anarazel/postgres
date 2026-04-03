@@ -912,6 +912,45 @@ amgetbatch (IndexScanDesc scan,
   <para>
 <programlisting>
 void
+amunguardbatch (IndexScanDesc scan,
+                IndexScanBatch batch);
+</programlisting>
+   Called by the table AM (via
+   <function>tableam_util_unguard_batch</function>) when it is safe to drop
+   the TID recycling interlock that the index AM holds on the batch's index
+   leaf page, which prevents concurrent TID recycling by
+   <command>VACUUM</command>.
+   Formally, an index AM may hold a different kind of interlock, or multiple
+   interlocks, in its per-batch opaque area, but in practice both built-in
+   index AMs that support <function>amgetbatch</function> &mdash; B-tree and
+   hash &mdash; hold a single buffer pin.  See <xref linkend="index-locking"/>
+   for details on buffer pin management during index scans.  This function
+   will be called at most once for each guarded batch; it is not called when
+   the index AM has already unguarded the batch itself (as it does when
+   <structfield>batchImmediateUnguard</structfield> is true, which is the
+   common case).
+  </para>
+
+  <para>
+   The index AM may choose to retain its own buffer pins when this serves an
+   internal purpose (for example, maintaining a descent stack of pinned index
+   pages for reuse across <function>amgetbatch</function> calls).  However,
+   any scheme that retains buffer pins managed by the index AM must be sure to
+   free the pins at an opportune point (for example when <function>amrescan</function>
+   and/or <function>amendscan</function> are called).  It must also keep the
+   number of retained pins fixed and small, to avoid exhausting the backend's
+   buffer pin limit (which is shared with the table AM's read stream
+   for index scan prefetching).
+  </para>
+
+  <para>
+   The <function>amunguardbatch</function> function is required for any index
+   access method that provides <function>amgetbatch</function>.
+  </para>
+
+  <para>
+<programlisting>
+void
 amkillitemsbatch (IndexScanDesc scan,
                   IndexScanBatch batch);
 </programlisting>
@@ -970,13 +1009,27 @@ amkillitemsbatch (IndexScanDesc scan,
    <command>VACUUM</command> recycling table TIDs &mdash; so it would be unsafe
    to assume that index entries still point to the same heap tuples.  Since
    <literal>LP_DEAD</literal> marking is only an optimization hint, it is
-   always safe to skip it.  Note that this LSN comparison technique requires
-   the index AM to use fake (monotonically increasing) LSNs on its pages for
-   relations where WAL is not generated, since real LSNs are not available in
-   that case.  See the B-tree and hash index implementations for reference
-   examples of this technique.  An index AM that does not implement fake LSNs
-   can still provide <function>amkillitemsbatch</function>, but should simply
-   do nothing when the relation does not generate WAL (i.e., when
+   always safe to skip it.
+  </para>
+
+  <para>
+   This LSN-based verification is what allows the table AM to unguard a batch
+   (via <function>amunguardbatch</function>) without having to coordinate with
+   a pending <function>amkillitemsbatch</function> call.  The TID recycling
+   hazards are the same in both cases, but
+   <function>amkillitemsbatch</function> can always safely give up on setting
+   <literal>LP_DEAD</literal> bits when it detects that the page has been
+   modified, so no coordination between the two is necessary.
+  </para>
+
+  <para>
+   Note that this LSN comparison technique requires the index AM to use fake
+   (monotonically increasing) LSNs on its pages for relations where WAL is not
+   generated, since real LSNs are not available in that case.  See the B-tree
+   and hash index implementations for reference examples of this technique.
+   An index AM that does not implement fake LSNs can still provide
+   <function>amkillitemsbatch</function>, but should simply do nothing when
+   the relation does not generate WAL (i.e., when
    <function>RelationNeedsWAL()</function> is false), since the LSN comparison
    would be unreliable.
   </para>
@@ -987,45 +1040,6 @@ amkillitemsbatch (IndexScanDesc scan,
    <literal>LP_DEAD</literal> bits should provide it; those that don't can
    leave it set to <literal>NULL</literal> even when they provide
    <function>amgetbatch</function>.
-  </para>
-
-  <para>
-<programlisting>
-void
-amunguardbatch (IndexScanDesc scan,
-                IndexScanBatch batch);
-</programlisting>
-   Called by the table AM (via
-   <function>tableam_util_unguard_batch</function>) when it is safe to drop
-   the TID recycling interlock that the index AM holds on the batch's index
-   leaf page, which prevents concurrent TID recycling by
-   <command>VACUUM</command>.
-   Formally, an index AM may hold a different kind of interlock, or multiple
-   interlocks, in its per-batch opaque area, but in practice both built-in
-   index AMs that support <function>amgetbatch</function> &mdash; B-tree and
-   hash &mdash; hold a single buffer pin.  See <xref linkend="index-locking"/>
-   for details on buffer pin management during index scans.  This function
-   will be called at most once for each guarded batch; it is not called when
-   the index AM has already unguarded the batch itself (as it does when
-   <structfield>batchImmediateUnguard</structfield> is true, which is the
-   common case).
-  </para>
-
-  <para>
-   The index AM may choose to retain its own buffer pins when this serves an
-   internal purpose (for example, maintaining a descent stack of pinned index
-   pages for reuse across <function>amgetbatch</function> calls).  However,
-   any scheme that retains buffer pins managed by the index AM must be sure to
-   free the pins at an opportune point (for example when <function>amrescan</function>
-   and/or <function>amendscan</function> are called).  It must also keep the
-   number of retained pins fixed and small, to avoid exhausting the backend's
-   buffer pin limit (which is shared with the table AM's read stream
-   for index scan prefetching).
-  </para>
-
-  <para>
-   The <function>amunguardbatch</function> function is required for any index
-   access method that provides <function>amgetbatch</function>.
   </para>
 
   <para>
