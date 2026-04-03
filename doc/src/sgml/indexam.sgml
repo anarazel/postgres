@@ -1024,17 +1024,19 @@ amkillitemsbatch (IndexScanDesc scan,
    correctness is obvious without any coupling between the two.
   </para>
 
-  <para>
-   Note that this LSN comparison technique requires the index AM to use fake
-   (monotonically increasing) LSNs on its pages for relations where WAL is not
-   generated, since real LSNs are not available in that case.  See the B-tree
-   and hash index implementations for reference examples of this technique.
-   An index AM that does not implement fake LSNs can still provide
-   <function>amkillitemsbatch</function>, but should simply do nothing when
-   the relation does not generate WAL (i.e., when
-   <function>RelationNeedsWAL()</function> is false), since the LSN comparison
-   would be unreliable.
-  </para>
+  <warning>
+   <para>
+    This LSN comparison technique requires the index AM to use fake
+    (monotonically increasing) LSNs on its pages for relations where WAL is
+    not generated, since real LSNs are not available in that case.  See the
+    B-tree and hash index implementations for reference examples of this
+    technique.  An index AM that does not implement fake LSNs can still
+    provide <function>amkillitemsbatch</function>, but should simply do
+    nothing when the relation does not generate WAL (i.e., when
+    <function>RelationNeedsWAL()</function> is false), since the LSN
+    comparison would be unreliable.
+   </para>
+  </warning>
 
   <para>
    The <function>amkillitemsbatch</function> function is optional.  Index
