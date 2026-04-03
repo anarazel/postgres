@@ -1005,7 +1005,10 @@ amunguardbatch (IndexScanDesc scan,
    index AMs that support <function>amgetbatch</function> &mdash; B-tree and
    hash &mdash; hold a single buffer pin.  See <xref linkend="index-locking"/>
    for details on buffer pin management during index scans.  This function
-   will be called exactly once for each guarded batch.
+   will be called at most once for each guarded batch; it is not called when
+   the index AM has already unguarded the batch itself (as it does when
+   <structfield>batchImmediateUnguard</structfield> is true, which is the
+   common case).
   </para>
 
   <para>
