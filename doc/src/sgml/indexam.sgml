@@ -963,8 +963,9 @@ amkillitemsbatch (IndexScanDesc scan,
   </para>
 
   <para>
-   While implementing <function>amkillitemsbatch</function> is optional for
-   <function>amgetbatch</function> index AMs, doing so is recommended for
+   Implementing <function>amkillitemsbatch</function> is optional for
+   <function>amgetbatch</function> index AMs (those that don't can leave
+   the field set to <literal>NULL</literal>), but doing so is recommended for
    performance, as it allows future scans to skip known-dead index entries.
    Both core index access methods that currently support
    <function>amgetbatch</function> (B-tree and hash) implement
@@ -1038,13 +1039,6 @@ amkillitemsbatch (IndexScanDesc scan,
    </para>
   </warning>
 
-  <para>
-   The <function>amkillitemsbatch</function> function is optional.  Index
-   access methods that want to mark dead index tuples with
-   <literal>LP_DEAD</literal> bits should provide it; those that don't can
-   leave it set to <literal>NULL</literal> even when they provide
-   <function>amgetbatch</function>.
-  </para>
 
   <para>
 <programlisting>
