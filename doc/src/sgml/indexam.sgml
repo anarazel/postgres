@@ -827,8 +827,8 @@ amgetbatch (IndexScanDesc scan,
    own scan position, with <function>amgetbatch</function> it is the caller
    that controls the progress of the scan through the index.  The caller
    will typically pass the most recently returned batch, but this is not
-   guaranteed &mdash; for example, during mark/restore a previously
-   returned batch may be passed instead.
+   guaranteed &mdash; for example, following the restoration of a marked
+   position, an earlier batch may be passed instead.
   </para>
 
   <para>
