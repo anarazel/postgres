@@ -1426,7 +1426,7 @@ amtranslatecmptype (CompareType cmptype, Oid opfamily, Oid opcintype);
     Both <structfield>scanPos</structfield> and
     <structfield>prefetchPos</structfield> are controlled by the table AM and
     core code; index access methods should not access or manipulate these
-    fields.  See the <filename>src/backend/access/heap/</filename>
+    fields.  See the <filename>src/backend/access/heap/heapam_indexscan.c</filename>
     implementation for a reference example.
    </para>
 
