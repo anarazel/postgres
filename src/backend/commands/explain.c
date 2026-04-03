@@ -3881,7 +3881,7 @@ show_indexscan_info(PlanState *planstate, ExplainState *es)
 	Plan	   *plan = planstate->plan;
 	SharedIndexScanInstrumentation *SharedInfo = NULL;
 	uint64		nsearches = 0,
-				ntablefetches = 0;
+				ntabletuplefetches = 0;
 
 	if (!es->analyze)
 		return;
@@ -3902,7 +3902,7 @@ show_indexscan_info(PlanState *planstate, ExplainState *es)
 				IndexOnlyScanState *indexstate = ((IndexOnlyScanState *) planstate);
 
 				nsearches = indexstate->ioss_Instrument->nsearches;
-				ntablefetches = indexstate->ioss_Instrument->ntabletuplefetches;
+				ntabletuplefetches = indexstate->ioss_Instrument->ntabletuplefetches;
 				SharedInfo = indexstate->ioss_SharedInfo;
 				break;
 			}
@@ -3926,12 +3926,12 @@ show_indexscan_info(PlanState *planstate, ExplainState *es)
 			IndexScanInstrumentation *winstrument = &SharedInfo->winstrument[i];
 
 			nsearches += winstrument->nsearches;
-			ntablefetches += winstrument->ntabletuplefetches;
+			ntabletuplefetches += winstrument->ntabletuplefetches;
 		}
 	}
 
 	if (nodeTag(plan) == T_IndexOnlyScan)
-		ExplainPropertyUInteger("Heap Fetches", NULL, ntablefetches, es);
+		ExplainPropertyUInteger("Heap Fetches", NULL, ntabletuplefetches, es);
 
 	ExplainPropertyUInteger("Index Searches", NULL, nsearches, es);
 }
