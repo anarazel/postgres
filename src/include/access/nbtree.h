@@ -965,9 +965,9 @@ typedef struct BTBatchData
  * This consists of preprocessed scan keys (see _bt_preprocess_keys() for
  * details of the preprocessing), and information about the current array
  * keys.  There are assumptions about how the current array keys track the
- * progress of the index scan through the index's key space (see _bt_readpage
- * and _bt_advance_array_keys), but we don't actually track anything about the
- * current scan position in this opaque struct.
+ * progress of the index scan through the index's key space (see _bt_readpage,
+ * btposreset, and _bt_advance_array_keys), but we don't track anything about
+ * the current scan position/batch in this opaque struct.
  *
  * Index scans work a page at a time, as required by the amgetbatch contract:
  * we pin and read-lock the page, identify all the matching items on the page
@@ -975,7 +975,7 @@ typedef struct BTBatchData
  * using amgetbatch utility routines.  This approach minimizes lock/unlock
  * traffic.  _bt_next is passed priorbatch, which has a BTBatchData area that
  * tells us which page is next in line to be read in the given scan direction
- * (priorbatch is provided as an argument to btgetbatch by core code).
+ * (this is often the same priorbatch passed to btgetbatch by core code).
  *
  * If we are doing an index-only scan, we save the entire IndexTuple for each
  * matched item, otherwise only its heap TID and offset.  Posting list tuples
