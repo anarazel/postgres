@@ -1015,13 +1015,13 @@ amkillitemsbatch (IndexScanDesc scan,
   </para>
 
   <para>
-   This LSN-based verification is what allows the table AM to unguard a batch
-   (via <function>amunguardbatch</function>) without having to coordinate with
-   a pending <function>amkillitemsbatch</function> call.  The TID recycling
-   hazards are the same in both cases, but
-   <function>amkillitemsbatch</function> can always safely give up on setting
-   <literal>LP_DEAD</literal> bits when it detects that the page has been
-   modified, so no coordination between the two is necessary.
+   This LSN-based verification means that the table AM need not consider
+   whether unguarding a batch could introduce TID recycling hazards for a
+   subsequent <function>amkillitemsbatch</function> call.  The hazards are
+   the same in both cases, but since
+   <function>amkillitemsbatch</function> independently verifies the page LSN
+   and can always safely give up on setting <literal>LP_DEAD</literal> bits,
+   correctness is obvious without any coupling between the two.
   </para>
 
   <para>
