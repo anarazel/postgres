@@ -1385,7 +1385,7 @@ amtranslatecmptype (CompareType cmptype, Oid opfamily, Oid opcintype);
    which the index returns the actual data not just the TID of the heap tuple.
    This will only avoid I/O if the visibility map shows that the TID is on an
    all-visible page; else the heap tuple must be visited anyway to check
-   MVCC visibility.  But that is no concern of the access method's.
+   MVCC visibility.  But that is no concern of the index access method's.
   </para>
 
   <para>
