@@ -1389,13 +1389,18 @@ amtranslatecmptype (CompareType cmptype, Oid opfamily, Oid opcintype);
    <title>Table AM Considerations for Batch Scanning</title>
 
    <para>
-    This section is primarily relevant to
-    <link linkend="tableam">table access method</link> authors.
-    When an index scan uses the <function>amgetbatch</function> interface,
-    the table AM is responsible for managing position state within the
-    <structname>IndexScanDesc</structname>'s
-    <structfield>batchringbuf</structfield> and for controlling when
-    buffer pins on index pages are released.
+    This section is primarily relevant to <link linkend="tableam">table access
+     method</link> authors.  When an index scan uses the
+    <function>amgetbatch</function> interface, the table AM has sole control
+    over the <structname>IndexScanDesc</structname>'s
+    <structfield>batchringbuf</structfield>, including creating, resetting,
+    and ending the batch ring buffer within the appropriate table AM
+    callbacks, and managing positional state and TID recycling interlocking
+    (that is, determining when to unguard each batch by releasing its index
+    page buffer pin).  Index access methods should not access or manipulate
+    these fields.  See the
+    <filename>src/backend/access/heap/heapam_indexscan.c</filename>
+    implementation for a reference example.
    </para>
 
    <para>
@@ -1403,8 +1408,8 @@ amtranslatecmptype (CompareType cmptype, Oid opfamily, Oid opcintype);
     <structfield>batchringbuf</structfield> tracks which batch and item within
     that batch will be returned next to the executor.  The table AM must advance
     <structfield>scanPos</structfield> as tuples are returned by
-    <function>table_index_getnext_slot</function>.  The core code may also
-    modify this field during operations such as mark/restore.
+    <function>table_index_getnext_slot</function>, and must also modify this
+    field during operations such as mark/restore.
    </para>
 
    <para>
@@ -1423,16 +1428,8 @@ amtranslatecmptype (CompareType cmptype, Oid opfamily, Oid opcintype);
    </para>
 
    <para>
-    Both <structfield>scanPos</structfield> and
-    <structfield>prefetchPos</structfield> are controlled by the table AM and
-    core code; index access methods should not access or manipulate these
-    fields.  See the <filename>src/backend/access/heap/heapam_indexscan.c</filename>
-    implementation for a reference example.
-   </para>
-
-   <para>
-    For details on buffer pin management during batch scans, including the
-    <structfield>batchImmediateUnguard</structfield> policy and the
+    For details on the TID recycling interlock during batch scans, including
+    the <structfield>batchImmediateUnguard</structfield> policy and the
     <function>amunguardbatch</function> callback, see
     <xref linkend="index-locking"/>.
    </para>
