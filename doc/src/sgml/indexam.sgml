@@ -940,11 +940,16 @@ amkillitemsbatch (IndexScanDesc scan,
    the index page's item pointers, since both are in ascending offset order.
    This also means the table AM need not call
    <function>tableam_util_scanpos_killitem</function> in any particular order.
-   (Index access methods using <function>amgettuple</function> rely on the
-   <structfield>kill_prior_tuple</structfield> mechanism instead to mark dead
-   tuples; the <filename>src/backend/access/gist/</filename> implementation
-   provides a reference example.)
   </para>
+
+  <note>
+   <para>
+    Index access methods using <function>amgettuple</function> rely on the
+    <structfield>kill_prior_tuple</structfield> mechanism instead to mark dead
+    tuples; the <filename>src/backend/access/gist/</filename> implementation
+    provides a reference example.
+   </para>
+  </note>
 
   <para>
    When implementing <function>amkillitemsbatch</function>, the index AM
