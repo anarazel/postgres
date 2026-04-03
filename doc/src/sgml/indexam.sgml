@@ -1409,7 +1409,7 @@ amtranslatecmptype (CompareType cmptype, Oid opfamily, Oid opcintype);
     that batch will be returned next to the executor.  The table AM must advance
     <structfield>scanPos</structfield> as tuples are returned by
     <function>table_index_getnext_slot</function>, and must also modify this
-    field during operations such as mark/restore.
+    field when restoring a saved mark.
    </para>
 
    <para>
