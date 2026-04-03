@@ -421,12 +421,15 @@ index_endscan(IndexScanDesc scan)
 	 */
 	if (!scan->usebatchring && scan->batchcache[0] != NULL)
 	{
-		Assert(scan->heapRelation == NULL);
+		Assert(scan->xs_heapfetch == NULL);
 		Assert(scan->indexRelation->rd_indam->amgetbatch != NULL);
 		pfree(index_scan_batch_base(scan, scan->batchcache[0]));
 	}
 
-	/* Release resources (like buffer pins) from table accesses */
+	/*
+	 * Release resources (like buffer pins and batch ring buffer) from table
+	 * accesses
+	 */
 	if (scan->xs_heapfetch)
 	{
 		table_index_fetch_end(scan);
