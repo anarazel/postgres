@@ -115,8 +115,8 @@ hashhandler(PG_FUNCTION_ARGS)
 		.amrescan = hashrescan,
 		.amgettuple = NULL,
 		.amgetbatch = hashgetbatch,
-		.amkillitemsbatch = hashkillitemsbatch,
 		.amunguardbatch = hashunguardbatch,
+		.amkillitemsbatch = hashkillitemsbatch,
 		.amgetbitmap = hashgetbitmap,
 		.amendscan = hashendscan,
 		.amposreset = NULL,
@@ -406,6 +406,24 @@ hashrescan(IndexScanDesc scan, ScanKey scankey, int nscankeys,
 }
 
 /*
+ *	hashunguardbatch() -- Drop batch's TID recycling interlock (buffer pin)
+ *
+ * Called by the table AM when it's safe to drop the buffer pin held to
+ * prevent concurrent TID recycling by VACUUM.
+ */
+void
+hashunguardbatch(IndexScanDesc scan, IndexScanBatch batch)
+{
+	HashBatchData *hashbatch = HashBatchGetData(scan, batch);
+
+	/* Should be called exactly once iff !batchImmediateUnguard */
+	Assert(!scan->batchImmediateUnguard);
+	Assert(batch->isGuarded);
+
+	ReleaseBuffer(hashbatch->buf);
+}
+
+/*
  *	hashkillitemsbatch() -- Mark dead items' index tuples LP_DEAD
  */
 void
@@ -490,24 +508,6 @@ hashkillitemsbatch(IndexScanDesc scan, IndexScanBatch batch)
 
 unlock_page:
 	_hash_relbuf(rel, buf);
-}
-
-/*
- *	hashunguardbatch() -- Drop batch's TID recycling interlock (buffer pin)
- *
- * Called by the table AM when it's safe to drop the buffer pin held to
- * prevent concurrent TID recycling by VACUUM.
- */
-void
-hashunguardbatch(IndexScanDesc scan, IndexScanBatch batch)
-{
-	HashBatchData *hashbatch = HashBatchGetData(scan, batch);
-
-	/* Should be called exactly once iff !batchImmediateUnguard */
-	Assert(!scan->batchImmediateUnguard);
-	Assert(batch->isGuarded);
-
-	ReleaseBuffer(hashbatch->buf);
 }
 
 /*

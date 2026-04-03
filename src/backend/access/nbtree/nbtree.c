@@ -163,8 +163,8 @@ bthandler(PG_FUNCTION_ARGS)
 		.amrescan = btrescan,
 		.amgettuple = NULL,
 		.amgetbatch = btgetbatch,
-		.amkillitemsbatch = btkillitemsbatch,
 		.amunguardbatch = btunguardbatch,
+		.amkillitemsbatch = btkillitemsbatch,
 		.amgetbitmap = btgetbitmap,
 		.amendscan = btendscan,
 		.amposreset = btposreset,
@@ -375,6 +375,24 @@ btrescan(IndexScanDesc scan, ScanKey scankey, int nscankeys,
 }
 
 /*
+ *	btunguardbatch() -- Drop batch's TID recycling interlock (buffer pin)
+ *
+ * Called by the table AM when it's safe to drop the buffer pin held to
+ * prevent concurrent TID recycling by VACUUM.
+ */
+void
+btunguardbatch(IndexScanDesc scan, IndexScanBatch batch)
+{
+	BTBatchData *btbatch = BTBatchGetData(scan, batch);
+
+	/* Should be called exactly once iff !batchImmediateUnguard */
+	Assert(!scan->batchImmediateUnguard);
+	Assert(batch->isGuarded);
+
+	ReleaseBuffer(btbatch->buf);
+}
+
+/*
  *	btkillitemsbatch() -- Mark dead items' index tuples LP_DEAD
  */
 void
@@ -521,24 +539,6 @@ btkillitemsbatch(IndexScanDesc scan, IndexScanBatch batch)
 
 unlock_page:
 	_bt_relbuf(rel, buf);
-}
-
-/*
- *	btunguardbatch() -- Drop batch's TID recycling interlock (buffer pin)
- *
- * Called by the table AM when it's safe to drop the buffer pin held to
- * prevent concurrent TID recycling by VACUUM.
- */
-void
-btunguardbatch(IndexScanDesc scan, IndexScanBatch batch)
-{
-	BTBatchData *btbatch = BTBatchGetData(scan, batch);
-
-	/* Should be called exactly once iff !batchImmediateUnguard */
-	Assert(!scan->batchImmediateUnguard);
-	Assert(batch->isGuarded);
-
-	ReleaseBuffer(btbatch->buf);
 }
 
 /*

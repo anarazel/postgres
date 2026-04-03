@@ -203,13 +203,13 @@ typedef IndexScanBatch (*amgetbatch_function) (IndexScanDesc scan,
 											   IndexScanBatch priorbatch,
 											   ScanDirection direction);
 
-/* mark dead items in index page */
-typedef void (*amkillitemsbatch_function) (IndexScanDesc scan,
-										   IndexScanBatch batch);
-
 /* drop TID recycling interlock held to prevent concurrent VACUUM recycling */
 typedef void (*amunguardbatch_function) (IndexScanDesc scan,
 										 IndexScanBatch batch);
+
+/* mark dead items in index page */
+typedef void (*amkillitemsbatch_function) (IndexScanDesc scan,
+										   IndexScanBatch batch);
 
 /* fetch all valid tuples */
 typedef int64 (*amgetbitmap_function) (IndexScanDesc scan,
@@ -321,8 +321,8 @@ typedef struct IndexAmRoutine
 	amrescan_function amrescan;
 	amgettuple_function amgettuple; /* can be NULL */
 	amgetbatch_function amgetbatch; /* can be NULL */
-	amkillitemsbatch_function amkillitemsbatch; /* can be NULL */
 	amunguardbatch_function amunguardbatch; /* can be NULL */
+	amkillitemsbatch_function amkillitemsbatch; /* can be NULL */
 	amgetbitmap_function amgetbitmap;	/* can be NULL */
 	amendscan_function amendscan;
 	amposreset_function amposreset; /* can be NULL */

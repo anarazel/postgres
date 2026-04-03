@@ -1072,8 +1072,8 @@ extern IndexScanBatch btgetbatch(IndexScanDesc scan,
 extern int64 btgetbitmap(IndexScanDesc scan, TIDBitmap *tbm);
 extern void btrescan(IndexScanDesc scan, ScanKey scankey, int nscankeys,
 					 ScanKey orderbys, int norderbys);
-extern void btkillitemsbatch(IndexScanDesc scan, IndexScanBatch batch);
 extern void btunguardbatch(IndexScanDesc scan, IndexScanBatch batch);
+extern void btkillitemsbatch(IndexScanDesc scan, IndexScanBatch batch);
 extern void btparallelrescan(IndexScanDesc scan);
 extern void btendscan(IndexScanDesc scan);
 extern void btposreset(IndexScanDesc scan, IndexScanBatch batch);

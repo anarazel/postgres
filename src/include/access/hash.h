@@ -328,8 +328,8 @@ extern int64 hashgetbitmap(IndexScanDesc scan, TIDBitmap *tbm);
 extern IndexScanDesc hashbeginscan(Relation rel, int nkeys, int norderbys);
 extern void hashrescan(IndexScanDesc scan, ScanKey scankey, int nscankeys,
 					   ScanKey orderbys, int norderbys);
-extern void hashkillitemsbatch(IndexScanDesc scan, IndexScanBatch batch);
 extern void hashunguardbatch(IndexScanDesc scan, IndexScanBatch batch);
+extern void hashkillitemsbatch(IndexScanDesc scan, IndexScanBatch batch);
 extern void hashendscan(IndexScanDesc scan);
 extern IndexBulkDeleteResult *hashbulkdelete(IndexVacuumInfo *info,
 											 IndexBulkDeleteResult *stats,
