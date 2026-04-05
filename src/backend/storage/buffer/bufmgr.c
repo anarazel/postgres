@@ -1604,6 +1604,10 @@ StartReadBuffersImpl(ReadBuffersOperation *operation,
  * buffers must remain valid until WaitReadBuffers() is called, and any
  * forwarded buffers must also be preserved for a continuing call unless
  * they are explicitly released.
+ *
+ * If true was returned, the memory underlying the ReadBuffersOperation needs
+ * to stay around until either WaitReadBuffers() or AbandonReadBuffers() is
+ * called (or an error is thrown).
  */
 bool
 StartReadBuffers(ReadBuffersOperation *operation,
@@ -2163,6 +2167,36 @@ AsyncReadBuffers(ReadBuffersOperation *operation, int *nblocks_progress)
 	*nblocks_progress = io_buffers_len;
 
 	return true;
+}
+
+/*
+ * Declare that this backend is not interested in the operation anymore. This
+ * needs to be called if StartReadBuffers() returned true and the
+ * ReadBuffersOperation is to be freed without calling WaitReadBuffers()
+ * (leaving errors aside).
+ *
+ * It is the caller's responsibility to release buffer pins (seems simpler
+ * that way, as that already is required if no IO had been necessary).
+ */
+void
+AbandonReadBuffers(ReadBuffersOperation *operation)
+{
+	PgAioWaitRef io_wref = operation->io_wref;
+
+	/* see equivalent WaitReadBuffers() check */
+	if (!pgaio_wref_valid(&io_wref) && io_method != IOMETHOD_SYNC)
+		elog(ERROR, "abandoning read operation that didn't read");
+
+	if (!pgaio_wref_valid(&io_wref))
+		return;
+
+	pgaio_wref_clear(&operation->io_wref);
+
+	/* can't abandon foreign IOs (nor do we need to) */
+	if (operation->foreign_io)
+		operation->foreign_io = false;
+	else
+		pgaio_wref_abandon(&io_wref);
 }
 
 /*

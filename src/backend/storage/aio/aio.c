@@ -152,11 +152,15 @@ const IoMethodOps *pgaio_method_ops;
  * operation succeeded and details about the first failure, if any. The error
  * can be raised / logged with pgaio_result_report().
  *
- * The lifetime of the memory pointed to be *ret needs to be at least as long
- * as the passed in resowner. If the resowner releases resources before the IO
- * completes (typically due to an error), the reference to *ret will be
- * cleared. In case of resowner cleanup *ret will not be updated with the
- * results of the IO operation.
+ * The lifetime of the memory pointed to by *ret needs to be at least as long
+ * as the passed in resowner.
+ *
+ * If the resowner releases resources before the IO completes (typically due
+ * to an error), the reference to *ret will be cleared. In case of resowner
+ * cleanup *ret will not be updated with the results of the IO operation.
+ *
+ * If the caller loses interest in the IO before completion
+ * pgaio_wref_abandon() can be used.
  */
 PgAioHandle *
 pgaio_io_acquire(struct ResourceOwnerData *resowner, PgAioReturn *ret)
@@ -278,6 +282,14 @@ pgaio_io_release_resowner(dlist_node *ioh_node, bool on_error)
 	ResourceOwnerForgetAioHandle(ioh->resowner, &ioh->resowner_node);
 	ioh->resowner = NULL;
 
+	/*
+	 * Need to unregister the reporting of the IO's result, the memory it's
+	 * referencing likely has gone away. Do so before potentially waiting
+	 * below, as that could cause the undesired writes.
+	 */
+	if (ioh->report_return)
+		ioh->report_return = NULL;
+
 	switch ((PgAioHandleState) ioh->state)
 	{
 		case PGAIO_HS_IDLE:
@@ -300,21 +312,31 @@ pgaio_io_release_resowner(dlist_node *ioh_node, bool on_error)
 			if (!on_error)
 				elog(WARNING, "AIO handle was not submitted");
 			pgaio_submit_staged();
-			break;
+
+			/* now that the IO is submitted, need to wait */
+			pg_fallthrough;
 		case PGAIO_HS_SUBMITTED:
 		case PGAIO_HS_COMPLETED_IO:
 		case PGAIO_HS_COMPLETED_SHARED:
 		case PGAIO_HS_COMPLETED_LOCAL:
-			/* this is expected to happen */
+
+			/*
+			 * This is expected to happen, e.g. after an error or after
+			 * pgaio_wref_abandon() was called.
+			 *
+			 * For now always wait for the IO's completion during resowner
+			 * cleanup. This provides a bound on how long after an error or
+			 * pgaio_wref_abandon() an IO handle will show up as used and how
+			 * long an uncompleted IO can cause resources to be retained.
+			 *
+			 * It is quite possible that we eventually want to support IO
+			 * operations that last longer, e.g. for WAL writes in the
+			 * background. If so we will either need to use a longer lived
+			 * resowner or add a flag controlling when this cleanup happens.
+			 */
+			pgaio_io_wait(ioh, ioh->generation);
 			break;
 	}
-
-	/*
-	 * Need to unregister the reporting of the IO's result, the memory it's
-	 * referencing likely has gone away.
-	 */
-	if (ioh->report_return)
-		ioh->report_return = NULL;
 
 	RESUME_INTERRUPTS();
 }
@@ -1048,6 +1070,58 @@ pgaio_wref_check_done(PgAioWaitRef *iow)
 	}
 
 	return false;
+}
+
+/*
+ * Declare that a wait reference to an IO, started by this backend, is not of
+ * interest to this backend anymore. Once called, the PgAioReturn *ret passed
+ * to pgaio_io_acquire[_nb]() will not be updated anymore and thus can be
+ * freed.
+ */
+void
+pgaio_wref_abandon(PgAioWaitRef *iow)
+{
+	uint64		ref_generation;
+	bool		am_owner;
+	PgAioHandle *ioh;
+	PgAioHandleState state;
+
+	ioh = pgaio_io_from_wref(iow, &ref_generation);
+
+	am_owner = ioh->owner_procno == MyProcNumber;
+
+	/*
+	 * It is safe to perform this check before checking if the IO was recycled
+	 * (and before we hold interrupts) as the owner of an IO cannot change.
+	 */
+	if (!am_owner)
+		elog(ERROR, "only IOs owned by current backend can be abandoned");
+
+	/*
+	 * To ensure that the IO won't be recycled while we check (e.g. during the
+	 * emission of a debug message).
+	 */
+	HOLD_INTERRUPTS();
+
+	if (!pgaio_io_was_recycled(ioh, ref_generation, &state))
+	{
+		pgaio_debug_io(DEBUG3, ioh,
+					   "discarding result %p, resowner: %p",
+					   ioh->report_return, ioh->resowner);
+
+		if (state < PGAIO_HS_SUBMITTED)
+			elog(ERROR, "abandoning IO in wrong state: %d", state);
+
+		/*
+		 * All we need to do to abandon the IO is to clear its report_return
+		 * field. Without that we could end up writing to freed/reused memory
+		 * when the IO completes.
+		 */
+		if (ioh->report_return)
+			ioh->report_return = NULL;
+	}
+
+	RESUME_INTERRUPTS();
 }
 
 
