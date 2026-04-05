@@ -551,22 +551,10 @@ indexam_util_batch_alloc(IndexScanDesc scan)
 	IndexScanBatch batch = NULL;
 	bool		new_alloc = false;
 
-	/*
-	 * Lazily compute batch_table_offset on first allocation.  This combines
-	 * the table AM and index AM opaque sizes into a single offset that can be
-	 * used to find the table AM opaque area (and the true allocation base)
-	 * from the batch pointer.
-	 */
-	if (scan->batch_table_offset == 0 &&
-		(scan->batch_index_opaque_size > 0 ||
-		 (scan->xs_heapfetch && scan->xs_heapfetch->batch_opaque_size > 0)))
-	{
-		uint16		table_opaque = scan->xs_heapfetch ?
-			scan->xs_heapfetch->batch_opaque_size : 0;
-
-		scan->batch_table_offset = table_opaque +
-			scan->batch_index_opaque_size;
-	}
+	/* Index AM must have set its opaque space to something already */
+	Assert(scan->batch_index_opaque_size > 0);
+	Assert(scan->batch_index_opaque_size ==
+		   MAXALIGN(scan->batch_index_opaque_size));
 
 	/* First look for an existing batch from the cache */
 	if (scan->usebatchring)
@@ -596,61 +584,85 @@ indexam_util_batch_alloc(IndexScanDesc scan)
 	{
 		Size		prefix_sz;
 		Size		base_sz;
-		Size		trailing_sz;
+		Size		ios_table_trailing_sz,
+					ios_total_trailing_sz;
 		Size		allocsz;
 		char	   *raw;
 
+		/*
+		 * Lazily compute batch_base_offset on first call here for scan.
+		 *
+		 * This combines the fixed-size table AM and index AM opaque sizes
+		 * into a single offset that can be used to find the true allocation
+		 * base from the batch pointer. (This is also where the fixed-sized
+		 * table AM opaque area can be found.)
+		 */
+		if (scan->batch_base_offset == 0)
+		{
+			uint16		table_opaque = scan->xs_heapfetch ?
+				scan->xs_heapfetch->batch_opaque_size : 0;
+
+			scan->batch_base_offset = table_opaque +
+				scan->batch_index_opaque_size;
+		}
+
 		/* AM opaque areas before the batch pointer */
-		prefix_sz = scan->batch_table_offset;
+		prefix_sz = scan->batch_base_offset;
+		Assert(prefix_sz == MAXALIGN(prefix_sz));
 
 		/* IndexScanBatchData header + items[] */
-		base_sz = offsetof(IndexScanBatchData, items) +
-			sizeof(BatchMatchingItem) * scan->maxitemsbatch;
+		base_sz = MAXALIGN(offsetof(IndexScanBatchData, items) +
+						   sizeof(BatchMatchingItem) * scan->maxitemsbatch);
 
 		/*
-		 * Trailing data after items[]: per-item data (owned by table AM),
-		 * then currTuples workspace (owned by index AM, read by table AM)
+		 * Trailing data after items[] used during index-only scans: per-item
+		 * data (owned by table AM), then currTuples workspace (owned by index
+		 * AM, read by table AM).
+		 *
+		 * We avoid assuming that table AM actually requires any per-item
+		 * trailing space during index-only scans.
 		 */
-		trailing_sz = 0;
-		if (scan->xs_want_itup)
+		ios_table_trailing_sz = 0;
+		if (scan->xs_want_itup && scan->xs_heapfetch->batch_per_item_size > 0)
 		{
-			if (scan->xs_heapfetch &&
-				scan->xs_heapfetch->batch_per_item_size > 0)
-				trailing_sz += MAXALIGN(scan->xs_heapfetch->batch_per_item_size *
-										scan->maxitemsbatch);
-			trailing_sz += scan->batch_tuples_workspace;
+			ios_table_trailing_sz =
+				MAXALIGN(scan->xs_heapfetch->batch_per_item_size *
+						 scan->maxitemsbatch);
 		}
 
-		allocsz = prefix_sz + MAXALIGN(base_sz) + trailing_sz;
+		/*
+		 * Total trailing size for an index-only scan's batch is the sum of
+		 * the two trailing spaces
+		 */
+		ios_total_trailing_sz = ios_table_trailing_sz +
+			scan->batch_tuples_workspace;
+
+		/*
+		 * Total batch size is the sum of the three subtotals
+		 */
+		allocsz = prefix_sz + base_sz + ios_total_trailing_sz;
 		raw = palloc(allocsz);
 		batch = (IndexScanBatch) (raw + prefix_sz);
+		Assert(index_scan_batch_base(scan, batch) == raw);
 
-		/* Set up currTuples pointer for index-only scans */
-		if (scan->xs_want_itup && scan->batch_tuples_workspace > 0)
-		{
-			Size		itemsEnd = MAXALIGN(base_sz);
-			Size		tableTrailing = 0;
+		/* CurrTuples (if any) is directly after IoS trailing table space */
+		batch->currTuples = NULL;
+		if (scan->xs_want_itup)
+			batch->currTuples = (char *) batch + base_sz + ios_table_trailing_sz;
 
-			if (scan->xs_heapfetch &&
-				scan->xs_heapfetch->batch_per_item_size > 0)
-				tableTrailing = MAXALIGN(scan->xs_heapfetch->batch_per_item_size *
-										 scan->maxitemsbatch);
-			batch->currTuples = (char *) batch + itemsEnd + tableTrailing;
-		}
-		else
-			batch->currTuples = NULL;
+		/* Always need to at least allocate currTuples for index-only scans */
+		Assert(!scan->xs_want_itup || batch->currTuples != NULL);
 
 		/*
-		 * Batches allocate deadItems lazily (though note that cached batches
-		 * keep their deadItems allocation when recycled)
+		 * Batches get their own palloc'd deadItems as needed (though cached
+		 * batches keep their deadItems allocation when recycled)
 		 */
 		batch->deadItems = NULL;
 		new_alloc = true;
 	}
 
-	/* xs_want_itup scans must get a currTuples space */
-	Assert(!(scan->xs_want_itup && scan->batch_tuples_workspace > 0 &&
-			 batch->currTuples == NULL));
+	/* We had better have computed batch_base_offset by now */
+	Assert(scan->batch_base_offset > 0);
 
 	/* Let the table AM initialize its per-batch opaque area */
 	if (scan->xs_heapfetch)

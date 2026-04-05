@@ -130,7 +130,8 @@ RelationGetIndexScan(Relation indexRelation, int nkeys, int norderbys)
 
 	scan->batch_index_opaque_size = 0;
 	scan->batch_tuples_workspace = 0;
-	scan->batch_table_offset = 0;
+	scan->batch_base_offset = 0;
+
 	scan->xs_visited_pages_limit = 0;
 
 	return scan;

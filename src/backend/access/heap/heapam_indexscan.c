@@ -121,8 +121,11 @@ heapam_index_fetch_begin(IndexScanDesc scan, uint32 flags)
 {
 	IndexFetchHeapData *hscan = palloc0_object(IndexFetchHeapData);
 
+	/* Indicate how much memory HeapBatchData will take from each batch */
 	hscan->xs_base.batch_opaque_size = MAXALIGN(sizeof(HeapBatchData));
-	hscan->xs_base.batch_per_item_size = sizeof(uint8); /* visInfo element size */
+	/* Indicate per-item visInfo element overhead (for index-only scans) */
+	hscan->xs_base.batch_per_item_size = sizeof(uint8);
+
 	hscan->xs_base.flags = flags;
 
 	/* Current heap block state */

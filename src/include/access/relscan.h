@@ -134,10 +134,10 @@ typedef struct ParallelBlockTableScanWorkerData *ParallelBlockTableScanWorker;
  */
 typedef struct IndexFetchTableData
 {
-	/* Table AM per-batch opaque area size (MAXALIGN'd), set by AM */
+	/* Table AM fixed-size opaque area size, set by AM (MAXALIGN'd) */
 	uint16		batch_opaque_size;
 
-	/* Per-item trailing data size in each batch */
+	/* Per-item trailing data size in each batch (for index-only scans) */
 	uint16		batch_per_item_size;
 
 	/*
@@ -180,7 +180,7 @@ typedef struct BatchMatchingItem
  *
  * Each batch allocation has the following memory layout:
  *
- *   [table AM opaque area]    <- allocation base, at -(batch_table_offset)
+ *   [table AM opaque area]    <- allocation base, at -(batch_base_offset)
  *   [index AM opaque area]    <- at -(batch_index_opaque_size)
  *   [IndexScanBatchData]      <- batch pointer, returned by amgetbatch
  *   [items[maxitemsbatch]]
@@ -188,7 +188,7 @@ typedef struct BatchMatchingItem
  *   [currTuples workspace]    <- index AM stores index tuples here for
  *                                index-only scans (batch_tuples_workspace)
  *
- * batch_table_offset combines both AM opaque sizes into a single offset from
+ * batch_base_offset combines both AM opaque sizes into a single offset from
  * the batch pointer to the true allocation base.  The indexbatch.c utilities
  * pfree a batch by passing pfree a pointer returned by index_scan_batch_base.
  * We rely on the assumption that batches have a fixed layout for the duration
@@ -410,8 +410,8 @@ typedef struct IndexScanDescData
 	uint16		batch_index_opaque_size;	/* MAXALIGN'd index AM opaque size */
 	uint16		batch_tuples_workspace; /* currTuples workspace size */
 
-	/* Computed offset, used to get table AM's opaque area from a batch */
-	uint16		batch_table_offset;
+	/* Offset used by index_scan_batch_base (computed lazily) */
+	uint16		batch_base_offset;
 
 	/*
 	 * When fetching with an ordering operator, the values of the ORDER BY
@@ -520,7 +520,9 @@ index_scan_batch_append(IndexScanDescData *scan, IndexScanBatch batch)
 static inline void *
 index_scan_batch_base(IndexScanDescData *scan, IndexScanBatch batch)
 {
-	return (char *) batch - scan->batch_table_offset;
+	Assert(scan->batch_base_offset > 0);
+
+	return (char *) batch - scan->batch_base_offset;
 }
 
 /*
