@@ -801,11 +801,12 @@ heapam_index_getnext_scanbatch_pos(IndexScanDesc scan, IndexFetchHeapData *hscan
 			 * freed up one such slot, we can resume the read stream (since
 			 * there's now space for heapam_index_prefetch_next_block to store
 			 * one more batch).
+			 *
+			 * Note: It's just about possible that prefetchPos was just (or is
+			 * just about to be) invalidated with low INDEX_SCAN_MAX_BATCHES.
 			 */
-			Assert(prefetchPos->batch != scanPos->batch);
-			Assert(prefetchPos->valid &&
+			Assert(!prefetchPos->valid ||
 				   index_scan_batch_loaded(scan, prefetchPos->batch));
-			Assert(index_scan_pos_cmp(prefetchPos, scanPos, direction) > 0);
 			Assert(!index_scan_batch_full(scan));
 
 			read_stream_resume(hscan->xs_read_stream);
