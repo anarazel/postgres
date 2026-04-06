@@ -682,12 +682,208 @@ heapam_index_consider_prefetching(IndexScanDesc scan,
 }
 
 /*
+ * Sketch of a generic helper for moving the scan position ahead, fetching
+ * additional batches if necessary.
+ */
+static pg_attribute_always_inline IndexScanBatch
+tableam_util_next_batch_pos(IndexScanDesc scan,
+							ScanDirection direction,
+							BatchRingItemPos **scanPosP,
+							BatchRingItemPos **prefetchPosP,
+							bool *firstBatch,
+							bool *sameBatch)
+{
+	IndexScanBatch scanBatch = NULL;
+	bool		hadExistingScanBatch;
+	BatchRingBuffer *batchringbuf = &scan->batchringbuf;
+	BatchRingItemPos *scanPos = &batchringbuf->scanPos;
+	BatchRingItemPos *prefetchPos = &batchringbuf->prefetchPos;
+
+	Assert(!scanPos->valid || batchringbuf->headBatch == scanPos->batch);
+	Assert(scanPos->valid || index_scan_batch_count(scan) == 0);
+
+	/*
+	 * Check if there's an existing loaded scanBatch for us to return the next
+	 * matching item's TID/index tuple from
+	 */
+	hadExistingScanBatch = scanPos->valid;
+	*firstBatch = !scanPos->valid;
+	if (scanPos->valid)
+	{
+		/*
+		 * scanPos is valid, so scanBatch must already be loaded in batch ring
+		 * buffer.  We rely on that here (can't do this with prefetchBatch).
+		 */
+		pg_assume(batchringbuf->headBatch == scanPos->batch);
+
+		scanBatch = index_scan_batch(scan, scanPos->batch);
+
+		if (index_scan_pos_advance(direction, scanBatch, scanPos))
+		{
+			*scanPosP = scanPos;
+			*prefetchPosP = prefetchPos;
+			*sameBatch = true;
+			return scanBatch;
+		}
+	}
+
+	/*
+	 * Either ran out of items from our existing scanBatch, or it hasn't been
+	 * loaded yet (because this is the first call here for the entire scan).
+	 * Try to advance scanBatch to the next batch (or get the first batch).
+	 */
+	scanBatch = tableam_util_fetch_next_batch(scan, direction,
+											  scanBatch, scanPos);
+
+	if (!scanBatch)
+	{
+		/*
+		 * We're done; no more batches in the current scan direction.
+		 *
+		 * Note: scanPos is generally still valid at this point.  The scan
+		 * might still back up in the other direction.
+		 */
+		return NULL;
+	}
+
+	*sameBatch = false;
+
+	/*
+	 * Advanced scanBatch.  Now position scanPos to the start of new
+	 * scanBatch.
+	 */
+	index_scan_pos_nextbatch(direction, scanBatch, scanPos);
+	Assert(index_scan_batch(scan, scanPos->batch) == scanBatch);
+
+	/*
+	 * Remove the head batch from the batch ring buffer (except when this new
+	 * scanBatch is our only one)
+	 */
+	if (hadExistingScanBatch)
+	{
+		IndexScanBatch headBatch = index_scan_batch(scan,
+													batchringbuf->headBatch);
+
+		Assert(headBatch != scanBatch);
+		Assert(batchringbuf->headBatch != scanPos->batch);
+
+		/* free obsolescent head batch (unless it is scan's markBatch) */
+		tableam_util_free_batch(scan, headBatch);
+
+		/*
+		 * If we're about to release the batch that prefetchPos currently
+		 * points to, just invalidate prefetchPos.  See the comments about
+		 * prefetchPos/scanPos within heapam_index_prefetch_next_block for an
+		 * explanation.
+		 *
+		 * This handling is approximately the opposite of resuming a paused
+		 * read stream: this helps the scan deal with prefetchPos falling
+		 * behind scanPos, whereas pausing is used when scanPos has fallen
+		 * behind (very far behind) prefetchPos.
+		 */
+		if (prefetchPos->valid &&
+			prefetchPos->batch == batchringbuf->headBatch)
+			prefetchPos->valid = false;
+
+		/* Remove the batch from the ring buffer (even if it's markBatch) */
+		batchringbuf->headBatch++;
+	}
+
+	*prefetchPosP = prefetchPos;
+	*scanPosP = scanPos;
+	return scanBatch;
+}
+
+/*
  * Get next TID from batch ring buffer, moving in the given scan direction.
  * Also sets *all_visible for item when caller passes a non-NULL arg.
  */
 static pg_attribute_always_inline ItemPointer
-heapam_index_getnext_scanbatch_pos(IndexScanDesc scan, IndexFetchHeapData *hscan,
-								   ScanDirection direction, bool *all_visible)
+heapam_index_getnext_tid_batch(IndexScanDesc scan, IndexFetchHeapData *hscan,
+							   ScanDirection direction, bool *all_visible)
+{
+	IndexScanBatch scanBatch = NULL;
+	/*
+	 * XXX: seems like it'd be quite nice to not have to access the
+	 * batchringbuf here inside the AM specific code. But the direction stuff
+	 * makes that harder.
+	 *
+	 * Perhaps the last direction could be in IndexScanDesc and then returned
+	 * by the tableam_util_ helper?
+	 */
+	BatchRingBuffer *batchringbuf = &scan->batchringbuf;
+	BatchRingItemPos *scanPos;
+	BatchRingItemPos *prefetchPos;
+	bool		firstBatch, sameBatch;
+
+
+	Assert(all_visible == NULL || scan->xs_want_itup);
+
+	/* Handle resetting the read stream when scan direction changes */
+	if (hscan->xs_read_stream_dir == NoMovementScanDirection)
+		hscan->xs_read_stream_dir = direction;	/* first call */
+	else if (unlikely(hscan->xs_read_stream_dir != direction))
+		heapam_index_dirchange_reset(hscan, direction, batchringbuf);
+
+	/* update position in the current batch or go to the next batch */
+	scanBatch = tableam_util_next_batch_pos(scan, direction, &scanPos, &prefetchPos,
+											&firstBatch, &sameBatch);
+
+	/* and there was nothing, we're done, may eternity have us */
+	if (!scanBatch)
+		return NULL;
+
+	if (!sameBatch && !firstBatch)
+	{
+		/*
+		 * FIXME: Shouldn't !firstBatch/hadExistingBatch get passed to
+		 * heapam_index_consider_prefetching() and the decision be made therein?
+		 */
+		if (!hscan->xs_read_stream)
+		{
+			Assert(!prefetchPos->valid);
+
+			/*
+			 * Not using a read stream to do index prefetching.  Decide whether to
+			 * start one now.
+			 */
+			heapam_index_consider_prefetching(scan, hscan);
+		}
+
+		if (unlikely(hscan->xs_paused))
+		{
+			/*
+			 * heapam_index_prefetch_next_block paused the scan's read stream
+			 * due to our running out of free batch slots.  Now that we've
+			 * freed up one such slot, we can resume the read stream (since
+			 * there's now space for heapam_index_prefetch_next_block to store
+			 * one more batch).
+			 *
+			 * Note: It's just about possible that prefetchPos was just (or is
+			 * just about to be) invalidated with low INDEX_SCAN_MAX_BATCHES.
+			 */
+			Assert(!prefetchPos->valid ||
+				   index_scan_batch_loaded(scan, prefetchPos->batch));
+			Assert(!index_scan_batch_full(scan));
+
+			read_stream_resume(hscan->xs_read_stream);
+			hscan->xs_paused = false;
+		}
+	}
+
+	return heapam_index_return_scanpos_tid(scan, hscan, direction,
+										   scanBatch, scanPos,
+										   all_visible);
+}
+
+#if OLD_TO_COPY_FROM
+/*
+ * Get next TID from batch ring buffer, moving in the given scan direction.
+ * Also sets *all_visible for item when caller passes a non-NULL arg.
+ */
+static pg_attribute_always_inline ItemPointer
+heapam_index_getnext_tid_batch(IndexScanDesc scan, IndexFetchHeapData *hscan,
+							   ScanDirection direction, bool *all_visible)
 {
 	BatchRingBuffer *batchringbuf = &scan->batchringbuf;
 	BatchRingItemPos *scanPos = &batchringbuf->scanPos;
@@ -824,6 +1020,7 @@ heapam_index_getnext_scanbatch_pos(IndexScanDesc scan, IndexFetchHeapData *hscan
 	return heapam_index_return_scanpos_tid(scan, hscan, direction,
 										   scanBatch, scanPos, all_visible);
 }
+#endif
 
 /*
  * Access the heap-private fixed-size data from the beginning of an allocated
@@ -1406,10 +1603,10 @@ heapam_index_getnext_slot(IndexScanDesc scan, ScanDirection direction,
 		{
 			/* Get the next TID from the index */
 			if (amgetbatch)
-				tid = heapam_index_getnext_scanbatch_pos(scan, hscan,
-														 direction,
-														 index_only ?
-														 &all_visible : NULL);
+				tid = heapam_index_getnext_tid_batch(scan, hscan,
+													 direction,
+													 index_only ?
+													 &all_visible : NULL);
 			else
 				tid = index_getnext_tid(scan, direction);
 
