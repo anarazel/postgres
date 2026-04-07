@@ -92,6 +92,7 @@
 #include "tcop/tcopprot.h"
 #include "tsearch/ts_cache.h"
 #include "utils/builtins.h"
+#include "portability/instr_time.h"
 #include "utils/bytea.h"
 #include "utils/float.h"
 #include "utils/guc_hooks.h"
@@ -370,6 +371,15 @@ static const struct config_enum_entry huge_pages_options[] = {
 	{"no", HUGE_PAGES_OFF, true},
 	{"1", HUGE_PAGES_ON, true},
 	{"0", HUGE_PAGES_OFF, true},
+	{NULL, 0, false}
+};
+
+static const struct config_enum_entry timing_clock_source_options[] = {
+	{"auto", TIMING_CLOCK_SOURCE_AUTO, false},
+	{"system", TIMING_CLOCK_SOURCE_SYSTEM, false},
+#if PG_INSTR_TSC_CLOCK
+	{"tsc", TIMING_CLOCK_SOURCE_TSC, false},
+#endif
 	{NULL, 0, false}
 };
 
@@ -731,6 +741,7 @@ const char *const config_group_names[] =
 	[CONN_AUTH_TCP] = gettext_noop("Connections and Authentication / TCP Settings"),
 	[CONN_AUTH_AUTH] = gettext_noop("Connections and Authentication / Authentication"),
 	[CONN_AUTH_SSL] = gettext_noop("Connections and Authentication / SSL"),
+	[RESOURCES_TIME] = gettext_noop("Resource Usage / Time"),
 	[RESOURCES_MEM] = gettext_noop("Resource Usage / Memory"),
 	[RESOURCES_DISK] = gettext_noop("Resource Usage / Disk"),
 	[RESOURCES_KERNEL] = gettext_noop("Resource Usage / Kernel Resources"),
