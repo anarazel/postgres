@@ -4,6 +4,7 @@ name: Github Actions CI
 
 on:
   push:
+  # FIXME: Should we also run on PRs?
 
 # Restrict GITHUB_TOKEN to the minimum the jobs need: reading repo
 # contents during checkout.
@@ -13,6 +14,7 @@ permissions:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   # Never cancel in-progress runs on master to ensure all commits are tested.
+  # FIXME: Should also not cancel REL_XY_STABLE
   cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 env:
@@ -81,7 +83,8 @@ env:
 
   # Debian Trixie container image used by all Linux jobs. Built by
   # 'https://github.com/anarazel/pg-vm-images/'.
-  LINUX_CI_IMAGE: us-docker.pkg.dev/pg-ci-images/ci/linux_debian_trixie_ci:latest
+  LINUX_CI_IMAGE: ghcr.io/anarazel/pg-vm-images/gha_main/linux_debian_trixie_ci:latest
+  LINUX_CI_IMAGE_DOCS: ghcr.io/anarazel/pg-vm-images/gha_main/linux_debian_trixie_ci_docs:latest
 
   # The full set of OS / job selectors recognized by the `ci-os-only:`
   # commit-message directive parsed in the `setup` job below.
@@ -112,6 +115,7 @@ jobs:
       # from contexts (e.g. `jobs.<id>.container.image`) where the `env`
       # context is not available.
       linux_ci_image: ${{ env.LINUX_CI_IMAGE }}
+      linux_ci_image_docs: ${{ env.LINUX_CI_IMAGE_DOCS }}
     steps:
       - id: os
         env:
@@ -170,14 +174,15 @@ jobs:
         with:
           fetch-depth: ${{ env.CLONE_DEPTH }}
 
-      - name: Restore ccache
-        uses: actions/cache@v5
+      - &ccache_restore_step
+        name: Restore ccache
+        uses: actions/cache/restore@v5
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-sanitycheck-${{ github.ref_name }}-${{ github.run_id }}
+          key: ccache-${{ github.ref_name }}-${{ github.job }}-${{ matrix.slug }}-${{ github.run_id }}
           restore-keys: |
-            ccache-sanitycheck-${{ github.ref_name }}-
-            ccache-sanitycheck-
+            ccache-${{ github.ref_name }}-${{ github.job }}-${{ matrix.slug }}-
+            ccache-master-${{ github.job }}-${{ matrix.slug }}-
 
       - name: Prepare workspace
         run: |
@@ -205,6 +210,16 @@ jobs:
             set -e
             ninja -C build -j${BUILD_JOBS} ${MBUILD_TARGET}
           EOF
+
+      # FIXME: As long as we use per-run ccache caches, we should probably add
+      # a step that checks if there is sufficient new content to warrant
+      # saving the new cache.
+      - &ccache_save_step
+        name: Save ccache
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ github.ref_name }}-${{ github.job }}-${{ matrix.slug }}-${{ github.run_id }}
 
       # Run a minimal set of tests. The main regression tests take too long
       # for this purpose. For now this is a random quick pg_regress style
@@ -355,31 +370,25 @@ jobs:
       options: --pid=host --ipc=host --ulimit memlock=-1:-1 --privileged
     env:
       BUILD_JOBS: 4
-      TEST_JOBS: 8
+      TEST_JOBS: 4
       CCACHE_DIR: /tmp/ccache_dir
-      DEBUGINFOD_URLS: "https://debuginfod.debian.net"
+      DEBUGINFOD_URLS: "https://debuginfod.debian.net https://debuginfod.ubuntu.com"
 
       UBSAN_OPTIONS: print_stacktrace=1:disable_coredump=0:abort_on_error=1:verbosity=2
-      ASAN_OPTIONS: print_stacktrace=1:disable_coredump=0:abort_on_error=1:detect_leaks=0:detect_stack_use_after_return=0
-      CFLAGS: -Og -ggdb -fno-sanitize-recover=all ${{ matrix.sanitizer_flags }}
-      CXXFLAGS: -Og -ggdb -fno-sanitize-recover=all ${{ matrix.sanitizer_flags }}
+      ASAN_OPTIONS: print_stacktrace=1:disable_coredump=0:abort_on_error=1:detect_leaks=0
+      CFLAGS: -O2 -ggdb -fno-sanitize-recover=all ${{ matrix.sanitizer_flags }}
+      CXXFLAGS: -O2 -ggdb -fno-sanitize-recover=all ${{ matrix.sanitizer_flags }}
       LDFLAGS: ${{ matrix.sanitizer_flags }}
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
 
       PG_TEST_INITDB_EXTRA_OPTS: ${{ matrix.pg_test_initdb_extra_opts }}
       PG_TEST_PG_COMBINEBACKUP_MODE: ${{ matrix.pg_test_pg_combinebackup_mode }}
+
     steps:
       - *checkout_step
 
-      - name: Restore ccache
-        uses: actions/cache@v5
-        with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ccache-linux-${{ matrix.slug }}-${{ github.ref_name }}-${{ github.run_id }}
-          restore-keys: |
-            ccache-linux-${{ matrix.slug }}-${{ github.ref_name }}-
-            ccache-linux-${{ matrix.slug }}-
+      - *ccache_restore_step
 
       - name: Prepare workspace
         run: |
@@ -413,6 +422,8 @@ jobs:
             set -e
             ${{ matrix.build }}
           EOF
+
+      - *ccache_save_step
 
       - name: Test world
         run: |
@@ -497,8 +508,6 @@ jobs:
         -c debug_parallel_query=regress
 
     steps:
-      - *checkout_step
-
       - name: Sysinfo
         run: |
           id
@@ -506,21 +515,14 @@ jobs:
           ulimit -a -H && ulimit -a -S
           env
 
+      - *checkout_step
+
       - name: Setup core files
         run: |
           mkdir -p $HOME/cores
           sudo sysctl kern.corefile="$HOME/cores/core.%P"
 
-      - name: Restore ccache
-        uses: actions/cache@v5
-        with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ccache-macos-${{ github.ref_name }}-${{ github.run_id }}
-          restore-keys: |
-            ccache-macos-${{ github.ref_name }}-
-            ccache-macos-
-
-      - name: Compute MacPorts cache key
+      - name: "Macports: Compute cache key"
         id: mpkey
         run: |
           macos_major=$(sw_vers -productVersion | sed 's/\..*//')
@@ -529,7 +531,7 @@ jobs:
           echo "key=macports-${macos_major}-${pkglist_hash}-${script_hash}-${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
           echo "restore-key=macports-${macos_major}-${pkglist_hash}-${script_hash}-" >> "$GITHUB_OUTPUT"
 
-      - name: Restore MacPorts cache
+      - name: "MacPorts: Restore cache"
         uses: actions/cache@v5
         with:
           path: ${{ env.MACPORTS_CACHE }}
@@ -546,7 +548,7 @@ jobs:
       # the large macport tree around to figure out that p5-io-tty is
       # actually p5.34-io-tty. Using the unversioned name works, but
       # updates macports every time.
-      - name: Install dependencies (MacPorts)
+      - name: "MacPorts: Install dependencies"
         env:
           # Pass token so the script's GitHub API call to list MacPorts
           # releases isn't subject to the 60/hr/IP unauthenticated rate
@@ -559,6 +561,8 @@ jobs:
           # Make macports install visible to subsequent steps
           echo /opt/local/sbin >> "$GITHUB_PATH"
           echo /opt/local/bin >> "$GITHUB_PATH"
+
+      - *ccache_restore_step
 
       - name: Configure
         run: |
@@ -575,6 +579,8 @@ jobs:
 
       - name: Build
         run: ninja -C build -j${BUILD_JOBS} ${MBUILD_TARGET}
+
+      - *ccache_save_step
 
       - name: Test world
         run: |
@@ -844,14 +850,7 @@ jobs:
         shell: cmd
         run: mkdir %PG_REGRESS_SOCK_DIR%
 
-      - name: Restore ccache
-        uses: actions/cache@v5
-        with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ccache-mingw-${{ github.ref_name }}-${{ github.run_id }}
-          restore-keys: |
-            ccache-mingw-${{ github.ref_name }}-
-            ccache-mingw-
+      - *ccache_restore_step
 
       - name: Configure
         run: |
@@ -865,6 +864,8 @@ jobs:
 
       - name: Build
         run: ninja -C build ${MBUILD_TARGET}
+
+      - *ccache_save_step
 
       - name: Test world
         run: meson test ${MTEST_ARGS} --num-processes ${TEST_JOBS}
@@ -897,7 +898,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     container:
-      image: ${{ needs.setup.outputs.linux_ci_image }}
+      image: ${{ needs.setup.outputs.linux_ci_image_docs }}
     env:
       BUILD_JOBS: 4
       CCACHE_DIR: /tmp/ccache_dir
@@ -905,16 +906,6 @@ jobs:
       # compilers / flag combinations.
       CCACHE_MAXSIZE: "1G"
     steps:
-      - *checkout_step
-
-      - name: Restore ccache
-        uses: actions/cache@v5
-        with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ccache-compiler-warnings-${{ github.ref_name }}-${{ github.run_id }}
-          restore-keys: |
-            ccache-compiler-warnings-${{ github.ref_name }}-
-            ccache-compiler-warnings-
 
       - name: Sysinfo
         run: |
@@ -926,6 +917,10 @@ jobs:
           clang -v
           env
 
+      - *checkout_step
+
+      - *ccache_restore_step
+
       - name: Setup workspace
         run: |
           echo "COPT=-Werror" > src/Makefile.custom
@@ -933,76 +928,100 @@ jobs:
 
       # gcc, cassert off, dtrace on
       - name: gcc warnings + (dtrace)
-        if: always()
+        if: ${{ !cancelled() }}
         run: |
+          echo "::group::configure"
           ./configure \
             --cache gcc.cache \
             --enable-dtrace \
             ${LINUX_CONFIGURE_FEATURES} \
             CC="ccache gcc" CXX="ccache g++" CLANG="ccache clang"
+          echo "::endgroup::"
+          echo "::group::build"
           make -s -j${BUILD_JOBS} clean
           make -s -j${BUILD_JOBS} world-bin
+          echo "::endgroup::"
 
       # gcc, cassert on, dtrace off
       - name: gcc warnings + (cassert)
-        if: always()
+        if: ${{ !cancelled() }}
         run: |
+          echo "::group::configure"
           ./configure \
             --cache gcc.cache \
             --enable-cassert \
             ${LINUX_CONFIGURE_FEATURES} \
             CC="ccache gcc" CXX="ccache g++" CLANG="ccache clang"
+          echo "::endgroup::"
+          echo "::group::build"
           make -s -j${BUILD_JOBS} clean
           make -s -j${BUILD_JOBS} world-bin
+          echo "::endgroup::"
 
       # clang, cassert off, dtrace off
       - name: clang warnings
-        if: always()
+        if: ${{ !cancelled() }}
         run: |
+          echo "::group::configure"
           ./configure \
             --cache clang.cache \
             ${LINUX_CONFIGURE_FEATURES} \
             CC="ccache clang" CXX="ccache clang++" CLANG="ccache clang"
+          echo "::endgroup::"
+          echo "::group::build"
           make -s -j${BUILD_JOBS} clean
           make -s -j${BUILD_JOBS} world-bin
+          echo "::endgroup::"
 
       # clang, cassert on, dtrace on
       - name: clang warnings + (cassert + dtrace)
-        if: always()
+        if: ${{ !cancelled() }}
         run: |
+          echo "::group::configure"
           ./configure \
             --cache clang.cache \
             --enable-cassert \
             --enable-dtrace \
             ${LINUX_CONFIGURE_FEATURES} \
             CC="ccache clang" CXX="ccache clang++" CLANG="ccache clang"
+          echo "::endgroup::"
+          echo "::group::build"
           make -s -j${BUILD_JOBS} clean
           make -s -j${BUILD_JOBS} world-bin
+          echo "::endgroup::"
 
       - name: mingw warnings (cross compilation)
-        if: always()
+        if: ${{ !cancelled() }}
         run: |
+          echo "::group::configure"
           ./configure \
             --host=x86_64-w64-mingw32ucrt \
             --enable-cassert \
             --without-icu \
             CC="ccache x86_64-w64-mingw32ucrt-gcc" \
             CXX="ccache x86_64-w64-mingw32ucrt-g++"
+          echo "::endgroup::"
+          echo "::group::build"
           make -s -j${BUILD_JOBS} clean
           make -s -j${BUILD_JOBS} world-bin
+          echo "::endgroup::"
 
       ###
       # Verify docs can be built
       ###
       # XXX: Only do this if there have been changes in doc/ since last build
       - name: Build documentation
-        if: always()
+        if: ${{ !cancelled() }}
         run: |
+          echo "::group::configure"
           ./configure \
             --cache gcc.cache \
             CC="ccache gcc" CXX="ccache g++" CLANG="ccache clang"
+          echo "::endgroup::"
+          echo "::group::build"
           make -s -j${BUILD_JOBS} clean
           make -s -j${BUILD_JOBS} -C doc
+          echo "::endgroup::"
 
       ###
       # Verify headerscheck / cpluspluscheck succeed
@@ -1012,12 +1031,17 @@ jobs:
       # - Use -fmax-errors, as particularly cpluspluscheck can be very verbose
       ###
       - name: headerscheck + cpluspluscheck
-        if: always()
+        if: ${{ !cancelled() }}
         run: |
           ./configure \
             ${LINUX_CONFIGURE_FEATURES} \
             --cache gcc.cache \
             --quiet \
             CC="ccache gcc" CXX="ccache g++" CLANG="ccache clang"
+          echo "::endgroup::"
+          echo "::group::build"
           make -s -j${BUILD_JOBS} clean
           make -s -j${BUILD_JOBS} -k ${CHECKFLAGS} headerscheck cpluspluscheck EXTRAFLAGS='-fmax-errors=10'
+          echo "::endgroup::"
+
+      - *ccache_save_step
