@@ -373,6 +373,10 @@ jobs:
       PG_TEST_INITDB_EXTRA_OPTS: ${{ matrix.pg_test_initdb_extra_opts }}
       PG_TEST_PG_COMBINEBACKUP_MODE: ${{ matrix.pg_test_pg_combinebackup_mode }}
     steps:
+      - name: sysinfo
+        run: |
+          lsblk -o +model --fs || true
+
       - *checkout_step
 
       - *ccache_restore_step
@@ -396,6 +400,11 @@ jobs:
             127.0.0.3 pg-loadbalancetest
           EOF
 
+      - name: install
+        run: |
+          apt-get update
+          apt-get install -y sysstat
+
       - name: Configure
         run: |
           su postgres <<EOF
@@ -412,11 +421,22 @@ jobs:
 
       - name: Test world
         run: |
+          iostat -xy > iostat.log &
+          vmstat -y -n -w 1 > vmstat.log &
           su postgres <<EOF
             set -e
             ulimit -c unlimited
             ${{ matrix.test }}
           EOF
+          killall iostat vmstat || true
+
+      - name: Upload stats
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-iostats-${{ matrix.slug }}-logs-${{ github.run_id }}
+          path: |
+            iostat.log
+            vmstat.log
 
       - name: Core backtraces
         if: failure()
