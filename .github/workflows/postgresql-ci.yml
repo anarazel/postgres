@@ -4,6 +4,7 @@ name: Github Actions CI
 
 on:
   push:
+  # FIXME: Should we also run on PRs?
 
 # Restrict GITHUB_TOKEN to the minimum the jobs need: reading repo
 # contents during checkout.
@@ -13,6 +14,7 @@ permissions:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   # Never cancel in-progress runs on master to ensure all commits are tested.
+  # FIXME: Should also not cancel REL_XY_STABLE
   cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 env:
@@ -170,14 +172,15 @@ jobs:
         with:
           fetch-depth: ${{ env.CLONE_DEPTH }}
 
-      - name: Restore ccache
+      - &ccache_restore_step
+        name: Restore ccache
         uses: actions/cache@v5
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-sanitycheck-${{ github.ref_name }}-${{ github.run_id }}
+          key: ccache-${{ github.job}}-${{ github.ref_name }}-${{ github.run_id }}
           restore-keys: |
-            ccache-sanitycheck-${{ github.ref_name }}-
-            ccache-sanitycheck-
+            ccache-${{ github.job}}-${{ github.ref_name }}-
+            ccache-${{ github.job}}-master-
 
       - name: Prepare workspace
         run: |
@@ -372,14 +375,16 @@ jobs:
     steps:
       - *checkout_step
 
-      - name: Restore ccache
-        uses: actions/cache@v5
-        with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ccache-linux-${{ matrix.slug }}-${{ github.ref_name }}-${{ github.run_id }}
-          restore-keys: |
-            ccache-linux-${{ matrix.slug }}-${{ github.ref_name }}-
-            ccache-linux-${{ matrix.slug }}-
+      - *ccache_restore_step
+
+      #- name: Restore ccache
+      #  uses: actions/cache@v5
+      #  with:
+      #    path: ${{ env.CCACHE_DIR }}
+      #    key: ccache-linux-${{ matrix.slug }}-${{ github.ref_name }}-${{ github.run_id }}
+      #    restore-keys: |
+      #      ccache-linux-${{ matrix.slug }}-${{ github.ref_name }}-
+      #      ccache-linux-${{ matrix.slug }}-
 
       - name: Prepare workspace
         run: |
