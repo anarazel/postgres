@@ -377,15 +377,6 @@ jobs:
 
       - *ccache_restore_step
 
-      #- name: Restore ccache
-      #  uses: actions/cache@v5
-      #  with:
-      #    path: ${{ env.CCACHE_DIR }}
-      #    key: ccache-linux-${{ matrix.slug }}-${{ github.ref_name }}-${{ github.run_id }}
-      #    restore-keys: |
-      #      ccache-linux-${{ matrix.slug }}-${{ github.ref_name }}-
-      #      ccache-linux-${{ matrix.slug }}-
-
       - name: Prepare workspace
         run: |
           useradd -m postgres
@@ -516,14 +507,7 @@ jobs:
           mkdir -p $HOME/cores
           sudo sysctl kern.corefile="$HOME/cores/core.%P"
 
-      - name: Restore ccache
-        uses: actions/cache@v5
-        with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ccache-macos-${{ github.ref_name }}-${{ github.run_id }}
-          restore-keys: |
-            ccache-macos-${{ github.ref_name }}-
-            ccache-macos-
+      - *ccache_restore_step
 
       - name: Compute MacPorts cache key
         id: mpkey
@@ -770,7 +754,7 @@ jobs:
     env:
       TEST_JOBS: 4  # higher concurrency causes occasional failures
       PG_TEST_USE_UNIX_SOCKETS: 1
-      PG_REGRESS_SOCK_DIR: 'c:\pgsock\'
+      PG_REGRESS_SOCK_DIR: 'c:\pgsock'
       TAR: "c:/windows/system32/tar.exe"
       # for mingw plpython to find its installation
       PYTHONHOME: D:/a/_temp/msys64/ucrt64
@@ -836,14 +820,7 @@ jobs:
         shell: cmd
         run: mkdir %PG_REGRESS_SOCK_DIR%
 
-      - name: Restore ccache
-        uses: actions/cache@v5
-        with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ccache-mingw-${{ github.ref_name }}-${{ github.run_id }}
-          restore-keys: |
-            ccache-mingw-${{ github.ref_name }}-
-            ccache-mingw-
+      - *ccache_restore_step
 
       - name: Configure
         shell: msys2 {0}
@@ -902,14 +879,7 @@ jobs:
     steps:
       - *checkout_step
 
-      - name: Restore ccache
-        uses: actions/cache@v5
-        with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ccache-compiler-warnings-${{ github.ref_name }}-${{ github.run_id }}
-          restore-keys: |
-            ccache-compiler-warnings-${{ github.ref_name }}-
-            ccache-compiler-warnings-
+      - *ccache_restore_step
 
       - name: Sysinfo
         run: |
