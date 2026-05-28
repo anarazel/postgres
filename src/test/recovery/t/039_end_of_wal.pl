@@ -112,7 +112,8 @@ sub build_page_header
 # set to "minimal" avoids random standby snapshot records.  Autovacuum
 # could also trigger randomly, generating random WAL activity of its own.
 my $node = PostgreSQL::Test::Cluster->new("node");
-$node->init;
+$node->init(extra=>['--wal-segsize=16']);
+
 $node->append_conf(
 	'postgresql.conf',
 	q[wal_level = minimal
