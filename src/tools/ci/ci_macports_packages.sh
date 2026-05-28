@@ -6,7 +6,7 @@
 # when packages are installed or removed.  Any package this script is
 # not instructed to install, will be removed again.
 #
-# This currently expects to be run in a macos cirrus-ci environment.
+# This currently expects to be run in a macos github actions environment.
 
 set -e
 # set -x
@@ -38,8 +38,8 @@ fi
 
 cache_dmg="macports.hfs.dmg"
 
-if [ "$CIRRUS_CI" != "true" ] && [ "$GITHUB_ACTIONS" != "true" ]; then
-    echo "expect to be called within cirrus-ci or github actions" 1>&2
+if [ "$GITHUB_ACTIONS" != "true" ]; then
+    echo "expect to be called within github actions" 1>&2
     exit 1
 fi
 
