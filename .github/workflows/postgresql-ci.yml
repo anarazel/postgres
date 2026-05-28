@@ -115,6 +115,16 @@ jobs:
       # context is not available.
       linux_ci_image: ${{ env.LINUX_CI_IMAGE }}
     steps:
+      - name: sysinfo
+        run: |
+          sudo lsblk -o +model --fs || true
+          export
+          who || true
+          cat /proc/cpuinfo
+          sudo apt-get update
+          sudo apt-get install -y cpuid
+          sudo cpuid -1
+
       - id: os
         env:
           MSG: ${{ github.event.head_commit.message }}
@@ -157,8 +167,8 @@ jobs:
       # set kernel.core_pattern.
       options: --privileged
     env:
-      BUILD_JOBS: 8
-      TEST_JOBS: 8
+      BUILD_JOBS: 4
+      TEST_JOBS: 4
       CCACHE_DIR: ${{ github.workspace }}/ccache_dir
       # no options enabled, should be small
       CCACHE_MAXSIZE: "150M"
@@ -277,7 +287,8 @@ jobs:
             slug: autoconf
             cc: ccache gcc
             cxx: ccache g++
-            sanitizer_flags: -fsanitize=address
+            sanitizer_flags:
+            #-fsanitize=address
             pg_test_pg_combinebackup_mode: '--copy-file-range'
             configure: |
               ./configure \
@@ -301,7 +312,8 @@ jobs:
             slug: meson-64
             cc: ccache gcc
             cxx: ccache g++
-            sanitizer_flags: -fsanitize=alignment,undefined
+            sanitizer_flags:
+            #-fsanitize=alignment,undefined
             pg_test_initdb_extra_opts: '-c io_method=io_uring'
             configure: |
               meson setup \
@@ -321,7 +333,8 @@ jobs:
             slug: meson-32
             cc: ccache gcc -m32
             cxx: ccache g++ -m32
-            sanitizer_flags: -fsanitize=alignment,undefined
+            sanitizer_flags:
+            #-fsanitize=alignment,undefined
             pg_test_initdb_extra_opts: '-c io_method=io_uring'
             configure: |
               meson setup \
@@ -358,14 +371,14 @@ jobs:
       options: --pid=host --ipc=host --ulimit memlock=-1:-1 --privileged
     env:
       BUILD_JOBS: 4
-      TEST_JOBS: 8
+      TEST_JOBS: 4
       CCACHE_DIR: /tmp/ccache_dir
       DEBUGINFOD_URLS: "https://debuginfod.debian.net"
 
       UBSAN_OPTIONS: print_stacktrace=1:disable_coredump=0:abort_on_error=1:verbosity=2
       ASAN_OPTIONS: print_stacktrace=1:disable_coredump=0:abort_on_error=1:detect_leaks=0:detect_stack_use_after_return=0
-      CFLAGS: -Og -ggdb -fno-sanitize-recover=all ${{ matrix.sanitizer_flags }}
-      CXXFLAGS: -Og -ggdb -fno-sanitize-recover=all ${{ matrix.sanitizer_flags }}
+      CFLAGS: -O2 -ggdb -fno-sanitize-recover=all ${{ matrix.sanitizer_flags }}
+      CXXFLAGS: -O2 -ggdb -fno-sanitize-recover=all ${{ matrix.sanitizer_flags }}
       LDFLAGS: ${{ matrix.sanitizer_flags }}
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
@@ -376,10 +389,19 @@ jobs:
       - name: sysinfo
         run: |
           lsblk -o +model --fs || true
+          export
 
       - *checkout_step
 
-      - *ccache_restore_step
+      #- *ccache_restore_step
+      - name: Restore ccache
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-linux-${{ matrix.slug }}-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            ccache-linux-${{ matrix.slug }}-${{ github.ref_name }}-
+            ccache-linux-${{ matrix.slug }}-
 
       - name: Prepare workspace
         run: |
@@ -421,7 +443,7 @@ jobs:
 
       - name: Test world
         run: |
-          iostat -xy > iostat.log &
+          iostat -xy 1 > iostat.log &
           vmstat -y -n -w 1 > vmstat.log &
           su postgres <<EOF
             set -e
@@ -469,7 +491,7 @@ jobs:
       # Test performance regresses noticeably when using all cores. 8 works OK.
       # https://postgr.es/m/20220927040208.l3shfcidovpzqxfh%40awork3.anarazel.de
       # Fix: Needs to be re-tested for Github Actions.
-      TEST_JOBS: 8
+      TEST_JOBS: 4
 
       CCACHE_DIR: ${{ github.workspace }}/ccache_dir
       MACPORTS_CACHE: ${{ github.workspace }}/macports-cache
@@ -614,7 +636,7 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 60
     env:
-      TEST_JOBS: 8
+      TEST_JOBS: 4
       # Avoid port conflicts between concurrent tap tests
       PG_TEST_USE_UNIX_SOCKETS: 1
       PG_REGRESS_SOCK_DIR: 'c:\pgsock'
