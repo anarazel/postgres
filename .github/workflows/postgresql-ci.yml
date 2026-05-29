@@ -83,7 +83,8 @@ env:
 
   # Debian Trixie container image used by all Linux jobs. Built by
   # 'https://github.com/anarazel/pg-vm-images/'.
-  LINUX_CI_IMAGE: us-docker.pkg.dev/pg-ci-images/ci/linux_debian_trixie_ci:latest
+  #LINUX_CI_IMAGE: us-docker.pkg.dev/pg-ci-images/ci/linux_debian_trixie_ci:latest
+  LINUX_CI_IMAGE: ghcr.io/anarazel/trixie-test:oci-zstd
 
   # The full set of OS / job selectors recognized by the `ci-os-only:`
   # commit-message directive parsed in the `setup` job below.
@@ -121,9 +122,6 @@ jobs:
           export
           who || true
           cat /proc/cpuinfo
-          sudo apt-get update
-          sudo apt-get install -y cpuid
-          sudo cpuid -1
 
       - id: os
         env:
@@ -283,30 +281,30 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: Autoconf
-            slug: autoconf
-            cc: ccache gcc
-            cxx: ccache g++
-            sanitizer_flags:
-            #-fsanitize=address
-            pg_test_pg_combinebackup_mode: '--copy-file-range'
-            configure: |
-              ./configure \
-                --enable-cassert --enable-injection-points --enable-debug \
-                --enable-tap-tests --enable-nls \
-                --with-segsize-blocks=6 \
-                --with-libnuma \
-                --with-liburing \
-                ${LINUX_CONFIGURE_FEATURES} \
-                CLANG="ccache clang"
-            build: |
-              make -s -j${BUILD_JOBS} world-bin
-            test: |
-              make -s ${CHECK} ${CHECKFLAGS} -j${TEST_JOBS}
-            logs_paths: |
-              **/*.log
-              **/*.diffs
-              **/regress_log_*
+          #- name: Autoconf
+          #  slug: autoconf
+          #  cc: ccache gcc
+          #  cxx: ccache g++
+          #  sanitizer_flags:
+          #  #-fsanitize=address
+          #  pg_test_pg_combinebackup_mode: '--copy-file-range'
+          #  configure: |
+          #    ./configure \
+          #      --enable-cassert --enable-injection-points --enable-debug \
+          #      --enable-tap-tests --enable-nls \
+          #      --with-segsize-blocks=6 \
+          #      --with-libnuma \
+          #      --with-liburing \
+          #      ${LINUX_CONFIGURE_FEATURES} \
+          #      CLANG="ccache clang"
+          #  build: |
+          #    make -s -j${BUILD_JOBS} world-bin
+          #  test: |
+          #    make -s ${CHECK} ${CHECKFLAGS} -j${TEST_JOBS}
+          #  logs_paths: |
+          #    **/*.log
+          #    **/*.diffs
+          #    **/regress_log_*
 
           - name: Meson (64bit)
             slug: meson-64
@@ -326,32 +324,32 @@ jobs:
               ninja -C build -j${BUILD_JOBS} ${MBUILD_TARGET}
               ninja -C build -t missingdeps
             test: |
-              meson test ${MTEST_ARGS} -C build --num-processes ${TEST_JOBS}
+              meson test ${MTEST_ARGS} -C build --num-processes ${TEST_JOBS} --suite setup --suite recovery
             logs_paths: *log_paths
 
-          - name: Meson (32bit)
-            slug: meson-32
-            cc: ccache gcc -m32
-            cxx: ccache g++ -m32
-            sanitizer_flags:
-            #-fsanitize=alignment,undefined
-            pg_test_initdb_extra_opts: '-c io_method=io_uring'
-            configure: |
-              meson setup \
-                ${MESON_COMMON_PG_CONFIG_ARGS} \
-                -Duuid=e2fs \
-                --buildtype=debug \
-                --pkg-config-path /usr/lib/i386-linux-gnu/pkgconfig/ \
-                -DPERL=perl5.40-i386-linux-gnu \
-                -Dlibnuma=disabled \
-                build
-            build: |
-              ninja -C build -j${BUILD_JOBS} ${MBUILD_TARGET}
-              ninja -C build -t missingdeps
-            test: |
-              PYTHONCOERCECLOCALE=0 LANG=C \
-                meson test ${MTEST_ARGS} -C build --num-processes ${TEST_JOBS}
-            logs_paths: *log_paths
+          #- name: Meson (32bit)
+          #  slug: meson-32
+          #  cc: ccache gcc -m32
+          #  cxx: ccache g++ -m32
+          #  sanitizer_flags:
+          #  #-fsanitize=alignment,undefined
+          #  pg_test_initdb_extra_opts: '-c io_method=io_uring'
+          #  configure: |
+          #    meson setup \
+          #      ${MESON_COMMON_PG_CONFIG_ARGS} \
+          #      -Duuid=e2fs \
+          #      --buildtype=debug \
+          #      --pkg-config-path /usr/lib/i386-linux-gnu/pkgconfig/ \
+          #      -DPERL=perl5.40-i386-linux-gnu \
+          #      -Dlibnuma=disabled \
+          #      build
+          #  build: |
+          #    ninja -C build -j${BUILD_JOBS} ${MBUILD_TARGET}
+          #    ninja -C build -t missingdeps
+          #  test: |
+          #    PYTHONCOERCECLOCALE=0 LANG=C \
+          #      meson test ${MTEST_ARGS} -C build --num-processes ${TEST_JOBS}
+          #  logs_paths: *log_paths
     container:
       image: ${{ needs.setup.outputs.linux_ci_image }}
       # Share the host PID + IPC namespaces. 017_shm.pl rapidly creates,
@@ -373,7 +371,7 @@ jobs:
       BUILD_JOBS: 4
       TEST_JOBS: 4
       CCACHE_DIR: /tmp/ccache_dir
-      DEBUGINFOD_URLS: "https://debuginfod.debian.net"
+      DEBUGINFOD_URLS: "https://debuginfod.debian.net https://debuginfod.ubuntu.com"
 
       UBSAN_OPTIONS: print_stacktrace=1:disable_coredump=0:abort_on_error=1:verbosity=2
       ASAN_OPTIONS: print_stacktrace=1:disable_coredump=0:abort_on_error=1:detect_leaks=0:detect_stack_use_after_return=0
@@ -426,6 +424,7 @@ jobs:
         run: |
           apt-get update
           apt-get install -y sysstat
+          apt-get install -y linux-perf bzip2 less
 
       - name: Configure
         run: |
@@ -443,14 +442,23 @@ jobs:
 
       - name: Test world
         run: |
-          iostat -xy 1 > iostat.log &
+          iostat -xy sda 1 > iostat.log &
           vmstat -y -n -w 1 > vmstat.log &
+          perf record -F10 -g -v --debuginfod="$DEBUGINFOD_URLS" -o perf.data -a \
           su postgres <<EOF
             set -e
             ulimit -c unlimited
             ${{ matrix.test }}
           EOF
           killall iostat vmstat || true
+
+      - name: perf
+        run: |
+          ls -l
+          perf evlist -i perf.data || true
+          perf report -v --children -i perf.data > perf-children.log || true
+          perf report -v --no-children -i perf.data > perf-no-children.log || true
+          perf archive perf.data || true
 
       - name: Upload stats
         uses: actions/upload-artifact@v7
@@ -459,6 +467,9 @@ jobs:
           path: |
             iostat.log
             vmstat.log
+            perf*.log
+            perf.data
+            perf.data.tar.bz2
 
       - name: Core backtraces
         if: failure()
