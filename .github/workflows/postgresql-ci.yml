@@ -139,6 +139,11 @@ jobs:
           done
           cat "$GITHUB_OUTPUT"
 
+      - name: fsck
+        if: ${{ github.ref_name == 'frak' }}
+        run: |
+          echo "I shall not be named"
+
 
   # To avoid unnecessarily spinning up a lot of VMs / containers for entirely
   # broken commits, have a minimal task that all others depend on.
