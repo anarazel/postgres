@@ -1,10 +1,15 @@
 # GitHub Actions CI configuration for PostgreSQL
 
-name: Github Actions CI
+name: Github Actions CI - Gen
 
 on:
-  push:
+  #push:
   # FIXME: Should we also run on PRs?
+  workflow_call:
+    inputs:
+      image-repo:
+        required: false
+        type: string
 
 # Restrict GITHUB_TOKEN to the minimum the jobs need: reading repo
 # contents during checkout.
