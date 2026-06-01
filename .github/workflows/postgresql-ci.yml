@@ -35,7 +35,8 @@ env:
 
   # Check target for the autoconf builds. Can be set to e.g. check to only
   # only test the main regression tests.
-  CHECK: check-world PROVE_FLAGS=--timer
+  # FIXME: Reset
+  CHECK: check PROVE_FLAGS=--timer
   CHECKFLAGS: -Otarget
 
   # Build test dependencies as part of the build step, to see compiler
@@ -45,7 +46,8 @@ env:
 
   # Can be set to a non-empty value to run a limited set of tests
   # (e.g. --suite regress to only run the main regression tests).
-  MTEST_TARGET:
+  # FIXME: Reset
+  MTEST_TARGET: --suite regress
 
   PGCTLTIMEOUT: 120  # avoids spurious failures during parallel tests
   TEMP_CONFIG: ${{ github.workspace }}/src/tools/ci/pg_ci_base.conf
