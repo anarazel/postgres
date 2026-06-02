@@ -236,8 +236,8 @@ jobs:
           mkdir -m 770 /tmp/cores
           chown root:postgres /tmp/cores
           sysctl kernel.core_pattern='/tmp/cores/%e-%s-%p.core'
-          # This is only needed on Linux Meson but it doesn't harm to have
-          # this enabled.
+          # This is only needed for some of the tasks using this, but it
+          # doesn't harm to have this enabled.
           sysctl -w kernel.io_uring_disabled=0
 
           cat >> /etc/hosts <<-EOF
