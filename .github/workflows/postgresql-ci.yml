@@ -325,8 +325,8 @@ jobs:
   # Linux, Autoconf
   #
   # SPECIAL:
-  # - Uses address sanitizer (sanitizer failures are typically printed in
-  #   the server log)
+  # - Uses undefined & alignment sanitizers (sanitizer failures are typically
+  #   printed in the server log)
   # - Configures postgres with a small segment size
   # - Uses PG_TEST_PG_COMBINEBACKUP_MODE=--copy-file-range
   linux-autoconf:
@@ -365,7 +365,7 @@ jobs:
       # linux- tasks by updating the environment variables programmatically.
       - name: Update Environment
         env:
-          SANITIZER_FLAGS: -fsanitize=address
+          SANITIZER_FLAGS: -fsanitize=alignment,undefined
           PG_TEST_PG_COMBINEBACKUP_MODE: --copy-file-range
         run: &linux_update_config_cmd |
           echo "CFLAGS=$CFLAGS ${SANITIZER_FLAGS}" >> "$GITHUB_ENV"
@@ -473,8 +473,8 @@ jobs:
   # Linux Meson, 64 bit
   #
   # SPECIAL:
-  # - Uses undefined behaviour and alignment sanitizers, (sanitizer failures
-  #   are typically printed in the server log)
+  # - Uses address sanitizer, (sanitizer failures are typically printed in the
+  #   server log)
   # - Uses io_method=io_uring
   # - Uses meson feature autodetection
   linux-meson-64:
@@ -489,7 +489,7 @@ jobs:
     steps:
       - name: Update Environment
         env:
-          SANITIZER_FLAGS: -fsanitize=alignment,undefined
+          SANITIZER_FLAGS: -fsanitize=address
           PG_TEST_INITDB_EXTRA_OPTS: -c io_method=io_uring
         run: *linux_update_config_cmd
 
