@@ -13,9 +13,9 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  # Never cancel in-progress runs on master to ensure all commits are tested.
-  # FIXME: Should also not cancel REL_XY_STABLE
-  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+  # Never cancel in-progress runs on master or release branches, to ensure
+  # all commits are tested.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' && !startsWith(github.ref, 'refs/heads/REL_') }}
 
 env:
   # The lower depth accelerates git clone. Use a bit of depth so that
@@ -946,6 +946,7 @@ jobs:
       # Use larger ccache cache as this job compiles with multiple
       # compilers / flag combinations.
       CCACHE_MAXSIZE: "1G"
+      DEFAULT_BUILD: world-bin
     steps:
 
       - name: Sysinfo
@@ -969,80 +970,59 @@ jobs:
       # gcc, cassert off, dtrace on
       - name: gcc warnings + (dtrace)
         if: ${{ !cancelled() }}
-        run: |
+        env:
+          CONF: ${{env.LINUX_CONFIGURE_FEATURES}} --cache gcc.cache --enable-dtrace
+          CC: ccache gcc
+          CXX: ccache g++
+          CLANG: ccache clang
+        run: &compiler_warnings_cmd |
           echo "::group::configure"
           ./configure \
-            --cache gcc.cache \
-            --enable-dtrace \
-            ${{env.LINUX_CONFIGURE_FEATURES}} \
-            CC="ccache gcc" CXX="ccache g++" CLANG="ccache clang"
+            ${{env.CONF}} \
+            CLANG="ccache clang"
           echo "::endgroup::"
 
           make -s -j${{env.BUILD_JOBS}} clean
-          make -s -j${{env.BUILD_JOBS}} world-bin
+          make -s -j${{env.BUILD_JOBS}} ${{env.DEFAULT_BUILD}}
 
 
       # gcc, cassert on, dtrace off
       - name: gcc warnings + (cassert)
         if: ${{ !cancelled() }}
-        run: |
-          echo "::group::configure"
-          ./configure \
-            --cache gcc.cache \
-            --enable-cassert \
-            ${{env.LINUX_CONFIGURE_FEATURES}} \
-            CC="ccache gcc" CXX="ccache g++" CLANG="ccache clang"
-          echo "::endgroup::"
+        env:
+          CONF: ${{env.LINUX_CONFIGURE_FEATURES}} --cache gcc.cache --enable-cassert
+          CC: ccache gcc
+          CXX: ccache g++
+        run: *compiler_warnings_cmd
 
-          make -s -j${{env.BUILD_JOBS}} clean
-          make -s -j${{env.BUILD_JOBS}} world-bin
 
       # clang, cassert off, dtrace off
       - name: clang warnings
         if: ${{ !cancelled() }}
-        run: |
-          echo "::group::configure"
-          ./configure \
-            --cache clang.cache \
-            ${{env.LINUX_CONFIGURE_FEATURES}} \
-            CC="ccache clang" CXX="ccache clang++" CLANG="ccache clang"
-          echo "::endgroup::"
-
-          make -s -j${{env.BUILD_JOBS}} clean
-          make -s -j${{env.BUILD_JOBS}} world-bin
+        env:
+          CONF: ${{env.LINUX_CONFIGURE_FEATURES}} --cache clang.cache
+          CC: ccache clang
+          CXX: ccache clang++
+        run: *compiler_warnings_cmd
 
 
       # clang, cassert on, dtrace on
       - name: clang warnings + (cassert + dtrace)
         if: ${{ !cancelled() }}
-        run: |
-          echo "::group::configure"
-          ./configure \
-            --cache clang.cache \
-            --enable-cassert \
-            --enable-dtrace \
-            ${{env.LINUX_CONFIGURE_FEATURES}} \
-            CC="ccache clang" CXX="ccache clang++" CLANG="ccache clang"
-          echo "::endgroup::"
-
-          make -s -j${{env.BUILD_JOBS}} clean
-          make -s -j${{env.BUILD_JOBS}} world-bin
+        env:
+          CONF: ${{env.LINUX_CONFIGURE_FEATURES}} --cache clang.cache --enable-cassert --enable-dtrace
+          CC: ccache clang
+          CXX: ccache clang++
+        run: *compiler_warnings_cmd
 
 
       - name: mingw warnings (cross compilation)
         if: ${{ !cancelled() }}
-        run: |
-          echo "::group::configure"
-          ./configure \
-            --host=x86_64-w64-mingw32ucrt \
-            --enable-cassert \
-            --without-icu \
-            CC="ccache x86_64-w64-mingw32ucrt-gcc" \
-            CXX="ccache x86_64-w64-mingw32ucrt-g++"
-          echo "::endgroup::"
-
-          make -s -j${{env.BUILD_JOBS}} clean
-          make -s -j${{env.BUILD_JOBS}} world-bin
+        env:
+          CONF: --host=x86_64-w64-mingw32ucrt --enable-cassert --without-icu
+          CC: ccache x86_64-w64-mingw32ucrt-gcc
+          CXX: ccache x86_64-w64-mingw32ucrt-g++
+        run: *compiler_warnings_cmd
 
 
       ###
@@ -1051,15 +1031,12 @@ jobs:
       # XXX: Only do this if there have been changes in doc/ since last build
       - name: Build documentation
         if: ${{ !cancelled() }}
-        run: |
-          echo "::group::configure"
-          ./configure \
-            --cache gcc.cache \
-            CC="ccache gcc" CXX="ccache g++" CLANG="ccache clang"
-          echo "::endgroup::"
-
-          make -s -j${{env.BUILD_JOBS}} clean
-          make -s -j${{env.BUILD_JOBS}} -C doc
+        env:
+          CONF: --cache gcc.cache
+          CC: ccache gcc
+          CXX: ccache g++
+          DEFAULT_BUILD: -C doc
+        run: *compiler_warnings_cmd
 
       ###
       # Verify headerscheck / cpluspluscheck succeed
