@@ -381,8 +381,7 @@ jobs:
         run: |
           ./configure \
             --enable-cassert --enable-injection-points --enable-debug \
-            --enable-tap-tests --enable-nls \
-            --with-segsize-blocks=6 \
+            --enable-tap-tests \
             --with-libnuma \
             --with-liburing \
             ${LINUX_CONFIGURE_FEATURES}
@@ -500,6 +499,7 @@ jobs:
             -Duuid=e2fs \
             --buildtype=debug \
             -Dllvm=enabled \
+            -Dsegsize_blocks=6 \
             build
 
       - name: Build
