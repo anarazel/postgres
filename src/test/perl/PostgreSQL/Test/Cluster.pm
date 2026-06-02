@@ -568,7 +568,7 @@ Print $node->info()
 sub dump_info
 {
 	my ($self) = @_;
-	print $self->info;
+	note $self->info;
 	return;
 }
 
@@ -866,7 +866,7 @@ sub backup
 
 	local %ENV = $self->_get_env();
 
-	print "# Taking pg_basebackup $backup_name from node \"$name\"\n";
+	note "Taking pg_basebackup $backup_name from node \"$name\"\n";
 	PostgreSQL::Test::Utils::system_or_bail(
 		'pg_basebackup', '--no-sync',
 		'--pgdata' => $backup_path,
@@ -874,7 +874,7 @@ sub backup
 		'--port' => $self->port,
 		'--checkpoint' => 'fast',
 		@{ $params{backup_options} });
-	print "# Backup finished\n";
+	note "Backup finished\n";
 	return;
 }
 
@@ -955,8 +955,8 @@ sub init_from_backup
 	$params{has_restoring} = 0 unless defined $params{has_restoring};
 	$params{standby} = 1 unless defined $params{standby};
 
-	print
-	  "# Initializing node \"$node_name\" from backup \"$backup_name\" of node \"$root_name\"\n";
+	note
+	  "Initializing node \"$node_name\" from backup \"$backup_name\" of node \"$root_name\"\n";
 	croak "Backup \"$backup_name\" does not exist at $backup_path"
 	  unless -d $backup_path;
 
@@ -1154,7 +1154,7 @@ sub start
 
 	BAIL_OUT("node \"$name\" is already running") if defined $self->{_pid};
 
-	print("### Starting node \"$name\"\n");
+	note("## Starting node \"$name\"\n");
 
 	# Temporarily unset PGAPPNAME so that the server doesn't
 	# inherit it.  Otherwise this could affect libpqwalreceiver
@@ -1174,7 +1174,7 @@ sub start
 
 	if ($ret != 0)
 	{
-		print "# pg_ctl start failed; see logfile for details: "
+		diag "pg_ctl start failed; see logfile for details: "
 		  . $self->logfile . "\n";
 
 		# pg_ctl could have timed out, so check to see if there's a pid file;
@@ -1209,7 +1209,7 @@ sub kill9
 
 	local %ENV = $self->_get_env();
 
-	print "### Killing node \"$name\" using signal 9\n";
+	note "## Killing node \"$name\" using signal 9\n";
 	kill(9, $self->{_pid});
 	$self->{_pid} = undef;
 	return;
@@ -1245,7 +1245,7 @@ sub stop
 	$mode = 'fast' unless defined $mode;
 	return 1 unless defined $self->{_pid};
 
-	print "### Stopping node \"$name\" using mode $mode\n";
+	note "## Stopping node \"$name\" using mode $mode\n";
 	my @cmd = ('pg_ctl', '--pgdata' => $pgdata, '--mode' => $mode, 'stop');
 	if ($params{timeout})
 	{
@@ -1255,7 +1255,7 @@ sub stop
 
 	if ($ret != 0)
 	{
-		print "# pg_ctl stop failed: $ret\n";
+		diag "pg_ctl stop failed: $ret\n";
 
 		# Check to see if we still have a postmaster or not.
 		$self->_update_pid(-1);
@@ -1285,7 +1285,7 @@ sub reload
 
 	local %ENV = $self->_get_env();
 
-	print "### Reloading node \"$name\"\n";
+	note "## Reloading node \"$name\"\n";
 	PostgreSQL::Test::Utils::system_or_bail(
 		'pg_ctl',
 		'--pgdata' => $pgdata,
@@ -1333,7 +1333,7 @@ sub restart
 
 	local %ENV = $self->_get_env(PGAPPNAME => undef);
 
-	print "### Restarting node \"$name\"\n";
+	note "## Restarting node \"$name\"\n";
 
 	my $log_location = -s $self->logfile;
 
@@ -1359,7 +1359,7 @@ sub restart
 
 	if ($ret != 0)
 	{
-		print "# pg_ctl restart failed; see logfile for details: "
+		diag "pg_ctl restart failed; see logfile for details: "
 		  . $self->logfile . "\n";
 
 		# pg_ctl could have timed out, so check to see if there's a pid file;
@@ -1392,7 +1392,7 @@ sub promote
 
 	local %ENV = $self->_get_env();
 
-	print "### Promoting node \"$name\"\n";
+	note "## Promoting node \"$name\"\n";
 	PostgreSQL::Test::Utils::system_or_bail(
 		'pg_ctl',
 		'--pgdata' => $pgdata,
@@ -1419,7 +1419,7 @@ sub logrotate
 
 	local %ENV = $self->_get_env();
 
-	print "### Rotating log in node \"$name\"\n";
+	note "## Rotating log in node \"$name\"\n";
 	PostgreSQL::Test::Utils::system_or_bail(
 		'pg_ctl',
 		'--pgdata' => $pgdata,
@@ -1435,7 +1435,7 @@ sub enable_streaming
 	my $root_connstr = $root_node->connstr;
 	my $name = $self->name;
 
-	print "### Enabling streaming replication for node \"$name\"\n";
+	note "## Enabling streaming replication for node \"$name\"\n";
 	$self->append_conf(
 		$self->_recovery_file, qq(
 primary_conninfo='$root_connstr'
@@ -1451,7 +1451,7 @@ sub enable_restoring
 	my $path = $root_node->archive_dir;
 	my $name = $self->name;
 
-	print "### Enabling WAL restore for node \"$name\"\n";
+	note "## Enabling WAL restore for node \"$name\"\n";
 
 	# On Windows, the path specified in the restore command needs to use
 	# double back-slashes to work properly and to be able to detect properly
@@ -1521,7 +1521,7 @@ sub enable_archiving
 	my $path = $self->archive_dir;
 	my $name = $self->name;
 
-	print "### Enabling WAL archiving for node \"$name\"\n";
+	note "## Enabling WAL archiving for node \"$name\"\n";
 
 	# On Windows, the path specified in the restore command needs to use
 	# double back-slashes to work properly and to be able to detect properly
@@ -1564,13 +1564,13 @@ sub _update_pid
 		# This protects against stale PID files left by crashed postmasters.
 		if ($is_running == -1 && kill(0, $self->{_pid}) == 0)
 		{
-			print
-			  "# Stale postmaster.pid file for node \"$name\": PID $self->{_pid} no longer exists\n";
+			note
+			  "Stale postmaster.pid file for node \"$name\": PID $self->{_pid} no longer exists\n";
 			$self->{_pid} = undef;
 			return;
 		}
 
-		print "# Postmaster PID for node \"$name\" is $self->{_pid}\n";
+		note "Postmaster PID for node \"$name\" is $self->{_pid}\n";
 
 		# If we found a pidfile when there shouldn't be one, complain.
 		BAIL_OUT("postmaster.pid unexpectedly present") if $is_running == 0;
@@ -1578,7 +1578,7 @@ sub _update_pid
 	}
 
 	$self->{_pid} = undef;
-	print "# No postmaster PID for node \"$name\"\n";
+	note "No postmaster PID for node \"$name\"\n";
 
 	# Complain if we expected to find a pidfile.
 	BAIL_OUT("postmaster.pid unexpectedly not present") if $is_running == 1;
@@ -1886,7 +1886,7 @@ sub get_free_port
 
 		# advance $port, wrapping correctly around range end
 		$port = $port_lower_bound if ++$port > $port_upper_bound;
-		print "# Checking port $port\n";
+		note "Checking port $port\n";
 
 		# Check first that candidate port number is not included in
 		# the list of already-registered nodes.
@@ -1925,7 +1925,7 @@ sub get_free_port
 		}
 	}
 
-	print "# Found port $port\n";
+	note "Found port $port\n";
 
 	# Update port for next time
 	$last_port_assigned = $port;
@@ -2082,9 +2082,7 @@ sub safe_psql
 	# psql can emit stderr from NOTICEs etc
 	if ($stderr ne "")
 	{
-		print "#### Begin standard error\n";
-		print $stderr;
-		print "\n#### End standard error\n";
+		note "\n### Begin standard error\n", $stderr, "\n### End standard error\n";
 	}
 
 	return $stdout;
@@ -3404,7 +3402,7 @@ sub wait_for_catchup
 			$target_lsn = $self->lsn('write');
 		}
 	}
-	print "Waiting for replication conn "
+	note "Waiting for replication conn "
 	  . $standby_name . "'s "
 	  . $mode
 	  . "_lsn to pass "
@@ -3452,7 +3450,7 @@ sub wait_for_catchup
 
 		if ($wait_succeeded && $output eq 'success')
 		{
-			print "done\n";
+			note "done\n";
 			return;
 		}
 
@@ -3519,7 +3517,7 @@ ${details});
 			croak "timed out waiting for catchup";
 		}
 	}
-	print "done\n";
+	note "done\n";
 	return;
 }
 
@@ -3575,7 +3573,7 @@ sub wait_for_slot_catchup
 		croak "valid modes are restart, confirmed_flush";
 	}
 	croak 'target lsn must be specified' unless defined($target_lsn);
-	print "Waiting for replication slot "
+	note "Waiting for replication slot "
 	  . $slot_name . "'s "
 	  . $mode
 	  . "_lsn to pass "
@@ -3592,7 +3590,7 @@ sub wait_for_slot_catchup
 ${details});
 		croak "timed out waiting for catchup";
 	}
-	print "done\n";
+	note "done\n";
 	return;
 }
 
@@ -3623,7 +3621,7 @@ sub wait_for_subscription_sync
 	$dbname = defined($dbname) ? $dbname : 'postgres';
 
 	# Wait for all tables to finish initial sync.
-	print "Waiting for all subscriptions in \"$name\" to synchronize data\n";
+	note "Waiting for all subscriptions in \"$name\" to synchronize data\n";
 	my $query =
 	  qq[SELECT count(1) = 0 FROM pg_subscription_rel WHERE srsubstate NOT IN ('r', 's');];
 	if (!$self->poll_query_until($dbname, $query))
@@ -3643,7 +3641,7 @@ ${details});
 		$publisher->wait_for_catchup($subname);
 	}
 
-	print "done\n";
+	note "done\n";
 	return;
 }
 
@@ -4003,7 +4001,7 @@ sub checksum_enable_offline
 {
 	my ($self) = @_;
 
-	print "# Enabling checksums in \"$self->data_dir\"\n";
+	note "Enabling checksums in \"$self->data_dir\"\n";
 	PostgreSQL::Test::Utils::system_or_bail('pg_checksums', '-D',
 		$self->data_dir, '-e');
 	return;
@@ -4021,7 +4019,7 @@ sub checksum_disable_offline
 {
 	my ($self) = @_;
 
-	print "# Disabling checksums in \"$self->data_dir\"\n";
+	note "Disabling checksums in \"$self->data_dir\"\n";
 	PostgreSQL::Test::Utils::system_or_bail('pg_checksums', '-D',
 		$self->data_dir, '-d');
 	return;

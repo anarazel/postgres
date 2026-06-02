@@ -376,7 +376,7 @@ value is passed through.
 
 sub system_log
 {
-	print("# Running: " . join(" ", @_) . "\n");
+	note("Running: " . join(" ", @_) . "\n");
 	return system(@_);
 }
 
@@ -430,7 +430,7 @@ The return value from the command is passed through.
 
 sub run_log
 {
-	print("# Running: " . join(" ", @{ $_[0] }) . "\n");
+	note("Running: " . join(" ", @{ $_[0] }) . "\n");
 	return IPC::Run::run(@_);
 }
 
@@ -1009,7 +1009,7 @@ sub command_ok
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd, $test_name) = @_;
 	my ($stdout, $stderr);
-	print("# Running: " . join(" ", @{$cmd}) . "\n");
+	note("Running: " . join(" ", @{$cmd}) . "\n");
 	my $result = IPC::Run::run $cmd, '>' => \$stdout, '2>' => \$stderr;
 	ok($result, $test_name) or do
 	{
@@ -1032,7 +1032,7 @@ sub command_fails
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd, $test_name) = @_;
 	my ($stdout, $stderr);
-	print("# Running: " . join(" ", @{$cmd}) . "\n");
+	note("Running: " . join(" ", @{$cmd}) . "\n");
 	my $result = IPC::Run::run $cmd, '>' => \$stdout, '2>' => \$stderr;
 	ok(!$result, $test_name) or do
 	{
@@ -1054,7 +1054,7 @@ sub command_exit_is
 {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd, $expected, $test_name) = @_;
-	print("# Running: " . join(" ", @{$cmd}) . "\n");
+	note("Running: " . join(" ", @{$cmd}) . "\n");
 	my $h = IPC::Run::start $cmd;
 	$h->finish();
 
@@ -1082,7 +1082,7 @@ sub program_help_ok
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd) = @_;
 	my ($stdout, $stderr);
-	print("# Running: $cmd --help\n");
+	note("Running: $cmd --help\n");
 	my $result = IPC::Run::run [ $cmd, '--help' ],
 	  '>' => \$stdout,
 	  '2>' => \$stderr;
@@ -1114,7 +1114,7 @@ sub program_version_ok
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd) = @_;
 	my ($stdout, $stderr);
-	print("# Running: $cmd --version\n");
+	note("Running: $cmd --version\n");
 	my $result = IPC::Run::run [ $cmd, '--version' ],
 	  '>' => \$stdout,
 	  '2>' => \$stderr;
@@ -1138,7 +1138,7 @@ sub program_options_handling_ok
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd) = @_;
 	my ($stdout, $stderr);
-	print("# Running: $cmd --not-a-valid-option\n");
+	note("Running: $cmd --not-a-valid-option\n");
 	my $result = IPC::Run::run [ $cmd, '--not-a-valid-option' ],
 	  '>' => \$stdout,
 	  '2>' => \$stderr;
@@ -1161,7 +1161,7 @@ sub command_like
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd, $expected_stdout, $test_name) = @_;
 	my ($stdout, $stderr);
-	print("# Running: " . join(" ", @{$cmd}) . "\n");
+	note("Running: " . join(" ", @{$cmd}) . "\n");
 	my $result = IPC::Run::run $cmd, '>' => \$stdout, '2>' => \$stderr;
 	ok($result, "$test_name: exit code 0");
 	is($stderr, '', "$test_name: no stderr");
@@ -1190,7 +1190,7 @@ sub command_like_safe
 	my ($stdout, $stderr);
 	my $stdoutfile = File::Temp->new();
 	my $stderrfile = File::Temp->new();
-	print("# Running: " . join(" ", @{$cmd}) . "\n");
+	note("Running: " . join(" ", @{$cmd}) . "\n");
 	my $result = IPC::Run::run $cmd, '>' => $stdoutfile, '2>' => $stderrfile;
 	$stdout = slurp_file($stdoutfile);
 	$stderr = slurp_file($stderrfile);
@@ -1214,7 +1214,7 @@ sub command_fails_like
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd, $expected_stderr, $test_name) = @_;
 	my ($stdout, $stderr);
-	print("# Running: " . join(" ", @{$cmd}) . "\n");
+	note("Running: " . join(" ", @{$cmd}) . "\n");
 	my $result = IPC::Run::run $cmd, '>' => \$stdout, '2>' => \$stderr;
 	ok(!$result, "$test_name: exit code not 0");
 	like($stderr, $expected_stderr, "$test_name: matches");
@@ -1235,7 +1235,7 @@ sub command_ok_or_fails_like
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd, $expected_stdout, $expected_stderr, $test_name) = @_;
 	my ($stdout, $stderr);
-	print("# Running: " . join(" ", @{$cmd}) . "\n");
+	note("Running: " . join(" ", @{$cmd}) . "\n");
 	my $result = IPC::Run::run $cmd, '>' => \$stdout, '2>' => \$stderr;
 	if (!$result)
 	{
@@ -1276,7 +1276,7 @@ sub command_checks_all
 
 	# run command
 	my ($stdout, $stderr);
-	print("# Running: " . join(" ", @{$cmd}) . "\n");
+	note("Running: " . join(" ", @{$cmd}) . "\n");
 	IPC::Run::run($cmd, '>' => \$stdout, '2>' => \$stderr);
 
 	# See http://perldoc.perl.org/perlvar.html#%24CHILD_ERROR
