@@ -22,13 +22,14 @@ SELECT 'init' FROM pg_create_physical_replication_slot('repl');
 SELECT data FROM pg_logical_slot_get_changes('repl', NULL, NULL, 'include-xids', '0', 'skip-empty-xacts', '1');
 SELECT pg_drop_replication_slot('repl');
 
+
 SELECT 'init' FROM pg_create_logical_replication_slot('regression_slot', 'test_decoding');
 
 /* check whether status function reports us, only reproduceable columns */
 SELECT slot_name, plugin, slot_type, active,
     NOT catalog_xmin IS NULL AS catalog_xmin_set,
     xmin IS NULl  AS data_xmin_not_set,
-    pg_wal_lsn_diff(restart_lsn, '0/00000001') > 0 AS some_wal
+    pg_wal_lsn_diff(restart_lsn, '0/01000000') > 0 AS some_wal
 FROM pg_replication_slots;
 
 /*

@@ -671,7 +671,6 @@ sub init
 			'initdb', '--no-sync',
 			'--pgdata' => $pgdata,
 			'--auth' => 'trust',
-			'--wal-segsize' => '1',
 			@{ $params{extra} });
 	}
 	else

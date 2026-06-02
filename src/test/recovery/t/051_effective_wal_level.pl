@@ -34,7 +34,7 @@ sub wait_for_logical_decoding_disabled
 
 # Initialize the primary server with wal_level = 'replica'.
 my $primary = PostgreSQL::Test::Cluster->new('primary');
-$primary->init(allows_streaming => 1, extra=>['--wal-segsize=16']);
+$primary->init(allows_streaming => 1);
 $primary->append_conf('postgresql.conf', "log_min_messages = debug1");
 $primary->start();
 
