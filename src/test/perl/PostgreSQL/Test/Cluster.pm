@@ -3374,6 +3374,34 @@ This is not a test. It croak()s on failure.
 
 =cut
 
+
+use Math::BigInt;
+
+sub parse_lsn_to_bytes {
+    my ($lsn) = @_;
+    die "invalid LSN format: $lsn\n"
+        unless $lsn =~ /\A([0-9A-Fa-f]+)\/([0-9A-Fa-f]+)\z/;
+    my ($hi, $lo) = ($1, $2);
+
+    my $hi_n = Math::BigInt->from_hex("0x$hi");
+    my $lo_n = Math::BigInt->from_hex("0x$lo");
+
+    return ($hi_n << 32) + $lo_n;
+}
+
+sub format_bytes_to_lsn {
+    my ($bytes) = @_;
+    my $n = ref($bytes) eq 'Math::BigInt' ? $bytes->copy : Math::BigInt->new($bytes);
+
+    my $hi = ($n >> 32)->to_hex();
+    my $lo = ($n & Math::BigInt->new('0xffffffff'))->to_hex();
+
+    $hi =~ s/^0x//i;
+    $lo =~ s/^0x//i;
+
+    return uc($hi) . "/" . sprintf("%08s", uc($lo)) =~ tr/ /0/r;}
+
+
 sub wait_for_catchup
 {
 	my ($self, $standby_name, $mode, $target_lsn) = @_;
@@ -3383,6 +3411,8 @@ sub wait_for_catchup
 	croak "unknown mode $mode for 'wait_for_catchup', valid modes are "
 	  . join(', ', keys(%valid_modes))
 	  unless exists($valid_modes{$mode});
+
+	my $self_psql = $self->background_psql('postgres', on_error_stop => 0);
 
 	# Keep a reference to the standby node if passed as an object, so we can
 	# use WAIT FOR LSN on it later.
@@ -3395,17 +3425,7 @@ sub wait_for_catchup
 	}
 	if (!defined($target_lsn))
 	{
-		my $isrecovery =
-		  $self->safe_psql('postgres', "SELECT pg_is_in_recovery()");
-		chomp($isrecovery);
-		if ($isrecovery eq 't')
-		{
-			$target_lsn = $self->lsn('replay');
-		}
-		else
-		{
-			$target_lsn = $self->lsn('write');
-		}
+		$target_lsn = $self_psql->query_safe("SELECT CASE WHEN pg_is_in_recovery() THEN pg_last_wal_replay_lsn() ELSE pg_current_wal_lsn() END");
 	}
 	note "Waiting for replication conn "
 	  . $standby_name . "'s "
@@ -3430,6 +3450,8 @@ sub wait_for_catchup
 		&& ($mode ne 'sent')
 		&& (!PostgreSQL::Test::Utils::has_wal_read_bug))
 	{
+		$self_psql->quit();
+
 		# Map mode names to WAIT FOR LSN mode names
 		my %mode_map = (
 			'replay' => 'standby_replay',
@@ -3497,9 +3519,46 @@ $@);
 	# - When standby_name is a string (e.g., subscription name)
 	# - When the standby is no longer in recovery (was promoted)
 	# - When WAIT FOR LSN was interrupted (e.g., killed by a recovery conflict)
-	my $query = qq[SELECT '$target_lsn' <= ${mode}_lsn AND state = 'streaming'
+	my $query = qq[SELECT ${mode}_lsn, state
          FROM pg_catalog.pg_stat_replication
          WHERE application_name IN ('$standby_name', 'walreceiver')];
+
+
+	my $attempts = 0;
+	my $max_attempts = 10 * $PostgreSQL::Test::Utils::timeout_default;
+	while ($attempts < $max_attempts)
+	{
+		my ($result, $ret) = $self_psql->query($query);
+		my $current_lsn = '';
+		my $current_state = 'unknown';
+
+		note $ret, $result;
+
+		if ($ret == 0 && $result ne '')
+		{
+			($current_lsn, $current_state) = split(/\|/, $result);
+		}
+
+		note "poll while waiting for $target_lsn: attempts: $attempts, current_lsn: $current_lsn, current_state: $current_state";
+
+		if ($current_state ne 'streaming')
+		{
+			note 'not yet in streaming state';
+		}
+		elsif (parse_lsn_to_bytes($target_lsn) <= parse_lsn_to_bytes($current_lsn))
+		{
+			note "done polling after $attempts attempts";
+			$self_psql->quit();
+			return;
+		}
+
+		# Wait 0.1 second before retrying.
+		usleep(100_000);
+		$attempts++;
+
+		# FIXME: doesn't handle has_wal_read_bugs and has no timeout handling
+	}
+
 	if (!$self->poll_query_until('postgres', $query))
 	{
 		if (PostgreSQL::Test::Utils::has_wal_read_bug)
