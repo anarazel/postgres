@@ -2336,6 +2336,10 @@ sub psql
 		croak "psql returns $ret: '$$stderr'\nwhile running '@psql_params'";
 	}
 
+	note "ran query ", $sql;
+	note "stdout: ".substr($$stdout, 0, 1024)."\n" unless !defined $$stdout or $$stdout eq '';
+	note "stderr: $$stderr\n" unless $$stderr eq '';
+
 	if (wantarray)
 	{
 		return ($ret, $$stdout, $$stderr);
@@ -2784,6 +2788,7 @@ sub poll_query_until
 
 		if ($stdout eq $expected && $stderr eq '')
 		{
+			diag "poll_query_until succeeded after $attempts: $expected, ", $query unless $attempts == 0;
 			return 1;
 		}
 

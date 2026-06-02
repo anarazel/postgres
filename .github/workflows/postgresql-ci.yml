@@ -310,7 +310,7 @@ jobs:
       # Note that this is used for both meson and autoconf builds
       - &upload_logs_step
         name: Upload logs
-        if: failure() && !cancelled()
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
           name: logs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
