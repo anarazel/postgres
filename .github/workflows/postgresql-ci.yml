@@ -12,10 +12,19 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  # Never cancel in-progress runs on master or release branches, to ensure
-  # all commits are tested.
-  cancel-in-progress: ${{ github.ref != 'refs/heads/master' && !startsWith(github.ref, 'refs/heads/REL_') }}
+  # For anything other than stable branches, we want there to only be one
+  # workflow active for that branch. But on stable branches & master, we
+  # neither want to wait for prior runs, nor to cancel them, so that each
+  # separately pushed commit is tested.  We achieve that by setting a unique
+  # concurrency group when on such a banch.
+  group: |
+    ${{github.workflow }}-${{
+    case(github.ref == 'refs/heads/master' ||
+         (startsWith(github.ref, 'refs/heads/REL_') && endsWith(github.ref, '_STABLE')),
+         github.run_id,
+         github.ref)
+    }}
+  cancel-in-progress: true
 
 env:
   # The lower depth accelerates git clone. Use a bit of depth so that
