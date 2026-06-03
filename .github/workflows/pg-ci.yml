@@ -779,8 +779,8 @@ jobs:
       - name: Install dependencies
         shell: pwsh
         run: |
-          # meson + ninja aren't preinstalled on windows-2022. Install via pip
-          python -m pip install --upgrade meson ninja
+          # meson is not preinstalled on windows-2022. Install via pip.
+          python -m pip install --upgrade meson
           if (!$?) { throw 'cmdfail' }
 
 
