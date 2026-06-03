@@ -479,6 +479,36 @@ jobs:
           LANG: C
         run: *meson_test_world_cmd
 
+      # Test running against existing PG instance.
+      #
+      # linux-meson-32 chosen because it's currently comparatively fast
+      - name: Test running
+        shell: *su_postgres_shell
+        run: |
+          ulimit -c unlimited
+
+          # Ensure install exists, in case somebody is debugging a failing
+          # test within this an reorders this before "Test world"
+          echo ::group::test_setup
+          meson test ${{env.MTEST_ARGS}} --suite setup --logbase setup
+          echo ::endgroup::
+
+          # Make libraries discoverable (the x86_64 reference is a meson
+          # oddity)
+          export LD_LIBRARY_PATH="$(pwd)/build/tmp_install/usr/local/pgsql/lib/x86_64-linux-gnu/:$LD_LIBRARY_PATH"
+
+          build/tmp_install/usr/local/pgsql/bin/initdb -N build/runningcheck --no-instructions -A trust
+          echo "include '$(pwd)/src/tools/ci/pg_ci_base.conf'" >> build/runningcheck/postgresql.conf
+
+          # Log into a place that will be archived in case of failure
+          mkdir -p build/testrun
+          build/tmp_install/usr/local/pgsql/bin/pg_ctl -c -o '-c fsync=off' -D build/runningcheck -l build/testrun/runningcheck.log start
+
+          # Run the tests supporting running against an already running
+          meson test ${{env.MTEST_ARGS}} --num-processes ${{env.TEST_JOBS}} --setup running
+
+          build/tmp_install/usr/local/pgsql/bin/pg_ctl -D build/runningcheck stop
+
       - *linux_collect_cores
       - *upload_logs_step
 
