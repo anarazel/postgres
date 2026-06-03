@@ -688,13 +688,13 @@ jobs:
       TAR: "c:/windows/system32/tar.exe"
 
       MESON_FEATURES: >-
-        -Dcpp_args=/std:c++20
         -Dauto_features=disabled
-        -Dtap_tests=enabled
+        -Dcpp_args=/std:c++20
         -Dldap=enabled
-        -Dssl=openssl
         -Dplperl=enabled
         -Dplpython=enabled
+        -Dssl=openssl
+        -Dtap_tests=enabled
 
     defaults:
       run:
