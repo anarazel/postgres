@@ -891,8 +891,8 @@ jobs:
           # ${MINGW_PACKAGE_PREFIX} is an environment variable used in the
           # MSYS2. It dynamically expands to the correct prefix for the active
           # shell environment.
-          pacman -S --noconfirm --needed \
-            git bison flex make diffutils \
+          pacman -S --noconfirm --needed  --asdeps \
+            git bison flex diffutils \
             ${MINGW_PACKAGE_PREFIX}-ccache \
             ${MINGW_PACKAGE_PREFIX}-gcc \
             ${MINGW_PACKAGE_PREFIX}-icu \
