@@ -114,6 +114,12 @@ env:
     --with-uuid=ossp
     --with-zstd
 
+  # Centrally define the version of linux runners, to make it easier to
+  # update. We don't just want to use ubuntu-latest, as it's not implausible
+  # there will be breakage when that switches to the next ubuntu version.
+  _LINUX_RUNS_ON: &linux_runs_on |
+    ubuntu-24.04
+
   # Debian Trixie containers used by all Linux jobs. Built by
   # 'https://github.com/anarazel/pg-vm-images/'.
   CONTAINER_REPO: ghcr.io/anarazel/pg-vm-images/main
@@ -133,7 +139,7 @@ jobs:
   # consumed by the jobs' `if:` conditions.
   setup:
     name: Determine enabled jobs
-    runs-on: ubuntu-latest
+    runs-on: *linux_runs_on
     timeout-minutes: 1
     outputs:
       linux: ${{ steps.os.outputs.linux }}
@@ -198,7 +204,7 @@ jobs:
     if: |
       !cancelled() &&
       needs.setup.outputs.sanitycheck == 'true'
-    runs-on: ubuntu-latest
+    runs-on: *linux_runs_on
     timeout-minutes: 15
     container: &linux_ci_container
       image: ${{ needs.setup.outputs.container_linux_ci }}
@@ -357,7 +363,7 @@ jobs:
       !cancelled() &&
       needs.setup.outputs.linux == 'true' &&
       needs.sanity-check.result != 'failure'
-    runs-on: ubuntu-latest
+    runs-on: *linux_runs_on
     container: *linux_ci_container
     timeout-minutes: 60
 
@@ -449,7 +455,7 @@ jobs:
     name: Linux - Meson (32-bit)
     needs: [setup, sanity-check]
     if: *linux_job_if
-    runs-on: ubuntu-latest
+    runs-on: *linux_runs_on
     container: *linux_ci_container
     timeout-minutes: 60
     env: *linux_env
@@ -539,7 +545,7 @@ jobs:
     name: Linux - Meson (64-bit)
     needs: [setup, sanity-check]
     if: *linux_job_if
-    runs-on: ubuntu-latest
+    runs-on: *linux_runs_on
     container: *linux_ci_container
     timeout-minutes: 60
     env: *linux_env
@@ -1022,7 +1028,7 @@ jobs:
       !cancelled() &&
       needs.setup.outputs.compilerwarnings == 'true' &&
       needs.sanity-check.result != 'failure'
-    runs-on: ubuntu-latest
+    runs-on: *linux_runs_on
     timeout-minutes: 60
     container:
       image: ${{ needs.setup.outputs.container_linux_ci_docs }}
