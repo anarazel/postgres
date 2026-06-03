@@ -718,8 +718,13 @@ jobs:
 
 
   # Job: Windows - Visual Studio
+  #
+  # If we were to execute tests in this job serially, this would be the
+  # slowest job by a good margin. To avoid that, use a matrix in combination
+  # with meson test's --slice SLICE/NUM_SLICES mechanism to split the tests
+  # across two runners.
   windows-vs:
-    name: Windows - Visual Studio
+    name: Windows - Visual Studio - Slice ${{ matrix.slice}}/${{ matrix.num_slices}}
     needs: [setup, sanity-check]
     if: |
       !cancelled() &&
@@ -727,6 +732,17 @@ jobs:
       needs.sanity-check.result != 'failure'
     runs-on: windows-2022
     timeout-minutes: 60
+
+    # As described at the top of the task, split the tests across two runners
+    # for performance. The gains from additional concurrency diminish
+    # relatively quickly, due to each instance having to install dependencies
+    # and build postgres.
+    strategy:
+      fail-fast: false
+      matrix:
+        num_slices: [2]
+        slice: [1, 2]
+
     env:
       # Avoid port conflicts between concurrent tap tests
       PG_TEST_USE_UNIX_SOCKETS: 1
@@ -880,6 +896,11 @@ jobs:
 
       - name: Test world
         env:
+          # As described at the top of the task, split the tests across two
+          # runners for performance.  It's not the prettiest to implement this
+          # by prepending to MTEST_TARGET, but a more complicated solution
+          # doesn't seem worth it.
+          MTEST_TARGET: --slice ${{ matrix.slice}}/${{ matrix.num_slices}} ${{env.MTEST_TARGET}}
           ADDITIONAL_SETUP: |
             call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
         run: *meson_test_world_cmd
