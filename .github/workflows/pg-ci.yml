@@ -741,6 +741,21 @@ jobs:
           icacls "${{ github.workspace }}" /grant "${env:USERNAME}:(OI)(CI)F" /Q | Out-Null
           Write-Host "Granted Full Control to $env:USERNAME on ${{ github.workspace }}"
 
+      # Install some dependencies via msys64, that seems to be the fastest and
+      # most reliable
+      - name: Install dependencies, Mingw
+        shell: 'C:\msys64\usr\bin\bash.exe --login -eo pipefail "{0}"'
+        run: |
+          pacman -S --noconfirm --needed --asdeps \
+            bison flex
+
+          # Make bison and flex visible
+          echo C:/msys64/usr/bin >> "$GITHUB_PATH"
+
+          # Don't prefer mingw's perl
+          echo C:/Strawberry/perl/bin >> "$GITHUB_PATH"
+
+
       # postgres' plpython3u loads python3.dll (the stable-ABI forwarder)
       # which in turn loads whichever python3NN.dll the Windows loader finds
       # first on PATH. On windows-2022 `C:\Program Files\Mercurial\` ships
@@ -763,7 +778,6 @@ jobs:
       - name: Install dependencies
         shell: pwsh
         run: |
-          choco install -y --no-progress --limitoutput diffutils winflexbison3
           # meson + ninja aren't preinstalled on windows-2022. Install via pip
           python -m pip install --upgrade meson ninja
 
