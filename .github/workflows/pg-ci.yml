@@ -695,6 +695,7 @@ jobs:
         -Dssl=openssl
         -Dplperl=enabled
         -Dplpython=enabled
+        -Dzstd=enabled
 
     defaults:
       run:
