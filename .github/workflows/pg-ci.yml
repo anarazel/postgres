@@ -901,7 +901,7 @@ jobs:
             ${MINGW_PACKAGE_PREFIX}-make \
             ${MINGW_PACKAGE_PREFIX}-meson \
             ${MINGW_PACKAGE_PREFIX}-perl \
-            ${MINGW_PACKAGE_PREFIX}-pkg-config \
+            ${MINGW_PACKAGE_PREFIX}-pkgconf \
             ${MINGW_PACKAGE_PREFIX}-readline \
             ${MINGW_PACKAGE_PREFIX}-zlib
 
