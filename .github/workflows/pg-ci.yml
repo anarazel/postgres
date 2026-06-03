@@ -846,7 +846,8 @@ jobs:
           if (!$?) { throw 'cmdfail' }
           echo ::endgroup::
 
-      - name: Setup hosts file
+      - &window_setup_hosts_step
+        name: Setup hosts file
         shell: pwsh
         run: |
           Add-Content c:\Windows\System32\Drivers\etc\hosts "127.0.0.1 pg-loadbalancetest"
@@ -922,6 +923,7 @@ jobs:
 
     steps:
       - *windows_disable_defender_step
+      - *window_setup_hosts_step
       - *checkout_step
 
       # Relocate the preinstalled MSYS2 tree from C:\ (slow system disk) to
