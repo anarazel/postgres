@@ -337,6 +337,7 @@ jobs:
               **/regress_log_*
               **/crashlog-*.txt
               build/meson-logs/**
+              **/config.log
           if-no-files-found: ignore
 
 
@@ -1151,3 +1152,4 @@ jobs:
             EXTRAFLAGS='-fmax-errors=10'
 
       - *ccache_save_step
+      - *upload_logs_step
