@@ -765,6 +765,7 @@ jobs:
         run: |
           # Install some dependencies via msys64, that seems to be the fastest
           # and most reliable
+          echo ::group::msys
           pacman -S --noconfirm --needed --asdeps \
             bison flex
           if (!$?) { throw 'cmdfail' }
@@ -774,11 +775,14 @@ jobs:
 
           # Don't prefer mingw's perl
           echo C:/Strawberry/perl/bin >> "$GITHUB_PATH"
+          echo ::endgroup::
 
 
           # meson is not preinstalled on windows-2022. Install via pip
+          echo ::group::pip
           python -m pip install --upgrade meson
           if (!$?) { throw 'cmdfail' }
+          echo ::endgroup::
 
 
           # Install IPC::Run.
@@ -790,10 +794,12 @@ jobs:
           #   handling). See upstream pg-vm-images commit ff5238afa3 and
           #   the thread at
           #   https://postgr.es/m/CAN55FZ06xanSbJdHe-CurjX_qNuBWZDEvS1kAk36L38YCtZXnw%40mail.gmail.com
+          echo ::group::cpan_ipc_run
           "o conf recommends_policy 0`no conf commit`nnotest install NJM/IPC-Run-20250809.0.tar.gz" | cpan
           if (!$?) { throw 'cmdfail' }
           perl -mIPC::Run -e 1
           if (!$?) { throw 'cmdfail' }
+          echo ::endgroup::
 
       - name: Setup hosts file
         shell: pwsh
@@ -916,8 +922,10 @@ jobs:
           # Pin IPC::Run to NJM/IPC-Run-20250809.0; TODDR/IPC-Run-20260322.0
           # broke postgres tap tests on Windows (pipe stdio handling).
           # See pg-vm-images commit ff5238afa3.
+          echo ::group::cpan_ipc_run
           (echo; echo o conf recommends_policy 0; echo notest install NJM/IPC-Run-20250809.0.tar.gz) | cpan
           perl -mIPC::Run -e 1
+          echo ::endgroup::
 
       - name: Setup socket directory
         shell: cmd
