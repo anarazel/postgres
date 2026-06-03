@@ -690,11 +690,11 @@ jobs:
       MESON_FEATURES: >-
         -Dcpp_args=/std:c++20
         -Dauto_features=disabled
-        -Dtap_tests=enabled
         -Dldap=enabled
-        -Dssl=openssl
         -Dplperl=enabled
         -Dplpython=enabled
+        -Dssl=openssl
+        -Dtap_tests=enabled
         -Dzstd=enabled
 
     defaults:
