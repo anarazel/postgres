@@ -317,7 +317,7 @@ jobs:
           meson test ${{env.MTEST_ARGS}} --suite setup --logbase setup || exit 1
           echo ::endgroup::
 
-          meson test ${{env.MTEST_ARGS}} --num-processes ${{env.TEST_JOBS}} ${{env.MTEST_TARGET}}
+          meson test ${{env.MTEST_ARGS}} --num-processes ${{env.TEST_JOBS}} --no-suite setup ${{env.MTEST_TARGET}}
 
       - &linux_collect_cores_step
         name: Core backtraces
