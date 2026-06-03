@@ -157,7 +157,8 @@ jobs:
           ulimit -a -H && ulimit -a -S
           env
 
-      - id: os
+      - name: Parse ci-os-only
+        id: os
         env:
           MSG: ${{ github.event.head_commit.message }}
         shell: bash
@@ -328,6 +329,7 @@ jobs:
               **/*.diffs
               **/regress_log_*
               **/crashlog-*.txt
+              build/meson-logs/**
           if-no-files-found: ignore
 
 
