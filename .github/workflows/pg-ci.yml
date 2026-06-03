@@ -340,6 +340,8 @@ jobs:
   #   printed in the server log)
   # - Configures postgres with a small segment size
   # - Uses PG_TEST_PG_COMBINEBACKUP_MODE=--copy-file-range
+  # - Uses postgres specific CPPFLAGS that increase test coverage
+  # - Enables --link for pg_upgrade
   linux-autoconf:
     name: Linux - Autoconf
     needs: [setup, sanity-check]
@@ -378,7 +380,10 @@ jobs:
         env:
           SANITIZER_FLAGS: -fsanitize=alignment,undefined
           PG_TEST_PG_COMBINEBACKUP_MODE: --copy-file-range
+          CPPFLAGS: -DRELCACHE_FORCE_RELEASE -DENFORCE_REGRESSION_TEST_NAME_RESTRICTIONS
+          PG_TEST_PG_UPGRADE_MODE: --link
         run: &linux_update_config_cmd |
+          echo "CPPFLAGS=$CPPFLAGS" >> "$GITHUB_ENV"
           echo "CFLAGS=$CFLAGS ${SANITIZER_FLAGS}" >> "$GITHUB_ENV"
           echo "CXXFLAGS=$CXXFLAGS ${SANITIZER_FLAGS}" >> "$GITHUB_ENV"
           echo "LDFLAGS=$LDFLAGS ${SANITIZER_FLAGS}" >> "$GITHUB_ENV"
@@ -386,6 +391,7 @@ jobs:
           echo "CC=${CC}" >> "$GITHUB_ENV"
           echo "CXX=${CXX}" >> "$GITHUB_ENV"
 
+          echo "PG_TEST_PG_UPGRADE_MODE=${PG_TEST_PG_UPGRADE_MODE}" >> "$GITHUB_ENV"
           echo "PG_TEST_INITDB_EXTRA_OPTS=${PG_TEST_INITDB_EXTRA_OPTS}" >> "$GITHUB_ENV"
           echo "PG_TEST_PG_COMBINEBACKUP_MODE=${PG_TEST_PG_COMBINEBACKUP_MODE}" >> "$GITHUB_ENV"
 
