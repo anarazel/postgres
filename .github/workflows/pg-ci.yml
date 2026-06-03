@@ -747,7 +747,7 @@ jobs:
     steps:
       - &windows_disable_defender_step
         name: Disable Windows Defender
-        shell: powershell
+        shell: pwsh
         run: |
           Set-MpPreference -DisableRealtimeMonitoring $true -SubmitSamplesConsent NeverSend -MAPSReporting Disable
           # Verify Defender status
@@ -933,7 +933,7 @@ jobs:
       # robocopy returns 0-7 on success (with various "files copied" bits
       # set) and 8+ on real failure, so we have to translate its exit code.
       - name: Relocate MSYS2 to D
-        shell: powershell
+        shell: pwsh
         run: |
           robocopy C:\msys64 D:\msys64 /E /MT:16 /NJS /NJH /NFL /NDL /NP
           if ($LASTEXITCODE -ge 8) { exit $LASTEXITCODE }
