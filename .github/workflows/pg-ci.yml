@@ -763,7 +763,18 @@ jobs:
       - name: Install dependencies
         shell: pwsh
         run: |
-          choco install -y --no-progress --limitoutput diffutils winflexbison3
+          # Install some dependencies via msys64, that seems to be the fastest
+          # and most reliable
+          pacman -S --noconfirm --needed --asdeps \
+            bison flex
+
+          # Make bison and flex visible
+          echo C:/msys64/usr/bin >> "$GITHUB_PATH"
+
+          # Don't prefer mingw's perl
+          echo C:/Strawberry/perl/bin >> "$GITHUB_PATH"
+
+
           # meson + ninja aren't preinstalled on windows-2022. Install via pip
           python -m pip install --upgrade meson ninja
 
