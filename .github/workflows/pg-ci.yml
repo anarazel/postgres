@@ -767,17 +767,6 @@ jobs:
           # meson + ninja aren't preinstalled on windows-2022. Install via pip
           python -m pip install --upgrade meson ninja
 
-          # OpenSSL 1.1 via the slproweb installer (pinned to match the
-          # version used elsewhere in postgres CI).
-          curl.exe -fsSL -o openssl-setup.exe https://slproweb.com/download/Win64OpenSSL-1_1_1w.exe
-          Start-Process -Wait -FilePath ./openssl-setup.exe `
-            -ArgumentList '/DIR=d:\openssl\1.1\ /VERYSILENT /SP- /SUPPRESSMSGBOXES'
-          # The slproweb installer puts libcrypto-1_1-x64.dll / libssl-1_1-x64.dll
-          # in d:\openssl\1.1\bin\ and updates the system PATH. GH Actions
-          # snapshots PATH at job start though, so the running job won't
-          # see those DLLs and initdb.exe would crash silently at runtime.
-          # Push the bin dir onto GITHUB_PATH so it persists for later steps.
-          Add-Content $env:GITHUB_PATH "d:\openssl\1.1\bin"
 
           # Install IPC::Run.
           # - recommends_policy=0 keeps cpan from pulling in IO::Tty / IO::Pty,
@@ -811,7 +800,6 @@ jobs:
             ${{env.MESON_FEATURES}} ^
             --buildtype debug ^
             -Db_pch=true ^
-            -Dextra_lib_dirs=d:\openssl\1.1\lib -Dextra_include_dirs=d:\openssl\1.1\include ^
             -DTAR=${{env.TAR}} ^
             build
 
