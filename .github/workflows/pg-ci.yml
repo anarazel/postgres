@@ -763,7 +763,7 @@ jobs:
         shell: cmd
 
     steps:
-      - &windows_disable_defender
+      - &windows_disable_defender_step
         name: Disable Windows Defender
         shell: powershell
         run: |
@@ -945,7 +945,7 @@ jobs:
         shell: 'D:\msys64\usr\bin\bash.exe --login -eo pipefail "{0}"'
 
     steps:
-      - *windows_disable_defender
+      - *windows_disable_defender_step
       - *checkout_step
 
       # Relocate the preinstalled MSYS2 tree from C:\ (slow system disk) to
