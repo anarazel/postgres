@@ -126,7 +126,10 @@ env:
 
 
 jobs:
-  # Parse "ci-os-only: ..." from the commit message and expose flags
+
+  # Job: Determine enabled jobs
+  #
+  # Parses "ci-os-only: ..." from the commit message and exposes flags
   # consumed by the jobs' `if:` conditions.
   setup:
     name: Determine enabled jobs
@@ -144,6 +147,7 @@ jobs:
       # context is not available.
       container_linux_ci: ${{ env.CONTAINER_REPO }}/${{ env.CONTAINER_LINUX_CI }}
       container_linux_ci_docs: ${{ env.CONTAINER_REPO }}/${{ env.CONTAINER_LINUX_CI_DOCS }}
+
     steps:
       # Anchor reused by other jobs further down. GitHub Actions supports YAML
       # anchors/aliases but not merge keys, so the alias copies the whole step
@@ -180,6 +184,8 @@ jobs:
           cat "$GITHUB_OUTPUT"
 
 
+  # Job: SanityCheck
+  #
   # To avoid unnecessarily spinning up a lot of VMs / containers for entirely
   # broken commits, have a minimal task that all others depend on.
   #
@@ -219,6 +225,7 @@ jobs:
     env:
       # no options enabled, should be small
       CCACHE_MAXSIZE: "150M"
+
     steps:
       - *nix_sysinfo_step
 
@@ -238,7 +245,7 @@ jobs:
             ccache-${{ github.job }}-${{ github.ref_name }}-
             ccache-${{ github.job }}-
 
-      - &linux_prepare_workspace
+      - &linux_prepare_workspace_step
         name: Prepare workspace
         run: |
           useradd -m postgres
@@ -271,7 +278,7 @@ jobs:
 
       - name: Build
         shell: *su_postgres_shell
-        run: &ninja_build_command |
+        run: &ninja_build_cmd |
           ninja -C build -j${{env.BUILD_JOBS}} ${{env.MBUILD_TARGET}}
           ninja -C build -t missingdeps
 
@@ -312,7 +319,7 @@ jobs:
 
           meson test ${{env.MTEST_ARGS}} --num-processes ${{env.TEST_JOBS}} ${{env.MTEST_TARGET}}
 
-      - &linux_collect_cores
+      - &linux_collect_cores_step
         name: Core backtraces
         if: failure() && !cancelled()
         run: src/tools/ci/cores_backtrace.sh linux /tmp/cores
@@ -333,7 +340,7 @@ jobs:
           if-no-files-found: ignore
 
 
-  # Linux, Autoconf
+  # Job: Linux - Autoconf
   #
   # SPECIAL:
   # - Uses undefined & alignment sanitizers (sanitizer failures are typically
@@ -398,7 +405,7 @@ jobs:
       - *nix_sysinfo_step
       - *checkout_step
       - *ccache_restore_step
-      - *linux_prepare_workspace
+      - *linux_prepare_workspace_step
 
       - name: Configure
         shell: *su_postgres_shell
@@ -423,11 +430,11 @@ jobs:
         run: |
           make -s ${CHECK} ${CHECKFLAGS} -j${TEST_JOBS}
 
-      - *linux_collect_cores
+      - *linux_collect_cores_step
       - *upload_logs_step
 
 
-  # Linux Meson, 32 bit
+  # Job: Linux - Meson (32-bit)
   #
   # SPECIAL:
   # - Uses undefined behaviour and alignment sanitizers, (sanitizer failures
@@ -458,7 +465,7 @@ jobs:
       - *nix_sysinfo_step
       - *checkout_step
       - *ccache_restore_step
-      - *linux_prepare_workspace
+      - *linux_prepare_workspace_step
 
       - name: Configure
         shell: *su_postgres_shell
@@ -474,7 +481,7 @@ jobs:
 
       - name: Build
         shell: *su_postgres_shell
-        run: *ninja_build_command
+        run: *ninja_build_cmd
 
       - *ccache_save_step
 
@@ -515,11 +522,11 @@ jobs:
 
           build/tmp_install/usr/local/pgsql/bin/pg_ctl -D build/runningcheck stop
 
-      - *linux_collect_cores
+      - *linux_collect_cores_step
       - *upload_logs_step
 
 
-  # Linux Meson, 64 bit
+  # Linux - Meson (64-bit)
   #
   # SPECIAL:
   # - Uses address sanitizer, (sanitizer failures are typically printed in the
@@ -546,7 +553,7 @@ jobs:
       - *nix_sysinfo_step
       - *checkout_step
       - *ccache_restore_step
-      - *linux_prepare_workspace
+      - *linux_prepare_workspace_step
 
       - name: Configure
         shell: *su_postgres_shell
@@ -560,7 +567,7 @@ jobs:
 
       - name: Build
         shell: *su_postgres_shell
-        run: *ninja_build_command
+        run: *ninja_build_cmd
 
       - *ccache_save_step
 
@@ -568,10 +575,12 @@ jobs:
         shell: *su_postgres_shell
         run: *meson_test_world_cmd
 
-      - *linux_collect_cores
+      - *linux_collect_cores_step
       - *upload_logs_step
 
 
+  # Job: macOS - Meson
+  #
   # SPECIAL:
   # - Enables --clone for pg_upgrade and pg_combinebackup
   # - Specifies configuration options that test reading/writing/copying of node trees
@@ -628,8 +637,8 @@ jobs:
 
     steps:
       - *nix_sysinfo_step
-
       - *checkout_step
+      - *ccache_restore_step
 
       - name: Setup core files
         run: |
@@ -674,8 +683,6 @@ jobs:
           echo /opt/local/sbin >> "$GITHUB_PATH"
           echo /opt/local/bin >> "$GITHUB_PATH"
 
-      - *ccache_restore_step
-
       - name: Configure
         env:
           PKG_CONFIG_PATH: /opt/local/lib/pkgconfig/
@@ -691,7 +698,7 @@ jobs:
             build
 
       - name: Build
-        run: *ninja_build_command
+        run: *ninja_build_cmd
 
       - *ccache_save_step
 
@@ -708,6 +715,7 @@ jobs:
       - *upload_logs_step
 
 
+  # Job: Windows - Visual Studio
   windows-vs:
     name: Windows - Visual Studio
     needs: [setup, sanity-check]
@@ -735,8 +743,9 @@ jobs:
     defaults:
       run:
         shell: cmd
+
     steps:
-      - &windows_disable_defender
+      - &windows_disable_defender_step
         name: Disable Windows Defender
         shell: powershell
         run: |
@@ -821,7 +830,6 @@ jobs:
           if (!$?) { throw 'cmdfail' }
           echo ::endgroup::
 
-
           # Install IPC::Run.
           # - recommends_policy=0 keeps cpan from pulling in IO::Tty / IO::Pty,
           #   which don't build on Windows ("This module requires a POSIX
@@ -879,6 +887,7 @@ jobs:
       - *upload_logs_step
 
 
+  # Job: Windows - MinGW - Meson
   windows-mingw:
     name: Windows - MinGW - Meson
     needs: [setup, sanity-check]
@@ -912,7 +921,7 @@ jobs:
         shell: 'D:\msys64\usr\bin\bash.exe --login -eo pipefail "{0}"'
 
     steps:
-      - *windows_disable_defender
+      - *windows_disable_defender_step
       - *checkout_step
 
       # Relocate the preinstalled MSYS2 tree from C:\ (slow system disk) to
@@ -981,7 +990,7 @@ jobs:
             build
 
       - name: Build
-        run: *ninja_build_command
+        run: *ninja_build_cmd
 
       - *ccache_save_step
 
@@ -993,6 +1002,8 @@ jobs:
       - *upload_logs_step
 
 
+  # Job: CompilerWarnings
+  #
   # Test that code can be built with both gcc and clang without warnings,
   # with various combinations of cassert/dtrace flags. Trace probes have
   # a history of getting accidentally broken; the matrix is there to
@@ -1017,20 +1028,10 @@ jobs:
       # compilers / flag combinations.
       CCACHE_MAXSIZE: "1G"
       DEFAULT_BUILD: world-bin
+
     steps:
-
-      - name: Sysinfo
-        run: |
-          id
-          uname -a
-          cat /proc/cmdline
-          ulimit -a -H && ulimit -a -S
-          gcc -v
-          clang -v
-          env
-
+      - *nix_sysinfo_step
       - *checkout_step
-
       - *ccache_restore_step
 
       - name: Setup workspace
@@ -1055,7 +1056,6 @@ jobs:
           make -s -j${{env.BUILD_JOBS}} clean
           make -s -j${{env.BUILD_JOBS}} ${{env.DEFAULT_BUILD}}
 
-
       # gcc, cassert on, dtrace off
       - name: gcc warnings + (cassert)
         if: ${{ !cancelled() }}
@@ -1064,7 +1064,6 @@ jobs:
           CC: ccache gcc
           CXX: ccache g++
         run: *compiler_warnings_cmd
-
 
       # clang, cassert off, dtrace off
       - name: clang warnings
@@ -1075,7 +1074,6 @@ jobs:
           CXX: ccache clang++
         run: *compiler_warnings_cmd
 
-
       # clang, cassert on, dtrace on
       - name: clang warnings + (cassert + dtrace)
         if: ${{ !cancelled() }}
@@ -1085,7 +1083,6 @@ jobs:
           CXX: ccache clang++
         run: *compiler_warnings_cmd
 
-
       - name: mingw warnings (cross compilation)
         if: ${{ !cancelled() }}
         env:
@@ -1093,7 +1090,6 @@ jobs:
           CC: ccache x86_64-w64-mingw32ucrt-gcc
           CXX: ccache x86_64-w64-mingw32ucrt-g++
         run: *compiler_warnings_cmd
-
 
       ###
       # Verify docs can be built
