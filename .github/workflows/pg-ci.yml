@@ -637,8 +637,8 @@ jobs:
 
     steps:
       - *nix_sysinfo_step
-
       - *checkout_step
+      - *ccache_restore_step
 
       - name: Setup core files
         run: |
@@ -682,8 +682,6 @@ jobs:
           # Make macports install visible to subsequent steps
           echo /opt/local/sbin >> "$GITHUB_PATH"
           echo /opt/local/bin >> "$GITHUB_PATH"
-
-      - *ccache_restore_step
 
       - name: Configure
         env:
@@ -847,7 +845,6 @@ jobs:
           python -m pip install --upgrade meson
           if (!$?) { throw 'cmdfail' }
           echo ::endgroup::
-
 
           # Install IPC::Run.
           # - recommends_policy=0 keeps cpan from pulling in IO::Tty / IO::Pty,
@@ -1056,18 +1053,8 @@ jobs:
       DEFAULT_BUILD: world-bin
 
     steps:
-      - name: Sysinfo
-        run: |
-          id
-          uname -a
-          cat /proc/cmdline
-          ulimit -a -H && ulimit -a -S
-          gcc -v
-          clang -v
-          env
-
+      - *nix_sysinfo_step
       - *checkout_step
-
       - *ccache_restore_step
 
       - name: Setup workspace
@@ -1092,7 +1079,6 @@ jobs:
           make -s -j${{env.BUILD_JOBS}} clean
           make -s -j${{env.BUILD_JOBS}} ${{env.DEFAULT_BUILD}}
 
-
       # gcc, cassert on, dtrace off
       - name: gcc warnings + (cassert)
         if: ${{ !cancelled() }}
@@ -1101,7 +1087,6 @@ jobs:
           CC: ccache gcc
           CXX: ccache g++
         run: *compiler_warnings_cmd
-
 
       # clang, cassert off, dtrace off
       - name: clang warnings
@@ -1112,7 +1097,6 @@ jobs:
           CXX: ccache clang++
         run: *compiler_warnings_cmd
 
-
       # clang, cassert on, dtrace on
       - name: clang warnings + (cassert + dtrace)
         if: ${{ !cancelled() }}
@@ -1122,7 +1106,6 @@ jobs:
           CXX: ccache clang++
         run: *compiler_warnings_cmd
 
-
       - name: mingw warnings (cross compilation)
         if: ${{ !cancelled() }}
         env:
@@ -1130,7 +1113,6 @@ jobs:
           CC: ccache x86_64-w64-mingw32ucrt-gcc
           CXX: ccache x86_64-w64-mingw32ucrt-g++
         run: *compiler_warnings_cmd
-
 
       ###
       # Verify docs can be built
