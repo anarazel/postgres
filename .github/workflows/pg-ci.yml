@@ -307,7 +307,7 @@ jobs:
           ${{env.ADDITIONAL_SETUP}}
 
           echo ::group::test_setup
-          meson test ${{env.MTEST_ARGS}} --suite setup --logbase setup
+          meson test ${{env.MTEST_ARGS}} --suite setup --logbase setup || exit 1
           echo ::endgroup::
 
           meson test ${{env.MTEST_ARGS}} --num-processes ${{env.TEST_JOBS}} ${{env.MTEST_TARGET}}
@@ -781,6 +781,7 @@ jobs:
         run: |
           # meson + ninja aren't preinstalled on windows-2022. Install via pip
           python -m pip install --upgrade meson ninja
+          if (!$?) { throw 'cmdfail' }
 
 
           # Install IPC::Run.
@@ -793,7 +794,9 @@ jobs:
           #   the thread at
           #   https://postgr.es/m/CAN55FZ06xanSbJdHe-CurjX_qNuBWZDEvS1kAk36L38YCtZXnw%40mail.gmail.com
           "o conf recommends_policy 0`no conf commit`nnotest install NJM/IPC-Run-20250809.0.tar.gz" | cpan
+          if (!$?) { throw 'cmdfail' }
           perl -mIPC::Run -e 1
+          if (!$?) { throw 'cmdfail' }
 
       - name: Setup hosts file
         shell: pwsh
@@ -821,7 +824,7 @@ jobs:
       - name: Build
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
-          ninja -C build ${{env.MBUILD_TARGET}}
+          ninja -C build ${{env.MBUILD_TARGET}} || exit 1
           ninja -C build -t missingdeps
 
       - name: Test world
