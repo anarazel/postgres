@@ -760,10 +760,25 @@ jobs:
           Add-Content $env:GITHUB_ENV "PATH=$filtered"
           Write-Host "Removed Mercurial entries from PATH"
 
+      # Install some dependencies via msys64, that seems to be the fastest and
+      # most reliable
+      - name: Install dependencies, Mingw
+        shell: 'C:\msys64\usr\bin\bash.exe --login -eo pipefail "{0}"'
+        run: |
+          # Install some dependencies via msys64, that seems to be the fastest
+          # and most reliable
+          pacman -S --noconfirm --needed --asdeps \
+            bison flex
+
+          # Make bison and flex visible
+          echo C:/msys64/usr/bin >> "$GITHUB_PATH"
+
+          # Don't prefer mingw's perl
+          echo C:/Strawberry/perl/bin >> "$GITHUB_PATH"
+
       - name: Install dependencies
         shell: pwsh
         run: |
-          choco install -y --no-progress --limitoutput diffutils winflexbison3
           # meson + ninja aren't preinstalled on windows-2022. Install via pip
           python -m pip install --upgrade meson ninja
 
