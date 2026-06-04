@@ -690,18 +690,23 @@ jobs:
           sudo sysctl kern.corefile="$HOME/cores/core.%P"
 
       - name: "Macports: Compute cache key"
-        id: mpkey
+        id: mp-key
         run: |
           macos_major=$(sw_vers -productVersion | sed 's/\..*//')
           pkglist_hash=$(printf '%s' "$MACOS_PACKAGE_LIST" | md5 -q)
           script_hash=$(md5 -q src/tools/ci/ci_macports_packages.sh)
           echo "key=macports-${macos_major}-${pkglist_hash}-${script_hash}" >> "$GITHUB_OUTPUT"
+          # It's faster to start with a partial cache for the same macos
+          # version than from scratch
+          echo "restore-key=macports-${macos_major}-" >> "$GITHUB_OUTPUT"
 
       - name: "MacPorts: Restore cache"
-        uses: actions/cache@v5
+        id: mp-restore
+        uses: actions/cache/restore@v5
         with:
           path: ${{ env.MACPORTS_CACHE }}
-          key: ${{ steps.mpkey.outputs.key }}
+          key: ${{ steps.mp-key.outputs.key }}
+          restore-keys: ${{ steps.mp-key.outputs.restore-key }}
 
       # Use MacPorts, even though Homebrew is installed. The installation
       # of the additional packages we need would take quite a while with
@@ -714,6 +719,7 @@ jobs:
       # actually p5.34-io-tty. Using the unversioned name works, but
       # updates MacPorts every time.
       - name: "MacPorts: Install dependencies"
+        id: mp-install
         env:
           # Pass token so the script's GitHub API call to list MacPorts
           # releases isn't subject to the 60/h/IP unauthenticated rate
@@ -726,6 +732,18 @@ jobs:
           # Make macports install visible to subsequent steps
           echo /opt/local/sbin >> "$GITHUB_PATH"
           echo /opt/local/bin >> "$GITHUB_PATH"
+
+      # Save macports before running build / tests, creating macports can be
+      # quite slow, so we don't want to start from scratch in the next run.
+      - name: "MacPorts: Save cache"
+        uses: actions/cache/save@v5
+        # Don't save cache if we had an exact match
+        if: |
+          steps.mp-install.conclusion == 'success' &&
+          steps.mp-restore.outputs.cache-hit != 'true'
+        with:
+          path: ${{ env.MACPORTS_CACHE }}
+          key: ${{ steps.mp-key.outputs.key }}
 
       - name: Configure
         env:
