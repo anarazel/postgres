@@ -1002,7 +1002,7 @@ jobs:
 
     defaults:
       run:
-        shell: 'D:\msys64\usr\bin\bash.exe --login -eo pipefail "{0}"'
+        shell: 'C:\msys64\usr\bin\bash.exe --login -eo pipefail "{0}"'
 
     steps:
       - *windows_disable_defender_step
@@ -1018,6 +1018,7 @@ jobs:
       # robocopy returns 0-7 on success (with various "files copied" bits
       # set) and 8+ on real failure, so we have to translate its exit code.
       - name: Relocate MSYS2 to D
+        if: 0
         shell: pwsh
         run: |
           robocopy C:\msys64 D:\msys64 /E /MT:16 /NJS /NJH /NFL /NDL /NP
