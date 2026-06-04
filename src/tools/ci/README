@@ -20,8 +20,8 @@ Configuring CI on personal repositories
 Currently postgres contains CI support utilizing GitHub Actions.
 
 
-Configuring CI use of a GitHub repository
-=========================================
+Configuring CI use for a GitHub repository
+==========================================
 
 The GitHub Actions based CI workflow may or may not be active by default,
 depending on when the repository was forked.
@@ -39,7 +39,7 @@ postgres/postgres, each repository needs to explicitly opt-in to actually run
 the full CI tests.
 
 To opt into CI, go to
-https://github.com/<username>/<reponame>//settings/variables/actions and
+https://github.com/<username>/<reponame>/settings/variables/actions and
 create a new repository variable named PG_CI_ENABLED, with the value 1.
 
 
