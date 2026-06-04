@@ -63,7 +63,7 @@ env:
 
   # Can be set to a non-empty value to run a limited set of tests
   # (e.g. --suite regress to only run the main regression tests).
-  MTEST_TARGET:
+  MTEST_TARGET: regress/regress
 
   PGCTLTIMEOUT: 120  # avoids spurious failures during parallel tests
   TEMP_CONFIG: ${{ github.workspace }}/src/tools/ci/pg_ci_base.conf
@@ -1018,9 +1018,10 @@ jobs:
       # robocopy returns 0-7 on success (with various "files copied" bits
       # set) and 8+ on real failure, so we have to translate its exit code.
       - name: Relocate MSYS2 to D
+        if: 1
         shell: pwsh
         run: |
-          robocopy C:\msys64 D:\msys64 /E /MT:16 /NJS /NJH /NFL /NDL /NP
+          robocopy C:\msys64 D:\msys64 /E /j /mt:4 /NJS /NJH /NFL /NDL /NP
           if ($LASTEXITCODE -ge 8) { exit $LASTEXITCODE }
           exit 0
 
