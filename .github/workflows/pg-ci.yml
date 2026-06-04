@@ -49,7 +49,7 @@ env:
   TEST_JOBS: 4
 
   CCACHE_MAXSIZE: "250M"
-  CCACHE_DIR: ${{ github.workspace }}/ccache_dir
+  CCACHE_BASE: ${{ github.workspace }}/ccache
 
   # Check target for the autoconf builds. Can be set to e.g. check to only
   # test the main regression tests.
@@ -277,51 +277,56 @@ jobs:
         with:
           fetch-depth: ${{ env.CLONE_DEPTH }}
 
-      - &ccache_restore_step
-        name: Restore ccache
-        id: ccache-restore
+      - &ccache_restore_default_step
+        name: "ccache: Restore for default branch ${{github.event.repository.default_branch}}"
+        id: ccache-restore-default
+        if: ${{github.event.repository.default_branch != github.ref_name }}
         uses: actions/cache/restore@v5
         with:
-          path: ${{ env.CCACHE_DIR }}
+          path: ${{ env.CCACHE_BASE }}/cached
+          key: ccache-${{ github.job }}-${{github.event.repository.default_branch}}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ccache-${{ github.job }}-${{github.event.repository.default_branch}}-
+
+      - &ccache_restore_step
+        name: "ccache: Restore for branch ${{ github.ref_name }}"
+        id: ccache-restore-branch
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ env.CCACHE_BASE }}/cached
           key: ccache-${{ github.job }}-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             ccache-${{ github.job }}-${{ github.ref_name }}-
-            ccache-${{ github.job }}-
 
       - &ccache_setup_step
-        name: ccache setup
-        #if: |
-        #  steps.ccache_restore.outputs.cache-hit == 'true' ||
-        #  steps.ccache_restore.outputs.cache-matched-key != ''
+        name: "ccache: Local setup"
+        shell: bash
         run: |
-          set -x
+          ls -l ${CCACHE_BASE} || true
 
-          echo env: "${CCACHE_DIR}"
-          echo github env: "${{env.CCACHE_DIR}}"
+          # Create a remote that we use to write to. Unfortunately remote
+          # stores have a different format than the local ccache. Therefore we
 
-          ls -l "${CCACHE_DIR}" || true
-          ls -l "${{env.CCACHE_DIR}}" || true
+          mkdir -p "${CCACHE_BASE}/local"
 
-          realpath "${CCACHE_DIR}" || true
-          realpath "${{env.CCACHE_DIR}}" || true
+          # Move restored ccache out of the way, we'll just use it as a read-only remote
+          mkdir -p "${CCACHE_BASE}/cached"
+          mv "${CCACHE_BASE}/cached" "${CCACHE_BASE}/cached-orig"
 
-          set -x
-          ccache -s -vv
-          ccache --print-stats
-          ccache -z
-          mkdir -p "${CCACHE_DIR}"
-          mv "${CCACHE_DIR}" "${CCACHE_DIR}-src"
-          mkdir -p "${CCACHE_DIR}-target"
-          mkdir -p "${CCACHE_DIR}"
+          # Grow new cache in place, only from accesses in this run
+          mkdir -p "${CCACHE_BASE}/cached"
 
-          echo "CCACHE_REMOTE_STORAGE=file://${CCACHE_DIR}-target file://${CCACHE_DIR}-src|read-only=true" >> "$GITHUB_ENV"
+          echo "CCACHE_DIR=${CCACHE_BASE}/local" >> "$GITHUB_ENV"
 
+          # Use -src as a readonly ccache, and populate -target with boths hits and misses"
+          cache_new="file://${CCACHE_BASE}/cached"
+          cache_orig="file://${CCACHE_BASE}/cached-orig|read-only=true"
+          echo "CCACHE_REMOTE_STORAGE=$cache_new $cache_orig" >> "$GITHUB_ENV"
+
+          # Update the remotes with misses and hits
           echo "CCACHE_RESHARE=1" >> "$GITHUB_ENV"
-          echo "CCACHE_LOGFILE=${CCACHE_DIR}-log" >> "$GITHUB_ENV"
 
-          ccache -s
-
-          du -sh ${CCACHE_DIR}* || true
+          du -sh ${CCACHE_BASE}/* || true
 
       - &linux_prepare_workspace_step
         name: Prepare workspace
@@ -340,16 +345,6 @@ jobs:
             127.0.0.2 pg-loadbalancetest
             127.0.0.3 pg-loadbalancetest
           EOF
-
-
-      - name: ccache verify
-        shell: su postgres -c "bash --noprofile --norc -eo pipefail {0}"
-        run: |
-          echo 'int main(){}' > /tmp/t.c;
-          ccache cc -c /tmp/t.c;
-          ccache cc -c /tmp/t.c;
-          ccache -s -vvv
-          cat "$CCACHE_LOGFILE"
 
       # By using a shell that includes su, the run commands themselves get
       # simpler. As there are quite a few commands that need to use su...
@@ -371,12 +366,12 @@ jobs:
           ninja -C build -t missingdeps
 
       - &ccache_pre_save_step
-        name: ccache pre save
-        id: ccache-pre-restore
+        name: "ccache: Should save cache"
+        id: ccache-pre-save
         run: |
           set -x
 
-          du -sh ${CCACHE_DIR}*
+          du -sh ${CCACHE_BASE}/*
           ccache -s -vv
           ccache --print-stats
 
@@ -395,27 +390,16 @@ jobs:
             echo "hit rate is high enough that it's not worth saving new cache"
           fi
 
-          # Put remote into place
-          rm -rf "${CCACHE_DIR}"
-          mv "${CCACHE_DIR}-target" "${CCACHE_DIR}"
-
-      - name: Upload ccache log
-        uses: actions/upload-artifact@v7
-        with:
-          name: ccache-log-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{env.CCACHE_DIR}}-log
-          archive: false
-
       # TODO: As long as we use per-run ccache caches, we should probably add
       # a step that checks if there is sufficient new content to warrant
       # saving the new cache.
       - &ccache_save_step
         name: Save ccache
         uses: actions/cache/save@v5
-        if: steps.ccache-pre-restore.outputs.should_save == 'true'
+        if: steps.ccache-pre-save.outputs.should_save == 'true'
         with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
+          path: ${{ env.CCACHE_BASE }}/cached
+          key: ${{ steps.ccache-restore-branch.outputs.cache-primary-key }}
 
       # Run a minimal set of tests. The main regression tests take too long
       # for this purpose. For now this is a random quick pg_regress style
