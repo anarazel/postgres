@@ -164,7 +164,7 @@ jobs:
             > and click on the three dots at the top right and choose
             > "Disable workflow"
         run: |
-          echo "$MSG" >> "$GITHUB_STEP_SUMMARY"
+          echo "$MSG" |tee -a "$GITHUB_STEP_SUMMARY"
 
 
   # Job: Determine enabled jobs
