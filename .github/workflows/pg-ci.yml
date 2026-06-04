@@ -53,7 +53,7 @@ env:
 
   # Check target for the autoconf builds. Can be set to e.g. check to only
   # test the main regression tests.
-  CHECK: check-world PROVE_FLAGS=--timer
+  CHECK: check PROVE_FLAGS=--timer
   CHECKFLAGS: -Otarget
 
   # Build test dependencies as part of the build step, to see compiler
@@ -63,7 +63,7 @@ env:
 
   # Can be set to a non-empty value to run a limited set of tests
   # (e.g. --suite regress to only run the main regression tests).
-  MTEST_TARGET:
+  MTEST_TARGET: --suite test_misc
 
   PGCTLTIMEOUT: 120  # avoids spurious failures during parallel tests
   TEMP_CONFIG: ${{ github.workspace }}/src/tools/ci/pg_ci_base.conf
@@ -267,7 +267,7 @@ jobs:
         --privileged --pid=host --ipc=host --ulimit memlock=-1:-1
     env:
       # no options enabled, should be small
-      CCACHE_MAXSIZE: "150M"
+      CCACHE_MAXSIZE: "250M"
 
     steps:
       - *nix_sysinfo_step
@@ -279,7 +279,7 @@ jobs:
 
       - &ccache_restore_step
         name: Restore ccache
-        id: ccache_restore
+        id: ccache-restore
         uses: actions/cache/restore@v5
         with:
           path: ${{ env.CCACHE_DIR }}
@@ -287,6 +287,41 @@ jobs:
           restore-keys: |
             ccache-${{ github.job }}-${{ github.ref_name }}-
             ccache-${{ github.job }}-
+
+      - &ccache_setup_step
+        name: ccache setup
+        #if: |
+        #  steps.ccache_restore.outputs.cache-hit == 'true' ||
+        #  steps.ccache_restore.outputs.cache-matched-key != ''
+        run: |
+          set -x
+
+          echo env: "${CCACHE_DIR}"
+          echo github env: "${{env.CCACHE_DIR}}"
+
+          ls -l "${CCACHE_DIR}" || true
+          ls -l "${{env.CCACHE_DIR}}" || true
+
+          realpath "${CCACHE_DIR}" || true
+          realpath "${{env.CCACHE_DIR}}" || true
+
+          set -x
+          ccache -s -vv
+          ccache --print-stats
+          ccache -z
+          mkdir -p "${CCACHE_DIR}"
+          mv "${CCACHE_DIR}" "${CCACHE_DIR}-src"
+          mkdir -p "${CCACHE_DIR}-target"
+          mkdir -p "${CCACHE_DIR}"
+
+          echo "CCACHE_REMOTE_STORAGE=file://${CCACHE_DIR}-target file://${CCACHE_DIR}-src|read-only=true" >> "$GITHUB_ENV"
+
+          echo "CCACHE_RESHARE=1" >> "$GITHUB_ENV"
+          echo "CCACHE_LOGFILE=${CCACHE_DIR}-log" >> "$GITHUB_ENV"
+
+          ccache -s
+
+          du -sh ${CCACHE_DIR}* || true
 
       - &linux_prepare_workspace_step
         name: Prepare workspace
@@ -305,6 +340,16 @@ jobs:
             127.0.0.2 pg-loadbalancetest
             127.0.0.3 pg-loadbalancetest
           EOF
+
+
+      - name: ccache verify
+        shell: su postgres -c "bash --noprofile --norc -eo pipefail {0}"
+        run: |
+          echo 'int main(){}' > /tmp/t.c;
+          ccache cc -c /tmp/t.c;
+          ccache cc -c /tmp/t.c;
+          ccache -s -vvv
+          cat "$CCACHE_LOGFILE"
 
       # By using a shell that includes su, the run commands themselves get
       # simpler. As there are quite a few commands that need to use su...
@@ -325,15 +370,52 @@ jobs:
           ninja -C build -j${{env.BUILD_JOBS}} ${{env.MBUILD_TARGET}}
           ninja -C build -t missingdeps
 
+      - &ccache_pre_save_step
+        name: ccache pre save
+        id: ccache-pre-restore
+        run: |
+          set -x
+
+          du -sh ${CCACHE_DIR}*
+          ccache -s -vv
+          ccache --print-stats
+
+          hits=$(ccache --print-stats|grep '^remote_storage_hit'|cut -f 2)
+          misses=$(ccache --print-stats|grep '^remote_storage_miss'|cut -f 2)
+
+          # compute hit ratio:
+          hit_pct=$(python3 -c "print(int($hits/($misses+$hits)*100))")||true
+
+          echo "hits: $hits, misses: $misses, hit_pct: $hit_pct"
+
+          if [ "$hit_pct" -lt 80 ]; then
+            echo "should_save=true" >> "$GITHUB_OUTPUT"
+            echo "hit rate is low, create new cache entry"
+          else
+            echo "hit rate is high enough that it's not worth saving new cache"
+          fi
+
+          # Put remote into place
+          rm -rf "${CCACHE_DIR}"
+          mv "${CCACHE_DIR}-target" "${CCACHE_DIR}"
+
+      - name: Upload ccache log
+        uses: actions/upload-artifact@v7
+        with:
+          name: ccache-log-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{env.CCACHE_DIR}}-log
+          archive: false
+
       # TODO: As long as we use per-run ccache caches, we should probably add
       # a step that checks if there is sufficient new content to warrant
       # saving the new cache.
       - &ccache_save_step
         name: Save ccache
         uses: actions/cache/save@v5
+        if: steps.ccache-pre-restore.outputs.should_save == 'true'
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ${{ steps.ccache_restore.outputs.cache-primary-key }}
+          key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
 
       # Run a minimal set of tests. The main regression tests take too long
       # for this purpose. For now this is a random quick pg_regress style
@@ -449,6 +531,7 @@ jobs:
       - *nix_sysinfo_step
       - *checkout_step
       - *ccache_restore_step
+      - *ccache_setup_step
       - *linux_prepare_workspace_step
 
       - name: Configure
@@ -467,6 +550,7 @@ jobs:
         run: |
           make -s -j${BUILD_JOBS} world-bin
 
+      - *ccache_pre_save_step
       - *ccache_save_step
 
       - name: Test world
@@ -509,6 +593,7 @@ jobs:
       - *nix_sysinfo_step
       - *checkout_step
       - *ccache_restore_step
+      - *ccache_setup_step
       - *linux_prepare_workspace_step
 
       - name: Configure
@@ -527,6 +612,7 @@ jobs:
         shell: *su_postgres_shell
         run: *ninja_build_cmd
 
+      - *ccache_pre_save_step
       - *ccache_save_step
 
       - name: Test world
@@ -597,6 +683,7 @@ jobs:
       - *nix_sysinfo_step
       - *checkout_step
       - *ccache_restore_step
+      - *ccache_setup_step
       - *linux_prepare_workspace_step
 
       - name: Configure
@@ -613,6 +700,7 @@ jobs:
         shell: *su_postgres_shell
         run: *ninja_build_cmd
 
+      - *ccache_pre_save_step
       - *ccache_save_step
 
       - name: Test world
@@ -682,7 +770,6 @@ jobs:
     steps:
       - *nix_sysinfo_step
       - *checkout_step
-      - *ccache_restore_step
 
       - name: Setup core files
         run: |
@@ -745,6 +832,9 @@ jobs:
           path: ${{ env.MACPORTS_CACHE }}
           key: ${{ steps.mp-key.outputs.key }}
 
+      - *ccache_restore_step
+      - *ccache_setup_step
+
       - name: Configure
         env:
           PKG_CONFIG_PATH: /opt/local/lib/pkgconfig/
@@ -762,6 +852,7 @@ jobs:
       - name: Build
         run: *ninja_build_cmd
 
+      - *ccache_pre_save_step
       - *ccache_save_step
 
       - name: Test world
@@ -1063,6 +1154,7 @@ jobs:
         run: mkdir ${{env.PG_REGRESS_SOCK_DIR}}
 
       - *ccache_restore_step
+      - *ccache_setup_step
 
       - name: Configure
         run: |
@@ -1077,6 +1169,7 @@ jobs:
       - name: Build
         run: *ninja_build_cmd
 
+      - *ccache_pre_save_step
       - *ccache_save_step
 
       - name: Test world
@@ -1119,6 +1212,7 @@ jobs:
       - *nix_sysinfo_step
       - *checkout_step
       - *ccache_restore_step
+      - *ccache_setup_step
 
       - name: Setup workspace
         run: |
@@ -1213,5 +1307,6 @@ jobs:
             headerscheck cpluspluscheck \
             EXTRAFLAGS='-fmax-errors=10'
 
+      - *ccache_pre_save_step
       - *ccache_save_step
       - *upload_logs_step
