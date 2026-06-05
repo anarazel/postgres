@@ -3,6 +3,8 @@
 --
 create table insertconflicttest(key int4, fruit text);
 
+SELECT 'failme';
+
 -- invalid clauses
 insert into insertconflicttest values (1) on conflict (key int4_ops (fillfactor=10)) do nothing;
 insert into insertconflicttest values (1) on conflict (key asc) do nothing;
