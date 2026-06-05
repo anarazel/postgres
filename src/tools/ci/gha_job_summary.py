@@ -109,7 +109,7 @@ def summarize_setup_status(path):
     if summary is None:
         return {
             "status": "not-run",
-            "text": "∅ no meson setup log",
+            "text": f"∅ no setup log ({path})",
         }
     if "error" in summary:
         return {
@@ -134,7 +134,7 @@ def summarize_test_status(path):
     if summary is None:
         return {
             "status": "not-run",
-            "text": "∅ no meson test log",
+            "text": f"∅ no meson test log ({path})",
             "passed": "",
             "failed": "",
             "skipped": "",
@@ -173,6 +173,51 @@ def summarize_test_status(path):
     }
 
 
+def find_existing_path(candidates):
+    for candidate in candidates:
+        if Path(candidate).exists():
+            return candidate
+    return None
+
+
+def infer_log_paths(steps):
+    setup_candidates = []
+    test_candidates = []
+
+    if step_status(steps, "test-minimal") != "not-run":
+        setup_candidates += ["build/meson-logs/minimal-setup.json"]
+        test_candidates += ["build/meson-logs/minimal.json"]
+
+    if step_status(steps, "test-world") != "not-run":
+        setup_candidates += ["build/meson-logs/world-setup.json"]
+        test_candidates += ["build/meson-logs/world.json"]
+
+    if step_status(steps, "test-running") != "not-run":
+        setup_candidates += ["build/meson-logs/running-setup.json"]
+        test_candidates += ["build/meson-logs/running.json"]
+
+    return find_existing_path(setup_candidates), find_existing_path(test_candidates)
+
+
+def failed_compilerwarnings_steps(steps):
+    failed = []
+    for step_id, step in steps.items():
+        if not isinstance(step, dict):
+            continue
+
+        conclusion = step.get("conclusion") or step.get("outcome") or "unknown"
+        if conclusion != "failure":
+            continue
+
+        name = step.get("name", "")
+        haystack = f"{step_id} {name}".lower()
+
+        if "compilerwarning" in haystack or "warning" in haystack:
+            failed.append((step_id, name or step_id))
+
+    return failed
+
+
 def main():
     steps = json.loads(os.environ["STEPS_JSON"])
     job_name = os.environ["JOB_NAME"]
@@ -180,10 +225,25 @@ def main():
     configure = step_status(steps, "configure")
     build = step_status(steps, "build")
 
-    setup = summarize_setup_status("build/meson-logs/setup.json")
-    tests = summarize_test_status("build/meson-logs/testlog.json")
+    setup_path, test_path = infer_log_paths(steps)
 
-    # Console-friendly output, with Unicode fallback
+    setup = summarize_setup_status(setup_path) if setup_path else {
+        "status": "not-run",
+        "text": "∅ no setup log",
+    }
+    tests = summarize_test_status(test_path) if test_path else {
+        "status": "not-run",
+        "text": "∅ no meson test log",
+        "passed": "",
+        "failed": "",
+        "skipped": "",
+        "timeout": "",
+        "other": "",
+        "first_failed": "",
+    }
+
+    compilerwarnings_failed = failed_compilerwarnings_steps(steps)
+
     safe_print()
     safe_print(f"Summary for job: {job_name}")
     safe_print("=" * (17 + len(job_name)))
@@ -203,6 +263,12 @@ def main():
         safe_print(f"  {counts}")
         if tests["first_failed"]:
             safe_print(f"  first failed: {tests['first_failed']}")
+
+    if compilerwarnings_failed:
+        safe_print("CompilerWarnings failures:")
+        for step_id, name in compilerwarnings_failed:
+            safe_print(f"  - {name} [{step_id}]")
+
     safe_print()
 
     lines = []
@@ -221,6 +287,13 @@ def main():
         f"| {tests['timeout']} "
         f"| {tests['first_failed']} |"
     )
+
+    if compilerwarnings_failed:
+        lines.append("")
+        lines.append("**CompilerWarnings failures:**")
+        lines.append("")
+        for step_id, name in compilerwarnings_failed:
+            lines.append(f"- `{name}` (`{step_id}`)")
 
     summary = "\n".join(lines)
 
