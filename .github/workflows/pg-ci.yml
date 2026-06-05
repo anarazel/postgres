@@ -496,7 +496,7 @@ jobs:
         run:
           ${{case(runner.os == 'Windows', 'chcp 65001', '')}}
 
-          # TBD: python3 src/tools/ci/gha_job_summary.py
+          python3 src/tools/ci/gha_job_summary.py
 
 
   # Job: Linux - Autoconf
