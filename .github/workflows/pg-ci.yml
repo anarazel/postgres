@@ -339,6 +339,7 @@ jobs:
       # By using a shell that includes su, the run commands themselves get
       # simpler. As there are quite a few commands that need to use su...
       - name: Configure
+        id: configure
         shell: &su_postgres_shell |
           su postgres -c "bash --noprofile --norc -eo pipefail {0}"
         run: |
@@ -350,6 +351,7 @@ jobs:
             build
 
       - name: Build
+        id: build
         shell: *su_postgres_shell
         run: &ninja_build_cmd |
           ninja -C build -j${{env.BUILD_JOBS}} ${{env.MBUILD_TARGET}}
@@ -448,8 +450,10 @@ jobs:
       # to be careful about using only ${{env.}} variable references,
       # linebreaks etc.
       - name: Test
+        id: test-minimal
         shell: *su_postgres_shell
         env:
+          NAME: minimal
           MTEST_TARGET: cube/regress pg_ctl/001_start_stop
         run: &meson_test_world_cmd |
           ${{case(runner.os == 'Windows', '', 'ulimit -c unlimited')}}
@@ -457,10 +461,10 @@ jobs:
           ${{env.ADDITIONAL_SETUP}}
 
           echo ::group::test_setup
-          meson test ${{env.MTEST_ARGS}} --suite setup --logbase setup || exit 1
+          meson test ${{env.MTEST_ARGS}} --logbase ${{env.NAME}}-setup --suite setup || exit 1
           echo ::endgroup::
 
-          meson test ${{env.MTEST_ARGS}} --num-processes ${{env.TEST_JOBS}} --no-suite setup ${{env.MTEST_TARGET}}
+          meson test ${{env.MTEST_ARGS}} --logbase ${{env.NAME}} --num-processes ${{env.TEST_JOBS}} --no-suite setup ${{env.MTEST_TARGET}}
 
       - &linux_collect_cores_step
         name: Core backtraces
@@ -482,6 +486,17 @@ jobs:
               build/meson-logs/**
               **/config.log
           if-no-files-found: ignore
+
+      - &summarize_step
+        name: Summarize
+        if: always()
+        env:
+          JOB_NAME: ${{github.job}}
+          STEPS_JSON: ${{toJSON(steps)}}
+        run:
+          ${{case(runner.os == 'Windows', 'chcp 65001', '')}}
+
+          # TBD: python3 src/tools/ci/gha_job_summary.py
 
 
   # Job: Linux - Autoconf
@@ -553,6 +568,7 @@ jobs:
       - *linux_prepare_workspace_step
 
       - name: Configure
+        id: configure
         shell: *su_postgres_shell
         run: |
           ./configure \
@@ -564,6 +580,7 @@ jobs:
             ${LINUX_CONFIGURE_FEATURES}
 
       - name: Build
+        id: build
         shell: *su_postgres_shell
         run: |
           make -s -j${BUILD_JOBS} world-bin
@@ -572,12 +589,14 @@ jobs:
       - *ccache_save_step
 
       - name: Test world
+        id: test-world
         shell: *su_postgres_shell
         run: |
           make -s ${CHECK} ${CHECKFLAGS} -j${TEST_JOBS}
 
       - *linux_collect_cores_step
       - *upload_logs_step
+      - *summarize_step
 
 
   # Job: Linux - Meson (32-bit)
@@ -615,6 +634,7 @@ jobs:
       - *linux_prepare_workspace_step
 
       - name: Configure
+        id: configure
         shell: *su_postgres_shell
         run: |
           meson setup \
@@ -627,6 +647,7 @@ jobs:
             build
 
       - name: Build
+        id: build
         shell: *su_postgres_shell
         run: *ninja_build_cmd
 
@@ -634,24 +655,29 @@ jobs:
       - *ccache_save_step
 
       - name: Test world
+        id: test-world
         shell: *su_postgres_shell
         env:
           PYTHONCOERCECLOCALE: 0
           LANG: C
+          NAME: world
         run: *meson_test_world_cmd
 
       # Test running against existing PG instance.
       #
       # linux-meson-32 chosen because it's currently comparatively fast
       - name: Test running
+        id: test-running
         shell: *su_postgres_shell
+        env:
+          NAME: running
         run: |
           ulimit -c unlimited
 
           # Ensure install exists, in case somebody is debugging a failing
           # test and reorders this to be before "Test world".
           echo ::group::test_setup
-          meson test ${{env.MTEST_ARGS}} --suite setup --logbase setup
+          meson test ${{env.MTEST_ARGS}} --logbase ${{env.NAME}}-setup --suite setup
           echo ::endgroup::
 
           # Make libraries discoverable (the x86_64 reference is a meson
@@ -666,12 +692,13 @@ jobs:
           build/tmp_install/usr/local/pgsql/bin/pg_ctl -c -o '-c fsync=off' -D build/runningcheck -l build/testrun/runningcheck.log start
 
           # Run the tests supporting running against an already running
-          meson test ${{env.MTEST_ARGS}} --num-processes ${{env.TEST_JOBS}} --setup running
+          meson test ${{env.MTEST_ARGS}} --logbase ${{env.NAME}} --num-processes ${{env.TEST_JOBS}} --setup running
 
           build/tmp_install/usr/local/pgsql/bin/pg_ctl -D build/runningcheck stop
 
       - *linux_collect_cores_step
       - *upload_logs_step
+      - *summarize_step
 
 
   # Linux - Meson (64-bit)
@@ -705,6 +732,7 @@ jobs:
       - *linux_prepare_workspace_step
 
       - name: Configure
+        id: configure
         shell: *su_postgres_shell
         run: |
           meson setup \
@@ -715,6 +743,7 @@ jobs:
             build
 
       - name: Build
+        id: build
         shell: *su_postgres_shell
         run: *ninja_build_cmd
 
@@ -722,11 +751,15 @@ jobs:
       - *ccache_save_step
 
       - name: Test world
+        id: test-world
+        env:
+          NAME: world
         shell: *su_postgres_shell
         run: *meson_test_world_cmd
 
       - *linux_collect_cores_step
       - *upload_logs_step
+      - *summarize_step
 
 
   # Job: macOS - Meson
@@ -854,6 +887,7 @@ jobs:
       - *ccache_restore_branch_step
 
       - name: Configure
+        id: configure
         env:
           PKG_CONFIG_PATH: /opt/local/lib/pkgconfig/
         run: |
@@ -868,15 +902,18 @@ jobs:
             build
 
       - name: Build
+        id: build
         run: *ninja_build_cmd
 
       - *ccache_decide_save_step
       - *ccache_save_step
 
       - name: Test world
+        id: test-world
         env:
           # default is 256, pretty low
           ADDITIONAL_SETUP: ulimit -n 1024
+          NAME: world
         run: *meson_test_world_cmd
 
       - name: Core backtraces
@@ -884,6 +921,7 @@ jobs:
         run: src/tools/ci/cores_backtrace.sh macos "$HOME/cores"
 
       - *upload_logs_step
+      - *summarize_step
 
 
   # Job: Windows - Visual Studio
@@ -995,6 +1033,7 @@ jobs:
       # Install some dependencies via msys64, that seems to be the fastest and
       # most reliable
       - name: Install dependencies, Mingw
+        id: install-mingw
         shell: 'C:\msys64\usr\bin\bash.exe --login -eo pipefail "{0}"'
         run: |
           # Install some dependencies via msys64, that seems to be the fastest
@@ -1009,6 +1048,7 @@ jobs:
           echo C:/Strawberry/perl/bin >> "$GITHUB_PATH"
 
       - name: Install dependencies
+        id: install-pip-ipc
         shell: pwsh
         run: |
           # meson is not preinstalled on windows-2022. Install via pip
@@ -1046,6 +1086,7 @@ jobs:
         run: mkdir ${{env.PG_REGRESS_SOCK_DIR}}
 
       - name: Configure
+        id: configure
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
           meson setup ^
@@ -1058,12 +1099,14 @@ jobs:
             build
 
       - name: Build
+        id: build
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
           ninja -C build ${{env.MBUILD_TARGET}} || exit 1
           ninja -C build -t missingdeps
 
       - name: Test world
+        id: test-world
         env:
           # As described at the top of the task, split the tests across two
           # runners for performance.  It's not the prettiest to implement this
@@ -1072,12 +1115,14 @@ jobs:
           MTEST_TARGET: --slice ${{ matrix.slice}}/${{ matrix.num_slices}} ${{env.MTEST_TARGET}}
           ADDITIONAL_SETUP: |
             call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
+          NAME: world
         run: *meson_test_world_cmd
 
       # TODO: We need to collect crashlogs but for them to be generated, we'd
       # have to configure the JIT Debugger to do so. cdb.exe is installed on
       # the runner so that is possible.
       - *upload_logs_step
+      - *summarize_step
 
 
   # Job: Windows - MinGW - Meson
@@ -1134,6 +1179,7 @@ jobs:
           exit 0
 
       - name: Setup MSYS2
+        id: install-mingw
         run: |
           # ${MINGW_PACKAGE_PREFIX} is an environment variable used in the
           # MSYS2. It dynamically expands to the correct prefix for the active
@@ -1158,6 +1204,7 @@ jobs:
       - *nix_sysinfo_step
 
       - name: Install additional dependencies
+        id: install-ipc
         run: |
           # Pin IPC::Run to NJM/IPC-Run-20250809.0; TODDR/IPC-Run-20260322.0
           # broke postgres tap tests on Windows (pipe stdio handling).
@@ -1175,6 +1222,7 @@ jobs:
       - *ccache_restore_branch_step
 
       - name: Configure
+        id: configure
         run: |
           meson setup \
             ${{env.MESON_COMMON_PG_CONFIG_ARGS}} \
@@ -1185,18 +1233,23 @@ jobs:
             build
 
       - name: Build
+        id: build
         run: *ninja_build_cmd
 
       - *ccache_decide_save_step
       - *ccache_save_step
 
       - name: Test world
+        id: test-world
+        env:
+          NAME: world
         run: *meson_test_world_cmd
 
       # TODO: We want to include crashlogs, but they are not yet
       # collected. cdb.exe is installed on the runner, so we can configure it
       # appropriately.
       - *upload_logs_step
+      - *summarize_step
 
 
   # Job: CompilerWarnings
@@ -1328,3 +1381,4 @@ jobs:
       - *ccache_decide_save_step
       - *ccache_save_step
       - *upload_logs_step
+      - *summarize_step
