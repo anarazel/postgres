@@ -248,6 +248,9 @@ reverse_name(PG_FUNCTION_ARGS)
 	int			i;
 	int			len;
 	char	   *new_string;
+	int			NOT_ME = 0;
+
+	Assert(NOT_ME == 0);
 
 	new_string = palloc0(NAMEDATALEN);
 	for (i = 0; i < NAMEDATALEN && string[i]; ++i)
