@@ -219,6 +219,7 @@ jobs:
           uname -a
           ulimit -a -H && ulimit -a -S
           env
+          nproc || sysctl hw.physicalcpu hw.logicalcpu || true
 
       - name: Parse ci-os-only
         id: os
@@ -1170,6 +1171,8 @@ jobs:
       # compilers / flag combinations.
       CCACHE_MAXSIZE: "1G"
       DEFAULT_BUILD: world-bin
+      CCACHE_SLOPPINESS: pch_defines,time_macros
+      CCACHE_DEPEND: 1
 
     steps:
       - *nix_sysinfo_step
@@ -1185,53 +1188,56 @@ jobs:
       - name: gcc warnings + (dtrace)
         if: ${{ !cancelled() }}
         env:
-          CONF: ${{env.LINUX_CONFIGURE_FEATURES}} --cache gcc.cache --enable-dtrace
+          CONF: ${{env.MESON_COMMON_FEATURES}} -Ddtrace=enabled
           CC: ccache gcc
           CXX: ccache g++
           CLANG: ccache clang
         run: &compiler_warnings_cmd |
           echo "::group::configure"
-          ./configure \
-            ${{env.CONF}} \
-            CLANG="ccache clang"
+          rm -rf build-meson
+          meson setup -Dwerror=true $CONF build-meson
           echo "::endgroup::"
 
-          make -s -j${{env.BUILD_JOBS}} clean
-          make -s -j${{env.BUILD_JOBS}} ${{env.DEFAULT_BUILD}}
+          ninja -C build-meson --quiet ${{env.MBUILD_TARGET}}
 
       # gcc, cassert on, dtrace off
       - name: gcc warnings + (cassert)
         if: ${{ !cancelled() }}
         env:
-          CONF: ${{env.LINUX_CONFIGURE_FEATURES}} --cache gcc.cache --enable-cassert
+          CONF: ${{env.MESON_COMMON_FEATURES}} -Dcassert=true
           CC: ccache gcc
           CXX: ccache g++
+          CLANG: ccache clang
         run: *compiler_warnings_cmd
 
       # clang, cassert off, dtrace off
       - name: clang warnings
         if: ${{ !cancelled() }}
         env:
-          CONF: ${{env.LINUX_CONFIGURE_FEATURES}} --cache clang.cache
+          CONF: ${{env.MESON_COMMON_FEATURES}}
           CC: ccache clang
           CXX: ccache clang++
+          CLANG: ccache clang
         run: *compiler_warnings_cmd
 
       # clang, cassert on, dtrace on
       - name: clang warnings + (cassert + dtrace)
         if: ${{ !cancelled() }}
         env:
-          CONF: ${{env.LINUX_CONFIGURE_FEATURES}} --cache clang.cache --enable-cassert --enable-dtrace
+          CONF: ${{env.MESON_COMMON_FEATURES}} -Dcassert=true -Ddtrace=enabled
           CC: ccache clang
           CXX: ccache clang++
+          CLANG: ccache clang
         run: *compiler_warnings_cmd
 
       - name: mingw warnings (cross compilation)
         if: ${{ !cancelled() }}
         env:
-          CONF: --host=x86_64-w64-mingw32ucrt --enable-cassert --without-icu
-          CC: ccache x86_64-w64-mingw32ucrt-gcc
-          CXX: ccache x86_64-w64-mingw32ucrt-g++
+          CONF: >-
+            --cross-file src/tools/ci/meson-cross-w64-ucrt.txt
+            --buildtype debug
+            -Db_pch=true
+            -Dcassert=true
         run: *compiler_warnings_cmd
 
       ###
@@ -1240,12 +1246,8 @@ jobs:
       # XXX: Only do this if there have been changes in doc/ since last build
       - name: Build documentation
         if: ${{ !cancelled() }}
-        env:
-          CONF: --cache gcc.cache
-          CC: ccache gcc
-          CXX: ccache g++
-          DEFAULT_BUILD: -C doc
-        run: *compiler_warnings_cmd
+        run:
+          ninja -C build-meson docs
 
       ###
       # Verify headerscheck / cpluspluscheck succeed
@@ -1260,7 +1262,6 @@ jobs:
           echo "::group::configure"
           ./configure \
             ${{env.LINUX_CONFIGURE_FEATURES}} \
-            --cache gcc.cache \
             --quiet \
             CC="ccache gcc" CXX="ccache g++" CLANG="ccache clang"
           echo "::endgroup::"

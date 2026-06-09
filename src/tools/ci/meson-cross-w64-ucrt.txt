@@ -1,0 +1,21 @@
+[constants]
+triple = 'x86_64-w64-mingw32ucrt'
+prefix = '/usr/bin' / triple + '-'
+
+[binaries]
+c = ['ccache', prefix + 'gcc']
+cpp = ['ccache', prefix + 'g++']
+ar = prefix + 'ar'
+strip = prefix + 'strip'
+pkg-config = prefix + 'pkg-config'
+windres = prefix + 'windres'
+
+[properties]
+# Directory that contains 'bin', 'lib', etc
+root = '/usr/x86_64-w64-mingw32ucrt'
+
+[host_machine]
+system = 'windows'
+cpu_family = 'x86_64'
+cpu = 'x86_64'
+endian = 'little'
