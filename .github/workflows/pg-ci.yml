@@ -205,7 +205,7 @@ jobs:
       # implausible there will be breakage when that switches to the next
       # ubuntu version.
       runs_on_linux: ${{ case(vars.runs_on_linux != '', vars.runs_on_linux, 'ubuntu-24.04') }}
-      runs_on_windows: ${{ case(vars.runs_on_windows != '', vars.runs_on_windows, 'windows-2025') }}
+      runs_on_windows: ${{ case(vars.runs_on_windows != '', vars.runs_on_windows, 'windows-2025-vs2026') }}
       runs_on_macos: ${{ case(vars.runs_on_macos != '', vars.runs_on_macos, 'macos-15') }}
 
       # runs_on_setup: an output can't be used as the input of the setup job
@@ -890,6 +890,14 @@ jobs:
         shell: cmd
 
     steps:
+      - name: Sysinfo
+        run: |
+          chcp
+          systeminfo
+          set
+          where.exe cl.exe || true
+          call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
+
       - &windows_disable_defender_step
         name: Disable Windows Defender
         shell: pwsh
@@ -903,12 +911,6 @@ jobs:
           }
 
       - *checkout_step
-
-      - name: Sysinfo
-        run: |
-          chcp
-          systeminfo
-          set
 
       # The TAP tests build an initdb template under build/tmp_install and
       # then `robocopy` it into per-test data directories. Robocopy with the
@@ -1006,7 +1008,7 @@ jobs:
 
       - name: Configure
         run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
+          call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
           meson setup ^
             --backend ninja ^
             ${{env.MESON_COMMON_PG_CONFIG_ARGS}} ^
@@ -1018,7 +1020,7 @@ jobs:
 
       - name: Build
         run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
+          call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
           ninja -C build ${{env.MBUILD_TARGET}} || exit 1
           ninja -C build -t missingdeps
 
@@ -1030,7 +1032,7 @@ jobs:
           # doesn't seem worth it.
           MTEST_TARGET: --slice ${{ matrix.slice}}/${{ matrix.num_slices}} ${{env.MTEST_TARGET}}
           ADDITIONAL_SETUP: |
-            call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
+            call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
         run: *meson_test_world_cmd
 
       # TODO: We need to collect crashlogs but for them to be generated, we'd
