@@ -1082,26 +1082,24 @@ jobs:
       - *window_setup_hosts_step
       - *checkout_step
 
-      # Relocate the preinstalled MSYS2 tree from C:\ (slow system disk) to
-      # D:\ (faster ephemeral data disk). Every subsequent MSYS2 step uses
-      # D:\msys64\usr\bin\bash.exe via the job's `defaults.run.shell`.
+      # The pre-existing msys install is on C:\, often the a rather slow
+      # system disk, whereas the workspace is often on a faster, ephemeral
+      # disk.  Using the pre-existing msys would often increase the total
+      # runtime of this task by ~15 minutes.
       #
-      # This reduces the total runtime of this task by ~15 minutes.
+      # Instead we just create our own install. That's faster than moving
+      # the install from C:\, and also works when the workspace is not on
+      # a separate disk.
       #
-      # robocopy returns 0-7 on success (with various "files copied" bits
-      # set) and 8+ on real failure, so we have to translate its exit code.
-      - name: 'Relocate MSYS2 to ${{ github.workspace }}/msys64'
+      # We could instead use msys2/setup-msys2, but that doesn't seem faster
+      # either.
+      - name: Install MSYS2
         shell: pwsh
         run: |
-          robocopy C:\msys64 "${{ github.workspace }}/msys64" /E /NJS /NJH /NFL /NDL /NP
-          if ($LASTEXITCODE -ge 8) { exit $LASTEXITCODE }
-          exit 0
+          pwsh -file "src/tools/ci/windows_install_mingw.ps1" "${{github.workspace}}"
 
       - name: Setup MSYS2
         run: |
-          where.exe pacman
-          echo $PATH
-
           # ${MINGW_PACKAGE_PREFIX} is an environment variable used in the
           # MSYS2. It dynamically expands to the correct prefix for the active
           # shell environment.
