@@ -862,7 +862,7 @@ jobs:
       !cancelled() &&
       needs.setup.outputs.windows == 'true' &&
       needs.sanity-check.result != 'failure'
-    runs-on: hosted-windows-2022-16core
+    runs-on: ${{ needs.setup.outputs.runs_on_windows }}
     timeout-minutes: 60
 
     # As described at the top of the task, split the tests across two runners
@@ -1075,7 +1075,7 @@ jobs:
 
     defaults:
       run:
-        shell: 'C:\msys64\usr\bin\bash.exe --login -eo pipefail "{0}"'
+        shell: '${{github.workspace}}\msys64\usr\bin\bash.exe --login -eo pipefail "{0}"'
 
     steps:
       - *windows_disable_defender_step
@@ -1090,16 +1090,18 @@ jobs:
       #
       # robocopy returns 0-7 on success (with various "files copied" bits
       # set) and 8+ on real failure, so we have to translate its exit code.
-      - name: Relocate MSYS2 to D
+      - name: 'Relocate MSYS2 to ${{ github.workspace }}/msys64'
         shell: pwsh
-        if: 0
         run: |
-          robocopy C:\msys64 D:\msys64 /E /NJS /NJH /NFL /NDL /NP
+          robocopy C:\msys64 "${{ github.workspace }}/msys64" /E /NJS /NJH /NFL /NDL /NP
           if ($LASTEXITCODE -ge 8) { exit $LASTEXITCODE }
           exit 0
 
       - name: Setup MSYS2
         run: |
+          where.exe pacman
+          echo $PATH
+
           # ${MINGW_PACKAGE_PREFIX} is an environment variable used in the
           # MSYS2. It dynamically expands to the correct prefix for the active
           # shell environment.
@@ -1143,7 +1145,7 @@ jobs:
         run: |
           meson setup \
             ${{env.MESON_COMMON_PG_CONFIG_ARGS}} \
-            -Ddebug=true -Doptimization=g -Db_pch=true \
+            -Ddebug=true -Doptimization=2 -Db_pch=true \
             ${{env.MESON_COMMON_FEATURES}} \
             ${{env.MESON_FEATURES}} \
             -DTAR=${{env.TAR}} \
