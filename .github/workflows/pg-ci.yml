@@ -1115,6 +1115,13 @@ jobs:
             mingw-w64-ucrt-x86_64-readline
             mingw-w64-ucrt-x86_64-zlib
 
+      - name: Download install
+        uses: actions/upload-artifact@v7
+        with:
+          name: mingw-install-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{github.workspace}}/msys64
+
       #- name: Install MSYS2
       #  shell: pwsh
       #  run: |
