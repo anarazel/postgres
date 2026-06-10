@@ -1093,32 +1093,54 @@ jobs:
       #
       # We could instead use msys2/setup-msys2, but that doesn't seem faster
       # either.
-      - name: Install MSYS2
-        shell: pwsh
-        run: |
-          pwsh -file "src/tools/ci/windows_install_mingw.ps1" "${{github.workspace}}"
-
       - name: Setup MSYS2
-        run: |
-          # ${MINGW_PACKAGE_PREFIX} is an environment variable used in the
-          # MSYS2. It dynamically expands to the correct prefix for the active
-          # shell environment.
-          pacman -S --noconfirm --needed  --asdeps \
-            git bison flex diffutils \
-            ${MINGW_PACKAGE_PREFIX}-ccache \
-            ${MINGW_PACKAGE_PREFIX}-gcc \
-            ${MINGW_PACKAGE_PREFIX}-icu \
-            ${MINGW_PACKAGE_PREFIX}-libbacktrace \
-            ${MINGW_PACKAGE_PREFIX}-libxml2 \
-            ${MINGW_PACKAGE_PREFIX}-libxslt \
-            ${MINGW_PACKAGE_PREFIX}-lz4 \
-            ${MINGW_PACKAGE_PREFIX}-make \
-            ${MINGW_PACKAGE_PREFIX}-meson \
-            ${MINGW_PACKAGE_PREFIX}-perl \
-            ${MINGW_PACKAGE_PREFIX}-pkgconf \
-            ${MINGW_PACKAGE_PREFIX}-readline \
-            ${MINGW_PACKAGE_PREFIX}-zlib \
-            ${MINGW_PACKAGE_PREFIX}-zstd
+        uses: msys2/setup-msys2@v2.31.1
+        with:
+          msystem: UCRT64
+          update: true
+          location: ${{github.workspace}}
+          install: >-
+            git bison flex diffutils
+            mingw-w64-ucrt-x86_64-ccache
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-icu
+            mingw-w64-ucrt-x86_64-libbacktrace
+            mingw-w64-ucrt-x86_64-libxml2
+            mingw-w64-ucrt-x86_64-libxslt
+            mingw-w64-ucrt-x86_64-lz4
+            mingw-w64-ucrt-x86_64-make
+            mingw-w64-ucrt-x86_64-meson
+            mingw-w64-ucrt-x86_64-perl
+            mingw-w64-ucrt-x86_64-pkg-config
+            mingw-w64-ucrt-x86_64-readline
+            mingw-w64-ucrt-x86_64-zlib
+
+      #- name: Install MSYS2
+      #  shell: pwsh
+      #  run: |
+      #    pwsh -file "src/tools/ci/windows_install_mingw.ps1" "${{github.workspace}}"
+      #
+      #- name: Setup MSYS2
+      #  run: |
+      #    # ${MINGW_PACKAGE_PREFIX} is an environment variable used in the
+      #    # MSYS2. It dynamically expands to the correct prefix for the active
+      #    # shell environment.
+      #    pacman -S --noconfirm --needed  --asdeps \
+      #      git bison flex diffutils \
+      #      ${MINGW_PACKAGE_PREFIX}-ccache \
+      #      ${MINGW_PACKAGE_PREFIX}-gcc \
+      #      ${MINGW_PACKAGE_PREFIX}-icu \
+      #      ${MINGW_PACKAGE_PREFIX}-libbacktrace \
+      #      ${MINGW_PACKAGE_PREFIX}-libxml2 \
+      #      ${MINGW_PACKAGE_PREFIX}-libxslt \
+      #      ${MINGW_PACKAGE_PREFIX}-lz4 \
+      #      ${MINGW_PACKAGE_PREFIX}-make \
+      #      ${MINGW_PACKAGE_PREFIX}-meson \
+      #      ${MINGW_PACKAGE_PREFIX}-perl \
+      #      ${MINGW_PACKAGE_PREFIX}-pkgconf \
+      #      ${MINGW_PACKAGE_PREFIX}-readline \
+      #      ${MINGW_PACKAGE_PREFIX}-zlib \
+      #      ${MINGW_PACKAGE_PREFIX}-zstd
 
       - *nix_sysinfo_step
 
