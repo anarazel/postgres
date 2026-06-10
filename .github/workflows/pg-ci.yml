@@ -269,8 +269,7 @@ jobs:
     if: |
       !cancelled() &&
       needs.setup.outputs.sanitycheck == 'true'
-    runs-on:
-      labels: hosted-ubuntu-24.04-8core
+    runs-on: ${{ needs.setup.outputs.runs_on_linux }}
     timeout-minutes: 15
     container: &linux_ci_container
       image: ${{ needs.setup.outputs.container_linux_ci }}
@@ -863,8 +862,7 @@ jobs:
       !cancelled() &&
       needs.setup.outputs.windows == 'true' &&
       needs.sanity-check.result != 'failure'
-    runs-on:
-      labels: hosted-windows-2022-16core
+    runs-on: hosted-windows-2022-16core
     timeout-minutes: 60
 
     # As described at the top of the task, split the tests across two runners
@@ -880,7 +878,7 @@ jobs:
     env:
       # Avoid port conflicts between concurrent tap tests
       PG_TEST_USE_UNIX_SOCKETS: 1
-      PG_REGRESS_SOCK_DIR: 'd:\pgsock'
+      PG_REGRESS_SOCK_DIR: ${{ github.workspace }}/pgsock
       TAR: "c:/windows/system32/tar.exe"
 
       MESON_FEATURES: >-
@@ -1009,7 +1007,7 @@ jobs:
 
       - name: Setup socket directory
         shell: cmd
-        run: mkdir ${{env.PG_REGRESS_SOCK_DIR}}
+        run: mkdir "${{env.PG_REGRESS_SOCK_DIR}}"
 
       - name: Configure
         run: |
@@ -1059,7 +1057,7 @@ jobs:
     env:
       # Avoid port conflicts between concurrent tap tests
       PG_TEST_USE_UNIX_SOCKETS: 1
-      PG_REGRESS_SOCK_DIR: 'd:\pgsock'
+      PG_REGRESS_SOCK_DIR: ${{ github.workspace }}/pgsock
       TAR: "c:/windows/system32/tar.exe"
 
       MSYS: winjitdebug
@@ -1077,7 +1075,7 @@ jobs:
 
     defaults:
       run:
-        shell: 'D:\msys64\usr\bin\bash.exe --login -eo pipefail "{0}"'
+        shell: 'C:\msys64\usr\bin\bash.exe --login -eo pipefail "{0}"'
 
     steps:
       - *windows_disable_defender_step
@@ -1094,6 +1092,7 @@ jobs:
       # set) and 8+ on real failure, so we have to translate its exit code.
       - name: Relocate MSYS2 to D
         shell: pwsh
+        if: 0
         run: |
           robocopy C:\msys64 D:\msys64 /E /NJS /NJH /NFL /NDL /NP
           if ($LASTEXITCODE -ge 8) { exit $LASTEXITCODE }
@@ -1135,7 +1134,7 @@ jobs:
 
       - name: Setup socket directory
         shell: cmd
-        run: mkdir ${{env.PG_REGRESS_SOCK_DIR}}
+        run: mkdir "${{env.PG_REGRESS_SOCK_DIR}}"
 
       - *ccache_restore_default_step
       - *ccache_restore_branch_step
