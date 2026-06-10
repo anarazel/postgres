@@ -1073,6 +1073,8 @@ jobs:
       CCACHE_SLOPPINESS: pch_defines,time_macros
       CCACHE_DEPEND: 1
 
+      MSYS2_PATH_TYPE: inherit
+
     defaults:
       run:
         shell: '${{github.workspace}}\msys64\usr\bin\bash.exe --login -eo pipefail "{0}"'
@@ -1100,25 +1102,28 @@ jobs:
           update: true
           location: ${{github.workspace}}
           install: >-
-            git bison flex diffutils
+            bison flex
             mingw-w64-ucrt-x86_64-ccache
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-icu
-            mingw-w64-ucrt-x86_64-libbacktrace
             mingw-w64-ucrt-x86_64-libxml2
             mingw-w64-ucrt-x86_64-libxslt
             mingw-w64-ucrt-x86_64-lz4
-            mingw-w64-ucrt-x86_64-make
             mingw-w64-ucrt-x86_64-meson
             mingw-w64-ucrt-x86_64-perl
-            mingw-w64-ucrt-x86_64-pkg-config
+            mingw-w64-ucrt-x86_64-pkgconf
             mingw-w64-ucrt-x86_64-readline
             mingw-w64-ucrt-x86_64-zlib
+
+      - name: report
+        run: |
+          du -shc msys64
 
       - name: Download install
         uses: actions/upload-artifact@v7
         with:
           name: mingw-install-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+          compression-level: 9
           path: |
             ${{github.workspace}}/msys64
 
@@ -1133,15 +1138,13 @@ jobs:
       #    # MSYS2. It dynamically expands to the correct prefix for the active
       #    # shell environment.
       #    pacman -S --noconfirm --needed  --asdeps \
-      #      git bison flex diffutils \
+      #      bison flex \
       #      ${MINGW_PACKAGE_PREFIX}-ccache \
       #      ${MINGW_PACKAGE_PREFIX}-gcc \
       #      ${MINGW_PACKAGE_PREFIX}-icu \
-      #      ${MINGW_PACKAGE_PREFIX}-libbacktrace \
       #      ${MINGW_PACKAGE_PREFIX}-libxml2 \
       #      ${MINGW_PACKAGE_PREFIX}-libxslt \
       #      ${MINGW_PACKAGE_PREFIX}-lz4 \
-      #      ${MINGW_PACKAGE_PREFIX}-make \
       #      ${MINGW_PACKAGE_PREFIX}-meson \
       #      ${MINGW_PACKAGE_PREFIX}-perl \
       #      ${MINGW_PACKAGE_PREFIX}-pkgconf \
