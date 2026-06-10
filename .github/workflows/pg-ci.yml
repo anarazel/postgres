@@ -40,14 +40,6 @@ env:
   # concurrent jobs and retrying older runs have a chance of working.
   CLONE_DEPTH: 500
 
-  # At the moment all jobs use 4vcore runners, and none seems to benefit from
-  # increasing concurrency further.
-  BUILD_JOBS: 4
-
-  # It's possible that some jobs benefit from an increased test concurrency,
-  # but a default of 4 is a safe bet. Individual jobs can override.
-  TEST_JOBS: 4
-
   CCACHE_MAXSIZE: "250M"
   CCACHE_DIR: ${{ github.workspace }}/ccache_dir
 
@@ -352,7 +344,7 @@ jobs:
       - name: Build
         shell: *su_postgres_shell
         run: &ninja_build_cmd |
-          ninja -C build -j${{env.BUILD_JOBS}} ${{env.MBUILD_TARGET}}
+          ninja -C build ${{env.MBUILD_TARGET}}
           ninja -C build -t missingdeps
 
       # Decide if it's worth uploading a new version of the ccache cache. If
@@ -405,7 +397,7 @@ jobs:
           meson test ${{env.MTEST_ARGS}} --suite setup --logbase setup || exit 1
           echo ::endgroup::
 
-          meson test ${{env.MTEST_ARGS}} --num-processes ${{env.TEST_JOBS}} --no-suite setup ${{env.MTEST_TARGET}}
+          meson test ${{env.MTEST_ARGS}} --no-suite setup ${{env.MTEST_TARGET}}
 
       - &linux_collect_cores_step
         name: Core backtraces
@@ -511,7 +503,7 @@ jobs:
       - name: Build
         shell: *su_postgres_shell
         run: |
-          make -s -j${BUILD_JOBS} world-bin
+          make -s -j$(nproc) world-bin
 
       - *ccache_decide_save_step
       - *ccache_save_step
@@ -519,7 +511,7 @@ jobs:
       - name: Test world
         shell: *su_postgres_shell
         run: |
-          make -s ${CHECK} ${CHECKFLAGS} -j${TEST_JOBS}
+          make -s ${CHECK} ${CHECKFLAGS} -j$(nproc)
 
       - *linux_collect_cores_step
       - *upload_logs_step
@@ -611,7 +603,7 @@ jobs:
           build/tmp_install/usr/local/pgsql/bin/pg_ctl -c -o '-c fsync=off' -D build/runningcheck -l build/testrun/runningcheck.log start
 
           # Run the tests supporting running against an already running
-          meson test ${{env.MTEST_ARGS}} --num-processes ${{env.TEST_JOBS}} --setup running
+          meson test ${{env.MTEST_ARGS}} --setup running
 
           build/tmp_install/usr/local/pgsql/bin/pg_ctl -D build/runningcheck stop
 
@@ -1200,7 +1192,7 @@ jobs:
           meson setup -Dwerror=true $CONF build-meson
           echo "::endgroup::"
 
-          ninja -C build-meson --quiet -j${{env.BUILD_JOBS}} ${{env.MBUILD_TARGET}}
+          ninja -C build-meson --quiet ${{env.MBUILD_TARGET}}
 
       # gcc, cassert on, dtrace off
       - name: gcc warnings + (cassert)
@@ -1268,8 +1260,8 @@ jobs:
             CC="ccache gcc" CXX="ccache g++" CLANG="ccache clang"
           echo "::endgroup::"
 
-          make -s -j${{env.BUILD_JOBS}} clean
-          make -s -j${{env.BUILD_JOBS}} -k ${{env.CHECKFLAGS}} \
+          make -s -j$(nproc) clean
+          make -s -j$(nproc) -k ${{env.CHECKFLAGS}} \
             headerscheck cpluspluscheck \
             EXTRAFLAGS='-fmax-errors=10'
 
