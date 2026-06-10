@@ -269,7 +269,8 @@ jobs:
     if: |
       !cancelled() &&
       needs.setup.outputs.sanitycheck == 'true'
-    runs-on: ${{ needs.setup.outputs.runs_on_linux }}
+    runs-on:
+      labels: hosted-ubuntu-24.04-8core
     timeout-minutes: 15
     container: &linux_ci_container
       image: ${{ needs.setup.outputs.container_linux_ci }}
@@ -298,6 +299,12 @@ jobs:
       CCACHE_MAXSIZE: "150M"
 
     steps:
+      - name: runs_on debug
+        run: |
+          set -x
+          echo "\"${{needs.setup.outputs.runs_on_linux}}\""
+          echo "\"hosted-ubuntu-24.04-8core\""
+
       - *nix_sysinfo_step
 
       - &checkout_step
@@ -856,7 +863,8 @@ jobs:
       !cancelled() &&
       needs.setup.outputs.windows == 'true' &&
       needs.sanity-check.result != 'failure'
-    runs-on: ${{ needs.setup.outputs.runs_on_windows }}
+    runs-on:
+      labels: hosted-windows-2022-16core
     timeout-minutes: 60
 
     # As described at the top of the task, split the tests across two runners
