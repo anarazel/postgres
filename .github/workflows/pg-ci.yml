@@ -1072,12 +1072,14 @@ jobs:
 
     defaults:
       run:
-        shell: msys2 {0}
+        shell: 'd:\msys64\usr\bin\bash.exe --login -eo pipefail "{0}"'
+        #shell: msys2 {0}
 
     steps:
       - *windows_disable_defender_step
       - *window_setup_hosts_step
       - *checkout_step
+      - *windows_setup_debugger_step
 
       # The pre-existing msys install is on C:\, often the a rather slow
       # system disk, whereas the workspace is often on a faster, ephemeral
@@ -1087,44 +1089,60 @@ jobs:
       # Instead we use msys2/setup-msys2 to set up our own install. That's
       # faster than moving the install from C:\, and also works when the
       # workspace is not on a separate disk.
-      - name: Install MSYS2
-        uses: msys2/setup-msys2@v2.31.1
-        with:
-          msystem: UCRT64
-          update: true
-          location: ${{github.workspace}}
-          install: >-
-            bison flex
-            mingw-w64-ucrt-x86_64-ccache
-            mingw-w64-ucrt-x86_64-gcc
-            mingw-w64-ucrt-x86_64-icu
-            mingw-w64-ucrt-x86_64-libxml2
-            mingw-w64-ucrt-x86_64-libxslt
-            mingw-w64-ucrt-x86_64-lz4
-            mingw-w64-ucrt-x86_64-meson
-            mingw-w64-ucrt-x86_64-perl
-            mingw-w64-ucrt-x86_64-pkgconf
-            mingw-w64-ucrt-x86_64-readline
-            mingw-w64-ucrt-x86_64-zlib
-            mingw-w64-ucrt-x86_64-zstd
+      #- name: Install MSYS2
+      #  uses: msys2/setup-msys2@v2.31.1
+      #  with:
+      #    msystem: UCRT64
+      #    update: true
+      #    location: ${{github.workspace}}
+      #    install: >-
+      #      bison flex
+      #      mingw-w64-ucrt-x86_64-ccache
+      #      mingw-w64-ucrt-x86_64-gcc
+      #      mingw-w64-ucrt-x86_64-icu
+      #      mingw-w64-ucrt-x86_64-libxml2
+      #      mingw-w64-ucrt-x86_64-libxslt
+      #      mingw-w64-ucrt-x86_64-lz4
+      #      mingw-w64-ucrt-x86_64-meson
+      #      mingw-w64-ucrt-x86_64-perl
+      #      mingw-w64-ucrt-x86_64-pkgconf
+      #      mingw-w64-ucrt-x86_64-readline
+      #      mingw-w64-ucrt-x86_64-zlib
+      #      mingw-w64-ucrt-x86_64-zstd
+
+      - name: download msys
+        shell: bash
+        run: |
+          curl -fsSL -o msys64.tar.zst https://github.com/anarazel/pg-vm-images/releases/latest/download/msys64-full.tar.zst
+          cd /d/
+          ls -lh
+          zstd -dcf "${{github.workspace}}/msys64.tar.zst" | tar -xf -
+          ls -lh
+
+      - name: test msys
+        run: |
+          where.exe perl || true
+          where.exe cpan || true
+          where.exe perl538.dll || true
+          perl --version
+          ldd d:/msys64/ucrt64/bin/perl
+          perl -mIPC::Run -e 1
 
       - *nix_sysinfo_step
 
-      - name: Install additional dependencies
-        run: |
-          # Pin IPC::Run to NJM/IPC-Run-20250809.0; TODDR/IPC-Run-20260322.0
-          # broke postgres tap tests on Windows (pipe stdio handling).
-          # See pg-vm-images commit ff5238afa3.
-          echo ::group::cpan_ipc_run
-          (echo; echo o conf recommends_policy 0; echo notest install NJM/IPC-Run-20250809.0.tar.gz) | cpan
-          perl -mIPC::Run -e 1
-          echo ::endgroup::
+      #- name: Install additional dependencies
+      #  run: |
+      #    # Pin IPC::Run to NJM/IPC-Run-20250809.0; TODDR/IPC-Run-20260322.0
+      #    # broke postgres tap tests on Windows (pipe stdio handling).
+      #    # See pg-vm-images commit ff5238afa3.
+      #    echo ::group::cpan_ipc_run
+      #    (echo; echo o conf recommends_policy 0; echo notest install NJM/IPC-Run-20250809.0.tar.gz) | cpan
+      #    perl -mIPC::Run -e 1
+      #    echo ::endgroup::
 
       - name: Setup socket directory
         shell: cmd
         run: mkdir "${{env.PG_REGRESS_SOCK_DIR}}"
-
-      - *windows_setup_debugger_step
 
       - *ccache_restore_default_step
       - *ccache_restore_branch_step
