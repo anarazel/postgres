@@ -1054,6 +1054,11 @@ jobs:
       CCACHE_SLOPPINESS: pch_defines,time_macros
       CCACHE_DEPEND: 1
 
+      # We don't want using an msys bash to "hide" all the other already
+      # installed tools, that would require us to install tools into msys that
+      # are already available otherwise.
+      MSYS2_PATH_TYPE: inherit
+
     defaults:
       run:
         shell: 'D:\msys64\usr\bin\bash.exe --login -eo pipefail "{0}"'
@@ -1084,15 +1089,13 @@ jobs:
           # MSYS2. It dynamically expands to the correct prefix for the active
           # shell environment.
           pacman -S --noconfirm --needed  --asdeps \
-            git bison flex diffutils \
+            bison flex \
             ${MINGW_PACKAGE_PREFIX}-ccache \
             ${MINGW_PACKAGE_PREFIX}-gcc \
             ${MINGW_PACKAGE_PREFIX}-icu \
-            ${MINGW_PACKAGE_PREFIX}-libbacktrace \
             ${MINGW_PACKAGE_PREFIX}-libxml2 \
             ${MINGW_PACKAGE_PREFIX}-libxslt \
             ${MINGW_PACKAGE_PREFIX}-lz4 \
-            ${MINGW_PACKAGE_PREFIX}-make \
             ${MINGW_PACKAGE_PREFIX}-meson \
             ${MINGW_PACKAGE_PREFIX}-perl \
             ${MINGW_PACKAGE_PREFIX}-pkgconf \
