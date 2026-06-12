@@ -122,7 +122,7 @@ env:
 
   # Debian Trixie containers used by all Linux jobs. Built by
   # 'https://github.com/anarazel/pg-vm-images/'.
-  CONTAINER_REPO: ghcr.io/anarazel/pg-vm-images/main
+  CONTAINER_REPO: ghcr.io/anarazel/pg-vm-images/slim-2
   CONTAINER_LINUX_CI: linux_debian_trixie_ci:latest
   CONTAINER_LINUX_CI_DOCS: linux_debian_trixie_ci_docs:latest
 
