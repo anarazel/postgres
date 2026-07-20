@@ -734,6 +734,12 @@ jobs:
       - *nix_sysinfo_step
       - *checkout_step
 
+      - name: 'configure extra opts'
+        run: |
+          echo -e "debug_copy_parse_plan_trees=on\ndebug_write_read_parse_plan_trees=on\ndebug_raw_expression_coverage_test=on\ndebug_parallel_query=regress" >> src/tools/ci/pg_ci_base.conf
+          cat src/tools/ci/pg_ci_base.conf
+
+
       - name: Setup core files
         run: |
           mkdir -p $HOME/cores
@@ -823,6 +829,10 @@ jobs:
           # default is 256, pretty low
           ADDITIONAL_SETUP: ulimit -n 1024
         run: *meson_test_world_cmd
+
+      - name: count template use
+        run: |
+          grep -r 'initializing database' build/meson-logs/testlog.txt|sort|uniq -c
 
       - name: Core backtraces
         if: failure() && !cancelled()
