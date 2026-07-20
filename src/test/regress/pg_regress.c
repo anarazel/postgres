@@ -2435,7 +2435,7 @@ regression_main(int argc, char *argv[],
 		else
 		{
 #ifndef WIN32
-			const char *copycmd = "cp -RPp \"%s\" \"%s/data\"";
+			const char *copycmd = "cp -RPpc \"%s\" \"%s/data\"";
 			int			expected_exitcode = 0;
 #else
 			const char *copycmd = "robocopy /E /NJS /NJH /NFL /NDL /NP \"%s\" \"%s/data\"";

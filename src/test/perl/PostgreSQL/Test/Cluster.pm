@@ -686,7 +686,7 @@ sub init
 		}
 		else
 		{
-			@copycmd = qw(cp -RPp);
+			@copycmd = qw(cp -RPpc);
 			$expected_exitcode = 0;
 		}
 
