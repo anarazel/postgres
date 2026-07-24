@@ -407,6 +407,10 @@ jobs:
 
           meson test ${{env.MTEST_ARGS}} --num-processes ${{env.TEST_JOBS}} --no-suite setup ${{env.MTEST_TARGET}}
 
+          echo "Template use: "
+          grep -r 'initializing database' build/meson-logs/testlog.txt|sort|uniq -c
+
+
       - &linux_collect_cores_step
         name: Core backtraces
         if: failure() && !cancelled()
