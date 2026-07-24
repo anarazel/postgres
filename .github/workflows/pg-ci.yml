@@ -336,6 +336,19 @@ jobs:
             127.0.0.3 pg-loadbalancetest
           EOF
 
+      - &install_python_deps_step
+        name: Install Python Deps
+        run: |
+          where python || type python || true
+          where python3 || type python3 || true
+          where pip || type pip || true
+          where pip3 || type pip3 || true
+
+          pip3 install --break-system-packages matplotlib psutil
+
+          python3 -c "import psutil; print(psutil.cpu_times())"
+          python3 src/tools/ci/resmon.py --help
+
       # By using a shell that includes su, the run commands themselves get
       # simpler. As there are quite a few commands that need to use su...
       - name: Configure
@@ -352,7 +365,7 @@ jobs:
       - name: Build
         shell: *su_postgres_shell
         run: &ninja_build_cmd |
-          ninja -C build -j${{env.BUILD_JOBS}} ${{env.MBUILD_TARGET}}
+          python3 src/tools/ci/resmon.py --prefix resource-build --interval 0.5 ninja -C build -j${{env.BUILD_JOBS}} ${{env.MBUILD_TARGET}}
           ninja -C build -t missingdeps
 
       # Decide if it's worth uploading a new version of the ccache cache. If
@@ -405,11 +418,39 @@ jobs:
           meson test ${{env.MTEST_ARGS}} --suite setup --logbase setup || exit 1
           echo ::endgroup::
 
-          meson test ${{env.MTEST_ARGS}} --num-processes ${{env.TEST_JOBS}} --no-suite setup ${{env.MTEST_TARGET}}
+          python3 src/tools/ci/resmon.py --prefix resource-test --interval 0.5 meson test ${{env.MTEST_ARGS}} --num-processes ${{env.TEST_JOBS}} --no-suite setup ${{env.MTEST_TARGET}} || exit 1
 
           echo "Template use: "
           grep -r 'initializing database' build/meson-logs/testlog.txt|sort|uniq -c
 
+
+      - &upload_resource_graph_test_step
+        name: Upload Resource Graph Test
+        uses: actions/upload-artifact@v7
+        with:
+          name: resource-test-${{github.job}}.png
+          path: resource-test.png
+          if-no-files-found: error
+          archive: false
+
+      - &upload_resource_graph_build_step
+        name: Upload Resource Graph Build
+        uses: actions/upload-artifact@v7
+        with:
+          name: resource-build-${{github.job}}.png
+          path: resource-build.png
+          if-no-files-found: error
+          archive: false
+
+      - &upload_resource_info_step
+        name: Upload Resource Info
+        uses: actions/upload-artifact@v7
+        with:
+          name: resource-info-${{github.job}}
+          path: |
+            resource-*.png
+            resource-*.csv
+          if-no-files-found: error
 
       - &linux_collect_cores_step
         name: Core backtraces
@@ -500,6 +541,7 @@ jobs:
       - *ccache_restore_default_step
       - *ccache_restore_branch_step
       - *linux_prepare_workspace_step
+      - *install_python_deps_step
 
       - name: Configure
         shell: *su_postgres_shell
@@ -515,7 +557,8 @@ jobs:
       - name: Build
         shell: *su_postgres_shell
         run: |
-          make -s -j${BUILD_JOBS} world-bin
+          python3 src/tools/ci/resmon.py --prefix resource-build --interval 0.5 \
+            make -s -j${BUILD_JOBS} world-bin
 
       - *ccache_decide_save_step
       - *ccache_save_step
@@ -523,7 +566,12 @@ jobs:
       - name: Test world
         shell: *su_postgres_shell
         run: |
-          make -s ${CHECK} ${CHECKFLAGS} -j${TEST_JOBS}
+          python3 src/tools/ci/resmon.py --prefix resource-test --interval 0.5 \
+            make -s ${CHECK} ${CHECKFLAGS} -j${TEST_JOBS}
+
+      - *upload_resource_graph_test_step
+      - *upload_resource_graph_build_step
+      - *upload_resource_info_step
 
       - *linux_collect_cores_step
       - *upload_logs_step
@@ -562,6 +610,7 @@ jobs:
       - *ccache_restore_default_step
       - *ccache_restore_branch_step
       - *linux_prepare_workspace_step
+      - *install_python_deps_step
 
       - name: Configure
         shell: *su_postgres_shell
@@ -615,9 +664,21 @@ jobs:
           build/tmp_install/usr/local/pgsql/bin/pg_ctl -c -o '-c fsync=off' -D build/runningcheck -l build/testrun/runningcheck.log start
 
           # Run the tests supporting running against an already running
-          meson test ${{env.MTEST_ARGS}} --num-processes ${{env.TEST_JOBS}} --setup running
+          python3 src/tools/ci/resmon.py --prefix resource-test-running --interval 0.5 \
+            meson test ${{env.MTEST_ARGS}} --num-processes ${{env.TEST_JOBS}} --setup running
 
           build/tmp_install/usr/local/pgsql/bin/pg_ctl -D build/runningcheck stop
+
+      - name: Upload Resource Graph Running
+        uses: actions/upload-artifact@v7
+        with:
+          name: resource-test-running-${{github.job}}.png
+          path: resource-test-running.png
+          if-no-files-found: error
+          archive: false
+      - *upload_resource_graph_test_step
+      - *upload_resource_graph_build_step
+      - *upload_resource_info_step
 
       - *linux_collect_cores_step
       - *upload_logs_step
@@ -652,6 +713,7 @@ jobs:
       - *ccache_restore_default_step
       - *ccache_restore_branch_step
       - *linux_prepare_workspace_step
+      - *install_python_deps_step
 
       - name: Configure
         shell: *su_postgres_shell
@@ -673,6 +735,10 @@ jobs:
       - name: Test world
         shell: *su_postgres_shell
         run: *meson_test_world_cmd
+
+      - *upload_resource_graph_test_step
+      - *upload_resource_graph_build_step
+      - *upload_resource_info_step
 
       - *linux_collect_cores_step
       - *upload_logs_step
@@ -715,6 +781,7 @@ jobs:
         p5.34-io-tty
         p5.34-ipc-run
         python312
+        py312-pip
         tcl
         zstd
 
@@ -783,6 +850,7 @@ jobs:
           sh src/tools/ci/ci_macports_packages.sh $MACOS_PACKAGE_LIST
           # system python doesn't provide headers
           sudo /opt/local/bin/port select python3 python312
+          sudo /opt/local/bin/port select pip3 pip312
           # Make macports install visible to subsequent steps
           echo /opt/local/sbin >> "$GITHUB_PATH"
           echo /opt/local/bin >> "$GITHUB_PATH"
@@ -801,6 +869,7 @@ jobs:
 
       - *ccache_restore_default_step
       - *ccache_restore_branch_step
+      - *install_python_deps_step
 
       - name: Configure
         env:
@@ -827,6 +896,10 @@ jobs:
           # default is 256, pretty low
           ADDITIONAL_SETUP: ulimit -n 1024
         run: *meson_test_world_cmd
+
+      - *upload_resource_graph_test_step
+      - *upload_resource_graph_build_step
+      - *upload_resource_info_step
 
       - name: Core backtraces
         if: failure() && !cancelled()
@@ -999,6 +1072,11 @@ jobs:
         shell: pwsh
         run: src/tools/ci/gha_setup_windows_debugger.ps1
 
+      - *install_python_deps_step
+      - name: Test resmon availability
+        run: |
+          python3 src/tools/ci/resmon.py --help || true
+
       - name: Configure
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
@@ -1014,7 +1092,7 @@ jobs:
       - name: Build
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
-          ninja -C build ${{env.MBUILD_TARGET}} || exit 1
+          python3 src/tools/ci/resmon.py --prefix resource-test --interval 0.5 ninja -C build ${{env.MBUILD_TARGET}} || exit 1
           ninja -C build -t missingdeps
 
       - name: Test world
@@ -1027,6 +1105,10 @@ jobs:
           ADDITIONAL_SETUP: |
             call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
         run: *meson_test_world_cmd
+
+      - *upload_resource_graph_test_step
+      - *upload_resource_graph_build_step
+      - *upload_resource_info_step
 
       - *upload_logs_step
 
@@ -1102,6 +1184,9 @@ jobs:
             ${MINGW_PACKAGE_PREFIX}-meson \
             ${MINGW_PACKAGE_PREFIX}-perl \
             ${MINGW_PACKAGE_PREFIX}-pkgconf \
+            ${MINGW_PACKAGE_PREFIX}-python-matplotlib \
+            ${MINGW_PACKAGE_PREFIX}-python-pip \
+            ${MINGW_PACKAGE_PREFIX}-python-psutil \
             ${MINGW_PACKAGE_PREFIX}-readline \
             ${MINGW_PACKAGE_PREFIX}-zlib \
             ${MINGW_PACKAGE_PREFIX}-zstd
@@ -1127,6 +1212,10 @@ jobs:
       - *ccache_restore_default_step
       - *ccache_restore_branch_step
 
+      - name: Test resmon availability
+        run: |
+          python3 src/tools/ci/resmon.py --help || true
+
       - name: Configure
         run: |
           meson setup \
@@ -1145,6 +1234,10 @@ jobs:
 
       - name: Test world
         run: *meson_test_world_cmd
+
+      - *upload_resource_graph_test_step
+      - *upload_resource_graph_build_step
+      - *upload_resource_info_step
 
       - *upload_logs_step
 
