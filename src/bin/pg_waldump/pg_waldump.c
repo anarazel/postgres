@@ -56,6 +56,7 @@ typedef struct XLogDumpConfig
 	bool		follow;
 	bool		stats;
 	bool		stats_per_record;
+	bool		isatty;
 
 	/* filter options */
 	bool		filter_by_rmgr[RM_MAX_ID + 1];
@@ -418,6 +419,14 @@ WALDumpReadPage(XLogReaderState *state, XLogRecPtr targetPagePtr, int reqLen,
 	if (count < 0)
 		return -1;
 
+	/*
+	 * Flush stdout whenever we have to read more WAL. That may sound a bit
+	 * weird, but it ensures that the time between printing a record and
+	 * flushing it is bound (there's only so many records on a page), while
+	 * avoiding a per-record flush, which would be expensive on windows.
+	 */
+	fflush(stdout);
+
 	if (!WALRead(state, readBuff, targetPagePtr, count, private->timeline,
 				 &errinfo))
 	{
@@ -482,6 +491,9 @@ TarWALDumpReadPage(XLogReaderState *state, XLogRecPtr targetPagePtr, int reqLen,
 	/* Bail out if the end of the requested range has already been reached */
 	if (count < 0)
 		return -1;
+
+	/* see WALDumpReadPage */
+	fflush(stdout);
 
 	/*
 	 * If the target page is in a different segment, release the hash entry
@@ -969,6 +981,17 @@ main(int argc, char **argv)
 	pqsignal(SIGINT, sigint_handler);
 #endif
 
+	/*
+	 * pg_waldump can emit a large volume of output on stdout (one WAL record
+	 * per line, using several writes per record). On windows this can end up
+	 * being extremely slow. To avoid that, we use full buffering, with
+	 * explicit fflush() calls in appropriate places.
+	 *
+	 * FIXME: The 1MB buffer was just chosen to figure out whether this fixes
+	 * the problem. A smaller buffer would likely suffice.
+	 */
+	setvbuf(stdout, NULL, _IOFBF, 1024 * 1024);
+
 	pg_logging_init(argv[0]);
 	set_pglocale_pgservice(argv[0], PG_TEXTDOMAIN("pg_waldump"));
 	progname = get_progname(argv[0]);
@@ -1018,6 +1041,7 @@ main(int argc, char **argv)
 	config.save_fullpage_path = NULL;
 	config.stats = false;
 	config.stats_per_record = false;
+	config.isatty = isatty(0);
 
 	stats.startptr = InvalidXLogRecPtr;
 	stats.endptr = InvalidXLogRecPtr;
@@ -1464,6 +1488,12 @@ main(int argc, char **argv)
 				break;
 			else
 			{
+				/*
+				 * One might think we'd have to flush here, but all
+				 * potentially pending output was already have flushed during
+				 * the *WALDumpReadPage() call when trying to reach the next
+				 * page of the WAL.
+				 */
 				pg_usleep(1000000L);	/* 1 second */
 				continue;
 			}
@@ -1514,6 +1544,17 @@ main(int argc, char **argv)
 		if (config.stop_after_records > 0 &&
 			config.already_displayed_records >= config.stop_after_records)
 			break;
+
+		/*
+		 * We explicitly enabled full buffering, for performance reason. If
+		 * printing to a tty, flush at record boundaries to avoid buffering
+		 * too much.
+		 *
+		 * FIXME: It's not actually clear that we need this? Are there cases
+		 * where the flushing in WALDumpReadPage() is insufficient?
+		 */
+		if (0 && config.isatty)
+			fflush(stdout);
 	}
 
 	if (config.stats == true && !config.quiet)
