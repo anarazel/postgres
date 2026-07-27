@@ -7,7 +7,7 @@ c = ['ccache', prefix + 'gcc']
 cpp = ['ccache', prefix + 'g++']
 ar = prefix + 'ar'
 strip = prefix + 'strip'
-pkg-config = prefix + 'pkg-config'
+pkg-config = prefix + 'pkgconf'
 windres = prefix + 'windres'
 
 [properties]
