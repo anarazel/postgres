@@ -1212,6 +1212,16 @@ jobs:
       DEFAULT_BUILD: world-bin
       CCACHE_SLOPPINESS: pch_defines,time_macros
       CCACHE_DEPEND: 1
+      MESON_LINUX_FEATURES: >-
+        -Dgssapi=enabled
+        -Dlibcurl=enabled
+        -Dlibnuma=enabled
+        -Dliburing=enabled
+        -Dllvm=enabled
+        -Dpam=enabled
+        -Dselinux=enabled
+        -Dsystemd=enabled
+        -Duuid=e2fs
 
     steps:
       - *nix_sysinfo_step
@@ -1227,7 +1237,7 @@ jobs:
       - name: gcc warnings + (dtrace)
         if: ${{ !cancelled() }}
         env:
-          CONF: ${{env.MESON_COMMON_FEATURES}} -Ddtrace=enabled
+          CONF: ${{env.MESON_COMMON_FEATURES}} ${{env.MESON_LINUX_FEATURES}} -Ddtrace=enabled
           CC: ccache gcc
           CXX: ccache g++
           CLANG: ccache clang
@@ -1243,7 +1253,7 @@ jobs:
       - name: gcc warnings + (cassert)
         if: ${{ !cancelled() }}
         env:
-          CONF: ${{env.MESON_COMMON_FEATURES}} -Dcassert=true
+          CONF: ${{env.MESON_COMMON_FEATURES}} ${{env.MESON_LINUX_FEATURES}} -Dcassert=true
           CC: ccache gcc
           CXX: ccache g++
           CLANG: ccache clang
@@ -1253,7 +1263,7 @@ jobs:
       - name: clang warnings
         if: ${{ !cancelled() }}
         env:
-          CONF: ${{env.MESON_COMMON_FEATURES}}
+          CONF: ${{env.MESON_COMMON_FEATURES}} ${{env.MESON_LINUX_FEATURES}}
           CC: ccache clang
           CXX: ccache clang++
           CLANG: ccache clang
@@ -1263,7 +1273,7 @@ jobs:
       - name: clang warnings + (cassert + dtrace)
         if: ${{ !cancelled() }}
         env:
-          CONF: ${{env.MESON_COMMON_FEATURES}} -Dcassert=true -Ddtrace=enabled
+          CONF: ${{env.MESON_COMMON_FEATURES}} ${{env.MESON_LINUX_FEATURES}} -Dcassert=true -Ddtrace=enabled
           CC: ccache clang
           CXX: ccache clang++
           CLANG: ccache clang
