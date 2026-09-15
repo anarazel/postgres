@@ -12,8 +12,8 @@ SELECT getdatabaseencoding() <> 'UTF8' OR
 
 SET client_encoding TO UTF8;
 
-CREATE SCHEMA collate_tests;
-SET search_path = collate_tests;
+CREATE SCHEMA collate_tests_icu;
+SET search_path = collate_tests_icu;
 
 
 CREATE TABLE collate_test1 (
@@ -188,12 +188,12 @@ SELECT to_char(date '2010-04-01', 'DD TMMON YYYY' COLLATE "tr-x-icu");
 
 -- backwards parsing
 
-CREATE VIEW collview1 AS SELECT * FROM collate_test1 WHERE b COLLATE "C" >= 'bbc';
-CREATE VIEW collview2 AS SELECT a, b FROM collate_test1 ORDER BY b COLLATE "C";
-CREATE VIEW collview3 AS SELECT a, lower((x || x) COLLATE "C") FROM collate_test10;
+CREATE VIEW icucollview1 AS SELECT * FROM collate_test1 WHERE b COLLATE "C" >= 'bbc';
+CREATE VIEW icucollview2 AS SELECT a, b FROM collate_test1 ORDER BY b COLLATE "C";
+CREATE VIEW icucollview3 AS SELECT a, lower((x || x) COLLATE "C") FROM collate_test10;
 
 SELECT table_name, view_definition FROM information_schema.views
-  WHERE table_name LIKE 'collview%' ORDER BY 1;
+  WHERE table_name LIKE 'icucollview%' ORDER BY 1;
 
 
 -- collation propagation in various expression types
@@ -344,7 +344,7 @@ CREATE INDEX collate_test1_idx4 ON collate_test1 (((b||'foo') COLLATE "POSIX"));
 CREATE INDEX collate_test1_idx5 ON collate_test1 (a COLLATE "C"); -- fail
 CREATE INDEX collate_test1_idx6 ON collate_test1 ((a COLLATE "C")); -- fail
 
-SELECT relname, pg_get_indexdef(oid) FROM pg_class WHERE relname LIKE 'collate_test%_idx%' ORDER BY 1;
+SELECT relname, pg_get_indexdef(oid) FROM pg_class WHERE relname LIKE 'collate_test%_idx%' AND relnamespace = 'collate_tests_icu'::regnamespace ORDER BY 1;
 
 set enable_seqscan = off;
 explain (costs off)
@@ -358,8 +358,8 @@ reset enable_seqscan;
 
 -- schema manipulation commands
 
-CREATE ROLE regress_test_role;
-CREATE SCHEMA test_schema;
+CREATE ROLE regress_test_role_icu;
+CREATE SCHEMA test_schema_icu;
 
 -- We need to do this this way to cope with varying names for encodings:
 SET client_min_messages TO WARNING;
@@ -393,31 +393,31 @@ CREATE COLLATION testx (provider = icu, locale = 'nonsense-nowhere'); DROP COLLA
 CREATE COLLATION test4 FROM nonsense;
 CREATE COLLATION test5 FROM test0;
 
-SELECT collname FROM pg_collation WHERE collname LIKE 'test%' ORDER BY 1;
+SELECT collname FROM pg_collation WHERE collname LIKE 'test%' AND collnamespace IN ('collate_tests_icu'::regnamespace, 'test_schema_icu'::regnamespace) ORDER BY 1;
 
 ALTER COLLATION test1 RENAME TO test11;
 ALTER COLLATION test0 RENAME TO test11; -- fail
 ALTER COLLATION test1 RENAME TO test22; -- fail
 
-ALTER COLLATION test11 OWNER TO regress_test_role;
+ALTER COLLATION test11 OWNER TO regress_test_role_icu;
 ALTER COLLATION test11 OWNER TO nonsense;
-ALTER COLLATION test11 SET SCHEMA test_schema;
+ALTER COLLATION test11 SET SCHEMA test_schema_icu;
 
 COMMENT ON COLLATION test0 IS 'US English';
 
 SELECT collname, nspname, obj_description(pg_collation.oid, 'pg_collation')
     FROM pg_collation JOIN pg_namespace ON (collnamespace = pg_namespace.oid)
-    WHERE collname LIKE 'test%'
+    WHERE collname LIKE 'test%' AND nspname IN ('collate_tests_icu', 'test_schema_icu')
     ORDER BY 1;
 
-DROP COLLATION test0, test_schema.test11, test5;
+DROP COLLATION test0, test_schema_icu.test11, test5;
 DROP COLLATION test0; -- fail
 DROP COLLATION IF EXISTS test0;
 
-SELECT collname FROM pg_collation WHERE collname LIKE 'test%';
+SELECT collname FROM pg_collation WHERE collname LIKE 'test%' AND collnamespace IN ('collate_tests_icu'::regnamespace, 'test_schema_icu'::regnamespace);
 
-DROP SCHEMA test_schema;
-DROP ROLE regress_test_role;
+DROP SCHEMA test_schema_icu;
+DROP ROLE regress_test_role_icu;
 
 
 -- ALTER
@@ -1049,9 +1049,9 @@ SELECT 'ὀδυσσεύς' = 'ὈΔΥΣΣΕΎΣ' COLLATE case_insensitive;
 SELECT relname FROM pg_class WHERE relname = 'PG_CLASS'::text COLLATE case_insensitive;
 SELECT relname FROM pg_class WHERE 'PG_CLASS'::text = relname COLLATE case_insensitive;
 
-SELECT typname FROM pg_type WHERE typname LIKE 'int_' AND typname <> 'INT2'::text
+SELECT typname FROM pg_type WHERE typname LIKE 'int_' AND typnamespace = 'pg_catalog'::regnamespace AND typname <> 'INT2'::text
   COLLATE case_insensitive ORDER BY typname;
-SELECT typname FROM pg_type WHERE typname LIKE 'int_' AND 'INT2'::text <> typname
+SELECT typname FROM pg_type WHERE typname LIKE 'int_' AND typnamespace = 'pg_catalog'::regnamespace AND 'INT2'::text <> typname
   COLLATE case_insensitive ORDER BY typname;
 
 -- test case adapted from subselect.sql
@@ -1151,7 +1151,7 @@ CREATE TABLE fk_collation_fk (id int, x text COLLATE case_insensitive);
 INSERT INTO fk_collation_fk VALUES (1, 'abc');
 -- Lack of SELECT on the PK table forces per-row validation.
 CREATE ROLE regress_fk_collation;
-GRANT USAGE ON SCHEMA collate_tests TO regress_fk_collation;
+GRANT USAGE ON SCHEMA collate_tests_icu TO regress_fk_collation;
 GRANT REFERENCES ON fk_collation_pk TO regress_fk_collation;
 ALTER TABLE fk_collation_fk OWNER TO regress_fk_collation;
 SET ROLE regress_fk_collation;
@@ -1162,7 +1162,7 @@ INSERT INTO fk_collation_fk VALUES (1, 'aBc');
 INSERT INTO fk_collation_fk VALUES (2, 'abc'); -- fails
 RESET ROLE;
 DROP TABLE fk_collation_fk, fk_collation_pk;
-REVOKE USAGE ON SCHEMA collate_tests FROM regress_fk_collation;
+REVOKE USAGE ON SCHEMA collate_tests_icu FROM regress_fk_collation;
 DROP ROLE regress_fk_collation;
 
 -- Conversely, a case-insensitive index must not make the FK comparison
@@ -1505,7 +1505,7 @@ DROP DOMAIN d1, d2;
 -- cleanup
 RESET search_path;
 SET client_min_messages TO warning;
-DROP SCHEMA collate_tests CASCADE;
+DROP SCHEMA collate_tests_icu CASCADE;
 RESET client_min_messages;
 
 -- leave a collation for pg_upgrade test

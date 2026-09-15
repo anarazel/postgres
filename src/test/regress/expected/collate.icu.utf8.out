@@ -9,14 +9,14 @@ SELECT getdatabaseencoding() <> 'UTF8' OR
 \quit
 \endif
 SET client_encoding TO UTF8;
-CREATE SCHEMA collate_tests;
-SET search_path = collate_tests;
+CREATE SCHEMA collate_tests_icu;
+SET search_path = collate_tests_icu;
 CREATE TABLE collate_test1 (
     a int,
     b text COLLATE "en-x-icu" NOT NULL
 );
 \d collate_test1
-        Table "collate_tests.collate_test1"
+      Table "collate_tests_icu.collate_test1"
  Column |  Type   | Collation | Nullable | Default 
 --------+---------+-----------+----------+---------
  a      | integer |           |          | 
@@ -47,7 +47,7 @@ CREATE TABLE collate_test_like (
     LIKE collate_test1
 );
 \d collate_test_like
-      Table "collate_tests.collate_test_like"
+    Table "collate_tests_icu.collate_test_like"
  Column |  Type   | Collation | Nullable | Default 
 --------+---------+-----------+----------+---------
  a      | integer |           |          | 
@@ -467,24 +467,24 @@ SELECT to_char(date '2010-04-01', 'DD TMMON YYYY');
 SELECT to_char(date '2010-04-01', 'DD TMMON YYYY' COLLATE "tr-x-icu");
 */
 -- backwards parsing
-CREATE VIEW collview1 AS SELECT * FROM collate_test1 WHERE b COLLATE "C" >= 'bbc';
-CREATE VIEW collview2 AS SELECT a, b FROM collate_test1 ORDER BY b COLLATE "C";
-CREATE VIEW collview3 AS SELECT a, lower((x || x) COLLATE "C") FROM collate_test10;
+CREATE VIEW icucollview1 AS SELECT * FROM collate_test1 WHERE b COLLATE "C" >= 'bbc';
+CREATE VIEW icucollview2 AS SELECT a, b FROM collate_test1 ORDER BY b COLLATE "C";
+CREATE VIEW icucollview3 AS SELECT a, lower((x || x) COLLATE "C") FROM collate_test10;
 SELECT table_name, view_definition FROM information_schema.views
-  WHERE table_name LIKE 'collview%' ORDER BY 1;
- table_name |              view_definition               
-------------+--------------------------------------------
- collview1  |  SELECT a,                                +
-            |     b                                     +
-            |    FROM collate_test1                     +
-            |   WHERE ((b COLLATE "C") >= 'bbc'::text);
- collview2  |  SELECT a,                                +
-            |     b                                     +
-            |    FROM collate_test1                     +
-            |   ORDER BY (b COLLATE "C");
- collview3  |  SELECT a,                                +
-            |     lower(((x || x) COLLATE "C")) AS lower+
-            |    FROM collate_test10;
+  WHERE table_name LIKE 'icucollview%' ORDER BY 1;
+  table_name  |              view_definition               
+--------------+--------------------------------------------
+ icucollview1 |  SELECT a,                                +
+              |     b                                     +
+              |    FROM collate_test1                     +
+              |   WHERE ((b COLLATE "C") >= 'bbc'::text);
+ icucollview2 |  SELECT a,                                +
+              |     b                                     +
+              |    FROM collate_test1                     +
+              |   ORDER BY (b COLLATE "C");
+ icucollview3 |  SELECT a,                                +
+              |     lower(((x || x) COLLATE "C")) AS lower+
+              |    FROM collate_test10;
 (3 rows)
 
 -- collation propagation in various expression types
@@ -1002,13 +1002,13 @@ CREATE INDEX collate_test1_idx6 ON collate_test1 ((a COLLATE "C")); -- fail
 ERROR:  collations are not supported by type integer
 LINE 1: ...ATE INDEX collate_test1_idx6 ON collate_test1 ((a COLLATE "C...
                                                              ^
-SELECT relname, pg_get_indexdef(oid) FROM pg_class WHERE relname LIKE 'collate_test%_idx%' ORDER BY 1;
-      relname       |                                                  pg_get_indexdef                                                  
---------------------+-------------------------------------------------------------------------------------------------------------------
- collate_test1_idx1 | CREATE INDEX collate_test1_idx1 ON collate_tests.collate_test1 USING btree (b)
- collate_test1_idx2 | CREATE INDEX collate_test1_idx2 ON collate_tests.collate_test1 USING btree (b COLLATE "C")
- collate_test1_idx3 | CREATE INDEX collate_test1_idx3 ON collate_tests.collate_test1 USING btree (b COLLATE "C")
- collate_test1_idx4 | CREATE INDEX collate_test1_idx4 ON collate_tests.collate_test1 USING btree (((b || 'foo'::text)) COLLATE "POSIX")
+SELECT relname, pg_get_indexdef(oid) FROM pg_class WHERE relname LIKE 'collate_test%_idx%' AND relnamespace = 'collate_tests_icu'::regnamespace ORDER BY 1;
+      relname       |                                                    pg_get_indexdef                                                    
+--------------------+-----------------------------------------------------------------------------------------------------------------------
+ collate_test1_idx1 | CREATE INDEX collate_test1_idx1 ON collate_tests_icu.collate_test1 USING btree (b)
+ collate_test1_idx2 | CREATE INDEX collate_test1_idx2 ON collate_tests_icu.collate_test1 USING btree (b COLLATE "C")
+ collate_test1_idx3 | CREATE INDEX collate_test1_idx3 ON collate_tests_icu.collate_test1 USING btree (b COLLATE "C")
+ collate_test1_idx4 | CREATE INDEX collate_test1_idx4 ON collate_tests_icu.collate_test1 USING btree (((b || 'foo'::text)) COLLATE "POSIX")
 (4 rows)
 
 set enable_seqscan = off;
@@ -1046,8 +1046,8 @@ select * from collate_test1 where b ilike 'ABC';
 
 reset enable_seqscan;
 -- schema manipulation commands
-CREATE ROLE regress_test_role;
-CREATE SCHEMA test_schema;
+CREATE ROLE regress_test_role_icu;
+CREATE SCHEMA test_schema_icu;
 -- We need to do this this way to cope with varying names for encodings:
 SET client_min_messages TO WARNING;
 SET icu_validation_level = disabled;
@@ -1084,7 +1084,7 @@ HINT:  To disable ICU locale validation, set the parameter "icu_validation_level
 CREATE COLLATION test4 FROM nonsense;
 ERROR:  collation "nonsense" for encoding "UTF8" does not exist
 CREATE COLLATION test5 FROM test0;
-SELECT collname FROM pg_collation WHERE collname LIKE 'test%' ORDER BY 1;
+SELECT collname FROM pg_collation WHERE collname LIKE 'test%' AND collnamespace IN ('collate_tests_icu'::regnamespace, 'test_schema_icu'::regnamespace) ORDER BY 1;
  collname 
 ----------
  test0
@@ -1094,37 +1094,37 @@ SELECT collname FROM pg_collation WHERE collname LIKE 'test%' ORDER BY 1;
 
 ALTER COLLATION test1 RENAME TO test11;
 ALTER COLLATION test0 RENAME TO test11; -- fail
-ERROR:  collation "test11" already exists in schema "collate_tests"
+ERROR:  collation "test11" already exists in schema "collate_tests_icu"
 ALTER COLLATION test1 RENAME TO test22; -- fail
 ERROR:  collation "test1" for encoding "UTF8" does not exist
-ALTER COLLATION test11 OWNER TO regress_test_role;
+ALTER COLLATION test11 OWNER TO regress_test_role_icu;
 ALTER COLLATION test11 OWNER TO nonsense;
 ERROR:  role "nonsense" does not exist
-ALTER COLLATION test11 SET SCHEMA test_schema;
+ALTER COLLATION test11 SET SCHEMA test_schema_icu;
 COMMENT ON COLLATION test0 IS 'US English';
 SELECT collname, nspname, obj_description(pg_collation.oid, 'pg_collation')
     FROM pg_collation JOIN pg_namespace ON (collnamespace = pg_namespace.oid)
-    WHERE collname LIKE 'test%'
+    WHERE collname LIKE 'test%' AND nspname IN ('collate_tests_icu', 'test_schema_icu')
     ORDER BY 1;
- collname |    nspname    | obj_description 
-----------+---------------+-----------------
- test0    | collate_tests | US English
- test11   | test_schema   | 
- test5    | collate_tests | 
+ collname |      nspname      | obj_description 
+----------+-------------------+-----------------
+ test0    | collate_tests_icu | US English
+ test11   | test_schema_icu   | 
+ test5    | collate_tests_icu | 
 (3 rows)
 
-DROP COLLATION test0, test_schema.test11, test5;
+DROP COLLATION test0, test_schema_icu.test11, test5;
 DROP COLLATION test0; -- fail
 ERROR:  collation "test0" for encoding "UTF8" does not exist
 DROP COLLATION IF EXISTS test0;
 NOTICE:  collation "test0" does not exist, skipping
-SELECT collname FROM pg_collation WHERE collname LIKE 'test%';
+SELECT collname FROM pg_collation WHERE collname LIKE 'test%' AND collnamespace IN ('collate_tests_icu'::regnamespace, 'test_schema_icu'::regnamespace);
  collname 
 ----------
 (0 rows)
 
-DROP SCHEMA test_schema;
-DROP ROLE regress_test_role;
+DROP SCHEMA test_schema_icu;
+DROP ROLE regress_test_role_icu;
 -- ALTER
 ALTER COLLATION "en-x-icu" REFRESH VERSION;
 NOTICE:  version has not changed
@@ -1156,13 +1156,13 @@ drop cascades to column y of composite type collate_dep_test2
 drop cascades to view collate_dep_test3
 drop cascades to index collate_dep_test4i
 \d collate_dep_test1
-      Table "collate_tests.collate_dep_test1"
+    Table "collate_tests_icu.collate_dep_test1"
  Column |  Type   | Collation | Nullable | Default 
 --------+---------+-----------+----------+---------
  a      | integer |           |          | 
 
 \d collate_dep_test2
- Composite type "collate_tests.collate_dep_test2"
+Composite type "collate_tests_icu.collate_dep_test2"
  Column |  Type   | Collation | Nullable | Default 
 --------+---------+-----------+----------+---------
  x      | integer |           |          | 
@@ -1701,11 +1701,11 @@ ORDER BY 1, 2;
    ->  Hash Join
          Output: t1.x, t2.x
          Hash Cond: ((t2.x)::text = (t1.x)::text)
-         ->  Seq Scan on collate_tests.test3cs t2
+         ->  Seq Scan on collate_tests_icu.test3cs t2
                Output: t2.x
          ->  Hash
                Output: t1.x
-               ->  Seq Scan on collate_tests.test1cs t1
+               ->  Seq Scan on collate_tests_icu.test1cs t1
                      Output: t1.x
 (12 rows)
 
@@ -1825,14 +1825,14 @@ ORDER BY 1, 2;
    ->  Hash Join
          Output: t1.x, test3cs.x
          Hash Cond: ((t1.x)::text = (test3cs.x)::text)
-         ->  Seq Scan on collate_tests.test1cs t1
+         ->  Seq Scan on collate_tests_icu.test1cs t1
                Output: t1.x
          ->  Hash
                Output: test3cs.x
                ->  HashAggregate
                      Output: test3cs.x
                      Group Key: test3cs.x
-                     ->  Seq Scan on collate_tests.test3cs
+                     ->  Seq Scan on collate_tests_icu.test3cs
                            Output: test3cs.x
 (15 rows)
 
@@ -1862,14 +1862,14 @@ ORDER BY 1, 2;
    ->  Hash Join
          Output: t1.x, test3cs.x
          Hash Cond: ((t1.x)::text = (test3cs.x)::text)
-         ->  Seq Scan on collate_tests.test1cs t1
+         ->  Seq Scan on collate_tests_icu.test1cs t1
                Output: t1.x
          ->  Hash
                Output: test3cs.x
                ->  HashAggregate
                      Output: test3cs.x
                      Group Key: test3cs.x
-                     ->  Seq Scan on collate_tests.test3cs
+                     ->  Seq Scan on collate_tests_icu.test3cs
                            Output: test3cs.x
 (15 rows)
 
@@ -1903,13 +1903,13 @@ ORDER BY 1, 2;
                Output: test3cs.x
                Group Key: test3cs.x
                ->  Append
-                     ->  Seq Scan on collate_tests.test3cs
+                     ->  Seq Scan on collate_tests_icu.test3cs
                            Output: test3cs.x
-                     ->  Seq Scan on collate_tests.test3cs test3cs_1
+                     ->  Seq Scan on collate_tests_icu.test3cs test3cs_1
                            Output: test3cs_1.x
          ->  Hash
                Output: t1.x
-               ->  Seq Scan on collate_tests.test1cs t1
+               ->  Seq Scan on collate_tests_icu.test1cs t1
                      Output: t1.x
 (18 rows)
 
@@ -2918,7 +2918,7 @@ SELECT relname FROM pg_class WHERE 'PG_CLASS'::text = relname COLLATE case_insen
  pg_class
 (1 row)
 
-SELECT typname FROM pg_type WHERE typname LIKE 'int_' AND typname <> 'INT2'::text
+SELECT typname FROM pg_type WHERE typname LIKE 'int_' AND typnamespace = 'pg_catalog'::regnamespace AND typname <> 'INT2'::text
   COLLATE case_insensitive ORDER BY typname;
  typname 
 ---------
@@ -2926,7 +2926,7 @@ SELECT typname FROM pg_type WHERE typname LIKE 'int_' AND typname <> 'INT2'::tex
  int8
 (2 rows)
 
-SELECT typname FROM pg_type WHERE typname LIKE 'int_' AND 'INT2'::text <> typname
+SELECT typname FROM pg_type WHERE typname LIKE 'int_' AND typnamespace = 'pg_catalog'::regnamespace AND 'INT2'::text <> typname
   COLLATE case_insensitive ORDER BY typname;
  typname 
 ---------
@@ -3174,7 +3174,7 @@ CREATE TABLE fk_collation_fk (id int, x text COLLATE case_insensitive);
 INSERT INTO fk_collation_fk VALUES (1, 'abc');
 -- Lack of SELECT on the PK table forces per-row validation.
 CREATE ROLE regress_fk_collation;
-GRANT USAGE ON SCHEMA collate_tests TO regress_fk_collation;
+GRANT USAGE ON SCHEMA collate_tests_icu TO regress_fk_collation;
 GRANT REFERENCES ON fk_collation_pk TO regress_fk_collation;
 ALTER TABLE fk_collation_fk OWNER TO regress_fk_collation;
 SET ROLE regress_fk_collation;
@@ -3187,7 +3187,7 @@ ERROR:  insert or update on table "fk_collation_fk" violates foreign key constra
 DETAIL:  Key (id, x)=(2, abc) is not present in table "fk_collation_pk".
 RESET ROLE;
 DROP TABLE fk_collation_fk, fk_collation_pk;
-REVOKE USAGE ON SCHEMA collate_tests FROM regress_fk_collation;
+REVOKE USAGE ON SCHEMA collate_tests_icu FROM regress_fk_collation;
 DROP ROLE regress_fk_collation;
 -- Conversely, a case-insensitive index must not make the FK comparison
 -- accept unequal values under the column's deterministic collation.
@@ -3904,7 +3904,7 @@ DROP DOMAIN d1, d2;
 -- cleanup
 RESET search_path;
 SET client_min_messages TO warning;
-DROP SCHEMA collate_tests CASCADE;
+DROP SCHEMA collate_tests_icu CASCADE;
 RESET client_min_messages;
 -- leave a collation for pg_upgrade test
 CREATE COLLATION coll_icu_upgrade FROM "und-x-icu";

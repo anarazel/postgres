@@ -207,7 +207,7 @@ CREATE INDEX collate_test1_idx4 ON collate_test1 (((b||'foo') COLLATE "POSIX"));
 CREATE INDEX collate_test1_idx5 ON collate_test1 (a COLLATE "POSIX"); -- fail
 CREATE INDEX collate_test1_idx6 ON collate_test1 ((a COLLATE "POSIX")); -- fail
 
-SELECT relname, pg_get_indexdef(oid) FROM pg_class WHERE relname LIKE 'collate_test%_idx%' ORDER BY 1;
+SELECT relname, pg_get_indexdef(oid) FROM pg_class WHERE relname LIKE 'collate_test%_idx%' AND relnamespace = 'collate_tests'::regnamespace ORDER BY 1;
 
 
 -- foreign keys

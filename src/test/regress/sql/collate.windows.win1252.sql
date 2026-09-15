@@ -15,8 +15,8 @@ SELECT getdatabaseencoding() <> 'WIN1252' OR
 
 SET client_encoding TO WIN1252;
 
-CREATE SCHEMA collate_tests;
-SET search_path = collate_tests;
+CREATE SCHEMA collate_tests_win;
+SET search_path = collate_tests_win;
 
 
 CREATE TABLE collate_test1 (
@@ -152,11 +152,11 @@ SELECT relname FROM pg_class WHERE relname ~* '^abc';
 
 -- backwards parsing
 
-CREATE VIEW collview1 AS SELECT * FROM collate_test1 WHERE b COLLATE "C" >= 'bbc';
-CREATE VIEW collview2 AS SELECT a, b FROM collate_test1 ORDER BY b COLLATE "C";
+CREATE VIEW wincollview1 AS SELECT * FROM collate_test1 WHERE b COLLATE "C" >= 'bbc';
+CREATE VIEW wincollview2 AS SELECT a, b FROM collate_test1 ORDER BY b COLLATE "C";
 
 SELECT table_name, view_definition FROM information_schema.views
-  WHERE table_name LIKE 'collview%' ORDER BY 1;
+  WHERE table_name LIKE 'wincollview%' ORDER BY 1;
 
 
 -- collation propagation in various expression types
@@ -298,13 +298,13 @@ CREATE INDEX collate_test1_idx4 ON collate_test1 (((b||'foo') COLLATE "POSIX"));
 CREATE INDEX collate_test1_idx5 ON collate_test1 (a COLLATE "C"); -- fail
 CREATE INDEX collate_test1_idx6 ON collate_test1 ((a COLLATE "C")); -- fail
 
-SELECT relname, pg_get_indexdef(oid) FROM pg_class WHERE relname LIKE 'collate_test%_idx%' ORDER BY 1;
+SELECT relname, pg_get_indexdef(oid) FROM pg_class WHERE relname LIKE 'collate_test%_idx%' AND relnamespace = 'collate_tests_win'::regnamespace ORDER BY 1;
 
 
 -- schema manipulation commands
 
-CREATE ROLE regress_test_role;
-CREATE SCHEMA test_schema;
+CREATE ROLE regress_test_role_win;
+CREATE SCHEMA test_schema_win;
 
 -- We need to do this this way to cope with varying names for encodings:
 do $$
@@ -330,31 +330,31 @@ CREATE COLLATION testx (locale = 'nonsense'); -- fail
 CREATE COLLATION test4 FROM nonsense;
 CREATE COLLATION test5 FROM test0;
 
-SELECT collname FROM pg_collation WHERE collname LIKE 'test%' ORDER BY 1;
+SELECT collname FROM pg_collation WHERE collname LIKE 'test%' AND collnamespace IN ('collate_tests_win'::regnamespace, 'test_schema_win'::regnamespace) ORDER BY 1;
 
 ALTER COLLATION test1 RENAME TO test11;
 ALTER COLLATION test0 RENAME TO test11; -- fail
 ALTER COLLATION test1 RENAME TO test22; -- fail
 
-ALTER COLLATION test11 OWNER TO regress_test_role;
+ALTER COLLATION test11 OWNER TO regress_test_role_win;
 ALTER COLLATION test11 OWNER TO nonsense;
-ALTER COLLATION test11 SET SCHEMA test_schema;
+ALTER COLLATION test11 SET SCHEMA test_schema_win;
 
 COMMENT ON COLLATION test0 IS 'US English';
 
 SELECT collname, nspname, obj_description(pg_collation.oid, 'pg_collation')
     FROM pg_collation JOIN pg_namespace ON (collnamespace = pg_namespace.oid)
-    WHERE collname LIKE 'test%'
+    WHERE collname LIKE 'test%' AND nspname IN ('collate_tests_win', 'test_schema_win')
     ORDER BY 1;
 
-DROP COLLATION test0, test_schema.test11, test5;
+DROP COLLATION test0, test_schema_win.test11, test5;
 DROP COLLATION test0; -- fail
 DROP COLLATION IF EXISTS test0;
 
-SELECT collname FROM pg_collation WHERE collname LIKE 'test%';
+SELECT collname FROM pg_collation WHERE collname LIKE 'test%' AND collnamespace IN ('collate_tests_win'::regnamespace, 'test_schema_win'::regnamespace);
 
-DROP SCHEMA test_schema;
-DROP ROLE regress_test_role;
+DROP SCHEMA test_schema_win;
+DROP ROLE regress_test_role_win;
 
 
 -- ALTER
@@ -412,4 +412,4 @@ CREATE COLLATION ctest_nondet (locale = 'en_US', deterministic = false);
 
 -- cleanup
 SET client_min_messages TO warning;
-DROP SCHEMA collate_tests CASCADE;
+DROP SCHEMA collate_tests_win CASCADE;
