@@ -674,6 +674,8 @@ extern PgStat_Backend *pgstat_fetch_stat_backend_by_pid(int pid,
 														BackendType *bktype);
 extern bool pgstat_tracks_backend_bktype(BackendType bktype);
 extern void pgstat_create_backend(ProcNumber procnum);
+extern void pgstat_backend_session_waits(PgStat_Counter *lock_usecs,
+										 PgStat_Counter *io_usecs);
 
 /*
  * Functions in pgstat_bgwriter.c

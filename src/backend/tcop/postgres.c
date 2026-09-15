@@ -197,6 +197,7 @@ static void ProcessRecoveryConflictInterrupts(void);
 static void ProcessRecoveryConflictInterrupt(RecoveryConflictReason reason);
 static void report_recovery_conflict(RecoveryConflictReason reason);
 static void log_disconnections(int code, Datum arg);
+static void capture_session_resource_stats(int code, Datum arg);
 static void enable_statement_timeout(void);
 static void disable_statement_timeout(void);
 
@@ -4494,7 +4495,17 @@ PostgresMain(const char *dbname, const char *username)
 	 * sure Log_disconnections has its final value.
 	 */
 	if (IsUnderPostmaster && Log_disconnections)
+	{
 		on_proc_exit(log_disconnections, 0);
+
+		/*
+		 * The lock and I/O statistics log_disconnections() reports live in
+		 * the backend's pgstats entry, which is dropped by the pgstats
+		 * shutdown hook before on_proc_exit callbacks run.  Registering here,
+		 * i.e. after pgstat_initialize(), makes this callback run first.
+		 */
+		before_shmem_exit(capture_session_resource_stats, 0);
+	}
 
 	pgstat_report_connect(MyDatabaseId);
 
@@ -5342,6 +5353,24 @@ ShowUsage(const char *title)
 }
 
 /*
+ * Session resource usage captured for log_disconnections(), before the
+ * pgstats entry this backend reports into goes away.
+ */
+static PgStat_Counter session_lock_wait_usecs = 0;
+static PgStat_Counter session_io_wait_usecs = 0;
+
+/*
+ * before_shmem_exit handler collecting the numbers log_disconnections()
+ * reports but cannot read any more by the time it runs.
+ */
+static void
+capture_session_resource_stats(int code, Datum arg)
+{
+	pgstat_backend_session_waits(&session_lock_wait_usecs,
+								 &session_io_wait_usecs);
+}
+
+/*
  * on_proc_exit handler to log end of session
  */
 static void
@@ -5354,6 +5383,7 @@ log_disconnections(int code, Datum arg)
 	int			hours,
 				minutes,
 				seconds;
+	struct rusage ru;
 
 	TimestampDifference(MyStartTimestamp,
 						GetCurrentTimestamp(),
@@ -5365,12 +5395,19 @@ log_disconnections(int code, Datum arg)
 	minutes = secs / SECS_PER_MINUTE;
 	seconds = secs % SECS_PER_MINUTE;
 
+	getrusage(RUSAGE_SELF, &ru);
+
 	ereport(LOG,
 			(errmsg("disconnection: session time: %d:%02d:%02d.%03d "
-					"user=%s database=%s host=%s%s%s",
+					"user=%s database=%s host=%s%s%s"
+					" cpu=%ld.%03d/%ld.%03d lock_wait=%.3f io_wait=%.3f",
 					hours, minutes, seconds, msecs,
 					port->user_name, port->database_name, port->remote_host,
-					port->remote_port[0] ? " port=" : "", port->remote_port)));
+					port->remote_port[0] ? " port=" : "", port->remote_port,
+					(long) ru.ru_utime.tv_sec, (int) (ru.ru_utime.tv_usec / 1000),
+					(long) ru.ru_stime.tv_sec, (int) (ru.ru_stime.tv_usec / 1000),
+					session_lock_wait_usecs / 1000000.0,
+					session_io_wait_usecs / 1000000.0)));
 }
 
 /*

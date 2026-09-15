@@ -14,6 +14,8 @@
 
 #include "postgres.h"
 
+#include <sys/resource.h>
+
 #include "access/brin.h"
 #include "access/gin.h"
 #include "access/nbtree.h"
@@ -160,6 +162,7 @@ static void ProcessParallelMessage(ParallelContext *pcxt, int i, StringInfo msg)
 static void WaitForParallelWorkersToExit(ParallelContext *pcxt);
 static parallel_worker_main_type LookupParallelWorkerFunction(const char *libraryname, const char *funcname);
 static void ParallelWorkerShutdown(int code, Datum arg);
+static void log_parallel_worker_exit(int code, Datum arg);
 
 
 /*
@@ -1440,6 +1443,13 @@ ParallelWorkerMain(Datum main_arg)
 											  BGWORKER_BYPASS_ROLELOGINCHECK);
 
 	/*
+	 * Now that we have a pgstats entry to report into, arrange to log what we
+	 * used.  The pgstats shutdown hook was registered in BaseInit(), before
+	 * us, so that this callback runs while the entry is still there.
+	 */
+	before_shmem_exit(log_parallel_worker_exit, 0);
+
+	/*
 	 * Set the client encoding to the database encoding, since that is what
 	 * the leader will expect.  (We're cheating a bit by not calling
 	 * PrepareClientEncoding first.  It's okay because this call will always
@@ -1581,6 +1591,41 @@ ParallelWorkerMain(Datum main_arg)
 
 	/* Report success. */
 	pq_putmessage(PqMsg_Terminate, NULL, 0);
+}
+
+/*
+ * before_shmem_exit handler logging this worker's resource usage.
+ *
+ * A parallel worker never disconnects, so log_disconnections() does not
+ * report for it, and it has no Port, so log_line_prefix's %q suppresses the
+ * application name that would say whose work it did; the leader's pid is
+ * what identifies it.  Gated on log_disconnections, like the session line
+ * this complements.
+ */
+static void
+log_parallel_worker_exit(int code, Datum arg)
+{
+	PgStat_Counter lock_wait_usecs;
+	PgStat_Counter io_wait_usecs;
+	struct rusage ru;
+	long		secs;
+	int			usecs;
+
+	if (!Log_disconnections)
+		return;
+
+	pgstat_backend_session_waits(&lock_wait_usecs, &io_wait_usecs);
+	getrusage(RUSAGE_SELF, &ru);
+	TimestampDifference(MyStartTimestamp, GetCurrentTimestamp(), &secs, &usecs);
+
+	ereport(LOG,
+			errmsg("parallel worker exit: session time: %ld.%03d s leader=%d "
+				   "cpu=%ld.%03d/%ld.%03d lock_wait=%.3f io_wait=%.3f",
+				   secs, usecs / 1000, (int) ParallelLeaderPid,
+				   (long) ru.ru_utime.tv_sec, (int) (ru.ru_utime.tv_usec / 1000),
+				   (long) ru.ru_stime.tv_sec, (int) (ru.ru_stime.tv_usec / 1000),
+				   lock_wait_usecs / 1000000.0,
+				   io_wait_usecs / 1000000.0));
 }
 
 /*

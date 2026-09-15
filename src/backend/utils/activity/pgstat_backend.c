@@ -121,6 +121,49 @@ pgstat_count_backend_lock_fastpath_exceeded(uint8 locktag_type)
 }
 
 /*
+ * Report this backend's own accumulated lock wait and I/O wait time, in
+ * microseconds.  Prototype support for the session resource line printed by
+ * log_disconnections(); must be called before the stats entry is dropped.
+ *
+ * Reads the same data as pg_stat_get_backend_lock() and
+ * pg_stat_get_backend_io(), after pushing whatever is still pending into the
+ * shared entry.
+ */
+void
+pgstat_backend_session_waits(PgStat_Counter *lock_usecs,
+							 PgStat_Counter *io_usecs)
+{
+	PgStat_EntryRef *entry_ref;
+	PgStat_Backend *stats;
+
+	*lock_usecs = 0;
+	*io_usecs = 0;
+
+	if (!pgstat_tracks_backend_bktype(MyBackendType))
+		return;
+
+	/* make the shared entry hold everything this backend accumulated */
+	pgstat_flush_backend(false, PGSTAT_BACKEND_FLUSH_ALL);
+
+	entry_ref = pgstat_get_entry_ref_locked(PGSTAT_KIND_BACKEND, InvalidOid,
+											MyProcNumber, false);
+	if (entry_ref == NULL)
+		return;
+
+	stats = &((PgStatShared_Backend *) entry_ref->shared_stats)->stats;
+
+	for (int i = 0; i <= LOCKTAG_LAST_TYPE; i++)
+		*lock_usecs += stats->lock_stats.stats[i].wait_time;
+
+	for (int io_object = 0; io_object < IOOBJECT_NUM_TYPES; io_object++)
+		for (int io_context = 0; io_context < IOCONTEXT_NUM_TYPES; io_context++)
+			for (int io_op = 0; io_op < IOOP_NUM_TYPES; io_op++)
+				*io_usecs += stats->io_stats.times[io_object][io_context][io_op];
+
+	pgstat_unlock_entry(entry_ref);
+}
+
+/*
  * Returns statistics of a backend by proc number.
  */
 PgStat_Backend *
