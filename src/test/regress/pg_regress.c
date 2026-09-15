@@ -105,6 +105,9 @@ char	   *bindir = PGBINDIR;
 char	   *launcher = NULL;
 static _stringlist *loadextension = NULL;
 static int	max_connections = 0;
+static int	max_parallel_workers = -1;
+static int	server_workers = -1;	/* parallel workers the server can start */
+static bool server_debug_parallel = false;	/* debug_parallel_query is on */
 static int	server_connections = 0; /* what the server allows beyond its
 									 * reserved slots */
 test_connections_function test_connections = NULL;
@@ -1211,17 +1214,20 @@ psql_end_command(StringInfo buf, const char *database)
 	} while (0)
 
 /*
- * Ask the server how many connections it allows beyond its reserved slots;
- * the connection budget of the scheduler stays below that.  This covers a
- * temporary instance and an existing installation alike.
+ * Ask the server what the scheduler has to stay within: the connections it
+ * allows beyond its reserved slots, the parallel workers it can start (the
+ * smaller of max_parallel_workers and the worker process slots not taken by
+ * other background workers, such as the logical replication launcher), and
+ * whether debug_parallel_query makes every query want a worker.  This
+ * covers a temporary instance and an existing installation alike.
  */
 static void
-query_server_connections(void)
+query_server_limits(void)
 {
 	StringInfo	buf = psql_start_command();
 	const char *probe_db = "postgres";
 	FILE	   *fp;
-	char		line[64];
+	char		line[128];
 	bool		ok = false;
 
 	/*
@@ -1233,30 +1239,44 @@ query_server_connections(void)
 
 	psql_add_command(buf, "SELECT current_setting('max_connections')::int"
 					 " - current_setting('superuser_reserved_connections')::int"
-					 " - coalesce(current_setting('reserved_connections', true)::int, 0)");
+					 " - coalesce(current_setting('reserved_connections', true)::int, 0),"
+					 " least(current_setting('max_parallel_workers')::int,"
+					 " current_setting('max_worker_processes')::int"
+					 " - (SELECT count(*) FROM pg_stat_activity WHERE backend_type NOT IN"
+					 " ('client backend', 'autovacuum launcher', 'autovacuum worker',"
+					 " 'background writer', 'checkpointer', 'archiver', 'startup',"
+					 " 'walreceiver', 'walsender', 'walwriter', 'io worker',"
+					 " 'slotsync worker', 'walsummarizer'))),"
+					 " current_setting('debug_parallel_query') <> 'off'");
 	appendStringInfo(buf, " -A -t \"%s\"", probe_db);
 	fflush(NULL);
 	fp = popen(buf->data, "r");
 	if (fp != NULL)
 	{
-		int			conns;
-
-		if (fgets(line, sizeof(line), fp) != NULL &&
-			sscanf(line, "%d", &conns) == 1)
+		if (fgets(line, sizeof(line), fp) != NULL)
 		{
-			server_connections = conns;
-			ok = true;
+			int			conns,
+						workers;
+			char		dpq;
+
+			if (sscanf(line, "%d|%d|%c", &conns, &workers, &dpq) == 3)
+			{
+				server_connections = conns;
+				server_workers = workers;
+				server_debug_parallel = (dpq == 't');
+				ok = true;
+			}
 		}
 		if (pclose(fp) != 0)
 			ok = false;
 	}
 
 	/*
-	 * Without an answer the scheduler keeps to a budget that fits a default
+	 * Without an answer the scheduler keeps to limits that fit a default
 	 * configuration, which may be more than this server allows; say so.
 	 */
 	if (!ok)
-		note("could not read the connection limit of the server from database \"%s\"",
+		note("could not read the connection and worker limits of the server from database \"%s\"",
 			 probe_db);
 
 	destroyStringInfo(buf);
@@ -1819,12 +1839,17 @@ report_test_result(const char *testname, postprocess_result_function postfunc,
  * "shared:" and "exclusive:" name resources (arbitrary words) a test uses;
  * a test needing a resource exclusively does not run concurrently with any
  * other test naming that resource, while shared users may overlap.
+ * "workers:" gives the number of parallel workers the tests on the line
+ * may have running at once.
  *
  * Runnable tests are started longest-dependency-chain first, then in file
  * order, so the order of the file doubles as scheduling priority.  At most
- * --max-concurrent-tests tests run at once (20 by default), and the
+ * --max-concurrent-tests tests run at once (20 by default), the
  * connections they open, as declared by the driver program, stay within
- * --max-connections (40 by default, less if the server allows fewer).
+ * --max-connections (40 by default, less if the server allows fewer), and
+ * the parallel workers they declare within --max-parallel-workers (what the
+ * server can start, by default).  When the server runs with
+ * debug_parallel_query, every test counts as needing a worker at least.
  */
 typedef struct SchedTest
 {
@@ -1839,6 +1864,7 @@ typedef struct SchedTest
 	bool		notwith_all;	/* notwith: * */
 	bool		parallel;		/* overlapped another test */
 	int			conns;			/* connections the test opens */
+	int			workers;		/* parallel workers it may run at once */
 	bool		reported;
 	char	  **shared;
 	int			nshared;
@@ -1905,8 +1931,9 @@ parse_schedule(const char *schedule, int *ntests_p, bool *has_run_lines)
 		enum
 		{
 			MODE_NAMES, MODE_AFTER, MODE_BEFORE, MODE_NOTWITH, MODE_SHARED,
-			MODE_EXCLUSIVE
+			MODE_EXCLUSIVE, MODE_WORKERS
 		}			mode = MODE_NAMES;
+		int			workers = 0;
 		const char *lastkw = NULL;
 		int			nitems = 0;
 		char	   *body = NULL;	/* bail() below does not return */
@@ -1947,7 +1974,7 @@ parse_schedule(const char *schedule, int *ntests_p, bool *has_run_lines)
 				break;			/* the rest of the line is a comment */
 			if (strcmp(tok, "after:") == 0 || strcmp(tok, "before:") == 0 ||
 				strcmp(tok, "notwith:") == 0 || strcmp(tok, "shared:") == 0 ||
-				strcmp(tok, "exclusive:") == 0)
+				strcmp(tok, "exclusive:") == 0 || strcmp(tok, "workers:") == 0)
 			{
 				if (lastkw != NULL && nitems == 0)
 					bail("\"%s\" without names in schedule file \"%s\" line %d",
@@ -1978,6 +2005,20 @@ parse_schedule(const char *schedule, int *ntests_p, bool *has_run_lines)
 			if (strcmp(tok, "exclusive:") == 0)
 			{
 				mode = MODE_EXCLUSIVE;
+				continue;
+			}
+			if (strcmp(tok, "workers:") == 0)
+			{
+				mode = MODE_WORKERS;
+				continue;
+			}
+			if (mode == MODE_WORKERS)
+			{
+				if (nitems > 0 || strspn(tok, "0123456789") != strlen(tok))
+					bail("\"workers:\" takes one number in schedule file \"%s\" line %d",
+						 schedule, line_num);
+				workers = atoi(tok);
+				nitems++;
 				continue;
 			}
 
@@ -2080,6 +2121,7 @@ parse_schedule(const char *schedule, int *ntests_p, bool *has_run_lines)
 			tests[i].nshared = nshared;
 			tests[i].exclusive = exclusive;
 			tests[i].nexclusive = nexclusive;
+			tests[i].workers = workers;
 		}
 	}
 	fclose(scf);
@@ -2221,8 +2263,11 @@ run_schedule(const char *schedule, test_start_function startfunc,
 	int			ndone = 0;
 	int			cap;
 	int			budget;
+	int			wbudget;
 	int			running_conns = 0;
+	int			running_workers = 0;
 	int			reserved;
+	int			reserved_workers;
 	int		   *running_idx;
 	int		   *order;
 	bool		has_run_lines;
@@ -2242,6 +2287,20 @@ run_schedule(const char *schedule, test_start_function startfunc,
 		budget = Max(1, Min(40, server_connections - 5));
 	else
 		budget = 20;
+	if (max_parallel_workers >= 0)
+		wbudget = max_parallel_workers;
+	else if (server_workers >= 0)
+		wbudget = server_workers;
+	else
+		wbudget = 8;
+
+	/*
+	 * With debug_parallel_query on, every query launches a worker, so a test
+	 * that declares none still needs one.
+	 */
+	if (server_debug_parallel)
+		for (int i = 0; i < ntests; i++)
+			tests[i].workers = Max(tests[i].workers, 1);
 #ifdef WIN32
 	if (cap > MAXIMUM_WAIT_OBJECTS)
 		cap = MAXIMUM_WAIT_OBJECTS;
@@ -2259,6 +2318,7 @@ run_schedule(const char *schedule, test_start_function startfunc,
 
 		/* start everything that can run, in priority order */
 		reserved = 0;
+		reserved_workers = 0;
 		for (int k = 0; k < ntests && nrunning < cap; k++)
 		{
 			i = order[k];
@@ -2267,19 +2327,30 @@ run_schedule(const char *schedule, test_start_function startfunc,
 			st = &tests[i];
 
 			/*
-			 * A test that does not fit into the connection budget keeps its
-			 * share reserved, so that lower-priority tests cannot starve it;
-			 * one needing more than the whole budget still runs, alone.
+			 * A test that does not fit into the connection or worker budget
+			 * keeps its share of both reserved, so that lower-priority tests
+			 * cannot starve it; one needing more than a whole budget still
+			 * runs, alone.  A test without workers is not kept from starting
+			 * by the worker budget.
 			 */
-			if (nrunning > 0 && running_conns + reserved + st->conns > budget)
+			if (nrunning > 0 &&
+				(running_conns + reserved + st->conns > budget ||
+				 (st->workers > 0 &&
+				  running_workers + reserved_workers + st->workers > wbudget)))
 			{
-				if (reserved == 0)
+				if (reserved == 0 && reserved_workers == 0)
+				{
 					reserved = st->conns;
+					reserved_workers = st->workers;
+				}
 				continue;
 			}
 			if (st->conns > budget)
 				note("%s needs %d connections, more than the %d allowed; running it alone",
 					 st->name, st->conns, budget);
+			if (st->workers > wbudget)
+				note("%s needs %d parallel workers, more than the %d available; running it alone",
+					 st->name, st->workers, wbudget);
 			if (st->after_all && st->before_all && st->line == i &&
 				sched_line_size(tests, ntests, i) > 1)
 			{
@@ -2305,6 +2376,7 @@ run_schedule(const char *schedule, test_start_function startfunc,
 			running_pids[nrunning] = st->pid;
 			running_idx[nrunning] = i;
 			running_conns += st->conns;
+			running_workers += st->workers;
 			nrunning++;
 		}
 
@@ -2329,6 +2401,7 @@ run_schedule(const char *schedule, test_start_function startfunc,
 		running_pids[i] = running_pids[nrunning - 1];
 		running_idx[i] = running_idx[nrunning - 1];
 		running_conns -= st->conns;
+		running_workers -= st->workers;
 		nrunning--;
 
 		/*
@@ -2548,6 +2621,8 @@ help(void)
 	printf(_("                                at once (default 40, less if the server\n"));
 	printf(_("                                allows fewer)\n"));
 	printf(_("      --max-concurrent-tests=N  maximum number of tests run at once (default 20)\n"));
+	printf(_("      --max-parallel-workers=N  parallel workers the tests may have running\n"));
+	printf(_("                                at once (default: what the server can start)\n"));
 	printf(_("      --outputdir=DIR           place output files in DIR (default \".\")\n"));
 	printf(_("      --schedule=FILE           use test ordering schedule from FILE\n"));
 	printf(_("                                (can be used multiple times to concatenate)\n"));
@@ -2602,6 +2677,7 @@ regression_main(int argc, char *argv[],
 		{"load-extension", required_argument, NULL, 22},
 		{"config-auth", required_argument, NULL, 24},
 		{"max-concurrent-tests", required_argument, NULL, 25},
+		{"max-parallel-workers", required_argument, NULL, 27},
 		{"expecteddir", required_argument, NULL, 26},
 		{NULL, 0, NULL, 0}
 	};
@@ -2730,6 +2806,9 @@ regression_main(int argc, char *argv[],
 				break;
 			case 25:
 				max_concurrent_tests = atoi(optarg);
+				break;
+			case 27:
+				max_parallel_workers = atoi(optarg);
 				break;
 			case 26:
 				expecteddir = pg_strdup(optarg);
@@ -3102,7 +3181,7 @@ regression_main(int argc, char *argv[],
 		}
 	}
 
-	query_server_connections();
+	query_server_limits();
 
 	/*
 	 * Create the test database(s) and role(s)

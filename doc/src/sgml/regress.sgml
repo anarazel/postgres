@@ -106,8 +106,11 @@ make MAX_CONNECTIONS=10 check
     constraints the line names: <literal>after:</literal> lists tests that
     must have finished, <literal>notwith:</literal> tests that must not run
     at the same time, <literal>before: *</literal> makes every later line
-    wait, and <literal>shared:</literal> and <literal>exclusive:</literal>
-    name resources that an exclusive user may not share with anyone.  Tests
+    wait, <literal>shared:</literal> and <literal>exclusive:</literal>
+    name resources that an exclusive user may not share with anyone, and
+    <literal>workers:</literal> gives the number of parallel workers the
+    tests may have running at once, which the scheduler keeps within what
+    the server can start.  Tests
     on a <literal>test:</literal> line form a group that waits for every
     earlier line and that every later line waits for.  The header of
     <filename>src/test/regress/parallel_schedule</filename> describes the
