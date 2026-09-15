@@ -28,6 +28,7 @@ tests += {
   'regress': {
     'sql': [
       'hot_chain',
+      'btree_dedup_unique',
     ],
   },
   'isolation': {

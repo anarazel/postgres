@@ -10,7 +10,7 @@ PGFILEDESC = "test_indexscan - test index scan internals"
 
 EXTRA_INSTALL = contrib/btree_gin contrib/btree_gist
 
-REGRESS = hot_chain
+REGRESS = hot_chain btree_dedup_unique
 
 ISOLATION = killtuples
 
