@@ -2998,6 +2998,14 @@ regression_main(int argc, char *argv[],
 		fputs("log_temp_files = 128kB\n", pg_conf);
 		fputs("max_prepared_transactions = 2\n", pg_conf);
 
+		/*
+		 * The parallel tests declare up to eight workers each in the
+		 * schedule; the default pool of eight would let only one of them run
+		 * at a time.
+		 */
+		fputs("max_worker_processes = 16\n", pg_conf);
+		fputs("max_parallel_workers = 16\n", pg_conf);
+
 		for (sl = temp_configs; sl != NULL; sl = sl->next)
 		{
 			char	   *temp_config = sl->str;
