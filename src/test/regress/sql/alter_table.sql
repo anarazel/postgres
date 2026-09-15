@@ -3088,16 +3088,12 @@ drop table attbl, atref;
 
 /* End test case for bug #17409 */
 
-/* Test case for bug #18970 */
+/* Test case for bug #18970 (the statistics object case is in stats_ext) */
 
 create table attbl(a int);
 create table atref(b attbl check ((b).a is not null));
 alter table attbl alter column a type numeric;  -- someday this should work
 alter table atref drop constraint atref_b_check;
-
-create statistics atref_stat on ((b).a is not null) from atref;
-alter table attbl alter column a type numeric;  -- someday this should work
-drop statistics atref_stat;
 
 create index atref_idx on atref (((b).a));
 alter table attbl alter column a type numeric;  -- someday this should work

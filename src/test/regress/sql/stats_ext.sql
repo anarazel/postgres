@@ -1928,3 +1928,12 @@ SELECT range_length_histogram, range_empty_frac, range_bounds_histogram
    FROM pg_stats_ext_exprs
    WHERE statistics_name = 'stats_ext_range';
 DROP TABLE stats_ext_tbl_range;
+
+-- Test case for bug #18970: a statistics object on an expression over a
+-- column of a table's row type keeps that table's columns from being altered.
+create table rowtype_tbl(a int);
+create table rowtype_ref(b rowtype_tbl);
+create statistics rowtype_ref_stat on ((b).a is not null) from rowtype_ref;
+alter table rowtype_tbl alter column a type numeric;  -- someday this should work
+drop statistics rowtype_ref_stat;
+drop table rowtype_tbl, rowtype_ref;
