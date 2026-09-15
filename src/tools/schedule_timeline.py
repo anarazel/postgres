@@ -16,15 +16,32 @@ A directory argument stands for the schedule*.jsonl files in it.  Each run
 log becomes <name>.dot next to it, or the file named by -o.  All boxes have
 their position already, so there is no layout left for graphviz to do:
 --svg renders the dot file with "neato -n2".
+
+Given the server's log, each test is also annotated with the CPU, lock
+wait and I/O wait time of its backends and with the rest of its wall time,
+which is time the server spent idle, waiting for the test's client.  The
+log of a temp instance is found through the run log; for a run against an
+existing server, pass --server-log.  That server needs
+
+    log_disconnections = on
+    log_line_prefix = '%m %b[%p] %q%a '
+    track_io_timing = on
+
+and a build that reports resource usage when a session disconnects and
+when a parallel worker exits.  All sessions of a test are added up, so a
+test that reconnects, and the several sessions of an isolation spec, need
+nothing special; parallel workers are added to the test of their leader.
 """
 
 import argparse
 import bisect
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
+import time
 
 # Layout constants, in points; the positions in the graph are absolute.
 YSCALE = 30.0  # points per second before stretching
@@ -33,6 +50,7 @@ CHAR_WIDTH = 3.8  # width of a character at font size 7
 MIN_WIDTH = 36.0
 LANE_GAP = 6.0
 STRIP_WIDTH = 12.0  # the bottleneck strip at the left
+CPU_WIDTH = 24.0  # the machine-wide CPU strip left of it
 
 # How the arrow to the test we waited for is drawn, per reason.  "slot" and
 # "budget" mean that we waited for capacity rather than for that particular
@@ -66,6 +84,158 @@ LIMIT_COLOR = {
     "constraints": "orange",
 }
 
+# log_line_prefix '%m %b[%p] %q%a ': timestamp, backend type, pid, and the
+# application name, which only session processes have.
+LOG_LINE = re.compile(
+    r"^(?P<ts>\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d+) \S+ "
+    r"(?P<btype>[^\[]*)\[(?P<pid>\d+)\] "
+    r"(?P<app>.*?)"
+    r"(?:DEBUG[1-5]?|LOG|INFO|NOTICE|WARNING|ERROR|FATAL|PANIC|STATEMENT"
+    r"|DETAIL|HINT|CONTEXT|QUERY|LOCATION):  "
+    r"(?P<msg>.*)$"
+)
+RESOURCES = re.compile(
+    r" cpu=(?P<user>[\d.]+)/(?P<system>[\d.]+)"
+    r" lock_wait=(?P<lock>[\d.]+) io_wait=(?P<io>[\d.]+)"
+)
+LEADER = re.compile(r" leader=(?P<pid>\d+)")
+
+
+def parse_timestamp(stamp):
+    """Seconds since the epoch of a %m timestamp, read as local time."""
+    whole, frac = stamp.split(".")
+    return time.mktime(time.strptime(whole, "%Y-%m-%d %H:%M:%S")) + float(
+        "0." + frac
+    )
+
+
+def test_of_app(app):
+    """The test an application_name belongs to.
+
+    "pg_regress/<test>" and "isolation/<spec>[/<session>]" both name the
+    test in their second component.
+    """
+    parts = app.split("/")
+    if len(parts) < 2 or not parts[1]:
+        return None
+    return parts[1]
+
+
+class ServerLog:
+    """The resource usage the server logged, per session and worker.
+
+    Sessions report theirs when they disconnect, parallel workers when they
+    exit; a worker only names its leader, so the leader's own lines are what
+    tells us which test it belongs to.
+    """
+
+    def __init__(self, path):
+        self.path = path
+        self.sessions = []  # test sessions, in log order
+        self.workers = []  # parallel worker exits, in log order
+        self.apps = {}  # pid -> [(timestamp, application name)]
+        self.unnamed = 0  # worker exits whose leader we never saw
+        self._read()
+
+    def _read(self):
+        with open(self.path, "r", errors="replace") as f:
+            for line in f:
+                m = LOG_LINE.match(line)
+                if m is None:
+                    continue  # continuation line, or another prefix
+                msg = m.group("msg")
+                interesting = msg.startswith(
+                    "disconnection:"
+                ) or msg.startswith("parallel worker exit:")
+                if not interesting and not m.group("app"):
+                    continue
+
+                ts = parse_timestamp(m.group("ts"))
+                pid = int(m.group("pid"))
+                app = m.group("app").strip()
+                if app:
+                    self.apps.setdefault(pid, []).append((ts, app))
+                if not interesting:
+                    continue
+
+                res = RESOURCES.search(msg)
+                if res is None:
+                    continue  # a server without the resource reporting
+                entry = {
+                    "ts": ts,
+                    "pid": pid,
+                    "app": app,
+                    "cpu": float(res.group("user")) + float(res.group("system")),
+                    "lock": float(res.group("lock")),
+                    "io": float(res.group("io")),
+                }
+                if msg.startswith("disconnection:"):
+                    self.sessions.append(entry)
+                else:
+                    leader = LEADER.search(msg)
+                    entry["leader"] = int(leader.group("pid")) if leader else None
+                    self.workers.append(entry)
+
+    def app_of_pid(self, pid, ts):
+        """The application name a pid had around ts.
+
+        Pids are reused, so take the name from the line closest in time.
+        """
+        seen = self.apps.get(pid)
+        if not seen:
+            return None
+        return min(seen, key=lambda entry: abs(entry[0] - ts))[1]
+
+    def entries(self):
+        """Every entry, as (test name, kind, entry)."""
+        for entry in self.sessions:
+            name = test_of_app(entry["app"])
+            yield name, "session", entry
+        for entry in self.workers:
+            app = entry["app"]
+            if not app and entry["leader"] is not None:
+                app = self.app_of_pid(entry["leader"], entry["ts"]) or ""
+            name = test_of_app(app)
+            if name is None:
+                self.unnamed += 1
+            yield name, "worker", entry
+
+
+def load_cpu(path):
+    """The machine's CPU usage over time, from a "vmstat -n -t 1" log.
+
+    Returns [(start, end, busy, user, system, iowait)], busy being everything
+    but idle, in percent.  A sample covers the interval ending at its
+    timestamp, and the first one after the header averages over the time since
+    boot, so it is dropped.  The samples describe the whole machine, not just
+    this run: on a shared machine they overstate what the tests did.
+    """
+    samples = []
+    cols = None
+    need = 0
+    for line in open(path, errors="replace"):
+        fields = line.split()
+        if not fields:
+            continue
+        if fields[0] == "r" and "id" in fields:
+            # the header's last token names the timezone, not a column
+            cols = {name: i for i, name in enumerate(fields)}
+            need = max(cols.get(n, -1) for n in ("id", "us", "sy", "wa")) + 1
+            continue
+        if cols is None or len(fields) < need + 2:
+            continue  # the banner, or a log without timestamps
+        try:
+            ts = parse_timestamp(fields[-2] + " " + fields[-1] + ".0")
+            busy = 100 - int(fields[cols["id"]])
+            samples.append((ts, busy, int(fields[cols["us"]]),
+                            int(fields[cols["sy"]]), int(fields[cols["wa"]])))
+        except (ValueError, KeyError, IndexError):
+            continue
+    # the first sample is the average since boot; the rest each cover the
+    # second before their timestamp
+    return [(ts - 1.0, ts, busy, user, system, iowait)
+            for ts, busy, user, system, iowait in samples[1:]]
+
 
 def load_run_log(path):
     """Read a run log; returns the run and its tests, in schedule order."""
@@ -81,6 +251,10 @@ def load_run_log(path):
             if rec.get("type") == "run":
                 run = rec
             elif rec.get("type") == "test":
+                rec.setdefault("sessions", 0)
+                rec.setdefault("workers", 0)
+                for key in ("cpu", "lock", "io"):
+                    rec.setdefault(key, 0.0)
                 tests.append(rec)
             elif rec.get("type") == "state":
                 states.append(rec)
@@ -91,6 +265,67 @@ def load_run_log(path):
     run["path"] = path
     run["states"] = states
     return run, tests
+
+
+def annotate(runs, log):
+    """Add the resource usage the server logged to the tests of runs.
+
+    runs is a list of (run, tests) sharing one server log.  A test name can
+    occur in more than one of them, so a session goes to the run whose test
+    was running when the session ended.
+    """
+    byname = {}
+    for run, tests in runs:
+        for test in tests:
+            byname.setdefault(test["name"], []).append(test)
+
+    attributed = 0
+    for name, kind, entry in log.entries():
+        if name is None:
+            continue
+        candidates = byname.get(name)
+        if not candidates:
+            continue
+        test = candidates[0]
+        if len(candidates) > 1:
+            # prefer the one that was running, else the one that ran last
+            # before this
+            test = min(
+                candidates,
+                key=lambda t: (
+                    not t["start"] <= entry["ts"] <= t["end"],
+                    abs(entry["ts"] - t["end"]),
+                ),
+            )
+        test[kind + "s"] += 1
+        test["cpu"] += entry["cpu"]
+        test["lock"] += entry["lock"]
+        test["io"] += entry["io"]
+        attributed += 1
+
+    covered = sum(
+        1 for _, tests in runs for t in tests if t["sessions"] or t["workers"]
+    )
+    total = sum(len(tests) for _, tests in runs)
+    print(
+        "%s: %d of %d session and worker records attributed, "
+        "%d of %d tests covered"
+        % (
+            log.path,
+            attributed,
+            len(log.sessions) + len(log.workers),
+            covered,
+            total,
+        ),
+        file=sys.stderr,
+    )
+    if log.unnamed:
+        print(
+            "%s: %d worker exits could not be traced to a leader"
+            % (log.path, log.unnamed),
+            file=sys.stderr,
+        )
+    return attributed > 0
 
 
 def directives(test):
@@ -117,9 +352,20 @@ def directives(test):
     return " ".join(out)
 
 
-def split_label(test):
-    """The second line of a box: how long the test took."""
-    return "%.0f ms" % test["duration_ms"]
+def split_label(test, have_stats):
+    """The second line of a box: how the test spent its wall time."""
+    wall = test["duration_ms"]
+    label = "%.0f ms" % wall
+    if not have_stats or not (test["sessions"] or test["workers"]):
+        return label
+    # shares of the wall time, so that the label stays about as wide as a
+    # test name; the tooltip has the milliseconds
+    parts = ["cpu %.0f%%" % (100.0 * 1000.0 * test["cpu"] / wall)]
+    for key in ("lock", "io"):
+        share = 100.0 * 1000.0 * test[key] / wall
+        if share >= 5.0:
+            parts.append("%s %.0f%%" % (key, share))
+    return label + "  " + " ".join(parts)
 
 
 def quote(text):
@@ -127,7 +373,7 @@ def quote(text):
     return text.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def layout(tests, labels, strip):
+def layout(tests, labels, strip, cpu=False):
     """Place the boxes: a column per concurrent test, time downwards.
 
     The time axis is a monotone compression of the clock, so that the order
@@ -170,7 +416,8 @@ def layout(tests, labels, strip):
         chars = max(len(test["name"]), len(labels[i]))
         lane_width[lane[i]] = max(lane_width[lane[i]], chars * CHAR_WIDTH + 8.0)
     lane_x = []
-    left = STRIP_WIDTH + LANE_GAP if strip else 0.0
+    left = (CPU_WIDTH + LANE_GAP if cpu else 0.0) + (
+        STRIP_WIDTH + LANE_GAP if strip else 0.0)
     for l, width in enumerate(lane_width):
         if l == 0:
             lane_x.append(left + width / 2)
@@ -198,7 +445,7 @@ def critical_path(tests):
     return onpath
 
 
-def caption_of(run, tests):
+def caption_of(run, tests, have_stats, have_cpu=False):
     """The lines above the picture: what it is and how to read it."""
     last = max(range(len(tests)), key=lambda i: tests[i]["end"])
     caption = [
@@ -223,18 +470,56 @@ def caption_of(run, tests):
             "gray = the concurrency limit, blue = the connection budget, green "
             "= the worker budget, orange = a constraint (hover for which)."
         )
+    if have_cpu:
+        caption.append(
+            "The bars at the far left are the whole machine's CPU usage per "
+            "second, full width = every core busy (hover for the split)."
+        )
+    if have_stats:
+        caption.append(
+            "The box fill is the share of the wall time the test's backends "
+            "spent on CPU: white = none, saturated blue = fully CPU bound."
+        )
+        caption.append(
+            "Labels give the backends' CPU as a share of the wall time, above "
+            "100% with parallel workers, and lock and IO wait shares of 5% or "
+            "more; hover for the milliseconds and the idle rest."
+        )
     caption.append("Hover for durations, directives, and what was pending.")
     return caption
 
 
-def box_of(run, tests, i):
-    """The tooltip of a test's box."""
+def box_of(run, tests, i, label, have_stats):
+    """The tooltip of a test's box, and how much of its time was CPU."""
     test = tests[i]
     tooltip = "%s: started at %.2f s, %.0f ms" % (
         test["name"],
         test["start"] - run["start"],
         test["duration_ms"],
     )
+    ratio = None
+    if have_stats and (test["sessions"] or test["workers"]):
+        wall = test["duration_ms"]
+        cpu = 1000.0 * test["cpu"]
+        ratio = min(cpu / wall, 1.0) if wall > 0 else 0.0
+        tooltip += (
+            "; cpu %.0f ms (%.0f%%), lock wait %.0f ms, io wait %.0f ms, "
+            "other %.0f ms, %d session%s"
+            % (
+                cpu,
+                100.0 * ratio,
+                1000.0 * test["lock"],
+                1000.0 * test["io"],
+                max(wall - cpu - 1000.0 * (test["lock"] + test["io"]), 0.0),
+                test["sessions"],
+                "" if test["sessions"] == 1 else "s",
+            )
+        )
+        if test["workers"]:
+            tooltip += " and %d parallel worker%s" % (
+                test["workers"],
+                "" if test["workers"] == 1 else "s",
+            )
     tooltip += "; %d of %d tests still pending then, %s; %s" % (
         test["pending_at_start"],
         len(tests),
@@ -243,7 +528,7 @@ def box_of(run, tests, i):
     )
     if test["status"] != "ok":
         tooltip += "; FAILED"
-    return tooltip
+    return {"tooltip": tooltip, "ratio": ratio}
 
 
 def strip_intervals(run, tests):
@@ -297,11 +582,12 @@ def edge_of(tests, i, onpath):
     return p, reason, red
 
 
-def write_dot(run, tests, out):
+def write_dot(run, tests, out, have_stats, cpu=()):
     """Write the timeline of one run log as graphviz input."""
-    labels = [split_label(t) for t in tests]
+    labels = [split_label(t, have_stats) for t in tests]
     strip = strip_intervals(run, tests)
-    pos, lane, lane_x, lane_width = layout(tests, labels, bool(strip))
+    pos, lane, lane_x, lane_width = layout(tests, labels, bool(strip), bool(cpu))
+    strip_x = CPU_WIDTH + LANE_GAP if cpu else 0.0
     onpath = critical_path(tests)
 
     out.write("// timeline of a %s run; render with: neato -n2 -Tsvg\n"
@@ -312,25 +598,35 @@ def write_dot(run, tests, out):
     out.write("\tlabelloc=t;\n\tlabeljust=l;\n")
     out.write('\tlabel="%s\\l";\n'
               % "\\l".join(quote(c)
-                           for c in caption_of(run, tests)))
+                           for c in caption_of(run, tests, have_stats,
+                                                    bool(cpu))))
 
     for i, test in enumerate(tests):
-        tooltip = box_of(run, tests, i)
+        box = box_of(run, tests, i, labels[i], have_stats)
         top = pos(test["start"])
         bottom = pos(test["end"])
+        if box["ratio"] is not None:
+            fill = ', style=filled, fillcolor="0.58 %.3f 1.000"' % (
+                0.04 + 0.76 * box["ratio"]
+            )
+        elif have_stats:
+            fill = ", style=filled, fillcolor=white"
+        else:
+            fill = ""
         out.write(
             '\t"%s" [label="%s\\n%s", tooltip="%s", pos="%.1f,%.1f!", '
-            "width=%.3f, height=%.3f%s];\n"
+            "width=%.3f, height=%.3f%s%s];\n"
             % (
                 quote(test["name"]),
                 quote(test["name"]),
                 quote(labels[i]),
-                quote(tooltip),
+                quote(box["tooltip"]),
                 lane_x[lane[i]],
                 -(top + bottom) / 2,
                 lane_width[lane[i]] / 72.0,
                 (bottom - top) / 72.0,
                 ", color=red, penwidth=2" if onpath[i] else "",
+                fill,
             )
         )
 
@@ -367,11 +663,36 @@ def write_dot(run, tests, out):
             % (
                 n,
                 quote(strip_tooltip(run, start, end, key)),
-                STRIP_WIDTH / 2,
+                strip_x + STRIP_WIDTH / 2,
                 -(top + bottom) / 2,
                 STRIP_WIDTH / 72.0,
                 (bottom - top) / 72.0,
                 LIMIT_COLOR.get(key[0], "white"),
+            )
+        )
+    first = min(t["start"] for t in tests)
+    last = max(t["end"] for t in tests)
+    for n, (start, end, busy, user, system, iowait) in enumerate(cpu):
+        if end < first or start > last:
+            continue                      # before or after the run
+        top = pos(max(start, first))
+        bottom = pos(min(end, last))
+        if bottom - top < 1.0:
+            continue
+        width = max(CPU_WIDTH * busy / 100.0, 0.5)
+        out.write(
+            '\tcpu%d [label="", tooltip="%s", pos="%.1f,%.1f!", '
+            "width=%.3f, height=%.3f, style=filled, fillcolor=%s, "
+            "color=none];\n"
+            % (
+                n,
+                quote("%d%% busy: %d%% user, %d%% system, %d%% iowait"
+                      % (busy, user, system, iowait)),
+                width / 2,
+                -(top + bottom) / 2,
+                width / 72.0,
+                (bottom - top) / 72.0,
+                "gray40" if busy >= 90 else "gray60",
             )
         )
     out.write("}\n")
@@ -414,6 +735,15 @@ def main():
                         "(only with a single run log)")
     parser.add_argument("--svg", action="store_true",
                         help="also render the dot file with \"neato -n2\"")
+    parser.add_argument("--server-log",
+                        help="server log to take resource usage from, "
+                        "instead of the one the run log names")
+    parser.add_argument("--no-server-log", action="store_true",
+                        help="do not annotate with resource usage")
+    parser.add_argument("--vmstat",
+                        help="\"vmstat -n -t 1\" log to take the machine's "
+                        "CPU usage from (default: vmstat.log beside the run "
+                        "log)")
     args = parser.parse_args()
 
     paths = [log for arg in args.runlog for log in run_logs_of(arg)]
@@ -422,16 +752,53 @@ def main():
 
     runs = [load_run_log(path) for path in paths]
 
+    # runs sharing a server log have to be attributed together, as a test
+    # name can occur in several of them
+    have_stats = {}
+    if not args.no_server_log:
+        bylog = {}
+        for run, tests in runs:
+            logpath = args.server_log or run["server_log"]
+            if logpath:
+                bylog.setdefault(logpath, []).append((run, tests))
+            else:
+                print(
+                    "%s: no server log recorded, not annotating; pass "
+                    "--server-log for a run against an existing server"
+                    % run["path"],
+                    file=sys.stderr,
+                )
+        for logpath, group in bylog.items():
+            try:
+                log = ServerLog(logpath)
+            except OSError as e:
+                print("could not read %s: %s" % (logpath, e), file=sys.stderr)
+                continue
+            annotated = annotate(group, log)
+            for run, _ in group:
+                have_stats[run["path"]] = annotated
+
     for run, tests in runs:
         if not tests:
             print("%s: no tests" % run["path"], file=sys.stderr)
             continue
+        stats = have_stats.get(run["path"], False)
+        vmstat = args.vmstat or os.path.join(os.path.dirname(run["path"]),
+                                             "vmstat.log")
+        try:
+            cpu = load_cpu(vmstat)
+        except OSError:
+            cpu = []
+        if not cpu and args.vmstat:
+            print("%s: no timestamped samples, is it \"vmstat -n -t 1\"?"
+                  % vmstat, file=sys.stderr)
         if args.output == "-":
-            write_dot(run, tests, sys.stdout)
+            # only one of the two can go to stdout
+            write_dot(run, tests, sys.stdout, stats, cpu)
             continue
         dotpath = args.output or os.path.splitext(run["path"])[0] + ".dot"
         with open(dotpath, "w") as f:
-            write_dot(run, tests, f)
+            write_dot(run, tests, f, stats, cpu)
         print("wrote %s" % dotpath, file=sys.stderr)
         if args.svg:
             render_with_neato(dotpath)
