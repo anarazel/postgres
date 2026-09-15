@@ -10,3 +10,5 @@
 #/regression.diffs
 #/regression.out
 /schedule*.jsonl
+/schedule*.dot
+/schedule*.svg
