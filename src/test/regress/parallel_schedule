@@ -54,7 +54,6 @@ test: create_aggregate create_function_sql create_cast constraints triggers sele
 # sanity_check does a vacuum, affecting the sort order of SELECT *
 # results. So it should not run parallel to other tests.
 # ----------
-test: sanity_check
 
 # ----------
 # Another group of parallel tests
@@ -145,4 +144,6 @@ test: fast_default
 
 # run tablespace test at the end because it drops the tablespace created during
 # setup that other tests may use.
+test: sanity_check filenode_mapping
+
 test: tablespace
