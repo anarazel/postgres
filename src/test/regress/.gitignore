@@ -9,3 +9,4 @@
 # Note: regression.* are only left behind on a failure; that's why they're not ignored
 #/regression.diffs
 #/regression.out
+/schedule*.jsonl

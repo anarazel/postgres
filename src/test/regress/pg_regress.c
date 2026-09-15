@@ -24,6 +24,7 @@
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "common/logging.h"
@@ -149,6 +150,7 @@ static _resultmap *resultmap = NULL;
 
 static PID_TYPE postmaster_pid = INVALID_PID;
 static bool postmaster_running = false;
+static char *server_logfile = NULL; /* log of a temp instance, for the run log */
 
 static int	success_count = 0;
 static int	fail_count = 0;
@@ -1766,9 +1768,9 @@ stop_running_tests(void)
 
 /*
  * Compare a finished test's results against the expected files and report
- * its status.  Frees the file lists.
+ * its status.  Frees the file lists and returns whether the test passed.
  */
-static void
+static bool
 report_test_result(const char *testname, postprocess_result_function postfunc,
 				   _stringlist **resultfiles, _stringlist **expectfiles,
 				   _stringlist **tags, int exit_status, double runtime,
@@ -1816,6 +1818,8 @@ report_test_result(const char *testname, postprocess_result_function postfunc,
 	free_stringlist(resultfiles);
 	free_stringlist(expectfiles);
 	free_stringlist(tags);
+
+	return exit_status == 0 && !differ;
 }
 
 /*
@@ -1859,6 +1863,7 @@ typedef struct SchedTest
 {
 	char	   *name;
 	int			line;			/* index of the first test on the same line */
+	int			line_num;		/* line of the schedule file it came from */
 	int		   *after;
 	int			nafter;
 	int		   *notwith;
@@ -1884,9 +1889,18 @@ typedef struct SchedTest
 	int			depth;			/* length of the longest chain of tests
 								 * waiting on this one */
 	int			exit_status;
+	bool		ok;				/* test passed */
 	_stringlist *resultfiles;
 	_stringlist *expectfiles;
 	_stringlist *tags;
+	/* recorded for the run log, see write_run_log() */
+	int			pred;			/* test whose completion preceded our start */
+	const char *pred_reason;	/* why it had to wait for that one */
+	int			pending_at_start;	/* tests still waiting when we started */
+	int			running_at_start;	/* tests running once we had started */
+	const char *limit_at_start; /* what kept the pending ones from starting */
+	bool		deferred_budget;	/* was skipped over for lack of
+									 * connections */
 } SchedTest;
 
 static int
@@ -2059,6 +2073,8 @@ parse_schedule(const char *schedule, int *ntests_p, bool *has_run_lines)
 				tests[ntests].line = first;
 				tests[ntests].conns = test_connections ? test_connections(tok) : 1;
 				tests[ntests].state = SCHED_PENDING;
+				tests[ntests].pred = -1;
+				tests[ntests].line_num = line_num;
 				ntests++;
 				continue;
 			}
@@ -2273,6 +2289,352 @@ sched_runnable(SchedTest *tests, int ntests, int t)
 	return true;
 }
 
+/*
+ * Describe why test t could not start before test p finished.
+ */
+static const char *
+sched_block_reason(SchedTest *tests, int t, int p)
+{
+	SchedTest  *st = &tests[t];
+	SchedTest  *pt = &tests[p];
+	bool		same_line = (st->line == pt->line);
+
+	for (int i = 0; i < st->nafter; i++)
+		if (st->after[i] == p)
+			return "after";
+	if (p < t && !same_line && (st->after_all || pt->before_all))
+		return "after *";
+	for (int i = 0; i < st->nnotwith; i++)
+		if (st->notwith[i] == p)
+			return "notwith";
+	for (int i = 0; i < pt->nnotwith; i++)
+		if (pt->notwith[i] == t)
+			return "notwith";
+	if (!same_line && (st->notwith_all || pt->notwith_all))
+		return "notwith *";
+	if (!same_line && resources_conflict(st, pt))
+		return "resource";
+	if (st->deferred_budget)
+		return "budget";
+	return "slot";
+}
+
+/*
+ * What keeps pending test t from starting right now: a test it waits for
+ * and why, mirroring sched_runnable().  A running blocker is preferred to a
+ * pending one, since it is the one being waited on.  Returns -1 if nothing
+ * blocks t.
+ */
+static int
+sched_blocker(SchedTest *tests, int ntests, int t, const char **reason)
+{
+	SchedTest  *st = &tests[t];
+
+	for (int pass = 0; pass < 2; pass++)
+	{
+		bool		running_only = (pass == 0);
+
+		for (int i = 0; i < st->nafter; i++)
+		{
+			SchedTest  *other = &tests[st->after[i]];
+
+			if (other->state == SCHED_RUNNING ||
+				(!running_only && other->state != SCHED_DONE))
+			{
+				*reason = "after";
+				return st->after[i];
+			}
+		}
+		for (int i = 0; i < ntests; i++)
+		{
+			SchedTest  *other = &tests[i];
+
+			if (other->line == st->line || i >= t)
+				continue;
+			if ((st->after_all || other->before_all) &&
+				(other->state == SCHED_RUNNING ||
+				 (!running_only && other->state != SCHED_DONE)))
+			{
+				*reason = "after *";
+				return i;
+			}
+		}
+	}
+	for (int i = 0; i < st->nnotwith; i++)
+		if (tests[st->notwith[i]].state == SCHED_RUNNING)
+		{
+			*reason = "notwith";
+			return st->notwith[i];
+		}
+	for (int i = 0; i < ntests; i++)
+	{
+		SchedTest  *other = &tests[i];
+
+		if (other->line == st->line || other->state != SCHED_RUNNING)
+			continue;
+		for (int j = 0; j < other->nnotwith; j++)
+			if (other->notwith[j] == t)
+			{
+				*reason = "notwith";
+				return i;
+			}
+		if (st->notwith_all || other->notwith_all)
+		{
+			*reason = "notwith *";
+			return i;
+		}
+		if (resources_conflict(st, other))
+		{
+			*reason = "resource";
+			return i;
+		}
+	}
+	*reason = NULL;
+	return -1;
+}
+
+/*
+ * What the scheduler was up against after one of its passes: how many tests
+ * ran and waited, what kept the waiting ones back, and for which of them.
+ */
+typedef struct SchedState
+{
+	instr_time	when;
+	int			running;
+	int			pending;
+	const char *limit;			/* none, cap, connections, workers,
+								 * constraints */
+	int			test;			/* the pending test the limit is judged by */
+	int			blocker;		/* the test it waits for, or -1 */
+	const char *reason;			/* how it waits for that one */
+} SchedState;
+
+/* append s as a JSON string */
+static void
+json_string(StringInfo buf, const char *s)
+{
+	appendStringInfoChar(buf, '"');
+	for (; *s != '\0'; s++)
+	{
+		if (*s == '"' || *s == '\\')
+			appendStringInfo(buf, "\\%c", *s);
+		else if ((unsigned char) *s < 0x20)
+			appendStringInfo(buf, "\\u%04x", (unsigned char) *s);
+		else
+			appendStringInfoChar(buf, *s);
+	}
+	appendStringInfoChar(buf, '"');
+}
+
+/* append a JSON member whose value is a list of strings */
+static void
+json_string_list(StringInfo buf, const char *key, char **vals, int nvals)
+{
+	appendStringInfo(buf, ", \"%s\": [", key);
+	for (int i = 0; i < nvals; i++)
+	{
+		if (i > 0)
+			appendStringInfoString(buf, ", ");
+		json_string(buf, vals[i]);
+	}
+	appendStringInfoChar(buf, ']');
+}
+
+/* append a JSON member whose value is a list of test names */
+static void
+json_test_list(StringInfo buf, const char *key, SchedTest *tests,
+			   int *idx, int nidx)
+{
+	appendStringInfo(buf, ", \"%s\": [", key);
+	for (int i = 0; i < nidx; i++)
+	{
+		if (i > 0)
+			appendStringInfoString(buf, ", ");
+		json_string(buf, tests[idx[i]].name);
+	}
+	appendStringInfoChar(buf, ']');
+}
+
+static int	nrunlogs = 0;		/* run logs written by this run */
+
+/*
+ * Remove the run logs an earlier run left in the output directory, so that
+ * none of them can pass for this run's.
+ */
+static void
+remove_old_run_logs(void)
+{
+	char		path[MAXPGPATH];
+
+	snprintf(path, sizeof(path), "%s/schedule.jsonl", outputdir);
+	unlink(path);
+	for (int i = 2;; i++)
+	{
+		snprintf(path, sizeof(path), "%s/schedule-%d.jsonl", outputdir, i);
+		if (unlink(path) != 0)
+			break;
+	}
+}
+
+/*
+ * Log the run of one schedule: one JSON object per line, the run itself
+ * first, then every test in the order the schedule declares them, then the
+ * state of the scheduler after each of its passes.
+ *
+ * The log holds what the scheduler did and knew -- when each test ran, what
+ * its directives were, which test's completion let it start, and what was
+ * holding the rest back at any moment -- but nothing derived from that, so
+ * that src/tools/schedule_timeline.py can draw the run without pg_regress
+ * having to know anything about drawing.
+ *
+ * Times are absolute, in seconds since the epoch, taken from the same clock
+ * as the server log's %m timestamps: that is what lets the script match the
+ * sessions the server logged against the tests that opened them.  For the
+ * tests they are computed from the monotonic clock the scheduler uses, so
+ * that they agree with the reported durations to the microsecond.
+ *
+ * A second schedule in the same run gets schedule-2.jsonl and so on; the
+ * files of an earlier run are removed by open_result_files().
+ */
+static void
+write_run_log(SchedTest *tests, int ntests, SchedState *states, int nstates,
+			  const char *schedule, bool has_run_lines, instr_time runstart,
+			  double runstart_wall, int cap, int budget, int wbudget)
+{
+	char		path[MAXPGPATH];
+	char		stamp[128];
+	FILE	   *f;
+	StringInfoData buf;
+	time_t		runstart_secs = (time_t) runstart_wall;
+	size_t		len;
+
+	if (++nrunlogs == 1)
+		snprintf(path, sizeof(path), "%s/schedule.jsonl", outputdir);
+	else
+		snprintf(path, sizeof(path), "%s/schedule-%d.jsonl", outputdir,
+				 nrunlogs);
+	f = fopen(path, "w");
+	if (f == NULL)
+	{
+		diag("could not open file \"%s\" for writing: %m", path);
+		return;
+	}
+
+	/* the start of the run for a human reader, next to the number */
+	len = strftime(stamp, sizeof(stamp), "%Y-%m-%d %H:%M:%S",
+				   localtime(&runstart_secs));
+	snprintf(stamp + len, sizeof(stamp) - len, ".%06d",
+			 (int) ((runstart_wall - (double) runstart_secs) * 1000000));
+
+	initStringInfo(&buf);
+	appendStringInfoString(&buf, "{\"type\": \"run\", \"version\": 1");
+	appendStringInfoString(&buf, ", \"driver\": ");
+	json_string(&buf, progname);
+	appendStringInfoString(&buf, ", \"schedule\": ");
+	json_string(&buf, schedule);
+	appendStringInfo(&buf, ", \"schedule_index\": %d", nrunlogs);
+	appendStringInfo(&buf, ", \"has_run_lines\": %s",
+					 has_run_lines ? "true" : "false");
+	appendStringInfo(&buf, ", \"start\": %.6f", runstart_wall);
+	appendStringInfoString(&buf, ", \"start_time\": ");
+	json_string(&buf, stamp);
+	appendStringInfo(&buf, ", \"ntests\": %d", ntests);
+	appendStringInfo(&buf, ", \"max_concurrent_tests\": %d", cap);
+	appendStringInfo(&buf, ", \"max_connections\": %d", budget);
+	appendStringInfo(&buf, ", \"max_parallel_workers\": %d", wbudget);
+	if (shuffle_seed >= 0)
+		appendStringInfo(&buf, ", \"shuffle_seed\": %d", shuffle_seed);
+	appendStringInfoString(&buf, ", \"server_log\": ");
+	if (server_logfile != NULL)
+		json_string(&buf, server_logfile);
+	else
+		appendStringInfoString(&buf, "null");
+	appendStringInfoString(&buf, "}\n");
+	fputs(buf.data, f);
+
+	for (int i = 0; i < ntests; i++)
+	{
+		SchedTest  *st = &tests[i];
+		double		start = runstart_wall +
+			INSTR_TIME_GET_DOUBLE(st->starttime) -
+			INSTR_TIME_GET_DOUBLE(runstart);
+		double		end = start + INSTR_TIME_GET_DOUBLE(st->duration);
+
+		resetStringInfo(&buf);
+		appendStringInfoString(&buf, "{\"type\": \"test\", \"name\": ");
+		json_string(&buf, st->name);
+		appendStringInfo(&buf, ", \"index\": %d, \"line\": %d, \"group\": %d",
+						 i, st->line_num, st->line);
+		json_test_list(&buf, "after", tests, st->after, st->nafter);
+		json_test_list(&buf, "notwith", tests, st->notwith, st->nnotwith);
+		appendStringInfo(&buf, ", \"after_all\": %s, \"before_all\": %s"
+						 ", \"notwith_all\": %s",
+						 st->after_all ? "true" : "false",
+						 st->before_all ? "true" : "false",
+						 st->notwith_all ? "true" : "false");
+		json_string_list(&buf, "shared", st->shared, st->nshared);
+		json_string_list(&buf, "exclusive", st->exclusive, st->nexclusive);
+		appendStringInfo(&buf, ", \"conns\": %d, \"workers\": %d",
+						 st->conns, st->workers);
+		appendStringInfo(&buf, ", \"start\": %.6f, \"end\": %.6f"
+						 ", \"duration_ms\": %.3f",
+						 start, end, INSTR_TIME_GET_MILLISEC(st->duration));
+		appendStringInfo(&buf, ", \"exit_status\": %d, \"status\": \"%s\"",
+						 st->exit_status, st->ok ? "ok" : "failed");
+		appendStringInfo(&buf, ", \"parallel\": %s",
+						 st->parallel ? "true" : "false");
+		appendStringInfoString(&buf, ", \"pred\": ");
+		if (st->pred >= 0)
+			json_string(&buf, tests[st->pred].name);
+		else
+			appendStringInfoString(&buf, "null");
+		appendStringInfoString(&buf, ", \"pred_reason\": ");
+		if (st->pred_reason != NULL)
+			json_string(&buf, st->pred_reason);
+		else
+			appendStringInfoString(&buf, "null");
+		appendStringInfo(&buf, ", \"pending_at_start\": %d"
+						 ", \"running_at_start\": %d",
+						 st->pending_at_start, st->running_at_start);
+		appendStringInfoString(&buf, ", \"limit\": ");
+		json_string(&buf, st->limit_at_start);
+		appendStringInfoString(&buf, "}\n");
+		fputs(buf.data, f);
+	}
+
+	for (int i = 0; i < nstates; i++)
+	{
+		SchedState *ss = &states[i];
+		double		when = runstart_wall +
+			INSTR_TIME_GET_DOUBLE(ss->when) - INSTR_TIME_GET_DOUBLE(runstart);
+
+		resetStringInfo(&buf);
+		appendStringInfo(&buf, "{\"type\": \"state\", \"t\": %.6f"
+						 ", \"running\": %d, \"pending\": %d, \"limit\": ",
+						 when, ss->running, ss->pending);
+		json_string(&buf, ss->limit);
+		appendStringInfoString(&buf, ", \"test\": ");
+		if (ss->test >= 0)
+			json_string(&buf, tests[ss->test].name);
+		else
+			appendStringInfoString(&buf, "null");
+		appendStringInfoString(&buf, ", \"blocker\": ");
+		if (ss->blocker >= 0)
+			json_string(&buf, tests[ss->blocker].name);
+		else
+			appendStringInfoString(&buf, "null");
+		appendStringInfoString(&buf, ", \"reason\": ");
+		if (ss->reason != NULL)
+			json_string(&buf, ss->reason);
+		else
+			appendStringInfoString(&buf, "null");
+		appendStringInfoString(&buf, "}\n");
+		fputs(buf.data, f);
+	}
+	fclose(f);
+	pfree(buf.data);
+}
+
 static void
 run_schedule(const char *schedule, test_start_function startfunc,
 			 postprocess_result_function postfunc)
@@ -2287,12 +2649,30 @@ run_schedule(const char *schedule, test_start_function startfunc,
 	int			running_workers = 0;
 	int			reserved;
 	int			reserved_workers;
+	int			reserved_for;
+	const char *reserved_limit;
+	SchedState *states = NULL;
+	int			nstates = 0;
+	int			maxstates = 0;
 	int		   *running_idx;
 	int		   *order;
+	int			nstarted;
+	int			last_finished = -1;
+	instr_time	runstart;
+	double		runstart_wall;
+	struct timeval tv;
 	bool		has_run_lines;
 
 	tests = parse_schedule(schedule, &ntests, &has_run_lines);
 	order = sched_priority_order(tests, ntests);
+
+	/*
+	 * The run log needs a wall clock time to relate the run to the server
+	 * log, while the schedule itself is timed with the monotonic clock.
+	 */
+	gettimeofday(&tv, NULL);
+	INSTR_TIME_SET_CURRENT(runstart);
+	runstart_wall = (double) tv.tv_sec + tv.tv_usec / 1000000.0;
 
 	/*
 	 * Without --max-connections, allow 40 connections, or fewer if the server
@@ -2334,12 +2714,19 @@ run_schedule(const char *schedule, test_start_function startfunc,
 		int			i;
 		int			exit_status;
 		SchedTest  *st;
+		SchedState *ss;
 
 		/* start everything that can run, in priority order */
+		nstarted = 0;
 		reserved = 0;
 		reserved_workers = 0;
+		reserved_for = -1;
+		reserved_limit = NULL;
 		for (int k = 0; k < ntests && nrunning < cap; k++)
 		{
+			bool		conns_short;
+			bool		workers_short;
+
 			i = order[k];
 			if (!sched_runnable(tests, ntests, i))
 				continue;
@@ -2360,18 +2747,23 @@ run_schedule(const char *schedule, test_start_function startfunc,
 			 * keeps its share of both reserved, so that lower-priority tests
 			 * cannot starve it; one needing more than a whole budget still
 			 * runs, alone.  A test without workers is not kept from starting
-			 * by the worker budget.
+			 * by the worker budget.  Which budget was short is remembered for
+			 * the run log, because a test declaring workers reserves them
+			 * whichever budget kept it waiting.
 			 */
-			if (nrunning > 0 &&
-				(running_conns + reserved + st->conns > budget ||
-				 (st->workers > 0 &&
-				  running_workers + reserved_workers + st->workers > wbudget)))
+			conns_short = running_conns + reserved + st->conns > budget;
+			workers_short = st->workers > 0 &&
+				running_workers + reserved_workers + st->workers > wbudget;
+			if (nrunning > 0 && (conns_short || workers_short))
 			{
 				if (reserved == 0 && reserved_workers == 0)
 				{
 					reserved = st->conns;
 					reserved_workers = st->workers;
+					reserved_for = i;
+					reserved_limit = conns_short ? "connections" : "workers";
 				}
+				st->deferred_budget = true;
 				continue;
 			}
 			if (st->conns > budget)
@@ -2402,11 +2794,64 @@ run_schedule(const char *schedule, test_start_function startfunc,
 			st->parallel = (nrunning > 0);
 			for (int r = 0; r < nrunning; r++)
 				tests[running_idx[r]].parallel = true;
+			if (last_finished >= 0)
+			{
+				st->pred = last_finished;
+				st->pred_reason = sched_block_reason(tests, i, last_finished);
+			}
 			running_pids[nrunning] = st->pid;
 			running_idx[nrunning] = i;
 			running_conns += st->conns;
 			running_workers += st->workers;
 			nrunning++;
+			nstarted++;
+		}
+
+		/*
+		 * For the run log: what is holding the pending tests back now, and
+		 * for which of them that shows.
+		 */
+		if (nstates >= maxstates)
+		{
+			maxstates = maxstates > 0 ? maxstates * 2 : 256;
+			states = pg_realloc_array(states, SchedState, maxstates);
+		}
+		ss = &states[nstates++];
+		INSTR_TIME_SET_CURRENT(ss->when);
+		ss->running = nrunning;
+		ss->pending = ntests - ndone - nrunning;
+		ss->test = -1;
+		ss->blocker = -1;
+		ss->reason = NULL;
+		for (int k = 0; k < ntests; k++)
+			if (tests[order[k]].state == SCHED_PENDING)
+			{
+				ss->test = order[k];
+				break;
+			}
+		if (ss->pending == 0)
+			ss->limit = "none";
+		else if (nrunning >= cap)
+			ss->limit = "cap";
+		else if (reserved > 0 || reserved_workers > 0)
+		{
+			ss->limit = reserved_limit;
+			ss->test = reserved_for;
+		}
+		else
+		{
+			ss->limit = "constraints";
+			if (ss->test >= 0)
+				ss->blocker = sched_blocker(tests, ntests, ss->test,
+											&ss->reason);
+		}
+		for (i = nrunning - nstarted; i < nrunning; i++)
+		{
+			SchedTest  *nst = &tests[running_idx[i]];
+
+			nst->pending_at_start = ss->pending;
+			nst->running_at_start = nrunning;
+			nst->limit_at_start = ss->limit;
 		}
 
 		if (nrunning == 0)
@@ -2425,6 +2870,7 @@ run_schedule(const char *schedule, test_start_function startfunc,
 		INSTR_TIME_SUBTRACT(st->duration, st->starttime);
 		st->exit_status = exit_status;
 		st->state = SCHED_DONE;
+		last_finished = running_idx[i];
 		ndone++;
 		/* compact the running arrays */
 		running_pids[i] = running_pids[nrunning - 1];
@@ -2449,18 +2895,25 @@ run_schedule(const char *schedule, test_start_function startfunc,
 			if (!alldone)
 				continue;
 			for (int j = st->line; j < st->line + n; j++)
-				report_test_result(tests[j].name, postfunc, &tests[j].resultfiles,
-								   &tests[j].expectfiles, &tests[j].tags,
-								   tests[j].exit_status,
-								   INSTR_TIME_GET_MILLISEC(tests[j].duration),
-								   true);
+				tests[j].ok =
+					report_test_result(tests[j].name, postfunc,
+									   &tests[j].resultfiles,
+									   &tests[j].expectfiles, &tests[j].tags,
+									   tests[j].exit_status,
+									   INSTR_TIME_GET_MILLISEC(tests[j].duration),
+									   true);
 		}
 		else
-			report_test_result(st->name, postfunc, &st->resultfiles,
-							   &st->expectfiles, &st->tags, st->exit_status,
-							   INSTR_TIME_GET_MILLISEC(st->duration),
-							   st->parallel);
+			st->ok = report_test_result(st->name, postfunc, &st->resultfiles,
+										&st->expectfiles, &st->tags,
+										st->exit_status,
+										INSTR_TIME_GET_MILLISEC(st->duration),
+										st->parallel);
 	}
+
+	write_run_log(tests, ntests, states, nstates, schedule, has_run_lines,
+				  runstart, runstart_wall, cap, budget, wbudget);
+	pg_free(states);
 
 	pg_free(order);
 	pg_free(running_pids);
@@ -2530,6 +2983,7 @@ open_result_files(void)
 	/* create outputdir directory if not present */
 	if (!directory_exists(outputdir))
 		make_directory(outputdir);
+	remove_old_run_logs();
 
 	/* create the log file (copy of running status output) */
 	snprintf(file, sizeof(file), "%s/regression.out", outputdir);
@@ -2732,6 +3186,9 @@ regression_main(int argc, char *argv[],
 
 	atexit(stop_postmaster);
 	atexit(stop_running_tests);
+
+	/* the run log needs "." as the decimal point whatever the locale says */
+	setlocale(LC_NUMERIC, "C");
 
 #if defined(WIN32)
 
@@ -3141,8 +3598,12 @@ regression_main(int argc, char *argv[],
 		}
 
 		/*
-		 * Start the temp postmaster
+		 * Start the temp postmaster.  Where its log ends up goes into the run
+		 * log, so that the timeline script can find the sessions the tests
+		 * opened.
 		 */
+		snprintf(buf, sizeof(buf), "%s/log/postmaster.log", outputdir);
+		server_logfile = pg_strdup(buf);
 		snprintf(buf, sizeof(buf),
 				 "\"%s%spostgres\" -D \"%s/data\" -F%s "
 				 "-c \"listen_addresses=%s\" -k \"%s\" "
