@@ -1113,7 +1113,8 @@ permissionsList(const char *pattern, bool showSystem)
 					  "       ELSE E''\n"
 					  "       END\n"
 					  "    FROM pg_catalog.pg_policy pol\n"
-					  "    WHERE polrelid = c.oid), E'\\n')\n"
+					  "    WHERE polrelid = c.oid\n"
+					  "    ORDER BY polname), E'\\n')\n"
 					  "    AS \"%s\"",
 					  gettext_noop("Policies"));
 
