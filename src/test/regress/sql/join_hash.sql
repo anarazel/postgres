@@ -2,11 +2,14 @@
 -- exercises for the hash join code
 --
 
-begin;
+-- Each group of tests below runs in its own transaction and is rolled
+-- back at the end.  Keep those transactions short: a long-running
+-- transaction delays CREATE INDEX CONCURRENTLY in concurrently running
+-- tests.
 
-set local min_parallel_table_scan_size = 0;
-set local parallel_setup_cost = 0;
-set local enable_hashjoin = on;
+set min_parallel_table_scan_size = 0;
+set parallel_setup_cost = 0;
+set enable_hashjoin = on;
 
 -- Extract bucket and batch counts from an explain analyze plan.  In
 -- general we can't make assertions about how many batches (or
@@ -93,7 +96,7 @@ alter table wide set (parallel_workers = 2);
 -- our work_mem budget
 
 -- non-parallel
-savepoint settings;
+begin;
 set local max_parallel_workers_per_gather = 0;
 set local work_mem = '4MB';
 set local hash_mem_multiplier = 1.0;
@@ -105,10 +108,10 @@ select original > 1 as initially_multibatch, final > original as increased_batch
 $$
   select count(*) from simple r join simple s using (id);
 $$);
-rollback to settings;
+rollback;
 
 -- parallel with parallel-oblivious hash join
-savepoint settings;
+begin;
 set local max_parallel_workers_per_gather = 2;
 set local work_mem = '4MB';
 set local hash_mem_multiplier = 1.0;
@@ -121,10 +124,10 @@ select original > 1 as initially_multibatch, final > original as increased_batch
 $$
   select count(*) from simple r join simple s using (id);
 $$);
-rollback to settings;
+rollback;
 
 -- parallel with parallel-aware hash join
-savepoint settings;
+begin;
 set local max_parallel_workers_per_gather = 2;
 set local work_mem = '4MB';
 set local hash_mem_multiplier = 1.0;
@@ -137,14 +140,14 @@ select original > 1 as initially_multibatch, final > original as increased_batch
 $$
   select count(*) from simple r join simple s using (id);
 $$);
-rollback to settings;
+rollback;
 
 -- The "good" case: batches required, but we plan the right number; we
 -- plan for some number of batches, and we stick to that number, and
 -- peak memory usage says within our work_mem budget
 
 -- non-parallel
-savepoint settings;
+begin;
 set local max_parallel_workers_per_gather = 0;
 set local work_mem = '128kB';
 set local hash_mem_multiplier = 1.0;
@@ -156,10 +159,10 @@ select original > 1 as initially_multibatch, final > original as increased_batch
 $$
   select count(*) from simple r join simple s using (id);
 $$);
-rollback to settings;
+rollback;
 
 -- parallel with parallel-oblivious hash join
-savepoint settings;
+begin;
 set local max_parallel_workers_per_gather = 2;
 set local work_mem = '128kB';
 set local hash_mem_multiplier = 1.0;
@@ -172,10 +175,10 @@ select original > 1 as initially_multibatch, final > original as increased_batch
 $$
   select count(*) from simple r join simple s using (id);
 $$);
-rollback to settings;
+rollback;
 
 -- parallel with parallel-aware hash join
-savepoint settings;
+begin;
 set local max_parallel_workers_per_gather = 2;
 set local work_mem = '192kB';
 set local hash_mem_multiplier = 1.0;
@@ -190,7 +193,7 @@ $$
 $$);
 -- parallel full multi-batch hash join
 select count(*) from simple r full outer join simple s using (id);
-rollback to settings;
+rollback;
 
 -- The "bad" case: during execution we need to increase number of
 -- batches; in this case we plan for 1 batch, and increase at least a
@@ -198,7 +201,7 @@ rollback to settings;
 -- budget
 
 -- non-parallel
-savepoint settings;
+begin;
 set local max_parallel_workers_per_gather = 0;
 set local work_mem = '128kB';
 set local hash_mem_multiplier = 1.0;
@@ -210,10 +213,10 @@ select original > 1 as initially_multibatch, final > original as increased_batch
 $$
   select count(*) FROM simple r JOIN bigger_than_it_looks s USING (id);
 $$);
-rollback to settings;
+rollback;
 
 -- parallel with parallel-oblivious hash join
-savepoint settings;
+begin;
 set local max_parallel_workers_per_gather = 2;
 set local work_mem = '128kB';
 set local hash_mem_multiplier = 1.0;
@@ -226,10 +229,10 @@ select original > 1 as initially_multibatch, final > original as increased_batch
 $$
   select count(*) from simple r join bigger_than_it_looks s using (id);
 $$);
-rollback to settings;
+rollback;
 
 -- parallel with parallel-aware hash join
-savepoint settings;
+begin;
 set local max_parallel_workers_per_gather = 1;
 set local work_mem = '192kB';
 set local hash_mem_multiplier = 1.0;
@@ -242,7 +245,7 @@ select original > 1 as initially_multibatch, final > original as increased_batch
 $$
   select count(*) from simple r join bigger_than_it_looks s using (id);
 $$);
-rollback to settings;
+rollback;
 
 -- The "ugly" case: increasing the number of batches during execution
 -- doesn't help, so stop trying to fit in work_mem and hope for the
@@ -251,7 +254,7 @@ rollback to settings;
 -- right through the work_mem budget and hope for the best...
 
 -- non-parallel
-savepoint settings;
+begin;
 set local max_parallel_workers_per_gather = 0;
 set local work_mem = '128kB';
 set local hash_mem_multiplier = 1.0;
@@ -262,10 +265,10 @@ select * from hash_join_batches(
 $$
   select count(*) from simple r join extremely_skewed s using (id);
 $$);
-rollback to settings;
+rollback;
 
 -- parallel with parallel-oblivious hash join
-savepoint settings;
+begin;
 set local max_parallel_workers_per_gather = 2;
 set local work_mem = '128kB';
 set local hash_mem_multiplier = 1.0;
@@ -277,10 +280,10 @@ select * from hash_join_batches(
 $$
   select count(*) from simple r join extremely_skewed s using (id);
 $$);
-rollback to settings;
+rollback;
 
 -- parallel with parallel-aware hash join
-savepoint settings;
+begin;
 set local max_parallel_workers_per_gather = 1;
 set local work_mem = '128kB';
 set local hash_mem_multiplier = 1.0;
@@ -292,12 +295,12 @@ select * from hash_join_batches(
 $$
   select count(*) from simple r join extremely_skewed s using (id);
 $$);
-rollback to settings;
+rollback;
 
 -- A couple of other hash join tests unrelated to work_mem management.
 
 -- Check that EXPLAIN ANALYZE has data even if the leader doesn't participate
-savepoint settings;
+begin;
 set local max_parallel_workers_per_gather = 2;
 set local work_mem = '4MB';
 set local hash_mem_multiplier = 1.0;
@@ -306,7 +309,7 @@ select * from hash_join_batches(
 $$
   select count(*) from simple r join simple s using (id);
 $$);
-rollback to settings;
+rollback;
 
 -- Exercise rescans.  We'll turn off parallel_leader_participation so
 -- that we can check that instrumentation comes back correctly.
@@ -318,7 +321,7 @@ alter table join_bar set (parallel_workers = 2);
 analyze join_foo, join_bar;
 
 -- multi-batch with rescan, parallel-oblivious
-savepoint settings;
+begin;
 set enable_parallel_hash = off;
 set parallel_leader_participation = off;
 set min_parallel_table_scan_size = 0;
@@ -343,10 +346,10 @@ $$
     left join (select b1.id, b1.t from join_bar b1 join join_bar b2 using (id)) ss
     on join_foo.id < ss.id + 1 and join_foo.id > ss.id - 1;
 $$);
-rollback to settings;
+rollback;
 
 -- single-batch with rescan, parallel-oblivious
-savepoint settings;
+begin;
 set enable_parallel_hash = off;
 set parallel_leader_participation = off;
 set min_parallel_table_scan_size = 0;
@@ -371,10 +374,10 @@ $$
     left join (select b1.id, b1.t from join_bar b1 join join_bar b2 using (id)) ss
     on join_foo.id < ss.id + 1 and join_foo.id > ss.id - 1;
 $$);
-rollback to settings;
+rollback;
 
 -- multi-batch with rescan, parallel-aware
-savepoint settings;
+begin;
 set enable_parallel_hash = on;
 set parallel_leader_participation = off;
 set min_parallel_table_scan_size = 0;
@@ -399,10 +402,10 @@ $$
     left join (select b1.id, b1.t from join_bar b1 join join_bar b2 using (id)) ss
     on join_foo.id < ss.id + 1 and join_foo.id > ss.id - 1;
 $$);
-rollback to settings;
+rollback;
 
 -- single-batch with rescan, parallel-aware
-savepoint settings;
+begin;
 set enable_parallel_hash = on;
 set parallel_leader_participation = off;
 set min_parallel_table_scan_size = 0;
@@ -427,61 +430,61 @@ $$
     left join (select b1.id, b1.t from join_bar b1 join join_bar b2 using (id)) ss
     on join_foo.id < ss.id + 1 and join_foo.id > ss.id - 1;
 $$);
-rollback to settings;
+rollback;
 
 -- A full outer join where every record is matched.
 
 -- non-parallel
-savepoint settings;
+begin;
 set local max_parallel_workers_per_gather = 0;
 explain (costs off)
      select  count(*) from simple r full outer join simple s using (id);
 select  count(*) from simple r full outer join simple s using (id);
-rollback to settings;
+rollback;
 
 -- parallelism not possible with parallel-oblivious full hash join
-savepoint settings;
+begin;
 set enable_parallel_hash = off;
 set local max_parallel_workers_per_gather = 2;
 explain (costs off)
      select  count(*) from simple r full outer join simple s using (id);
 select  count(*) from simple r full outer join simple s using (id);
-rollback to settings;
+rollback;
 
 -- parallelism is possible with parallel-aware full hash join
-savepoint settings;
+begin;
 set local max_parallel_workers_per_gather = 2;
 explain (costs off)
      select  count(*) from simple r full outer join simple s using (id);
 select  count(*) from simple r full outer join simple s using (id);
-rollback to settings;
+rollback;
 
 -- A full outer join where every record is not matched.
 
 -- non-parallel
-savepoint settings;
+begin;
 set local max_parallel_workers_per_gather = 0;
 explain (costs off)
      select  count(*) from simple r full outer join simple s on (r.id = 0 - s.id);
 select  count(*) from simple r full outer join simple s on (r.id = 0 - s.id);
-rollback to settings;
+rollback;
 
 -- parallelism not possible with parallel-oblivious full hash join
-savepoint settings;
+begin;
 set enable_parallel_hash = off;
 set local max_parallel_workers_per_gather = 2;
 explain (costs off)
      select  count(*) from simple r full outer join simple s on (r.id = 0 - s.id);
 select  count(*) from simple r full outer join simple s on (r.id = 0 - s.id);
-rollback to settings;
+rollback;
 
 -- parallelism is possible with parallel-aware full hash join
-savepoint settings;
+begin;
 set local max_parallel_workers_per_gather = 2;
 explain (costs off)
      select  count(*) from simple r full outer join simple s on (r.id = 0 - s.id);
 select  count(*) from simple r full outer join simple s on (r.id = 0 - s.id);
-rollback to settings;
+rollback;
 
 
 -- exercise special code paths for huge tuples (note use of non-strict
@@ -490,7 +493,7 @@ rollback to settings;
 
 -- parallel with parallel-aware hash join (hits ExecParallelHashLoadTuple and
 -- sts_puttuple oversized tuple cases because it's multi-batch)
-savepoint settings;
+begin;
 set max_parallel_workers_per_gather = 2;
 set enable_parallel_hash = on;
 set work_mem = '128kB';
@@ -506,14 +509,14 @@ $$
   select length(max(s.t))
   from wide left join (select id, coalesce(t, '') || '' as t from wide where id < 3) s using (id);
 $$);
-rollback to settings;
+rollback;
 
 
 -- Hash join reuses the HOT status bit to indicate match status. This can only
 -- be guaranteed to produce correct results if all the hash join tuple match
 -- bits are reset before reuse. This is done upon loading them into the
 -- hashtable.
-SAVEPOINT settings;
+BEGIN;
 SET enable_parallel_hash = on;
 SET min_parallel_table_scan_size = 0;
 SET parallel_setup_cost = 0;
@@ -534,9 +537,14 @@ SELECT * FROM hjtest_matchbits_t1 t1 FULL JOIN hjtest_matchbits_t2 t2 ON t1.id =
 RESET parallel_setup_cost;
 SET enable_parallel_hash = off;
 SELECT * FROM hjtest_matchbits_t1 t1 FULL JOIN hjtest_matchbits_t2 t2 ON t1.id = t2.id;
-ROLLBACK TO settings;
+ROLLBACK;
 
-rollback;
+-- Clean up the tables and functions created above.
+drop table simple, bigger_than_it_looks, extremely_skewed, wide, join_foo, join_bar;
+drop function find_hash(json), hash_join_batches(text);
+reset min_parallel_table_scan_size;
+reset parallel_setup_cost;
+reset enable_hashjoin;
 
 -- Verify that hash key expressions reference the correct
 -- nodes. Hashjoin's hashkeys need to reference its outer plan, Hash's
