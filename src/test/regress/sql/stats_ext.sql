@@ -6,26 +6,7 @@
 -- from auto-analyze happening when we didn't expect it.
 --
 
--- check the number of estimated/actual rows in the top node
-create function check_estimated_rows(text) returns table (estimated int, actual int)
-language plpgsql as
-$$
-declare
-    ln text;
-    tmp text[];
-    first_row bool := true;
-begin
-    for ln in
-        execute format('explain analyze %s', $1)
-    loop
-        if first_row then
-            first_row := false;
-            tmp := regexp_match(ln, 'rows=(\d*) .* rows=(\d*)');
-            return query select tmp[1]::int, tmp[2]::int;
-        end if;
-    end loop;
-end;
-$$;
+-- check_estimated_rows(), used below, is created by test_setup
 
 -- Verify failures
 CREATE TABLE ext_stats_test (x text, y int, z int, w xid);
