@@ -1,149 +1,369 @@
 # ----------
 # src/test/regress/parallel_schedule
 #
-# Most test scripts can be run after running just test_setup and possibly
-# create_index.  Exceptions to this rule are documented below.
+# pg_regress starts each test as soon as its constraints allow, running at
+# most --max-concurrent-tests tests (20 by default) and keeping their
+# connections within --max-connections (40 by default, less if the server
+# allows fewer) and their parallel workers within --max-parallel-workers
+# (what the server can start, by default) at any time.
 #
-# By convention, we put no more than twenty tests in any one parallel group;
-# this limits the number of connections needed to run the tests.
-# ----------
-
-# required setup steps
-test: test_setup
-
-# ----------
-# The first group of parallel tests
-# ----------
-test: boolean char name varchar text int2 int4 int8 oid float4 float8 bit numeric txid uuid enum money rangetypes pg_lsn regproc
-
-# ----------
-# The second group of parallel tests
-# multirangetypes depends on rangetypes
-# multirangetypes shouldn't run concurrently with type_sanity
-# ----------
-test: strings md5 numerology point lseg line box path polygon circle date time timetz timestamp timestamptz interval inet macaddr macaddr8 multirangetypes
-
-# ----------
-# Another group of parallel tests
-# geometry depends on point, lseg, line, box, path, polygon, circle
-# horology depends on date, time, timetz, timestamp, timestamptz, interval
-# ----------
-test: geometry horology tstypes regex type_sanity opr_sanity misc_sanity comments expressions unicode xid mvcc database stats_import pg_ndistinct pg_dependencies oid8 encoding euc_kr
-
-# ----------
-# Load huge amounts of data
-# We should split the data files into single files and then
-# execute two copy tests in parallel, to check that copy itself
-# is concurrent safe.
-# ----------
-test: copy copyselect copydml copyencoding insert insert_conflict
-
-# ----------
-# More groups of parallel tests
-# Note: many of the tests in later groups depend on create_index
-# ----------
-test: create_function_c create_misc create_operator create_procedure create_table create_type create_schema
-test: create_index index_concurrently create_index_spgist create_view index_including index_including_gist
-
-# ----------
-# Another group of parallel tests
-# ----------
-test: create_aggregate create_function_sql create_cast constraints triggers select inherit typed_table vacuum drop_if_exists updatable_views roleattributes create_am hash_func errors infinite_recurse
-
-# ----------
-# sanity_check does a vacuum, affecting the sort order of SELECT *
-# results. So it should not run parallel to other tests.
-# ----------
-
-# ----------
-# Another group of parallel tests
-# aggregates depends on create_aggregate
-# join depends on create_misc
-# ----------
-test: select_into select_distinct select_distinct_on select_implicit select_having subselect union case join aggregates transactions random portals arrays btree_index hash_index update delete namespace prepared_xacts
-
-# ----------
-# Another group of parallel tests
-# ----------
-test: brin gin gist spgist privileges init_privs security_label collate matview lock replica_identity rowsecurity object_address tablesample groupingsets drop_operator password identity generated_stored join_hash
-
-# ----------
-# Additional BRIN tests
-# ----------
-test: brin_bloom brin_multi
-
-# ----------
-# Another group of parallel tests
-# ----------
-test: create_table_like alter_generic alter_operator misc async dbsize merge misc_functions nls sysviews tsrf tid tidscan tidrangescan collate.utf8 collate.icu.utf8 incremental_sort create_role without_overlaps generated_virtual
-
-# collate.linux.utf8 and collate.icu.utf8 tests cannot be run in parallel with each other
-# psql depends on create_am
-# amutils depends on geometry, create_index_spgist, hash_index, brin
-test: rules psql psql_crosstab psql_pipeline amutils stats_ext collate.linux.utf8 collate.windows.win1252
-
-# ----------
-# Run these alone so they don't run out of parallel workers
-# select_parallel depends on create_misc
-# ----------
-test: select_parallel
-test: write_parallel
-test: vacuum_parallel
-
-# Run this alone, because concurrent DROP TABLE would make non-superuser
-# "ANALYZE;" fail with "relation with OID $n does not exist".
-test: maintain_every
-
-# no relation related tests can be put in this group
-test: publication subscription
-
-# ----------
-# Another group of parallel tests
-# select_views depends on create_view
-# ----------
-test: select_views portals_p2 foreign_key dependency guc bitmapops combocid tsearch tsdicts foreign_data window xmlmap functional_deps advisory_lock indirect_toast equivclass stats_rewrite
-
-# ----------
-# Another group of parallel tests (JSON related)
-# ----------
-test: json jsonb json_encoding jsonpath jsonpath_encoding jsonb_jsonpath sqljson sqljson_queryfuncs sqljson_jsontable
-
-# ----------
-# Another group of parallel tests
-# with depends on create_misc
-# NB: temp.sql does reconnects which transiently uses 2 connections,
-# so keep this parallel group to at most 19 tests
-# ----------
-test: plancache limit plpgsql copy2 temp domain rangefuncs prepare conversion truncate alter_table sequence polymorphism rowtypes returning largeobject with xml
-
-# ----------
-# Another group of parallel tests
+#   run: a b c [after: x y] [before: *] [notwith: p q]
+#        [shared: r1 r2] [exclusive: r3] [workers: n]
+#       Tests on one line are started without any constraint among
+#       themselves.  "after:" names tests that must have finished before
+#       these start, "notwith:" tests that must not run at the same time,
+#       and "before: *" makes every later line wait for these.  Names must
+#       be declared on an earlier line; "after: *" means every test on an
+#       earlier line and "notwith: *" every test on another line.  "shared:"
+#       and "exclusive:" name resources (arbitrary words): a test holding a
+#       resource exclusively does not overlap any other test naming it,
+#       shared users may overlap each other.  "workers:" gives the parallel
+#       workers a test may have running at once, counting every statement
+#       of the test and, for an isolation spec, every session of it; with
+#       debug_parallel_query on, every test counts as one at least.  A line
+#       without directives is kept apart only from lines that say so
+#       ("notwith: *", "before: *").
+#   test: a b c
+#       A parallel group as in older schedules: waits for everything above
+#       and everything below waits for it.
 #
-# The stats test resets stats, so nothing else needing stats access can be in
-# this group.
+# Runnable tests start longest-dependency-chain first; the order of the
+# file breaks ties.  Tests marked "notwith: *" can only start when nothing
+# else is running, so they tend to run at the end.  A few tests reconnect
+# (\c), so a handful of connections more than the budget can briefly be in
+# use.
+#
+# The constraints were derived from recording which objects each test
+# creates, drops, alters, reads and writes (including the targets of
+# statements that fail on purpose), plus a few global effects (publications for all tables,
+# database-wide VACUUM/ANALYZE/REPACK, event triggers, prepared transactions,
+# large object OIDs, privileges on languages).
+# The comments on the lines below name the recorded objects behind each
+# constraint.  The worker counts are the most workers a test was seen to
+# have running at once; the settings a test makes are only a lower bound on
+# that, as a plan can have two Gather nodes active at once, a spec's
+# sessions run their queries at the same time, and a VACUUM or an index
+# build can use workers with nothing set at all.
+#
+# The catalog sanity checks run early with nothing else going
+# on, before the tests that leave rule-violating objects behind;
+# oidjoins runs late so that it sees as many objects as possible;
+# event_trigger_login runs alone because its login trigger would catch
+# connections of concurrent tests; sanity_check runs after
+# everything else and alone, because its database-wide VACUUM moves rows,
+# which changes the order an unordered SELECT returns them in, and
+# filenode_mapping runs with it,
+# checking the mapping of every relation after all the other tests rewrote
+# theirs; tablespace runs last because it drops the tablespace created by
+# test_setup.
+#
+# The file was generated from those recordings by a tool that is not part
+# of the tree; to add a test, add a line with the constraints its objects
+# need (a line without directives is fine for a self-contained test).
+#
+# Constraints marked "listing" come from catalog queries and psql \d
+# commands that select objects by name pattern rather than by name: a test
+# creating an object the pattern matches, in a schema the query looks at
+# (other sessions' temp schemas included when it scans pg_class directly),
+# must not run at the same time, and if it leaves the object behind, the
+# listing test runs first.  Two more rules read the SQL: a test resetting
+# the counters of a shared catalog (stats) is kept apart from tests writing
+# that catalog, and the filenode_mapping check is kept apart from tests
+# moving relations between tablespaces.
 # ----------
-test: partition_join partition_prune reloptions hash_part indexing partition_aggregate partition_info tuplesort explain memoize stats predicate numa eager_aggregate planner_est
 
-# ----------
-# Another group of parallel tests (compression)
-# ----------
-test: compression compression_lz4 compression_pglz cluster
-
-# event_trigger depends on create_am and cannot run concurrently with
-# any test that runs DDL
-# oidjoins is read-only, though, and should run late for best coverage
-test: oidjoins event_trigger
-
-
-# event_trigger_login cannot run concurrently with any other tests because
-# on-login event handling could catch connection of a concurrent test.
-test: event_trigger_login
-
-# this test also uses event triggers, so likewise run it by itself
-test: fast_default
-
-# run tablespace test at the end because it drops the tablespace created during
-# setup that other tests may use.
-test: sanity_check filenode_mapping
-
-test: tablespace
+run: test_setup before: *
+#   notwith *: misc_sanity: catalog sanity check runs alone
+run: type_sanity opr_sanity misc_sanity before: * notwith: *
+#   notwith *: publication: publication for all tables
+run: publication notwith: *
+#   notwith *: fast_default: its event triggers would fire on the DDL of aggregates
+run: fast_default notwith: *
+#   notwith *: event_trigger_login runs with nothing else
+run: event_trigger_login notwith: *
+#   notwith *: maintain_every: database-wide VACUUM or ANALYZE
+run: maintain_every notwith: *
+run: privileges shared: pg_largeobject_metadata stats exclusive: database_regression largeobjects
+run: collate.icu.utf8 exclusive: database_regression
+#   after collate.icu.utf8: dup(), mylt(), mylt2() ...
+run: collate.linux.utf8 after: collate.icu.utf8 exclusive: database_regression
+run: subscription shared: stats exclusive: database_regression
+run: dependency exclusive: database_regression
+run: create_role exclusive: database_regression
+run: prepared_xacts exclusive: advisory_1 twophase
+run: advisory_lock exclusive: advisory_1
+#   after privileges: pg_largeobject_metadata
+run: largeobject after: privileges exclusive: largeobjects pg_largeobject_metadata
+run: stats_rewrite shared: stats exclusive: twophase
+run: database create_index
+#   after create_index: public.tenk2_unique1
+#   notwith create_role: stats resets the counters of shared pg_shdescription, which create_role writes
+run: stats after: create_index notwith: create_role exclusive: stats
+run: create_misc
+#   after create_index: public.onek_unique1, public.onek_unique2, public.tenk1_hundred ...
+#   after create_misc: public.b_star
+run: join after: create_index create_misc
+run: create_aggregate
+#   after create_index: public.onek_hundred, public.onek_unique1, public.tenk1_hundred ...
+#   after create_aggregate: aggf_trans(), aggfns(), aggfns_trans() ...
+run: aggregates after: create_index create_aggregate
+run: create_table
+#   after create_index: public.iix, public.onek_stringu1, public.onek_unique1 ...
+run: subselect after: create_index
+#   after create_index: public.tenk1_hundred, public.tenk1_unique1
+run: groupingsets after: create_index
+#   after create_index: public.tenk1_thous_tenthous, public.tenk1_unique1, public.tenk1_unique2 ...
+run: union after: create_index
+#   after create_index: public.tenk1_hundred
+run: select_distinct after: create_index
+#   after create_index: public.onek_stringu1, public.tenk1_unique1, public.tenk1_unique2 ...
+run: portals after: create_index
+#   after create_index: public.onek2_u1_prtl, public.onek2_u2_prtl, public.onek_stringu1 ...
+run: select after: create_index
+#   after select: public.onek2
+run: select_into after: select
+run: constraints
+#   after create_index: public.tenk1_hundred
+run: select_distinct_on after: create_index
+#   after join: public.onek
+#   after aggregates: public.onek
+#   after subselect: public.onek
+#   after groupingsets: public.onek
+#   after union: public.onek
+#   after select_distinct: public.onek
+#   after portals: public.onek
+#   after select_into: public.onek
+#   after select_distinct_on: public.onek
+run: misc after: join aggregates subselect groupingsets union select_distinct portals select_into select_distinct_on
+#   after create_index: public.fast_emp4000, public.grect2ind
+run: create_am after: create_index
+#   notwith create_index: stats_ext lists stats names with "\dX", stats_ext lists stats names with "\dX+"
+#   notwith join: stats_ext lists stats names with "\dX", stats_ext lists stats names with "\dX+"
+run: stats_ext notwith: create_index join
+#   after create_table: psql lists opfamily names with "\dAf btree int4"
+#   after misc: public.onek
+#   after create_am: create_am lists am names with "SELECT amname, amhandler, amtype FROM pg_am where amtype = '", psql lists am names with "\dA"
+#   notwith privileges: privileges
+run: psql after: create_table misc create_am notwith: privileges
+#   notwith aggregates: create_view lists rel names with "SELECT relname FROM pg_class WHERE relname LIKE 'v%' AND rel"
+#   notwith subselect: create_view lists rel names with "SELECT relname FROM pg_class WHERE relname LIKE 'v%' AND rel"
+run: create_view notwith: aggregates subselect
+run: index_concurrently triggers
+#   after triggers: whoami(), public.whoami()
+run: temp after: triggers exclusive: twophase
+run: foreign_key
+#   after misc: public.onek
+run: portals_p2 after: misc
+run: errors
+#   after constraints: public.atacc1.test2, atacc1_a_not_null on public.atacc1, atacc1_test_check on public.atacc1 ...
+#   after psql: psql lists opfamily names with "\dAf btree int4", public.onek, public.onek_unique1
+#   after create_view: create_view lists rel names with "SELECT relname FROM pg_class WHERE relname LIKE 'v%' AND rel", create_view lists rel names with "\d+ tt1"
+#   after portals_p2: public.onek, public.onek_unique1
+#   after errors: public.stud_emp
+#   notwith triggers: parent_a_not_null on public.parent, public.child, public.child[] ...
+run: alter_table after: constraints psql create_view portals_p2 errors notwith: triggers
+#   after psql: psql lists opfamily names with "\dAf btree int4"
+#   notwith subscription: select_parallel lists fdw names with "SELECT * FROM information_schema.foreign_data_wrapper_option"
+#   notwith stats_ext: select_parallel lists fdw names with "SELECT * FROM information_schema.foreign_data_wrapper_option"
+run: select_parallel after: psql notwith: subscription stats_ext shared: stats
+run: join_hash
+#   after create_index: public.tenk1_hundred, public.tenk1_thous_tenthous, public.tenk1_unique1 ...
+run: inherit after: create_index
+run: gist
+#   notwith privileges: create_procedure lists proc names with "\dfn public.*test*1", create_procedure lists proc names with "\dfp public.*test*1"
+#   notwith stats: create_procedure lists proc names with "\dfn public.*test*1"
+run: create_procedure notwith: privileges stats
+run: indexing
+#   after create_index: public.tenk1_thous_tenthous, public.tenk1_unique1
+#   after create_procedure: create_procedure lists proc names with "\dfn public.*test*1"
+run: plpgsql after: create_index create_procedure
+#   notwith subscription: foreign_data lists fdw names with "SELECT * FROM information_schema.foreign_data_wrapper_option", foreign_data lists fdw names with "SELECT * FROM information_schema.foreign_data_wrappers ORDER", foreign_data lists fdw names with "SELECT fdwname, fdwhandler, fdwvalidator, fdwoptions FROM pg" ...
+#   notwith stats_ext: foreign_data lists fdw names with "SELECT * FROM information_schema.foreign_data_wrapper_option", foreign_data lists fdw names with "SELECT * FROM information_schema.foreign_data_wrappers ORDER", foreign_data lists fdw names with "SELECT fdwname, fdwhandler, fdwvalidator, fdwoptions FROM pg" ...
+#   notwith select_parallel: select_parallel lists fdw names with "SELECT * FROM information_schema.foreign_data_wrapper_option"
+run: foreign_data notwith: subscription stats_ext select_parallel
+run: tuplesort
+#   after create_table: public.part_p1, public.part_p1[], public.part_p2 ...
+run: partition_prune after: create_table
+run: gin partition_join
+#   after create_index: public.tenk1_thous_tenthous, public.tenk1_unique1, public.tenk1_unique2
+run: brin_multi after: create_index
+run: partition_aggregate
+#   notwith alter_table: public.mytype, public.mytype[]
+run: rangetypes notwith: alter_table
+#   after create_index: public.tenk1_thous_tenthous, public.tenk1_unique1, public.tenk1_unique2
+run: brin after: create_index
+run: generated_stored updatable_views
+#   notwith rangetypes: (public.textrange2 AS public.textmultirange2), public.textmultirange2(), public.textmultirange2(public.textrange2) ...
+run: without_overlaps notwith: rangetypes
+run: rowsecurity
+#   notwith generated_stored: gf1(), gtestdomain1range()
+run: generated_virtual notwith: generated_stored
+#   after create_procedure: create_procedure lists proc names with "\dfn public.*test*1"
+run: rules after: create_procedure
+run: hash_index
+#   after create_index: public.tenk1_hundred, public.tenk1_thous_tenthous
+run: btree_index after: create_index
+#   after create_view: interpt_pp(), public.iexit, public.interpt_pp(pg_catalog.path,pg_catalog.path) ...
+#   notwith inherit: regress_alice
+#   notwith rowsecurity: f_leak()
+run: select_views after: create_view notwith: inherit rowsecurity
+run: create_index_spgist spgist jsonb
+#   notwith alter_table: public.hash_parted, public.hash_parted[], public.list_parted ...
+run: insert notwith: alter_table
+#   notwith create_view: create_view lists rel names with "SELECT relname FROM pg_class WHERE relname LIKE 'v%' AND rel"
+run: vacuum notwith: create_view shared: stats
+#   after select_views: xml lists proc names with "WITH x AS (SELECT proname, proowner, procost::numeric, prona"
+#   notwith rowsecurity: xml lists proc names with "WITH x AS (SELECT proname, proowner, procost::numeric, prona"
+run: xml after: select_views notwith: rowsecurity
+run: polygon
+#   notwith stats_ext: stats_ext lists stats names with "\dX", stats_ext lists stats names with "\dX+"
+#   notwith select_parallel: select_parallel lists fdw names with "SELECT * FROM information_schema.foreign_data_wrapper_option"
+#   notwith foreign_data: foreign_data lists fdw names with "SELECT * FROM information_schema.foreign_data_wrapper_option", foreign_data lists fdw names with "SELECT * FROM information_schema.foreign_data_wrappers ORDER", foreign_data lists fdw names with "SELECT fdwname, fdwhandler, fdwvalidator, fdwoptions FROM pg" ...
+run: create_table_like notwith: stats_ext select_parallel foreign_data
+run: box
+#   notwith privileges: privileges
+#   notwith alter_table: public.part1, public.part1[], public.part2 ...
+#   notwith insert: public.part1, public.part1[], public.part2 ...
+run: merge notwith: privileges alter_table insert
+run: identity numeric index_including_gist stats_import
+#   notwith privileges: privileges grants MAINTAIN on a table to PUBLIC, which cluster reaches with a database-wide REPACK
+#   notwith rowsecurity: rowsecurity grants MAINTAIN on a table to PUBLIC, which cluster reaches with a database-wide REPACK
+run: cluster notwith: privileges rowsecurity
+run: timestamptz eager_aggregate matview
+#   after rangetypes: arraymultirange(), arrayrange(), mydomainmultirange() ...
+#   notwith alter_table: public.mytype, public.mytype[], mytype()
+#   notwith without_overlaps: textrange2(), public.textrange2(pg_catalog.text,pg_catalog.text), public.textrange2(pg_catalog.text,pg_catalog.text,pg_catalog.text) ...
+run: multirangetypes after: rangetypes notwith: alter_table without_overlaps
+run: tsearch
+#   notwith alter_table: public.hash_parted, public.hash_parted[], public.list_parted ...
+#   notwith partition_prune: public.list_part1, public.list_part1[]
+#   notwith insert: public.hash_parted, public.hash_parted[], public.hpart1 ...
+run: update notwith: alter_table partition_prune insert
+run: timestamp bitmapops
+#   after create_index: public.tenk1_thous_tenthous, public.tenk1_unique1, public.tenk1_unique2
+#   notwith create_view: create_view lists rel names with "SELECT relname FROM pg_class WHERE relname LIKE 'v%' AND rel"
+run: window after: create_index notwith: create_view
+run: domain regex
+#   notwith create_aggregate: sum3()
+#   notwith aggregates: sum3()
+run: polymorphism notwith: create_aggregate aggregates
+#   notwith collate.icu.utf8: dup()
+#   notwith collate.linux.utf8: dup()
+#   notwith create_view: create_view lists rel names with "SELECT relname FROM pg_class WHERE relname LIKE 'v%' AND rel"
+run: rangefuncs notwith: collate.icu.utf8 collate.linux.utf8 create_view
+run: truncate strings
+#   notwith constraints: public.pk
+run: replica_identity notwith: constraints
+#   after create_index: public.tenk1_unique1
+#   after create_misc: public.a_star
+#   notwith create_view: create_view lists rel names with "SELECT relname FROM pg_class WHERE relname LIKE 'v%' AND rel"
+run: with after: create_index create_misc notwith: create_view
+#   after create_index: public.tenk1_hundred, public.tenk1_unique1
+run: memoize after: create_index
+run: enum vacuum_parallel create_type
+#   after create_index: public.tenk1_unique1
+#   notwith domain: public.comptype, public.comptype[]
+run: arrays after: create_index notwith: domain
+#   notwith stats_ext: index_including lists rel names with "SELECT indexdef FROM pg_indexes WHERE tablename = 'tbl' ORDE"
+run: index_including notwith: stats_ext
+run: indirect_toast interval insert_conflict circle sequence
+#   notwith collate.icu.utf8: dup()
+#   notwith collate.linux.utf8: dup()
+#   notwith create_view: create_view lists rel names with "SELECT relname FROM pg_class WHERE relname LIKE 'v%' AND rel"
+#   notwith rangefuncs: dup()
+run: collate notwith: collate.icu.utf8 collate.linux.utf8 create_view rangefuncs
+run: line path
+#   after create_index: public.tenk1_unique1, public.tenk1_unique2
+run: incremental_sort after: create_index
+run: lseg
+run: copy shared: stats
+run: compression date jsonb_jsonpath
+#   after create_type: public.widget
+run: copy2 after: create_type
+run: json
+#   notwith privileges: privileges
+run: create_function_sql notwith: privileges
+#   after polygon: public.polygon_tbl
+#   after box: public.box_tbl
+#   after circle: public.circle_tbl
+#   after line: public.line_tbl
+#   after path: public.path_tbl
+#   after lseg: public.lseg_tbl
+run: geometry after: polygon box circle line path lseg
+#   after create_index: public.tenk1_hundred, public.tenk1_thous_tenthous, public.tenk1_unique1
+run: rowtypes after: create_index
+run: timetz time
+#   after create_index: public.tenk1_thous_tenthous, public.tenk1_unique1, public.tenk1_unique2
+run: brin_bloom after: create_index
+#   notwith rangetypes: (public.mydomainrange AS public.mydomainmultirange), public.mydomain, public.mydomain[] ...
+#   notwith multirangetypes: (public.mydomainrange AS public.mydomainmultirange), public.mydomain, public.mydomain[] ...
+run: sqljson notwith: rangetypes multirangetypes
+run: write_parallel
+#   after enum: public.rainbow, public.rainbow[], public.rgb ...
+run: sqljson_queryfuncs after: enum
+#   after create_index: public.tenk1_unique2
+run: transactions after: create_index
+run: typed_table
+#   notwith create_view: create_view lists rel names with "SELECT relname FROM pg_class WHERE relname LIKE 'v%' AND rel"
+run: returning notwith: create_view
+run: compression_lz4
+#   after timestamptz: public.timestamptz_tbl
+#   after timestamp: public.timestamp_tbl
+#   after interval: public.interval_tbl
+#   after date: public.date_tbl
+#   after timetz: public.timetz_tbl
+#   after time: public.time_tbl
+run: horology after: timestamptz timestamp interval date timetz time
+run: sqljson_jsontable
+#   notwith privileges: privileges
+#   notwith select_parallel: select_parallel lists fdw names with "SELECT * FROM information_schema.foreign_data_wrapper_option"
+#   notwith foreign_data: foreign_data lists fdw names with "SELECT * FROM information_schema.foreign_data_wrapper_option", foreign_data lists fdw names with "SELECT * FROM information_schema.foreign_data_wrappers ORDER", foreign_data lists fdw names with "SELECT fdwname, fdwhandler, fdwvalidator, fdwoptions FROM pg" ...
+run: alter_generic notwith: privileges select_parallel foreign_data
+#   after create_index: public.tenk1_unique1
+run: misc_functions after: create_index shared: stats
+run: tidrangescan create_schema password random mvcc
+#   after misc: public.onek
+run: limit after: misc
+run: uuid
+#   notwith subscription: subscription lists sub names with "SELECT obj_description(s.oid, 'pg_subscription') FROM pg_sub", subscription lists sub names with "\dRs", subscription lists sub names with "\dRs+"
+#   notwith select_parallel: select_parallel lists fdw names with "SELECT * FROM information_schema.foreign_data_wrapper_option"
+#   notwith foreign_data: foreign_data lists fdw names with "SELECT * FROM information_schema.foreign_data_wrapper_option", foreign_data lists fdw names with "SELECT * FROM information_schema.foreign_data_wrappers ORDER", foreign_data lists fdw names with "SELECT fdwname, fdwhandler, fdwvalidator, fdwoptions FROM pg" ...
+run: object_address notwith: subscription select_parallel foreign_data
+run: guc shared: stats
+run: predicate conversion partition_info tablesample
+#   after create_index: public.tenk1_thous_tenthous
+run: explain after: create_index
+run: equivclass lock
+#   after create_index: public.tenk1_unique1
+#   notwith create_view: create_view lists rel names with "SELECT relname FROM pg_class WHERE relname LIKE 'v%' AND rel"
+#   notwith foreign_data: s1, s2
+run: plancache after: create_index notwith: create_view foreign_data
+run: sysviews shared: stats
+run: expressions functional_deps psql_pipeline bit tstypes drop_if_exists boolean float8 inet tsdicts jsonpath encoding int8 reloptions tsrf tidscan namespace numerology float4 alter_operator
+run: combocid
+#   notwith create_function_sql: test1()
+run: xmlmap notwith: create_function_sql
+run: copydml collate.utf8 case int4 select_implicit money regproc roleattributes psql_crosstab int2 infinite_recurse tid
+#   notwith sqljson: public.mood, public.mood[]
+run: hash_func notwith: sqljson
+run: macaddr8 xid copyselect prepare hash_part pg_dependencies name oid8 numa point txid security_label
+#   notwith create_view: create_view lists rel names with "SELECT relname FROM pg_class WHERE relname LIKE 'v%' AND rel"
+run: varchar notwith: create_view
+run: pg_ndistinct text select_having planner_est
+#   notwith partition_prune: public.===(integer,integer)
+#   notwith alter_operator: public.!==(boolean,boolean), public.===(boolean,boolean)
+run: create_operator notwith: partition_prune alter_operator
+run: pg_lsn copyencoding
+#   after brin: public.brinidx
+#   after hash_index: public.hash_i4_index
+#   after create_index_spgist: public.sp_quad_ind, public.sp_radix_ind
+#   after geometry: public.gcircleind
+#   notwith create_am: amutils lists am names with "select amname, prop, pg_indexam_has_property(a.oid, prop) as"
+run: amutils after: brin hash_index create_index_spgist geometry notwith: create_am
+run: drop_operator dbsize oid unicode json_encoding char delete macaddr create_cast md5 jsonpath_encoding compression_pglz nls init_privs async create_function_c comments collate.windows.win1252 euc_kr
+#   notwith *: sanity_check: database-wide VACUUM or ANALYZE
+run: sanity_check filenode_mapping after: * notwith: *
+#   notwith *: event_trigger: its event triggers would fire on the DDL of aggregates
+run: event_trigger oidjoins after: * notwith: *
+#   notwith privileges: foo()
+run: tablespace after: * notwith: privileges

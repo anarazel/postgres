@@ -2515,6 +2515,8 @@ EXCEPTION WHEN OTHERS THEN
 	RETURN false;
 END$$;
 ALTER FUNCTION terminate_nothrow OWNER TO pg_signal_backend;
+-- This tries to terminate the bootstrap superuser's backends and auxiliary
+-- processes; pg_signal_backend may not, so no test is affected.
 SELECT backend_type FROM pg_stat_activity
 WHERE CASE WHEN COALESCE(usesysid, 10) = 10 THEN terminate_nothrow(pid) END;
  backend_type 

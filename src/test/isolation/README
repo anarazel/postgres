@@ -36,7 +36,16 @@ To define tests with overlapping transactions, we use test specification
 files with a custom syntax, which is described in the next section.  To add
 a new test, place a spec file in the specs/ subdirectory, add the expected
 output in the expected/ subdirectory, and add the test's name to the
-isolation_schedule file.
+isolation_schedule file.  Specs on a "run:" line of that file may run
+concurrently with any other spec unless a directive says otherwise:
+"notwith:" names specs that must not overlap (typically because both
+create objects of the same name), "notwith: *" keeps a spec whose outcome
+depends on timing or on cluster-wide state away from every other line, and
+"shared:"/"exclusive:" name a resource such as advisory lock keys; see
+src/test/regress/parallel_schedule for the full syntax.  Give the objects a
+spec creates names that no other spec uses (a prefix derived from the spec
+name works well); specs creating objects of the same name are kept from
+running at the same time.
 
 isolationtester is a program that uses libpq to open multiple connections,
 and executes a test specified by a spec file. A libpq connection string

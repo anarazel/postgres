@@ -58,17 +58,22 @@ clean distclean:
 	rm -rf $(pg_regress_clean_files)
 	rm -f specparse.h specparse.c specscanner.c
 
+MAXCONNOPT =
+ifdef MAX_CONNECTIONS
+MAXCONNOPT += --max-connections=$(MAX_CONNECTIONS)
+endif
+
 installcheck: all
-	$(pg_isolation_regress_installcheck) --schedule=$(srcdir)/isolation_schedule
+	$(pg_isolation_regress_installcheck) --schedule=$(srcdir)/isolation_schedule $(MAXCONNOPT)
 
 check: all
-	$(pg_isolation_regress_check) --schedule=$(srcdir)/isolation_schedule
+	$(pg_isolation_regress_check) --schedule=$(srcdir)/isolation_schedule $(MAXCONNOPT)
 
 # Non-default tests.  It only makes sense to run these if set up to use
 # prepared transactions, via TEMP_CONFIG for the check case, or via the
 # postgresql.conf for the installcheck case.
 installcheck-prepared-txns: all temp-install
-	$(pg_isolation_regress_installcheck) --schedule=$(srcdir)/isolation_schedule prepared-transactions prepared-transactions-cic
+	$(pg_isolation_regress_installcheck) --schedule=$(srcdir)/isolation_schedule $(MAXCONNOPT) prepared-transactions prepared-transactions-cic
 
 check-prepared-txns: all temp-install
-	$(pg_isolation_regress_check) --schedule=$(srcdir)/isolation_schedule prepared-transactions prepared-transactions-cic
+	$(pg_isolation_regress_check) --schedule=$(srcdir)/isolation_schedule $(MAXCONNOPT) prepared-transactions prepared-transactions-cic

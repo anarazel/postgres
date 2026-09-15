@@ -133,9 +133,82 @@ isolation_init(int argc, char **argv)
 	add_stringlist_item(&dblist, "isolation_regression");
 }
 
+/*
+ * A spec opens one connection per session plus one for the tester, which
+ * the scheduler keeps within --max-connections.  Count the "session"
+ * declarations the way the spec scanner sees them: an SQL block runs from a
+ * brace to the next closing brace whatever is in between, a quoted
+ * identifier from a double quote to the next one, and "#" starts a comment.
+ */
+static int
+isolation_connections(const char *testname)
+{
+	char		infile[MAXPGPATH];
+	FILE	   *f;
+	char		line[4096];
+	int			nsessions = 0;
+	bool		in_sql = false;
+
+	snprintf(infile, sizeof(infile), "%s/specs/%s.spec", outputdir, testname);
+	if (!file_exists(infile))
+		snprintf(infile, sizeof(infile), "%s/specs/%s.spec", inputdir, testname);
+	f = fopen(infile, "r");
+	if (!f)
+		return 1;
+	while (fgets(line, sizeof(line), f))
+	{
+		char	   *p = line;
+
+		while (*p)
+		{
+			if (in_sql)
+			{
+				if (*p == '}')
+					in_sql = false;
+				p++;
+			}
+			else if (isspace((unsigned char) *p))
+				p++;
+			else if (*p == '#')
+				break;
+			else if (*p == '{')
+			{
+				in_sql = true;
+				p++;
+			}
+			else if (*p == '"')
+			{
+				for (p++; *p; p++)
+				{
+					if (*p == '"' && p[1] == '"')
+						p++;
+					else if (*p == '"')
+					{
+						p++;
+						break;
+					}
+				}
+			}
+			else
+			{
+				char	   *start = p;
+
+				while (*p && !isspace((unsigned char) *p) && !strchr("{}\"#", *p))
+					p++;
+				if (p - start == 7 && strncmp(start, "session", 7) == 0)
+					nsessions++;
+			}
+		}
+	}
+	fclose(f);
+	return nsessions + 1;
+}
+
 int
 main(int argc, char *argv[])
 {
+	test_connections = isolation_connections;
+
 	return regression_main(argc, argv,
 						   isolation_init,
 						   isolation_start_test,
