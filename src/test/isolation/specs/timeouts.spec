@@ -2,19 +2,19 @@
 
 setup
 {
- CREATE TABLE accounts (accountid text PRIMARY KEY, balance numeric not null);
- INSERT INTO accounts VALUES ('checking', 600), ('savings', 600);
+ CREATE TABLE to_accounts (accountid text PRIMARY KEY, balance numeric not null);
+ INSERT INTO to_accounts VALUES ('checking', 600), ('savings', 600);
 }
 
 teardown
 {
- DROP TABLE accounts;
+ DROP TABLE to_accounts;
 }
 
 session s1
 setup		{ BEGIN ISOLATION LEVEL READ COMMITTED; }
-step rdtbl	{ SELECT * FROM accounts; }
-step wrtbl	{ UPDATE accounts SET balance = balance + 100; }
+step rdtbl	{ SELECT * FROM to_accounts; }
+step wrtbl	{ UPDATE to_accounts SET balance = balance + 100; }
 teardown	{ ABORT; }
 
 session s2
@@ -23,8 +23,8 @@ step sto	{ SET statement_timeout = '10ms'; }
 step lto	{ SET lock_timeout = '10ms'; }
 step lsto	{ SET lock_timeout = '10ms'; SET statement_timeout = '10s'; }
 step slto	{ SET lock_timeout = '10s'; SET statement_timeout = '10ms'; }
-step locktbl	{ LOCK TABLE accounts; }
-step update	{ DELETE FROM accounts WHERE accountid = 'checking'; }
+step locktbl	{ LOCK TABLE to_accounts; }
+step update	{ DELETE FROM to_accounts WHERE accountid = 'checking'; }
 teardown	{ ABORT; }
 
 # It's possible that the isolation tester will not observe the final

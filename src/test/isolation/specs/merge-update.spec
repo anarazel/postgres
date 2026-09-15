@@ -8,18 +8,18 @@
 
 setup
 {
-  CREATE TABLE target (key int primary key, val text);
-  INSERT INTO target VALUES (1, 'setup1');
+  CREATE TABLE mu_target (key int primary key, val text);
+  INSERT INTO mu_target VALUES (1, 'setup1');
 
   CREATE TABLE pa_target (key integer, val text)
 	  PARTITION BY LIST (key);
-  CREATE TABLE part1 (key integer, val text);
-  CREATE TABLE part2 (val text, key integer);
-  CREATE TABLE part3 (key integer, val text);
+  CREATE TABLE mu_part1 (key integer, val text);
+  CREATE TABLE mu_part2 (val text, key integer);
+  CREATE TABLE mu_part3 (key integer, val text);
 
-  ALTER TABLE pa_target ATTACH PARTITION part1 FOR VALUES IN (1,4);
-  ALTER TABLE pa_target ATTACH PARTITION part2 FOR VALUES IN (2,5,6);
-  ALTER TABLE pa_target ATTACH PARTITION part3 DEFAULT;
+  ALTER TABLE pa_target ATTACH PARTITION mu_part1 FOR VALUES IN (1,4);
+  ALTER TABLE pa_target ATTACH PARTITION mu_part2 FOR VALUES IN (2,5,6);
+  ALTER TABLE pa_target ATTACH PARTITION mu_part3 DEFAULT;
 
   INSERT INTO pa_target VALUES (1, 'initial');
   INSERT INTO pa_target VALUES (2, 'initial');
@@ -41,7 +41,7 @@ setup
 
 teardown
 {
-  DROP TABLE target;
+  DROP TABLE mu_target;
   DROP TABLE pa_target CASCADE;
   DROP FUNCTION explain_filter;
 }
@@ -53,7 +53,7 @@ setup
 }
 step "merge1"
 {
-  MERGE INTO target t
+  MERGE INTO mu_target t
   USING (SELECT 1 as key, 'merge1' as val) s
   ON s.key = t.key
   WHEN NOT MATCHED THEN
@@ -102,7 +102,7 @@ setup
 }
 step "merge2a"
 {
-  MERGE INTO target t
+  MERGE INTO mu_target t
   USING (SELECT 1 as key, 'merge2a' as val) s
   ON s.key = t.key
   WHEN NOT MATCHED THEN
@@ -117,7 +117,7 @@ step "explain_merge2a"
 {
   SELECT explain_filter($$
   EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF)
-  MERGE INTO target t
+  MERGE INTO mu_target t
   USING (SELECT 1 as key, 'merge2a' as val) s
   ON s.key = t.key
   WHEN NOT MATCHED THEN
@@ -131,7 +131,7 @@ step "explain_merge2a"
 }
 step "merge2b"
 {
-  MERGE INTO target t
+  MERGE INTO mu_target t
   USING (SELECT 1 as key, 'merge2b' as val) s
   ON s.key = t.key
   WHEN NOT MATCHED THEN
@@ -141,7 +141,7 @@ step "merge2b"
 }
 step "merge2c"
 {
-  MERGE INTO target t
+  MERGE INTO mu_target t
   USING (SELECT 1 as key, 'merge2c' as val) s
   ON s.key = t.key AND t.key < 2
   WHEN NOT MATCHED THEN
@@ -198,7 +198,7 @@ step "pa_merge2c_dup"
   WHEN MATCHED THEN
 	UPDATE set val = t.val || ' updated by pa_merge2c_dup';  -- should fail
 }
-step "select2" { SELECT * FROM target; }
+step "select2" { SELECT * FROM mu_target; }
 step "pa_select2" { SELECT * FROM pa_target; }
 step "c2" { COMMIT; }
 step "a2" { ABORT; }

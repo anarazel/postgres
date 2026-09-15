@@ -6,33 +6,33 @@
 
 setup
 {
-  CREATE TABLE foo (
+  CREATE TABLE lut_foo (
 	key		int,
 	value	int,
 	PRIMARY KEY (key) INCLUDE (value)
   );
 
-  INSERT INTO foo VALUES (1, 1);
+  INSERT INTO lut_foo VALUES (1, 1);
 }
 
 teardown
 {
-  DROP TABLE foo;
+  DROP TABLE lut_foo;
 }
 
 session s1
 step s1b	{ BEGIN ISOLATION LEVEL REPEATABLE READ; }
-step s1s	{ SELECT * FROM foo; }	# obtain snapshot
-step s1l	{ SELECT * FROM foo FOR KEY SHARE; } # obtain lock
+step s1s	{ SELECT * FROM lut_foo; }	# obtain snapshot
+step s1l	{ SELECT * FROM lut_foo FOR KEY SHARE; } # obtain lock
 step s1c	{ COMMIT; }
 
 session s2
 step s2b	{ BEGIN; }
-step s2u	{ UPDATE foo SET value = 2 WHERE key = 1; }
+step s2u	{ UPDATE lut_foo SET value = 2 WHERE key = 1; }
 step s2c	{ COMMIT; }
-step s2d1	{ DELETE FROM foo WHERE key = 1; }
-step s2d2	{ UPDATE foo SET key = 3 WHERE key = 1; }
-step s2d3	{ UPDATE foo SET value = 3 WHERE key = 1; }
+step s2d1	{ DELETE FROM lut_foo WHERE key = 1; }
+step s2d2	{ UPDATE lut_foo SET key = 3 WHERE key = 1; }
+step s2d3	{ UPDATE lut_foo SET value = 3 WHERE key = 1; }
 
 permutation s1b s2b s1s s2u s1l s2c s2d1 s1c
 permutation s1b s2b s1s s2u s1l s2c s2d2 s1c

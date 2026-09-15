@@ -5,12 +5,12 @@
 
 setup
 {
-  CREATE TABLE upsert (key int primary key, val text);
+  CREATE TABLE icdu_upsert (key int primary key, val text);
 }
 
 teardown
 {
-  DROP TABLE upsert;
+  DROP TABLE icdu_upsert;
 }
 
 session s1
@@ -18,7 +18,7 @@ setup
 {
   BEGIN ISOLATION LEVEL READ COMMITTED;
 }
-step insert1 { INSERT INTO upsert(key, val) VALUES(1, 'insert1') ON CONFLICT (key) DO UPDATE set val = upsert.val || ' updated by insert1'; }
+step insert1 { INSERT INTO icdu_upsert(key, val) VALUES(1, 'insert1') ON CONFLICT (key) DO UPDATE set val = icdu_upsert.val || ' updated by insert1'; }
 step c1 { COMMIT; }
 step a1 { ABORT; }
 
@@ -27,8 +27,8 @@ setup
 {
   BEGIN ISOLATION LEVEL READ COMMITTED;
 }
-step insert2 { INSERT INTO upsert(key, val) VALUES(1, 'insert2') ON CONFLICT (key) DO UPDATE set val = upsert.val || ' updated by insert2'; }
-step select2 { SELECT * FROM upsert; }
+step insert2 { INSERT INTO icdu_upsert(key, val) VALUES(1, 'insert2') ON CONFLICT (key) DO UPDATE set val = icdu_upsert.val || ' updated by insert2'; }
+step select2 { SELECT * FROM icdu_upsert; }
 step c2 { COMMIT; }
 
 # One session (session 2) block-waits on another (session 1) to determine if it

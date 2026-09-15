@@ -6,17 +6,17 @@
 
 setup
 {
- CREATE TABLE accounts (accountid text PRIMARY KEY, balance numeric not null,
+ CREATE TABLE epq_accounts (accountid text PRIMARY KEY, balance numeric not null,
    balance2 numeric GENERATED ALWAYS AS (balance * 2) STORED);
- INSERT INTO accounts VALUES ('checking', 600), ('savings', 600);
+ INSERT INTO epq_accounts VALUES ('checking', 600), ('savings', 600);
 
  CREATE FUNCTION update_checking(int) RETURNS bool LANGUAGE sql AS $$
-     UPDATE accounts SET balance = balance + 1 WHERE accountid = 'checking'; SELECT true;$$;
+     UPDATE epq_accounts SET balance = balance + 1 WHERE accountid = 'checking'; SELECT true;$$;
 
- CREATE TABLE accounts_ext (accountid text PRIMARY KEY, balance numeric not null, other text);
- INSERT INTO accounts_ext VALUES ('checking', 600, 'other'), ('savings', 700, null);
- ALTER TABLE accounts_ext ADD COLUMN newcol int DEFAULT 42;
- ALTER TABLE accounts_ext ADD COLUMN newcol2 text DEFAULT NULL;
+ CREATE TABLE epq_accounts_ext (accountid text PRIMARY KEY, balance numeric not null, other text);
+ INSERT INTO epq_accounts_ext VALUES ('checking', 600, 'other'), ('savings', 700, null);
+ ALTER TABLE epq_accounts_ext ADD COLUMN newcol int DEFAULT 42;
+ ALTER TABLE epq_accounts_ext ADD COLUMN newcol2 text DEFAULT NULL;
 
  CREATE TABLE p (a int, b int, c int);
  CREATE TABLE c1 () INHERITS (p);
@@ -60,9 +60,9 @@ setup
 
 teardown
 {
- DROP TABLE accounts;
+ DROP TABLE epq_accounts;
  DROP FUNCTION update_checking(int);
- DROP TABLE accounts_ext;
+ DROP TABLE epq_accounts_ext;
  DROP TABLE p CASCADE;
  DROP TABLE table_a, table_b, jointest;
  DROP TABLE parttbl;
@@ -73,35 +73,35 @@ teardown
 session s1
 setup		{ BEGIN ISOLATION LEVEL READ COMMITTED; }
 # wx1 then wx2 checks the basic case of re-fetching up-to-date values
-step wx1	{ UPDATE accounts SET balance = balance - 200 WHERE accountid = 'checking' RETURNING balance; }
+step wx1	{ UPDATE epq_accounts SET balance = balance - 200 WHERE accountid = 'checking' RETURNING balance; }
 # wy1 then wy2 checks the case where quals pass then fail
-step wy1	{ UPDATE accounts SET balance = balance + 500 WHERE accountid = 'checking' RETURNING balance; }
+step wy1	{ UPDATE epq_accounts SET balance = balance + 500 WHERE accountid = 'checking' RETURNING balance; }
 # wx2 then wb1 checks the case of re-fetching up-to-date values for DELETE ... RETURNING ...
-step wb1	{ DELETE FROM accounts WHERE balance = 600 RETURNING *; }
+step wb1	{ DELETE FROM epq_accounts WHERE balance = 600 RETURNING *; }
 
-step wxext1	{ UPDATE accounts_ext SET balance = balance - 200 WHERE accountid = 'checking' RETURNING balance; }
-step tocds1	{ UPDATE accounts SET accountid = 'cds' WHERE accountid = 'checking'; }
-step tocdsext1 { UPDATE accounts_ext SET accountid = 'cds' WHERE accountid = 'checking'; }
+step wxext1	{ UPDATE epq_accounts_ext SET balance = balance - 200 WHERE accountid = 'checking' RETURNING balance; }
+step tocds1	{ UPDATE epq_accounts SET accountid = 'cds' WHERE accountid = 'checking'; }
+step tocdsext1 { UPDATE epq_accounts_ext SET accountid = 'cds' WHERE accountid = 'checking'; }
 
 # d1 then wx1 checks that update can deal with the updated row vanishing
 # wx2 then d1 checks that the delete affects the updated row
 # wx2, wx2 then d1 checks that the delete checks the quals correctly (balance too high)
 # wx2, d2, then d1 checks that delete handles a vanishing row correctly
-step d1		{ DELETE FROM accounts WHERE accountid = 'checking' AND balance < 1500 RETURNING balance; }
+step d1		{ DELETE FROM epq_accounts WHERE accountid = 'checking' AND balance < 1500 RETURNING balance; }
 
 # upsert tests are to check writable-CTE cases
 step upsert1	{
 	WITH upsert AS
-	  (UPDATE accounts SET balance = balance + 500
+	  (UPDATE epq_accounts SET balance = balance + 500
 	   WHERE accountid = 'savings'
 	   RETURNING accountid)
-	INSERT INTO accounts SELECT 'savings', 500
+	INSERT INTO epq_accounts SELECT 'savings', 500
 	  WHERE NOT EXISTS (SELECT 1 FROM upsert);
 }
 
 # Tests for Tid / Tid Range Scan
-step tid1 { UPDATE accounts SET balance = balance + 100 WHERE ctid = '(0,1)' RETURNING accountid, balance; }
-step tidrange1 { UPDATE accounts SET balance = balance + 100 WHERE ctid BETWEEN '(0,1)' AND '(0,1)' RETURNING accountid, balance; }
+step tid1 { UPDATE epq_accounts SET balance = balance + 100 WHERE ctid = '(0,1)' RETURNING accountid, balance; }
+step tidrange1 { UPDATE epq_accounts SET balance = balance + 100 WHERE ctid BETWEEN '(0,1)' AND '(0,1)' RETURNING accountid, balance; }
 
 # tests with table p check inheritance cases:
 # readp1/writep1/readp2 tests a bug where nodeLockRows did the wrong thing
@@ -124,19 +124,19 @@ step r1		{ ROLLBACK; }
 # ie, handling non-locked tables in an EvalPlanQual recheck
 
 step partiallock	{
-	SELECT * FROM accounts a1, accounts a2
+	SELECT * FROM epq_accounts a1, epq_accounts a2
 	  WHERE a1.accountid = a2.accountid
 	  FOR UPDATE OF a1;
 }
 step lockwithvalues	{
 	-- Reference rowmark column that differs in type from targetlist at some attno.
 	-- See CAHU7rYZo_C4ULsAx_LAj8az9zqgrD8WDd4hTegDTMM1LMqrBsg@mail.gmail.com
-	SELECT a1.*, v.id FROM accounts a1, (values('checking'::text, 'nan'::text),('savings', 'nan')) v(id, notnumeric)
+	SELECT a1.*, v.id FROM epq_accounts a1, (values('checking'::text, 'nan'::text),('savings', 'nan')) v(id, notnumeric)
 	WHERE a1.accountid = v.id AND v.notnumeric != 'einszwei'
 	  FOR UPDATE OF a1;
 }
 step partiallock_ext	{
-	SELECT * FROM accounts_ext a1, accounts_ext a2
+	SELECT * FROM epq_accounts_ext a1, epq_accounts_ext a2
 	  WHERE a1.accountid = a2.accountid
 	  FOR UPDATE OF a1;
 }
@@ -201,28 +201,28 @@ step simplepartupdate_noroute {
 # test system class LockTuple()
 
 step sys1	{
-	UPDATE pg_class SET reltuples = 123 WHERE oid = 'accounts'::regclass;
+	UPDATE pg_class SET reltuples = 123 WHERE oid = 'epq_accounts'::regclass;
 }
 
 step s1pp1 { UPDATE another_parttbl SET b = b + 1 WHERE a = 1; }
 
-step updateformergevalues { UPDATE accounts SET balance = balance + 100; }
+step updateformergevalues { UPDATE epq_accounts SET balance = balance + 100; }
 
 session s2
 setup		{ BEGIN ISOLATION LEVEL READ COMMITTED; }
-step wx2	{ UPDATE accounts SET balance = balance + 450 WHERE accountid = 'checking' RETURNING balance; }
-step wy2	{ UPDATE accounts SET balance = balance + 1000 WHERE accountid = 'checking' AND balance < 1000  RETURNING balance; }
-step d2		{ DELETE FROM accounts WHERE accountid = 'checking'; }
+step wx2	{ UPDATE epq_accounts SET balance = balance + 450 WHERE accountid = 'checking' RETURNING balance; }
+step wy2	{ UPDATE epq_accounts SET balance = balance + 1000 WHERE accountid = 'checking' AND balance < 1000  RETURNING balance; }
+step d2		{ DELETE FROM epq_accounts WHERE accountid = 'checking'; }
 
 step upsert2	{
 	WITH upsert AS
-	  (UPDATE accounts SET balance = balance + 1234
+	  (UPDATE epq_accounts SET balance = balance + 1234
 	   WHERE accountid = 'savings'
 	   RETURNING accountid)
-	INSERT INTO accounts SELECT 'savings', 1234
+	INSERT INTO epq_accounts SELECT 'savings', 1234
 	  WHERE NOT EXISTS (SELECT 1 FROM upsert);
 }
-step wx2_ext	{ UPDATE accounts_ext SET balance = balance + 450; }
+step wx2_ext	{ UPDATE epq_accounts_ext SET balance = balance + 450; }
 step readp2		{ SELECT tableoid::regclass, ctid, * FROM p WHERE b IN (0, 1) AND c = 0 FOR UPDATE; }
 step returningp1 {
 	WITH u AS ( UPDATE p SET b = b WHERE a > 0 RETURNING * )
@@ -248,10 +248,10 @@ step updateforcip3	{
 step wrtwcte	{ UPDATE table_a SET value = 'tableAValue2' WHERE id = 1; }
 step wrjt	{ UPDATE jointest SET data = 42 WHERE id = 7; }
 
-step tid2 { UPDATE accounts SET balance = balance + 200 WHERE ctid = '(0,1)' RETURNING accountid, balance; }
-step tidrange2 { UPDATE accounts SET balance = balance + 200 WHERE ctid BETWEEN '(0,1)' AND '(0,1)' RETURNING accountid, balance; }
+step tid2 { UPDATE epq_accounts SET balance = balance + 200 WHERE ctid = '(0,1)' RETURNING accountid, balance; }
+step tidrange2 { UPDATE epq_accounts SET balance = balance + 200 WHERE ctid BETWEEN '(0,1)' AND '(0,1)' RETURNING accountid, balance; }
 # here, recheck succeeds; (0,3) is the id that step tid1 will assign
-step tidsucceed2 { UPDATE accounts SET balance = balance + 200 WHERE ctid = '(0,1)' OR ctid = '(0,3)' RETURNING accountid, balance; }
+step tidsucceed2 { UPDATE epq_accounts SET balance = balance + 200 WHERE ctid = '(0,1)' OR ctid = '(0,3)' RETURNING accountid, balance; }
 
 step conditionalpartupdate	{
 	update parttbl set c = -c where b < 10;
@@ -281,20 +281,20 @@ step complexpartupdate_doesnt_route {
 # (updated|deleted). The *fail versions of the tests additionally
 # perform an update, via a function, in a different command, to test
 # behaviour relating to that.
-step updwcte  { WITH doup AS (UPDATE accounts SET balance = balance + 1100 WHERE accountid = 'checking' RETURNING *) UPDATE accounts a SET balance = doup.balance + 100 FROM doup RETURNING *; }
-step updwctefail  { WITH doup AS (UPDATE accounts SET balance = balance + 1100 WHERE accountid = 'checking' RETURNING *, update_checking(999)) UPDATE accounts a SET balance = doup.balance + 100 FROM doup RETURNING *; }
-step delwcte  { WITH doup AS (UPDATE accounts SET balance = balance + 1100 WHERE accountid = 'checking' RETURNING *) DELETE FROM accounts a USING doup RETURNING *; }
-step delwctefail  { WITH doup AS (UPDATE accounts SET balance = balance + 1100 WHERE accountid = 'checking' RETURNING *, update_checking(999)) DELETE FROM accounts a USING doup RETURNING *; }
+step updwcte  { WITH doup AS (UPDATE epq_accounts SET balance = balance + 1100 WHERE accountid = 'checking' RETURNING *) UPDATE epq_accounts a SET balance = doup.balance + 100 FROM doup RETURNING *; }
+step updwctefail  { WITH doup AS (UPDATE epq_accounts SET balance = balance + 1100 WHERE accountid = 'checking' RETURNING *, update_checking(999)) UPDATE epq_accounts a SET balance = doup.balance + 100 FROM doup RETURNING *; }
+step delwcte  { WITH doup AS (UPDATE epq_accounts SET balance = balance + 1100 WHERE accountid = 'checking' RETURNING *) DELETE FROM epq_accounts a USING doup RETURNING *; }
+step delwctefail  { WITH doup AS (UPDATE epq_accounts SET balance = balance + 1100 WHERE accountid = 'checking' RETURNING *, update_checking(999)) DELETE FROM epq_accounts a USING doup RETURNING *; }
 
 # Check that nested EPQ works correctly
 step wnested2 {
-    UPDATE accounts SET balance = balance - 1200
+    UPDATE epq_accounts SET balance = balance - 1200
     WHERE noisy_oper('upid', accountid, '=', 'checking')
     AND noisy_oper('up', balance, '>', 200.0)
     AND EXISTS (
         SELECT accountid
-        FROM accounts_ext ae
-        WHERE noisy_oper('lock_id', ae.accountid, '=', accounts.accountid)
+        FROM epq_accounts_ext ae
+        WHERE noisy_oper('lock_id', ae.accountid, '=', epq_accounts.accountid)
             AND noisy_oper('lock_bal', ae.balance, '>', 200.0)
         FOR UPDATE
     );
@@ -302,12 +302,12 @@ step wnested2 {
 
 step sysupd2	{
 	UPDATE pg_class SET reltuples = reltuples * 2
-	WHERE oid = 'accounts'::regclass;
+	WHERE oid = 'epq_accounts'::regclass;
 }
 
 step sysmerge2	{
 	MERGE INTO pg_class
-	USING (SELECT 'accounts'::regclass AS o) j
+	USING (SELECT 'epq_accounts'::regclass AS o) j
 	ON o = oid
 	WHEN MATCHED THEN UPDATE SET reltuples = reltuples * 2;
 }
@@ -321,17 +321,17 @@ step s2pp3 { EXECUTE epd(1); }
 step s2pp4 { DELETE FROM another_parttbl WHERE a = (SELECT 1); }
 
 step mergevalues {
-	MERGE INTO accounts
+	MERGE INTO epq_accounts
 	USING (VALUES ('checking', 610), ('savings', 620)) v(accountid, balance)
-	ON v.accountid = accounts.accountid
+	ON v.accountid = epq_accounts.accountid
 	WHEN MATCHED THEN UPDATE SET balance = v.balance
 	WHEN NOT MATCHED THEN INSERT VALUES ('unmatched', -1);
 }
 
 session s3
 setup		{ BEGIN ISOLATION LEVEL READ COMMITTED; }
-step read	{ SELECT * FROM accounts ORDER BY accountid; }
-step read_ext	{ SELECT * FROM accounts_ext ORDER BY accountid; }
+step read	{ SELECT * FROM epq_accounts ORDER BY accountid; }
+step read_ext	{ SELECT * FROM epq_accounts_ext ORDER BY accountid; }
 step read_a		{ SELECT * FROM table_a ORDER BY id; }
 step read_part	{ SELECT * FROM parttbl ORDER BY a, c; }
 

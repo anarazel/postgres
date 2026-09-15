@@ -6,19 +6,19 @@ setup
   --
   -- Setup to test concurrent handling of ExecDelete().
   --
-  CREATE TABLE foo (a int, b text) PARTITION BY LIST(a);
-  CREATE TABLE foo1 PARTITION OF foo FOR VALUES IN (1);
-  CREATE TABLE foo2 PARTITION OF foo FOR VALUES IN (2);
-  INSERT INTO foo VALUES (1, 'ABC');
+  CREATE TABLE pku4_foo (a int, b text) PARTITION BY LIST(a);
+  CREATE TABLE pku4_foo1 PARTITION OF pku4_foo FOR VALUES IN (1);
+  CREATE TABLE pku4_foo2 PARTITION OF pku4_foo FOR VALUES IN (2);
+  INSERT INTO pku4_foo VALUES (1, 'ABC');
 
   --
   -- Setup to test concurrent handling of GetTupleForTrigger().
   --
-  CREATE TABLE footrg (a int, b text) PARTITION BY LIST(a);
-  CREATE TABLE triglog as select * from footrg;
-  CREATE TABLE footrg1 PARTITION OF footrg FOR VALUES IN (1);
-  CREATE TABLE footrg2 PARTITION OF footrg FOR VALUES IN (2);
-  INSERT INTO footrg VALUES (1, 'ABC');
+  CREATE TABLE pku4_footrg (a int, b text) PARTITION BY LIST(a);
+  CREATE TABLE triglog as select * from pku4_footrg;
+  CREATE TABLE pku4_footrg1 PARTITION OF pku4_footrg FOR VALUES IN (1);
+  CREATE TABLE pku4_footrg2 PARTITION OF pku4_footrg FOR VALUES IN (2);
+  INSERT INTO pku4_footrg VALUES (1, 'ABC');
   CREATE FUNCTION func_footrg() RETURNS TRIGGER AS $$
   BEGIN
 	 OLD.b = OLD.b || ' trigger';
@@ -30,35 +30,35 @@ setup
 
      RETURN OLD;
   END $$ LANGUAGE PLPGSQL;
-  CREATE TRIGGER footrg_ondel BEFORE DELETE ON footrg1
+  CREATE TRIGGER pku4_footrg_ondel BEFORE DELETE ON pku4_footrg1
    FOR EACH ROW EXECUTE PROCEDURE func_footrg();
 
 }
 
 teardown
 {
-  DROP TABLE foo;
-  DROP TRIGGER footrg_ondel ON footrg1;
+  DROP TABLE pku4_foo;
+  DROP TRIGGER pku4_footrg_ondel ON pku4_footrg1;
   DROP FUNCTION func_footrg();
-  DROP TABLE footrg;
+  DROP TABLE pku4_footrg;
   DROP TABLE triglog;
 }
 
 session s1
 step s1b	{ BEGIN ISOLATION LEVEL READ COMMITTED; }
-step s1u	{ UPDATE foo SET a = a + 1, b = b || ' update1' WHERE b like '%ABC%'; }
-step s1ut	{ UPDATE footrg SET a = a + 1, b = b || ' update1' WHERE b like '%ABC%'; }
-step s1s	{ SELECT tableoid::regclass, * FROM foo ORDER BY a; }
-step s1st	{ SELECT tableoid::regclass, * FROM footrg ORDER BY a; }
+step s1u	{ UPDATE pku4_foo SET a = a + 1, b = b || ' update1' WHERE b like '%ABC%'; }
+step s1ut	{ UPDATE pku4_footrg SET a = a + 1, b = b || ' update1' WHERE b like '%ABC%'; }
+step s1s	{ SELECT tableoid::regclass, * FROM pku4_foo ORDER BY a; }
+step s1st	{ SELECT tableoid::regclass, * FROM pku4_footrg ORDER BY a; }
 step s1stl	{ SELECT * FROM triglog ORDER BY a; }
 step s1c	{ COMMIT; }
 
 session s2
 step s2b	{ BEGIN ISOLATION LEVEL READ COMMITTED; }
-step s2u1	{ UPDATE foo SET b = b || ' update2' WHERE a = 1; }
-step s2u2	{ UPDATE foo SET b = 'EFG' WHERE a = 1; }
-step s2ut1	{ UPDATE footrg SET b = b || ' update2' WHERE a = 1; }
-step s2ut2	{ UPDATE footrg SET b = 'EFG' WHERE a = 1; }
+step s2u1	{ UPDATE pku4_foo SET b = b || ' update2' WHERE a = 1; }
+step s2u2	{ UPDATE pku4_foo SET b = 'EFG' WHERE a = 1; }
+step s2ut1	{ UPDATE pku4_footrg SET b = b || ' update2' WHERE a = 1; }
+step s2ut2	{ UPDATE pku4_footrg SET b = 'EFG' WHERE a = 1; }
 step s2c	{ COMMIT; }
 
 

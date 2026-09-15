@@ -2,30 +2,30 @@
 # held lock should still be held.
 setup
 {
-  CREATE TABLE foo (
+  CREATE TABLE das_foo (
      key INT PRIMARY KEY,
      value INT
   );
 
-  INSERT INTO foo VALUES (1, 1);
+  INSERT INTO das_foo VALUES (1, 1);
 }
 
 teardown
 {
-  DROP TABLE foo;
+  DROP TABLE das_foo;
 }
 
 session s1
 setup			{ BEGIN; }
-step s1l		{ SELECT * FROM foo FOR KEY SHARE; }
+step s1l		{ SELECT * FROM das_foo FOR KEY SHARE; }
 step s1svp		{ SAVEPOINT f; }
-step s1d		{ DELETE FROM foo; }
+step s1d		{ DELETE FROM das_foo; }
 step s1r		{ ROLLBACK TO f; }
 step s1c		{ COMMIT; }
 
 session s2
 setup			{ BEGIN; }
-step s2l		{ SELECT * FROM foo FOR UPDATE; }
+step s2l		{ SELECT * FROM das_foo FOR UPDATE; }
 step s2c		{ COMMIT; }
 
 permutation s1l s1svp s1d s1r s1c s2l s2c

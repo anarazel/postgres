@@ -1,38 +1,38 @@
 # Soft deadlock requiring reversal of multiple wait-edges.  s1 must
-# jump over both s3 and s4 and acquire the lock on a2 immediately,
-# since s3 and s4 are hard-blocked on a1.
+# jump over both s3 and s4 and acquire the lock on ds2_a2 immediately,
+# since s3 and s4 are hard-blocked on ds2_a1.
 
 setup
 {
-  CREATE TABLE a1 ();
-  CREATE TABLE a2 ();
+  CREATE TABLE ds2_a1 ();
+  CREATE TABLE ds2_a2 ();
 }
 
 teardown
 {
-  DROP TABLE a1, a2;
+  DROP TABLE ds2_a1, ds2_a2;
 }
 
 session s1
 setup		{ BEGIN; SET deadlock_timeout = '10ms'; }
-step s1a	{ LOCK TABLE a1 IN SHARE UPDATE EXCLUSIVE MODE; }
-step s1b	{ LOCK TABLE a2 IN SHARE UPDATE EXCLUSIVE MODE; }
+step s1a	{ LOCK TABLE ds2_a1 IN SHARE UPDATE EXCLUSIVE MODE; }
+step s1b	{ LOCK TABLE ds2_a2 IN SHARE UPDATE EXCLUSIVE MODE; }
 step s1c	{ COMMIT; }
 
 session s2
 setup		{ BEGIN; SET deadlock_timeout = '100s'; }
-step s2a 	{ LOCK TABLE a2 IN ACCESS SHARE MODE; }
-step s2b 	{ LOCK TABLE a1 IN SHARE UPDATE EXCLUSIVE MODE; }
+step s2a 	{ LOCK TABLE ds2_a2 IN ACCESS SHARE MODE; }
+step s2b 	{ LOCK TABLE ds2_a1 IN SHARE UPDATE EXCLUSIVE MODE; }
 step s2c	{ COMMIT; }
 
 session s3
 setup		{ BEGIN; SET deadlock_timeout = '100s'; }
-step s3a	{ LOCK TABLE a2 IN ACCESS EXCLUSIVE MODE; }
+step s3a	{ LOCK TABLE ds2_a2 IN ACCESS EXCLUSIVE MODE; }
 step s3c	{ COMMIT; }
 
 session s4
 setup		{ BEGIN; SET deadlock_timeout = '100s'; }
-step s4a	{ LOCK TABLE a2 IN ACCESS EXCLUSIVE MODE; }
+step s4a	{ LOCK TABLE ds2_a2 IN ACCESS EXCLUSIVE MODE; }
 step s4c	{ COMMIT; }
 
 # The expected output for this test assumes that isolationtester will

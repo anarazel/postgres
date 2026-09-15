@@ -8,12 +8,12 @@
 
 setup
 {
-  CREATE TABLE ints (key int primary key, val text);
+  CREATE TABLE icdn_ints (key int primary key, val text);
 }
 
 teardown
 {
-  DROP TABLE ints;
+  DROP TABLE icdn_ints;
 }
 
 session s1
@@ -21,7 +21,7 @@ setup
 {
   BEGIN ISOLATION LEVEL READ COMMITTED;
 }
-step donothing1 { INSERT INTO ints(key, val) VALUES(1, 'donothing1') ON CONFLICT DO NOTHING; }
+step donothing1 { INSERT INTO icdn_ints(key, val) VALUES(1, 'donothing1') ON CONFLICT DO NOTHING; }
 step c1 { COMMIT; }
 step a1 { ABORT; }
 
@@ -30,8 +30,8 @@ setup
 {
   BEGIN ISOLATION LEVEL READ COMMITTED;
 }
-step donothing2 { INSERT INTO ints(key, val) VALUES(1, 'donothing2') ON CONFLICT DO NOTHING; }
-step select2 { SELECT * FROM ints; }
+step donothing2 { INSERT INTO icdn_ints(key, val) VALUES(1, 'donothing2') ON CONFLICT DO NOTHING; }
+step select2 { SELECT * FROM icdn_ints; }
 step c2 { COMMIT; }
 
 # Regular case where one session block-waits on another to determine if it

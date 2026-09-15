@@ -2,24 +2,24 @@
 
 setup
 {
-  CREATE TABLE foo (
+  CREATE TABLE nw_foo (
 	id int PRIMARY KEY,
 	data text NOT NULL
   );
-  INSERT INTO foo VALUES (1, 'x');
+  INSERT INTO nw_foo VALUES (1, 'x');
 }
 
 teardown
 {
-  DROP TABLE foo;
+  DROP TABLE nw_foo;
 }
 
 session s1
 setup		{ BEGIN; }
-step s1a	{ SELECT * FROM foo FOR UPDATE NOWAIT; }
+step s1a	{ SELECT * FROM nw_foo FOR UPDATE NOWAIT; }
 step s1b	{ COMMIT; }
 
 session s2
 setup		{ BEGIN; }
-step s2a	{ SELECT * FROM foo FOR UPDATE NOWAIT; }
+step s2a	{ SELECT * FROM nw_foo FOR UPDATE NOWAIT; }
 step s2b	{ COMMIT; }

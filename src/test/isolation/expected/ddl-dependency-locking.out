@@ -66,16 +66,16 @@ ERROR:  referenced type was concurrently dropped
 
 starting permutation: s1_begin s1_create_function_with_function s2_drop_function_f s1_commit
 step s1_begin: BEGIN;
-step s1_create_function_with_function: CREATE FUNCTION foofunc() RETURNS int LANGUAGE SQL RETURN f() + 1;
-step s2_drop_function_f: DROP FUNCTION f(); <waiting ...>
+step s1_create_function_with_function: CREATE FUNCTION foofunc() RETURNS int LANGUAGE SQL RETURN ddl_f() + 1;
+step s2_drop_function_f: DROP FUNCTION ddl_f(); <waiting ...>
 step s1_commit: COMMIT;
 step s2_drop_function_f: <... completed>
-ERROR:  cannot drop function f() because other objects depend on it
+ERROR:  cannot drop function ddl_f() because other objects depend on it
 
 starting permutation: s2_begin s2_drop_function_f s1_create_function_with_function s2_commit
 step s2_begin: BEGIN;
-step s2_drop_function_f: DROP FUNCTION f();
-step s1_create_function_with_function: CREATE FUNCTION foofunc() RETURNS int LANGUAGE SQL RETURN f() + 1; <waiting ...>
+step s2_drop_function_f: DROP FUNCTION ddl_f();
+step s1_create_function_with_function: CREATE FUNCTION foofunc() RETURNS int LANGUAGE SQL RETURN ddl_f() + 1; <waiting ...>
 step s2_commit: COMMIT;
 step s1_create_function_with_function: <... completed>
 ERROR:  referenced function was concurrently dropped

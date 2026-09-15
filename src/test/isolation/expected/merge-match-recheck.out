@@ -1,9 +1,9 @@
 Parsed test spec with 2 sessions
 
 starting permutation: update1 merge_status c2 select1 c1
-step update1: UPDATE target t SET balance = balance + 10, val = t.val || ' updated by update1' WHERE t.key = 1;
+step update1: UPDATE mmr_target t SET balance = balance + 10, val = t.val || ' updated by update1' WHERE t.key = 1;
 step merge_status: 
-  MERGE INTO target t
+  MERGE INTO mmr_target t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND status = 's1' THEN
@@ -15,7 +15,7 @@ step merge_status:
  <waiting ...>
 step c2: COMMIT;
 step merge_status: <... completed>
-step select1: SELECT * FROM target;
+step select1: SELECT * FROM mmr_target;
 key|balance|status|val                           
 ---+-------+------+------------------------------
   1|    170|s2    |setup updated by update1 when1
@@ -25,9 +25,9 @@ step c1: COMMIT;
 
 starting permutation: update1_tg merge_status_tg c2 select1_tg c1
 s2: NOTICE:  Update: (1,160,s1,setup) -> (1,170,s1,"setup updated by update1_tg")
-step update1_tg: UPDATE target_tg t SET balance = balance + 10, val = t.val || ' updated by update1_tg' WHERE t.key = 1;
+step update1_tg: UPDATE mmr_target_tg t SET balance = balance + 10, val = t.val || ' updated by update1_tg' WHERE t.key = 1;
 step merge_status_tg: 
-  MERGE INTO target_tg t
+  MERGE INTO mmr_target_tg t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND status = 's1' THEN
@@ -40,7 +40,7 @@ step merge_status_tg:
 step c2: COMMIT;
 s1: NOTICE:  Update: (1,170,s1,"setup updated by update1_tg") -> (1,170,s2,"setup updated by update1_tg when1")
 step merge_status_tg: <... completed>
-step select1_tg: SELECT * FROM target_tg;
+step select1_tg: SELECT * FROM mmr_target_tg;
 key|balance|status|val                              
 ---+-------+------+---------------------------------
   1|    170|s2    |setup updated by update1_tg when1
@@ -49,9 +49,9 @@ key|balance|status|val
 step c1: COMMIT;
 
 starting permutation: update2 merge_status c2 select1 c1
-step update2: UPDATE target t SET status = 's2', val = t.val || ' updated by update2' WHERE t.key = 1;
+step update2: UPDATE mmr_target t SET status = 's2', val = t.val || ' updated by update2' WHERE t.key = 1;
 step merge_status: 
-  MERGE INTO target t
+  MERGE INTO mmr_target t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND status = 's1' THEN
@@ -63,7 +63,7 @@ step merge_status:
  <waiting ...>
 step c2: COMMIT;
 step merge_status: <... completed>
-step select1: SELECT * FROM target;
+step select1: SELECT * FROM mmr_target;
 key|balance|status|val                           
 ---+-------+------+------------------------------
   1|    160|s3    |setup updated by update2 when2
@@ -73,9 +73,9 @@ step c1: COMMIT;
 
 starting permutation: update2_tg merge_status_tg c2 select1_tg c1
 s2: NOTICE:  Update: (1,160,s1,setup) -> (1,160,s2,"setup updated by update2_tg")
-step update2_tg: UPDATE target_tg t SET status = 's2', val = t.val || ' updated by update2_tg' WHERE t.key = 1;
+step update2_tg: UPDATE mmr_target_tg t SET status = 's2', val = t.val || ' updated by update2_tg' WHERE t.key = 1;
 step merge_status_tg: 
-  MERGE INTO target_tg t
+  MERGE INTO mmr_target_tg t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND status = 's1' THEN
@@ -88,7 +88,7 @@ step merge_status_tg:
 step c2: COMMIT;
 s1: NOTICE:  Update: (1,160,s2,"setup updated by update2_tg") -> (1,160,s3,"setup updated by update2_tg when2")
 step merge_status_tg: <... completed>
-step select1_tg: SELECT * FROM target_tg;
+step select1_tg: SELECT * FROM mmr_target_tg;
 key|balance|status|val                              
 ---+-------+------+---------------------------------
   1|    160|s3    |setup updated by update2_tg when2
@@ -97,9 +97,9 @@ key|balance|status|val
 step c1: COMMIT;
 
 starting permutation: update3 merge_status c2 select1 c1
-step update3: UPDATE target t SET status = 's3', val = t.val || ' updated by update3' WHERE t.key = 1;
+step update3: UPDATE mmr_target t SET status = 's3', val = t.val || ' updated by update3' WHERE t.key = 1;
 step merge_status: 
-  MERGE INTO target t
+  MERGE INTO mmr_target t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND status = 's1' THEN
@@ -111,7 +111,7 @@ step merge_status:
  <waiting ...>
 step c2: COMMIT;
 step merge_status: <... completed>
-step select1: SELECT * FROM target;
+step select1: SELECT * FROM mmr_target;
 key|balance|status|val                           
 ---+-------+------+------------------------------
   1|    160|s4    |setup updated by update3 when3
@@ -121,9 +121,9 @@ step c1: COMMIT;
 
 starting permutation: update3_tg merge_status_tg c2 select1_tg c1
 s2: NOTICE:  Update: (1,160,s1,setup) -> (1,160,s3,"setup updated by update3_tg")
-step update3_tg: UPDATE target_tg t SET status = 's3', val = t.val || ' updated by update3_tg' WHERE t.key = 1;
+step update3_tg: UPDATE mmr_target_tg t SET status = 's3', val = t.val || ' updated by update3_tg' WHERE t.key = 1;
 step merge_status_tg: 
-  MERGE INTO target_tg t
+  MERGE INTO mmr_target_tg t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND status = 's1' THEN
@@ -136,7 +136,7 @@ step merge_status_tg:
 step c2: COMMIT;
 s1: NOTICE:  Update: (1,160,s3,"setup updated by update3_tg") -> (1,160,s4,"setup updated by update3_tg when3")
 step merge_status_tg: <... completed>
-step select1_tg: SELECT * FROM target_tg;
+step select1_tg: SELECT * FROM mmr_target_tg;
 key|balance|status|val                              
 ---+-------+------+---------------------------------
   1|    160|s4    |setup updated by update3_tg when3
@@ -145,9 +145,9 @@ key|balance|status|val
 step c1: COMMIT;
 
 starting permutation: update5 merge_status c2 select1 c1
-step update5: UPDATE target t SET status = 's5', val = t.val || ' updated by update5' WHERE t.key = 1;
+step update5: UPDATE mmr_target t SET status = 's5', val = t.val || ' updated by update5' WHERE t.key = 1;
 step merge_status: 
-  MERGE INTO target t
+  MERGE INTO mmr_target t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND status = 's1' THEN
@@ -159,7 +159,7 @@ step merge_status:
  <waiting ...>
 step c2: COMMIT;
 step merge_status: <... completed>
-step select1: SELECT * FROM target;
+step select1: SELECT * FROM mmr_target;
 key|balance|status|val                     
 ---+-------+------+------------------------
   1|    160|s5    |setup updated by update5
@@ -169,9 +169,9 @@ step c1: COMMIT;
 
 starting permutation: update5_tg merge_status_tg c2 select1_tg c1
 s2: NOTICE:  Update: (1,160,s1,setup) -> (1,160,s5,"setup updated by update5_tg")
-step update5_tg: UPDATE target_tg t SET status = 's5', val = t.val || ' updated by update5_tg' WHERE t.key = 1;
+step update5_tg: UPDATE mmr_target_tg t SET status = 's5', val = t.val || ' updated by update5_tg' WHERE t.key = 1;
 step merge_status_tg: 
-  MERGE INTO target_tg t
+  MERGE INTO mmr_target_tg t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND status = 's1' THEN
@@ -183,7 +183,7 @@ step merge_status_tg:
  <waiting ...>
 step c2: COMMIT;
 step merge_status_tg: <... completed>
-step select1_tg: SELECT * FROM target_tg;
+step select1_tg: SELECT * FROM mmr_target_tg;
 key|balance|status|val                        
 ---+-------+------+---------------------------
   1|    160|s5    |setup updated by update5_tg
@@ -192,9 +192,9 @@ key|balance|status|val
 step c1: COMMIT;
 
 starting permutation: update_bal1 merge_bal c2 select1 c1
-step update_bal1: UPDATE target t SET balance = 50, val = t.val || ' updated by update_bal1' WHERE t.key = 1;
+step update_bal1: UPDATE mmr_target t SET balance = 50, val = t.val || ' updated by update_bal1' WHERE t.key = 1;
 step merge_bal: 
-  MERGE INTO target t
+  MERGE INTO mmr_target t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND balance < 0 THEN
@@ -214,7 +214,7 @@ key|old_balance|new_balance|status|val
   1|         50|        100|s1    |setup updated by update_bal1 when1
 (1 row)
 
-step select1: SELECT * FROM target;
+step select1: SELECT * FROM mmr_target;
 key|balance|status|val                               
 ---+-------+------+----------------------------------
   1|    100|s1    |setup updated by update_bal1 when1
@@ -223,9 +223,9 @@ key|balance|status|val
 step c1: COMMIT;
 
 starting permutation: update_bal1_pa merge_bal_pa c2 select1_pa c1
-step update_bal1_pa: UPDATE target_pa t SET balance = 50, val = t.val || ' updated by update_bal1_pa' WHERE t.key = 1;
+step update_bal1_pa: UPDATE mmr_target_pa t SET balance = 50, val = t.val || ' updated by update_bal1_pa' WHERE t.key = 1;
 step merge_bal_pa: 
-  MERGE INTO target_pa t
+  MERGE INTO mmr_target_pa t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND balance < 0 THEN
@@ -245,7 +245,7 @@ key|old_balance|new_balance|status|val
   1|         50|        100|s1    |setup updated by update_bal1_pa when1
 (1 row)
 
-step select1_pa: SELECT * FROM target_pa;
+step select1_pa: SELECT * FROM mmr_target_pa;
 key|balance|status|val                                  
 ---+-------+------+-------------------------------------
   1|    100|s1    |setup updated by update_bal1_pa when1
@@ -255,10 +255,10 @@ step c1: COMMIT;
 
 starting permutation: update_bal1_tg merge_bal_tg c2 select1_tg c1
 s2: NOTICE:  Update: (1,160,s1,setup) -> (1,50,s1,"setup updated by update_bal1_tg")
-step update_bal1_tg: UPDATE target_tg t SET balance = 50, val = t.val || ' updated by update_bal1_tg' WHERE t.key = 1;
+step update_bal1_tg: UPDATE mmr_target_tg t SET balance = 50, val = t.val || ' updated by update_bal1_tg' WHERE t.key = 1;
 step merge_bal_tg: 
   WITH t AS (
-    MERGE INTO target_tg t
+    MERGE INTO mmr_target_tg t
     USING (SELECT 1 as key) s
     ON s.key = t.key
     WHEN MATCHED AND balance < 0 THEN
@@ -281,7 +281,7 @@ key|old_balance|new_balance|status|val
   1|         50|        100|s1    |setup updated by update_bal1_tg when1
 (1 row)
 
-step select1_tg: SELECT * FROM target_tg;
+step select1_tg: SELECT * FROM mmr_target_tg;
 key|balance|status|val                                  
 ---+-------+------+-------------------------------------
   1|    100|s1    |setup updated by update_bal1_tg when1
@@ -290,10 +290,10 @@ key|balance|status|val
 step c1: COMMIT;
 
 starting permutation: update1 update6 merge_bal c2 select1 c1
-step update1: UPDATE target t SET balance = balance + 10, val = t.val || ' updated by update1' WHERE t.key = 1;
-step update6: UPDATE target t SET balance = balance - 100, val = t.val || ' updated by update6' WHERE t.key = 1;
+step update1: UPDATE mmr_target t SET balance = balance + 10, val = t.val || ' updated by update1' WHERE t.key = 1;
+step update6: UPDATE mmr_target t SET balance = balance - 100, val = t.val || ' updated by update6' WHERE t.key = 1;
 step merge_bal: 
-  MERGE INTO target t
+  MERGE INTO mmr_target t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND balance < 0 THEN
@@ -313,7 +313,7 @@ key|old_balance|new_balance|status|val
   1|         70|        140|s1    |setup updated by update1 updated by update6 when1
 (1 row)
 
-step select1: SELECT * FROM target;
+step select1: SELECT * FROM mmr_target;
 key|balance|status|val                                              
 ---+-------+------+-------------------------------------------------
   1|    140|s1    |setup updated by update1 updated by update6 when1
@@ -322,10 +322,10 @@ key|balance|status|val
 step c1: COMMIT;
 
 starting permutation: update1_pa update6_pa merge_bal_pa c2 select1_pa c1
-step update1_pa: UPDATE target_pa t SET balance = balance + 10, val = t.val || ' updated by update1_pa' WHERE t.key = 1;
-step update6_pa: UPDATE target_pa t SET balance = balance - 100, val = t.val || ' updated by update6_pa' WHERE t.key = 1;
+step update1_pa: UPDATE mmr_target_pa t SET balance = balance + 10, val = t.val || ' updated by update1_pa' WHERE t.key = 1;
+step update6_pa: UPDATE mmr_target_pa t SET balance = balance - 100, val = t.val || ' updated by update6_pa' WHERE t.key = 1;
 step merge_bal_pa: 
-  MERGE INTO target_pa t
+  MERGE INTO mmr_target_pa t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND balance < 0 THEN
@@ -345,7 +345,7 @@ key|old_balance|new_balance|status|val
   1|         70|        140|s1    |setup updated by update1_pa updated by update6_pa when1
 (1 row)
 
-step select1_pa: SELECT * FROM target_pa;
+step select1_pa: SELECT * FROM mmr_target_pa;
 key|balance|status|val                                                    
 ---+-------+------+-------------------------------------------------------
   1|    140|s1    |setup updated by update1_pa updated by update6_pa when1
@@ -355,12 +355,12 @@ step c1: COMMIT;
 
 starting permutation: update1_tg update6_tg merge_bal_tg c2 select1_tg c1
 s2: NOTICE:  Update: (1,160,s1,setup) -> (1,170,s1,"setup updated by update1_tg")
-step update1_tg: UPDATE target_tg t SET balance = balance + 10, val = t.val || ' updated by update1_tg' WHERE t.key = 1;
+step update1_tg: UPDATE mmr_target_tg t SET balance = balance + 10, val = t.val || ' updated by update1_tg' WHERE t.key = 1;
 s2: NOTICE:  Update: (1,170,s1,"setup updated by update1_tg") -> (1,70,s1,"setup updated by update1_tg updated by update6_tg")
-step update6_tg: UPDATE target_tg t SET balance = balance - 100, val = t.val || ' updated by update6_tg' WHERE t.key = 1;
+step update6_tg: UPDATE mmr_target_tg t SET balance = balance - 100, val = t.val || ' updated by update6_tg' WHERE t.key = 1;
 step merge_bal_tg: 
   WITH t AS (
-    MERGE INTO target_tg t
+    MERGE INTO mmr_target_tg t
     USING (SELECT 1 as key) s
     ON s.key = t.key
     WHEN MATCHED AND balance < 0 THEN
@@ -383,7 +383,7 @@ key|old_balance|new_balance|status|val
   1|         70|        140|s1    |setup updated by update1_tg updated by update6_tg when1
 (1 row)
 
-step select1_tg: SELECT * FROM target_tg;
+step select1_tg: SELECT * FROM mmr_target_tg;
 key|balance|status|val                                                    
 ---+-------+------+-------------------------------------------------------
   1|    140|s1    |setup updated by update1_tg updated by update6_tg when1
@@ -392,10 +392,10 @@ key|balance|status|val
 step c1: COMMIT;
 
 starting permutation: update6 update6 merge_bal c2 select1 c1
-step update6: UPDATE target t SET balance = balance - 100, val = t.val || ' updated by update6' WHERE t.key = 1;
-step update6: UPDATE target t SET balance = balance - 100, val = t.val || ' updated by update6' WHERE t.key = 1;
+step update6: UPDATE mmr_target t SET balance = balance - 100, val = t.val || ' updated by update6' WHERE t.key = 1;
+step update6: UPDATE mmr_target t SET balance = balance - 100, val = t.val || ' updated by update6' WHERE t.key = 1;
 step merge_bal: 
-  MERGE INTO target t
+  MERGE INTO mmr_target t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND balance < 0 THEN
@@ -415,7 +415,7 @@ key|old_balance|new_balance|status|val
   1|        -40|           |s1    |setup updated by update6 updated by update6
 (1 row)
 
-step select1: SELECT * FROM target;
+step select1: SELECT * FROM mmr_target;
 key|balance|status|val
 ---+-------+------+---
 (0 rows)
@@ -423,10 +423,10 @@ key|balance|status|val
 step c1: COMMIT;
 
 starting permutation: update6_pa update6_pa merge_bal_pa c2 select1_pa c1
-step update6_pa: UPDATE target_pa t SET balance = balance - 100, val = t.val || ' updated by update6_pa' WHERE t.key = 1;
-step update6_pa: UPDATE target_pa t SET balance = balance - 100, val = t.val || ' updated by update6_pa' WHERE t.key = 1;
+step update6_pa: UPDATE mmr_target_pa t SET balance = balance - 100, val = t.val || ' updated by update6_pa' WHERE t.key = 1;
+step update6_pa: UPDATE mmr_target_pa t SET balance = balance - 100, val = t.val || ' updated by update6_pa' WHERE t.key = 1;
 step merge_bal_pa: 
-  MERGE INTO target_pa t
+  MERGE INTO mmr_target_pa t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND balance < 0 THEN
@@ -446,7 +446,7 @@ key|old_balance|new_balance|status|val
   1|        -40|           |s1    |setup updated by update6_pa updated by update6_pa
 (1 row)
 
-step select1_pa: SELECT * FROM target_pa;
+step select1_pa: SELECT * FROM mmr_target_pa;
 key|balance|status|val
 ---+-------+------+---
 (0 rows)
@@ -455,12 +455,12 @@ step c1: COMMIT;
 
 starting permutation: update6_tg update6_tg merge_bal_tg c2 select1_tg c1
 s2: NOTICE:  Update: (1,160,s1,setup) -> (1,60,s1,"setup updated by update6_tg")
-step update6_tg: UPDATE target_tg t SET balance = balance - 100, val = t.val || ' updated by update6_tg' WHERE t.key = 1;
+step update6_tg: UPDATE mmr_target_tg t SET balance = balance - 100, val = t.val || ' updated by update6_tg' WHERE t.key = 1;
 s2: NOTICE:  Update: (1,60,s1,"setup updated by update6_tg") -> (1,-40,s1,"setup updated by update6_tg updated by update6_tg")
-step update6_tg: UPDATE target_tg t SET balance = balance - 100, val = t.val || ' updated by update6_tg' WHERE t.key = 1;
+step update6_tg: UPDATE mmr_target_tg t SET balance = balance - 100, val = t.val || ' updated by update6_tg' WHERE t.key = 1;
 step merge_bal_tg: 
   WITH t AS (
-    MERGE INTO target_tg t
+    MERGE INTO mmr_target_tg t
     USING (SELECT 1 as key) s
     ON s.key = t.key
     WHEN MATCHED AND balance < 0 THEN
@@ -483,7 +483,7 @@ key|old_balance|new_balance|status|val
   1|        -40|           |s1    |setup updated by update6_tg updated by update6_tg
 (1 row)
 
-step select1_tg: SELECT * FROM target_tg;
+step select1_tg: SELECT * FROM mmr_target_tg;
 key|balance|status|val
 ---+-------+------+---
 (0 rows)
@@ -491,10 +491,10 @@ key|balance|status|val
 step c1: COMMIT;
 
 starting permutation: update7 update6 merge_bal c2 select1 c1
-step update7: UPDATE target t SET balance = 350, val = t.val || ' updated by update7' WHERE t.key = 1;
-step update6: UPDATE target t SET balance = balance - 100, val = t.val || ' updated by update6' WHERE t.key = 1;
+step update7: UPDATE mmr_target t SET balance = 350, val = t.val || ' updated by update7' WHERE t.key = 1;
+step update6: UPDATE mmr_target t SET balance = balance - 100, val = t.val || ' updated by update6' WHERE t.key = 1;
 step merge_bal: 
-  MERGE INTO target t
+  MERGE INTO mmr_target t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND balance < 0 THEN
@@ -514,7 +514,7 @@ key|old_balance|new_balance|status|val
   1|        250|       2000|s1    |setup updated by update7 updated by update6 when3
 (1 row)
 
-step select1: SELECT * FROM target;
+step select1: SELECT * FROM mmr_target;
 key|balance|status|val                                              
 ---+-------+------+-------------------------------------------------
   1|   2000|s1    |setup updated by update7 updated by update6 when3
@@ -523,9 +523,9 @@ key|balance|status|val
 step c1: COMMIT;
 
 starting permutation: update1_pa_move merge_bal_pa c2 c1
-step update1_pa_move: UPDATE target_pa t SET balance = 210, val = t.val || ' updated by update1_pa_move' WHERE t.key = 1;
+step update1_pa_move: UPDATE mmr_target_pa t SET balance = 210, val = t.val || ' updated by update1_pa_move' WHERE t.key = 1;
 step merge_bal_pa: 
-  MERGE INTO target_pa t
+  MERGE INTO mmr_target_pa t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND balance < 0 THEN
@@ -544,10 +544,10 @@ ERROR:  tuple to be locked was already moved to another partition due to concurr
 step c1: COMMIT;
 
 starting permutation: update1_pa update1_pa_move merge_bal_pa c2 c1
-step update1_pa: UPDATE target_pa t SET balance = balance + 10, val = t.val || ' updated by update1_pa' WHERE t.key = 1;
-step update1_pa_move: UPDATE target_pa t SET balance = 210, val = t.val || ' updated by update1_pa_move' WHERE t.key = 1;
+step update1_pa: UPDATE mmr_target_pa t SET balance = balance + 10, val = t.val || ' updated by update1_pa' WHERE t.key = 1;
+step update1_pa_move: UPDATE mmr_target_pa t SET balance = 210, val = t.val || ' updated by update1_pa_move' WHERE t.key = 1;
 step merge_bal_pa: 
-  MERGE INTO target_pa t
+  MERGE INTO mmr_target_pa t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND balance < 0 THEN
@@ -566,9 +566,9 @@ ERROR:  tuple to be locked was already moved to another partition due to concurr
 step c1: COMMIT;
 
 starting permutation: update1 merge_delete c2 select1 c1
-step update1: UPDATE target t SET balance = balance + 10, val = t.val || ' updated by update1' WHERE t.key = 1;
+step update1: UPDATE mmr_target t SET balance = balance + 10, val = t.val || ' updated by update1' WHERE t.key = 1;
 step merge_delete: 
-  MERGE INTO target t
+  MERGE INTO mmr_target t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND balance < 100 THEN
@@ -578,7 +578,7 @@ step merge_delete:
  <waiting ...>
 step c2: COMMIT;
 step merge_delete: <... completed>
-step select1: SELECT * FROM target;
+step select1: SELECT * FROM mmr_target;
 key|balance|status|val
 ---+-------+------+---
 (0 rows)
@@ -587,9 +587,9 @@ step c1: COMMIT;
 
 starting permutation: update1_tg merge_delete_tg c2 select1_tg c1
 s2: NOTICE:  Update: (1,160,s1,setup) -> (1,170,s1,"setup updated by update1_tg")
-step update1_tg: UPDATE target_tg t SET balance = balance + 10, val = t.val || ' updated by update1_tg' WHERE t.key = 1;
+step update1_tg: UPDATE mmr_target_tg t SET balance = balance + 10, val = t.val || ' updated by update1_tg' WHERE t.key = 1;
 step merge_delete_tg: 
-  MERGE INTO target_tg t
+  MERGE INTO mmr_target_tg t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND balance < 100 THEN
@@ -600,7 +600,7 @@ step merge_delete_tg:
 step c2: COMMIT;
 s1: NOTICE:  Delete: (1,170,s1,"setup updated by update1_tg")
 step merge_delete_tg: <... completed>
-step select1_tg: SELECT * FROM target_tg;
+step select1_tg: SELECT * FROM mmr_target_tg;
 key|balance|status|val
 ---+-------+------+---
 (0 rows)
@@ -608,9 +608,9 @@ key|balance|status|val
 step c1: COMMIT;
 
 starting permutation: update_bal1 merge_delete c2 select1 c1
-step update_bal1: UPDATE target t SET balance = 50, val = t.val || ' updated by update_bal1' WHERE t.key = 1;
+step update_bal1: UPDATE mmr_target t SET balance = 50, val = t.val || ' updated by update_bal1' WHERE t.key = 1;
 step merge_delete: 
-  MERGE INTO target t
+  MERGE INTO mmr_target t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND balance < 100 THEN
@@ -620,7 +620,7 @@ step merge_delete:
  <waiting ...>
 step c2: COMMIT;
 step merge_delete: <... completed>
-step select1: SELECT * FROM target;
+step select1: SELECT * FROM mmr_target;
 key|balance|status|val                               
 ---+-------+------+----------------------------------
   1|    100|s1    |setup updated by update_bal1 when1
@@ -630,9 +630,9 @@ step c1: COMMIT;
 
 starting permutation: update_bal1_tg merge_delete_tg c2 select1_tg c1
 s2: NOTICE:  Update: (1,160,s1,setup) -> (1,50,s1,"setup updated by update_bal1_tg")
-step update_bal1_tg: UPDATE target_tg t SET balance = 50, val = t.val || ' updated by update_bal1_tg' WHERE t.key = 1;
+step update_bal1_tg: UPDATE mmr_target_tg t SET balance = 50, val = t.val || ' updated by update_bal1_tg' WHERE t.key = 1;
 step merge_delete_tg: 
-  MERGE INTO target_tg t
+  MERGE INTO mmr_target_tg t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND balance < 100 THEN
@@ -643,7 +643,7 @@ step merge_delete_tg:
 step c2: COMMIT;
 s1: NOTICE:  Update: (1,50,s1,"setup updated by update_bal1_tg") -> (1,100,s1,"setup updated by update_bal1_tg when1")
 step merge_delete_tg: <... completed>
-step select1_tg: SELECT * FROM target_tg;
+step select1_tg: SELECT * FROM mmr_target_tg;
 key|balance|status|val                                  
 ---+-------+------+-------------------------------------
   1|    100|s1    |setup updated by update_bal1_tg when1

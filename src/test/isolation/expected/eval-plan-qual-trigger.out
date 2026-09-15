@@ -41,8 +41,8 @@ s1: NOTICE:  trigger: name rep_a_u; when: AFTER; lev: ROWs; op: UPDATE; old: (ke
 step s1_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups1'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *;
 
 key  |data         
@@ -59,8 +59,8 @@ s2: NOTICE:  trigger: name rep_a_u; when: AFTER; lev: ROWs; op: UPDATE; old: (ke
 step s2_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups2'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-ups2' AS check_old_and_new;
 
 key  |data              |check_old_and_new
@@ -112,8 +112,8 @@ s1: NOTICE:  trigger: name rep_a_u; when: AFTER; lev: ROWs; op: UPDATE; old: (ke
 step s1_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups1'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *;
 
 key  |data         
@@ -130,8 +130,8 @@ s2: NOTICE:  trigger: name rep_a_u; when: AFTER; lev: ROWs; op: UPDATE; old: (ke
 step s2_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups2'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-ups2' AS check_old_and_new;
 
 key  |data         |check_old_and_new
@@ -185,8 +185,8 @@ s1: NOTICE:  trigger: name rep_a_u; when: AFTER; lev: ROWs; op: UPDATE; old: (ke
 step s1_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups1'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *;
 
 key  |data         
@@ -203,8 +203,8 @@ s2: NOTICE:  trigger: name rep_a_d; when: AFTER; lev: ROWs; op: DELETE; old: (ke
 step s2_del_a: 
     DELETE FROM trigtest
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, data = old.data AS check_old;
 
 key  |data         |check_old
@@ -257,8 +257,8 @@ s1: NOTICE:  trigger: name rep_a_u; when: AFTER; lev: ROWs; op: UPDATE; old: (ke
 step s1_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups1'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *;
 
 key  |data         
@@ -275,8 +275,8 @@ s2: NOTICE:  trigger: name rep_a_d; when: AFTER; lev: ROWs; op: DELETE; old: (ke
 step s2_del_a: 
     DELETE FROM trigtest
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, data = old.data AS check_old;
 
 key  |data    |check_old
@@ -327,8 +327,8 @@ s1: NOTICE:  trigger: name rep_a_u; when: AFTER; lev: ROWs; op: UPDATE; old: (ke
 step s1_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups1'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *;
 
 key  |data         
@@ -341,8 +341,8 @@ s2: NOTICE:  upk: text val-a-s1 <> text mismatch: t
 step s2_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups2'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-ups2' AS check_old_and_new;
  <waiting ...>
 step s1_c: COMMIT;
@@ -401,8 +401,8 @@ s1: NOTICE:  trigger: name rep_a_u; when: AFTER; lev: ROWs; op: UPDATE; old: (ke
 step s1_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups1'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *;
 
 key  |data         
@@ -415,8 +415,8 @@ s2: NOTICE:  upk: text val-a-s1 <> text mismatch: t
 step s2_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups2'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-ups2' AS check_old_and_new;
  <waiting ...>
 step s1_r: ROLLBACK;
@@ -475,8 +475,8 @@ s1: NOTICE:  trigger: name rep_a_u; when: AFTER; lev: ROWs; op: UPDATE; old: (ke
 step s1_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups1'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *;
 
 key  |data         
@@ -489,8 +489,8 @@ s2: NOTICE:  upk: text val-a-s1 <> text mismatch: t
 step s2_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups2'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-ups2' AS check_old_and_new;
  <waiting ...>
 step s1_c: COMMIT;
@@ -551,8 +551,8 @@ s1: NOTICE:  trigger: name rep_a_u; when: AFTER; lev: ROWs; op: UPDATE; old: (ke
 step s1_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups1'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *;
 
 key  |data         
@@ -565,8 +565,8 @@ s2: NOTICE:  upk: text val-a-s1 <> text mismatch: t
 step s2_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups2'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-ups2' AS check_old_and_new;
  <waiting ...>
 step s1_r: ROLLBACK;
@@ -625,8 +625,8 @@ s1: NOTICE:  trigger: name rep_a_d; when: AFTER; lev: ROWs; op: DELETE; old: (ke
 step s1_del_a: 
     DELETE FROM trigtest
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *
 
 key  |data    
@@ -639,8 +639,8 @@ s2: NOTICE:  upk: text val-a-s1 <> text mismatch: t
 step s2_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups2'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-ups2' AS check_old_and_new;
  <waiting ...>
 step s1_c: COMMIT;
@@ -695,8 +695,8 @@ s1: NOTICE:  trigger: name rep_a_d; when: AFTER; lev: ROWs; op: DELETE; old: (ke
 step s1_del_a: 
     DELETE FROM trigtest
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *
 
 key  |data    
@@ -709,8 +709,8 @@ s2: NOTICE:  upk: text val-a-s1 <> text mismatch: t
 step s2_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups2'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-ups2' AS check_old_and_new;
  <waiting ...>
 step s1_r: ROLLBACK;
@@ -856,8 +856,8 @@ s1: NOTICE:  trigger: name rep_a_u; when: AFTER; lev: ROWs; op: UPDATE; old: (ke
 step s1_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups1'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *;
 
 key  |data         
@@ -871,8 +871,8 @@ step s2_upsert_a_data:
     ON CONFLICT (key)
         DO UPDATE SET data = trigtest.data || '-upserts2'
         WHERE
-            noisy_oper('upd', trigtest.key, '=', 'key-a') AND
-            noisy_oper('upk', trigtest.data, '<>', 'mismatch')
+            eqt_noisy_oper('upd', trigtest.key, '=', 'key-a') AND
+            eqt_noisy_oper('upk', trigtest.data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-upserts2' AS check_old_and_new;
  <waiting ...>
 step s1_c: COMMIT;
@@ -938,8 +938,8 @@ s1: NOTICE:  trigger: name rep_a_u; when: AFTER; lev: ROWs; op: UPDATE; old: (ke
 step s1_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups1'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *;
 
 key  |data         
@@ -953,8 +953,8 @@ step s2_upsert_a_data:
     ON CONFLICT (key)
         DO UPDATE SET data = trigtest.data || '-upserts2'
         WHERE
-            noisy_oper('upd', trigtest.key, '=', 'key-a') AND
-            noisy_oper('upk', trigtest.data, '<>', 'mismatch')
+            eqt_noisy_oper('upd', trigtest.key, '=', 'key-a') AND
+            eqt_noisy_oper('upk', trigtest.data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-upserts2' AS check_old_and_new;
  <waiting ...>
 step s1_c: COMMIT;
@@ -1010,8 +1010,8 @@ step s2_upsert_a_data:
     ON CONFLICT (key)
         DO UPDATE SET data = trigtest.data || '-upserts2'
         WHERE
-            noisy_oper('upd', trigtest.key, '=', 'key-a') AND
-            noisy_oper('upk', trigtest.data, '<>', 'mismatch')
+            eqt_noisy_oper('upd', trigtest.key, '=', 'key-a') AND
+            eqt_noisy_oper('upk', trigtest.data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-upserts2' AS check_old_and_new;
  <waiting ...>
 step s1_c: COMMIT;
@@ -1066,8 +1066,8 @@ step s2_upsert_a_data:
     ON CONFLICT (key)
         DO UPDATE SET data = trigtest.data || '-upserts2'
         WHERE
-            noisy_oper('upd', trigtest.key, '=', 'key-a') AND
-            noisy_oper('upk', trigtest.data, '<>', 'mismatch')
+            eqt_noisy_oper('upd', trigtest.key, '=', 'key-a') AND
+            eqt_noisy_oper('upk', trigtest.data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-upserts2' AS check_old_and_new;
  <waiting ...>
 step s1_r: ROLLBACK;
@@ -1120,8 +1120,8 @@ s1: NOTICE:  trigger: name rep_a_u; when: AFTER; lev: ROWs; op: UPDATE; old: (ke
 step s1_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups1'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *;
 
 key  |data         
@@ -1135,8 +1135,8 @@ step s2_upsert_a_data:
     ON CONFLICT (key)
         DO UPDATE SET data = trigtest.data || '-upserts2'
         WHERE
-            noisy_oper('upd', trigtest.key, '=', 'key-a') AND
-            noisy_oper('upk', trigtest.data, '<>', 'mismatch')
+            eqt_noisy_oper('upd', trigtest.key, '=', 'key-a') AND
+            eqt_noisy_oper('upk', trigtest.data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-upserts2' AS check_old_and_new;
  <waiting ...>
 step s1_c: COMMIT;
@@ -1192,8 +1192,8 @@ s1: NOTICE:  trigger: name rep_a_u; when: AFTER; lev: ROWs; op: UPDATE; old: (ke
 step s1_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups1'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *;
 
 key  |data         
@@ -1207,8 +1207,8 @@ step s2_upsert_a_data:
     ON CONFLICT (key)
         DO UPDATE SET data = trigtest.data || '-upserts2'
         WHERE
-            noisy_oper('upd', trigtest.key, '=', 'key-a') AND
-            noisy_oper('upk', trigtest.data, '<>', 'mismatch')
+            eqt_noisy_oper('upd', trigtest.key, '=', 'key-a') AND
+            eqt_noisy_oper('upk', trigtest.data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-upserts2' AS check_old_and_new;
  <waiting ...>
 step s1_r: ROLLBACK;
@@ -1260,8 +1260,8 @@ s1: NOTICE:  trigger: name rep_a_u; when: AFTER; lev: ROWs; op: UPDATE; old: (ke
 step s1_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups1'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *;
 
 key  |data         
@@ -1274,8 +1274,8 @@ s2: NOTICE:  upk: text val-a-s1 <> text mismatch: t
 step s2_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups2'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-ups2' AS check_old_and_new;
  <waiting ...>
 step s1_c: COMMIT;
@@ -1331,8 +1331,8 @@ s1: NOTICE:  trigger: name rep_a_u; when: AFTER; lev: ROWs; op: UPDATE; old: (ke
 step s1_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups1'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *;
 
 key  |data         
@@ -1345,8 +1345,8 @@ s2: NOTICE:  upk: text val-a-s1 <> text mismatch: t
 step s2_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups2'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-ups2' AS check_old_and_new;
  <waiting ...>
 step s1_r: ROLLBACK;
@@ -1401,8 +1401,8 @@ s1: NOTICE:  trigger: name rep_a_u; when: AFTER; lev: ROWs; op: UPDATE; old: (ke
 step s1_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups1'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *;
 
 key  |data         
@@ -1415,8 +1415,8 @@ s2: NOTICE:  upk: text val-a-s1 <> text mismatch: t
 step s2_del_a: 
     DELETE FROM trigtest
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, data = old.data AS check_old;
  <waiting ...>
 step s1_c: COMMIT;
@@ -1472,8 +1472,8 @@ s1: NOTICE:  trigger: name rep_a_u; when: AFTER; lev: ROWs; op: UPDATE; old: (ke
 step s1_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups1'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *;
 
 key  |data         
@@ -1486,8 +1486,8 @@ s2: NOTICE:  upk: text val-a-s1 <> text mismatch: t
 step s2_del_a: 
     DELETE FROM trigtest
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, data = old.data AS check_old;
  <waiting ...>
 step s1_r: ROLLBACK;
@@ -1541,8 +1541,8 @@ s1: NOTICE:  trigger: name rep_a_d; when: AFTER; lev: ROWs; op: DELETE; old: (ke
 step s1_del_a: 
     DELETE FROM trigtest
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *
 
 key  |data    
@@ -1555,8 +1555,8 @@ s2: NOTICE:  upk: text val-a-s1 <> text mismatch: t
 step s2_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups2'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-ups2' AS check_old_and_new;
  <waiting ...>
 step s1_c: COMMIT;
@@ -1608,8 +1608,8 @@ s1: NOTICE:  trigger: name rep_a_d; when: AFTER; lev: ROWs; op: DELETE; old: (ke
 step s1_del_a: 
     DELETE FROM trigtest
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *
 
 key  |data    
@@ -1622,8 +1622,8 @@ s2: NOTICE:  upk: text val-a-s1 <> text mismatch: t
 step s2_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups2'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-ups2' AS check_old_and_new;
  <waiting ...>
 step s1_r: ROLLBACK;
@@ -1677,8 +1677,8 @@ s1: NOTICE:  trigger: name rep_a_d; when: AFTER; lev: ROWs; op: DELETE; old: (ke
 step s1_del_a: 
     DELETE FROM trigtest
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *
 
 key  |data    
@@ -1691,8 +1691,8 @@ s2: NOTICE:  upk: text val-a-s1 <> text mismatch: t
 step s2_del_a: 
     DELETE FROM trigtest
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, data = old.data AS check_old;
  <waiting ...>
 step s1_c: COMMIT;
@@ -1743,8 +1743,8 @@ s1: NOTICE:  trigger: name rep_a_d; when: AFTER; lev: ROWs; op: DELETE; old: (ke
 step s1_del_a: 
     DELETE FROM trigtest
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *
 
 key  |data    
@@ -1757,8 +1757,8 @@ s2: NOTICE:  upk: text val-a-s1 <> text mismatch: t
 step s2_del_a: 
     DELETE FROM trigtest
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, data = old.data AS check_old;
  <waiting ...>
 step s1_r: ROLLBACK;
@@ -1813,8 +1813,8 @@ s1: NOTICE:  trigger: name rep_a_u; when: AFTER; lev: ROWs; op: UPDATE; old: (ke
 step s1_upd_a_tob: 
     UPDATE trigtest SET key = 'key-b', data = data || '-tobs1'
     WHERE
-        noisy_oper('upk', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upk', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *;
 
 key  |data          
@@ -1827,8 +1827,8 @@ s2: NOTICE:  upk: text val-a-s1 <> text mismatch: t
 step s2_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups2'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-ups2' AS check_old_and_new;
  <waiting ...>
 step s1_c: COMMIT;
@@ -1883,8 +1883,8 @@ s1: NOTICE:  trigger: name rep_a_u; when: AFTER; lev: ROWs; op: UPDATE; old: (ke
 step s1_upd_a_tob: 
     UPDATE trigtest SET key = 'key-b', data = data || '-tobs1'
     WHERE
-        noisy_oper('upk', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upk', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *;
 
 key  |data          
@@ -1897,8 +1897,8 @@ s2: NOTICE:  upk: text val-a-s1 <> text mismatch: t
 step s2_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups2'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-ups2' AS check_old_and_new;
  <waiting ...>
 step s1_r: ROLLBACK;
@@ -1955,8 +1955,8 @@ s1: NOTICE:  trigger: name rep_a_u; when: AFTER; lev: ROWs; op: UPDATE; old: (ke
 step s1_upd_a_tob: 
     UPDATE trigtest SET key = 'key-b', data = data || '-tobs1'
     WHERE
-        noisy_oper('upk', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upk', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *;
 
 key  |data          
@@ -1969,8 +1969,8 @@ s2: NOTICE:  upd: text key-c = text key-b: f
 step s2_upd_b_data: 
     UPDATE trigtest SET data = data || '-ups2'
     WHERE
-        noisy_oper('upd', key, '=', 'key-b') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-b') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *;
 
 key|data
@@ -2022,8 +2022,8 @@ s1: NOTICE:  trigger: name rep_a_u; when: AFTER; lev: ROWs; op: UPDATE; old: (ke
 step s1_upd_a_tob: 
     UPDATE trigtest SET key = 'key-b', data = data || '-tobs1'
     WHERE
-        noisy_oper('upk', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upk', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *;
 
 key  |data          
@@ -2036,8 +2036,8 @@ s2: NOTICE:  upk: text val-a-s1 <> text mismatch: t
 step s2_upd_all_data: 
     UPDATE trigtest SET data = data || '-ups2'
     WHERE
-        noisy_oper('upd', key, '<>', 'mismatch') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '<>', 'mismatch') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-ups2' AS check_old_and_new;
  <waiting ...>
 step s1_c: COMMIT;
@@ -2102,8 +2102,8 @@ s1: NOTICE:  trigger: name rep_a_d; when: AFTER; lev: ROWs; op: DELETE; old: (ke
 step s1_del_a: 
     DELETE FROM trigtest
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *
 
 key  |data    
@@ -2116,8 +2116,8 @@ s2: NOTICE:  upk: text val-a-s1 <> text mismatch: t
 step s2_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups2'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-ups2' AS check_old_and_new;
  <waiting ...>
 step s1_c: COMMIT;
@@ -2172,8 +2172,8 @@ s1: NOTICE:  trigger: name rep_a_d; when: AFTER; lev: ROWs; op: DELETE; old: (ke
 step s1_del_a: 
     DELETE FROM trigtest
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *
 
 key  |data    
@@ -2186,8 +2186,8 @@ s2: NOTICE:  upk: text val-a-s1 <> text mismatch: t
 step s2_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups2'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-ups2' AS check_old_and_new;
  <waiting ...>
 step s1_r: ROLLBACK;
@@ -2244,8 +2244,8 @@ s1: NOTICE:  trigger: name rep_a_d; when: AFTER; lev: ROWs; op: DELETE; old: (ke
 step s1_del_a: 
     DELETE FROM trigtest
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *
 
 key  |data    
@@ -2258,8 +2258,8 @@ s2: NOTICE:  upk: text val-a-s1 <> text mismatch: t
 step s2_del_a: 
     DELETE FROM trigtest
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, data = old.data AS check_old;
  <waiting ...>
 step s1_c: COMMIT;
@@ -2312,8 +2312,8 @@ s1: NOTICE:  trigger: name rep_a_d; when: AFTER; lev: ROWs; op: DELETE; old: (ke
 step s1_del_a: 
     DELETE FROM trigtest
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *
 
 key  |data    
@@ -2326,8 +2326,8 @@ s2: NOTICE:  upk: text val-a-s1 <> text mismatch: t
 step s2_del_a: 
     DELETE FROM trigtest
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, data = old.data AS check_old;
  <waiting ...>
 step s1_r: ROLLBACK;
@@ -2391,8 +2391,8 @@ s1: NOTICE:  trigger: name rep_a_u; when: AFTER; lev: ROWs; op: UPDATE; old: (ke
 step s1_upd_b_data: 
     UPDATE trigtest SET data = data || '-ups1'
     WHERE
-        noisy_oper('upd', key, '=', 'key-b') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-b') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *;
 
 key  |data         
@@ -2405,8 +2405,8 @@ s2: NOTICE:  upk: text val-b-s1 <> text mismatch: t
 step s2_upd_b_data: 
     UPDATE trigtest SET data = data || '-ups2'
     WHERE
-        noisy_oper('upd', key, '=', 'key-b') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-b') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *;
  <waiting ...>
 s1: NOTICE:  upd: text key-a = text key-b: f
@@ -2417,8 +2417,8 @@ s1: NOTICE:  trigger: name rep_a_d; when: AFTER; lev: ROWs; op: DELETE; old: (ke
 step s1_del_b: 
     DELETE FROM trigtest
     WHERE
-        noisy_oper('upd', key, '=', 'key-b') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-b') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *
 
 key  |data         
@@ -2433,8 +2433,8 @@ s1: NOTICE:  trigger: name rep_a_u; when: AFTER; lev: ROWs; op: UPDATE; old: (ke
 step s1_upd_a_tob: 
     UPDATE trigtest SET key = 'key-b', data = data || '-tobs1'
     WHERE
-        noisy_oper('upk', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upk', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *;
 
 key  |data          
@@ -2491,8 +2491,8 @@ s1: NOTICE:  trigger: name rep_a_u; when: AFTER; lev: ROWs; op: UPDATE; old: (ke
 step s1_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups1'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *;
 
 key  |data         
@@ -2505,8 +2505,8 @@ s2: NOTICE:  upk: text val-a-s1 <> text mismatch: t
 step s2_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups2'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-ups2' AS check_old_and_new;
  <waiting ...>
 step s1_c: COMMIT;
@@ -2556,8 +2556,8 @@ s1: NOTICE:  trigger: name rep_a_u; when: AFTER; lev: ROWs; op: UPDATE; old: (ke
 step s1_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups1'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *;
 
 key  |data         
@@ -2570,8 +2570,8 @@ s2: NOTICE:  upk: text val-a-s1 <> text mismatch: t
 step s2_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups2'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-ups2' AS check_old_and_new;
  <waiting ...>
 step s1_r: ROLLBACK;
@@ -2630,8 +2630,8 @@ s1: NOTICE:  trigger: name rep_a_d; when: AFTER; lev: ROWs; op: DELETE; old: (ke
 step s1_del_a: 
     DELETE FROM trigtest
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *
 
 key  |data    
@@ -2644,8 +2644,8 @@ s2: NOTICE:  upk: text val-a-s1 <> text mismatch: t
 step s2_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups2'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-ups2' AS check_old_and_new;
  <waiting ...>
 step s1_c: COMMIT;
@@ -2696,8 +2696,8 @@ s1: NOTICE:  trigger: name rep_a_d; when: AFTER; lev: ROWs; op: DELETE; old: (ke
 step s1_del_a: 
     DELETE FROM trigtest
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *
 
 key  |data    
@@ -2710,8 +2710,8 @@ s2: NOTICE:  upk: text val-a-s1 <> text mismatch: t
 step s2_upd_a_data: 
     UPDATE trigtest SET data = data || '-ups2'
     WHERE
-        noisy_oper('upd', key, '=', 'key-a') AND
-        noisy_oper('upk', data, '<>', 'mismatch')
+        eqt_noisy_oper('upd', key, '=', 'key-a') AND
+        eqt_noisy_oper('upk', data, '<>', 'mismatch')
     RETURNING *, new.data = old.data || '-ups2' AS check_old_and_new;
  <waiting ...>
 step s1_r: ROLLBACK;

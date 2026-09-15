@@ -2,32 +2,32 @@
 
 setup
 {
-  CREATE TABLE queue (
+  CREATE TABLE sl3_queue (
 	id	int		PRIMARY KEY,
 	data			text	NOT NULL,
 	status			text	NOT NULL
   );
-  INSERT INTO queue VALUES (1, 'foo', 'NEW'), (2, 'bar', 'NEW');
+  INSERT INTO sl3_queue VALUES (1, 'foo', 'NEW'), (2, 'bar', 'NEW');
 }
 
 teardown
 {
-  DROP TABLE queue;
+  DROP TABLE sl3_queue;
 }
 
 session s1
 setup		{ BEGIN; }
-step s1a	{ SELECT * FROM queue ORDER BY id FOR UPDATE LIMIT 1; }
+step s1a	{ SELECT * FROM sl3_queue ORDER BY id FOR UPDATE LIMIT 1; }
 step s1b	{ COMMIT; }
 
 session s2
 setup		{ BEGIN; }
-step s2a	{ SELECT * FROM queue ORDER BY id FOR UPDATE LIMIT 1; }
+step s2a	{ SELECT * FROM sl3_queue ORDER BY id FOR UPDATE LIMIT 1; }
 step s2b	{ COMMIT; }
 
 session s3
 setup		{ BEGIN; }
-step s3a	{ SELECT * FROM queue ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1; }
+step s3a	{ SELECT * FROM sl3_queue ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1; }
 step s3b	{ COMMIT; }
 
 # s3 skips to the second record because it can't obtain the tuple lock

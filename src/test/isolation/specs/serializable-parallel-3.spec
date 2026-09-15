@@ -5,18 +5,18 @@
 
 setup
 {
-	CREATE TABLE foo AS SELECT generate_series(1, 10)::int a;
-	ALTER TABLE foo SET (parallel_workers = 2);
+	CREATE TABLE sp3_foo AS SELECT generate_series(1, 10)::int a;
+	ALTER TABLE sp3_foo SET (parallel_workers = 2);
 }
 
 teardown
 {
-	DROP TABLE foo;
+	DROP TABLE sp3_foo;
 }
 
 session s1
 setup 		{ BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE; }
-step s1r	{ SELECT * FROM foo; }
+step s1r	{ SELECT * FROM sp3_foo; }
 step s1c 	{ COMMIT; }
 
 session s2
@@ -25,13 +25,13 @@ setup		{
 			  SET parallel_setup_cost = 0;
 			  SET parallel_tuple_cost = 0;
 			}
-step s2r1	{ SELECT * FROM foo; }
-step s2r2	{ SELECT * FROM foo; }
+step s2r1	{ SELECT * FROM sp3_foo; }
+step s2r2	{ SELECT * FROM sp3_foo; }
 step s2c	{ COMMIT; }
 
 session s3
 setup		{ BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE; }
-step s3r	{ SELECT * FROM foo; }
+step s3r	{ SELECT * FROM sp3_foo; }
 step s3c	{ COMMIT; }
 
 session s4
@@ -40,8 +40,8 @@ setup		{
 			  SET parallel_setup_cost = 0;
 			  SET parallel_tuple_cost = 0;
 			}
-step s4r1	{ SELECT * FROM foo; }
-step s4r2	{ SELECT * FROM foo; }
+step s4r1	{ SELECT * FROM sp3_foo; }
+step s4r2	{ SELECT * FROM sp3_foo; }
 step s4c	{ COMMIT; }
 
 permutation s1r s3r s2r1 s4r1 s1c s2r2 s3c s4r2 s4c s2c

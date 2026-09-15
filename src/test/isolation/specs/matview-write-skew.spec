@@ -9,20 +9,20 @@
 
 setup
 {
-  CREATE TABLE orders (date date, item text, num int);
-  INSERT INTO orders VALUES ('2022-04-01', 'apple', 10), ('2022-04-01', 'banana', 20);
+  CREATE TABLE mws_orders (date date, item text, num int);
+  INSERT INTO mws_orders VALUES ('2022-04-01', 'apple', 10), ('2022-04-01', 'banana', 20);
 
   CREATE MATERIALIZED VIEW order_summary AS
-    SELECT date, item, sum(num) FROM orders GROUP BY date, item;
+    SELECT date, item, sum(num) FROM mws_orders GROUP BY date, item;
   CREATE UNIQUE INDEX ON order_summary(date, item);
-  -- Create a diff between the summary table and the parent orders.
-  INSERT INTO orders VALUES ('2022-04-02', 'apple', 20);
+  -- Create a diff between the summary table and the parent mws_orders.
+  INSERT INTO mws_orders VALUES ('2022-04-02', 'apple', 20);
 }
 
 teardown
 {
   DROP MATERIALIZED VIEW order_summary;
-  DROP TABLE orders;
+  DROP TABLE mws_orders;
 }
 
 session s1
@@ -33,8 +33,8 @@ step s1_commit  { COMMIT; }
 session s2
 step s2_begin  { BEGIN ISOLATION LEVEL SERIALIZABLE; }
 step s2_read   { SELECT max(date) FROM order_summary; }
-step s2_insert { INSERT INTO orders VALUES ('2022-04-02', 'orange', 15); }
-step s2_update { UPDATE orders SET num = num + 1; }
+step s2_insert { INSERT INTO mws_orders VALUES ('2022-04-02', 'orange', 15); }
+step s2_update { UPDATE mws_orders SET num = num + 1; }
 step s2_commit { COMMIT; }
 
 # refresh -> read -> write

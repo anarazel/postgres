@@ -3,19 +3,19 @@
 
 setup
 {
-	CREATE TABLE foo AS SELECT generate_series(1, 100)::int a;
-	CREATE INDEX ON foo(a);
-	ALTER TABLE foo SET (parallel_workers = 2);
+	CREATE TABLE sp2_foo AS SELECT generate_series(1, 100)::int a;
+	CREATE INDEX ON sp2_foo(a);
+	ALTER TABLE sp2_foo SET (parallel_workers = 2);
 }
 
 teardown
 {
-	DROP TABLE foo;
+	DROP TABLE sp2_foo;
 }
 
 session s1
 setup 		{ BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE; }
-step s1r	{ SELECT COUNT(*) FROM foo; }
+step s1r	{ SELECT COUNT(*) FROM sp2_foo; }
 step s1c 	{ COMMIT; }
 
 session s2
@@ -27,8 +27,8 @@ setup		{
 			  SET parallel_leader_participation = off;
 			  SET enable_seqscan = off;
 			}
-step s2r1	{ SELECT COUNT(*) FROM foo; }
-step s2r2	{ SELECT COUNT(*) FROM foo; }
+step s2r1	{ SELECT COUNT(*) FROM sp2_foo; }
+step s2r2	{ SELECT COUNT(*) FROM sp2_foo; }
 step s2c	{ COMMIT; }
 
 permutation s1r s2r1 s1c s2r2 s2c

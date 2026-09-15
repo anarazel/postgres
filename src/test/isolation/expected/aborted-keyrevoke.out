@@ -2,16 +2,16 @@ Parsed test spec with 2 sessions
 
 starting permutation: s1s s1u s1r s1l s1c s2l s2c
 step s1s: SAVEPOINT f;
-step s1u: UPDATE foo SET key = 2;
+step s1u: UPDATE ak_foo SET key = 2;
 step s1r: ROLLBACK TO f;
-step s1l: SELECT * FROM foo FOR KEY SHARE;
+step s1l: SELECT * FROM ak_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
 (1 row)
 
 step s1c: COMMIT;
-step s2l: SELECT * FROM foo FOR KEY SHARE;
+step s2l: SELECT * FROM ak_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
@@ -21,15 +21,15 @@ step s2c: COMMIT;
 
 starting permutation: s1s s1u s1r s1l s2l s1c s2c
 step s1s: SAVEPOINT f;
-step s1u: UPDATE foo SET key = 2;
+step s1u: UPDATE ak_foo SET key = 2;
 step s1r: ROLLBACK TO f;
-step s1l: SELECT * FROM foo FOR KEY SHARE;
+step s1l: SELECT * FROM ak_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
 (1 row)
 
-step s2l: SELECT * FROM foo FOR KEY SHARE;
+step s2l: SELECT * FROM ak_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
@@ -40,15 +40,15 @@ step s2c: COMMIT;
 
 starting permutation: s1s s1u s1r s1l s2l s2c s1c
 step s1s: SAVEPOINT f;
-step s1u: UPDATE foo SET key = 2;
+step s1u: UPDATE ak_foo SET key = 2;
 step s1r: ROLLBACK TO f;
-step s1l: SELECT * FROM foo FOR KEY SHARE;
+step s1l: SELECT * FROM ak_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
 (1 row)
 
-step s2l: SELECT * FROM foo FOR KEY SHARE;
+step s2l: SELECT * FROM ak_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
@@ -59,15 +59,15 @@ step s1c: COMMIT;
 
 starting permutation: s1s s1u s1r s2l s1l s1c s2c
 step s1s: SAVEPOINT f;
-step s1u: UPDATE foo SET key = 2;
+step s1u: UPDATE ak_foo SET key = 2;
 step s1r: ROLLBACK TO f;
-step s2l: SELECT * FROM foo FOR KEY SHARE;
+step s2l: SELECT * FROM ak_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
 (1 row)
 
-step s1l: SELECT * FROM foo FOR KEY SHARE;
+step s1l: SELECT * FROM ak_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
@@ -78,15 +78,15 @@ step s2c: COMMIT;
 
 starting permutation: s1s s1u s1r s2l s1l s2c s1c
 step s1s: SAVEPOINT f;
-step s1u: UPDATE foo SET key = 2;
+step s1u: UPDATE ak_foo SET key = 2;
 step s1r: ROLLBACK TO f;
-step s2l: SELECT * FROM foo FOR KEY SHARE;
+step s2l: SELECT * FROM ak_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
 (1 row)
 
-step s1l: SELECT * FROM foo FOR KEY SHARE;
+step s1l: SELECT * FROM ak_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
@@ -97,16 +97,16 @@ step s1c: COMMIT;
 
 starting permutation: s1s s1u s1r s2l s2c s1l s1c
 step s1s: SAVEPOINT f;
-step s1u: UPDATE foo SET key = 2;
+step s1u: UPDATE ak_foo SET key = 2;
 step s1r: ROLLBACK TO f;
-step s2l: SELECT * FROM foo FOR KEY SHARE;
+step s2l: SELECT * FROM ak_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
 (1 row)
 
 step s2c: COMMIT;
-step s1l: SELECT * FROM foo FOR KEY SHARE;
+step s1l: SELECT * FROM ak_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
@@ -116,8 +116,8 @@ step s1c: COMMIT;
 
 starting permutation: s1s s1u s2l s1r s1l s1c s2c
 step s1s: SAVEPOINT f;
-step s1u: UPDATE foo SET key = 2;
-step s2l: SELECT * FROM foo FOR KEY SHARE; <waiting ...>
+step s1u: UPDATE ak_foo SET key = 2;
+step s2l: SELECT * FROM ak_foo FOR KEY SHARE; <waiting ...>
 step s1r: ROLLBACK TO f;
 step s2l: <... completed>
 key|value
@@ -125,7 +125,7 @@ key|value
   1|    1
 (1 row)
 
-step s1l: SELECT * FROM foo FOR KEY SHARE;
+step s1l: SELECT * FROM ak_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
@@ -136,8 +136,8 @@ step s2c: COMMIT;
 
 starting permutation: s1s s1u s2l s1r s1l s2c s1c
 step s1s: SAVEPOINT f;
-step s1u: UPDATE foo SET key = 2;
-step s2l: SELECT * FROM foo FOR KEY SHARE; <waiting ...>
+step s1u: UPDATE ak_foo SET key = 2;
+step s2l: SELECT * FROM ak_foo FOR KEY SHARE; <waiting ...>
 step s1r: ROLLBACK TO f;
 step s2l: <... completed>
 key|value
@@ -145,7 +145,7 @@ key|value
   1|    1
 (1 row)
 
-step s1l: SELECT * FROM foo FOR KEY SHARE;
+step s1l: SELECT * FROM ak_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
@@ -156,8 +156,8 @@ step s1c: COMMIT;
 
 starting permutation: s1s s1u s2l s1r s2c s1l s1c
 step s1s: SAVEPOINT f;
-step s1u: UPDATE foo SET key = 2;
-step s2l: SELECT * FROM foo FOR KEY SHARE; <waiting ...>
+step s1u: UPDATE ak_foo SET key = 2;
+step s2l: SELECT * FROM ak_foo FOR KEY SHARE; <waiting ...>
 step s1r: ROLLBACK TO f;
 step s2l: <... completed>
 key|value
@@ -166,7 +166,7 @@ key|value
 (1 row)
 
 step s2c: COMMIT;
-step s1l: SELECT * FROM foo FOR KEY SHARE;
+step s1l: SELECT * FROM ak_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
@@ -176,17 +176,17 @@ step s1c: COMMIT;
 
 starting permutation: s1s s2l s1u s2c s1r s1l s1c
 step s1s: SAVEPOINT f;
-step s2l: SELECT * FROM foo FOR KEY SHARE;
+step s2l: SELECT * FROM ak_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
 (1 row)
 
-step s1u: UPDATE foo SET key = 2; <waiting ...>
+step s1u: UPDATE ak_foo SET key = 2; <waiting ...>
 step s2c: COMMIT;
 step s1u: <... completed>
 step s1r: ROLLBACK TO f;
-step s1l: SELECT * FROM foo FOR KEY SHARE;
+step s1l: SELECT * FROM ak_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
@@ -196,16 +196,16 @@ step s1c: COMMIT;
 
 starting permutation: s1s s2l s2c s1u s1r s1l s1c
 step s1s: SAVEPOINT f;
-step s2l: SELECT * FROM foo FOR KEY SHARE;
+step s2l: SELECT * FROM ak_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
 (1 row)
 
 step s2c: COMMIT;
-step s1u: UPDATE foo SET key = 2;
+step s1u: UPDATE ak_foo SET key = 2;
 step s1r: ROLLBACK TO f;
-step s1l: SELECT * FROM foo FOR KEY SHARE;
+step s1l: SELECT * FROM ak_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
@@ -214,18 +214,18 @@ key|value
 step s1c: COMMIT;
 
 starting permutation: s2l s1s s1u s2c s1r s1l s1c
-step s2l: SELECT * FROM foo FOR KEY SHARE;
+step s2l: SELECT * FROM ak_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
 (1 row)
 
 step s1s: SAVEPOINT f;
-step s1u: UPDATE foo SET key = 2; <waiting ...>
+step s1u: UPDATE ak_foo SET key = 2; <waiting ...>
 step s2c: COMMIT;
 step s1u: <... completed>
 step s1r: ROLLBACK TO f;
-step s1l: SELECT * FROM foo FOR KEY SHARE;
+step s1l: SELECT * FROM ak_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
@@ -234,7 +234,7 @@ key|value
 step s1c: COMMIT;
 
 starting permutation: s2l s1s s2c s1u s1r s1l s1c
-step s2l: SELECT * FROM foo FOR KEY SHARE;
+step s2l: SELECT * FROM ak_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
@@ -242,9 +242,9 @@ key|value
 
 step s1s: SAVEPOINT f;
 step s2c: COMMIT;
-step s1u: UPDATE foo SET key = 2;
+step s1u: UPDATE ak_foo SET key = 2;
 step s1r: ROLLBACK TO f;
-step s1l: SELECT * FROM foo FOR KEY SHARE;
+step s1l: SELECT * FROM ak_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
@@ -253,7 +253,7 @@ key|value
 step s1c: COMMIT;
 
 starting permutation: s2l s2c s1s s1u s1r s1l s1c
-step s2l: SELECT * FROM foo FOR KEY SHARE;
+step s2l: SELECT * FROM ak_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
@@ -261,9 +261,9 @@ key|value
 
 step s2c: COMMIT;
 step s1s: SAVEPOINT f;
-step s1u: UPDATE foo SET key = 2;
+step s1u: UPDATE ak_foo SET key = 2;
 step s1r: ROLLBACK TO f;
-step s1l: SELECT * FROM foo FOR KEY SHARE;
+step s1l: SELECT * FROM ak_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1

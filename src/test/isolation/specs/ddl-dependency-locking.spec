@@ -8,7 +8,7 @@ setup
 	CREATE TYPE public.foo as enum ('one', 'two');
 	CREATE TYPE public.footab as enum ('three', 'four');
 	CREATE DOMAIN id AS int;
-	CREATE FUNCTION f() RETURNS int LANGUAGE SQL RETURN 1;
+	CREATE FUNCTION ddl_f() RETURNS int LANGUAGE SQL RETURN 1;
 	CREATE FUNCTION public.falter() RETURNS int LANGUAGE SQL RETURN 1;
 	CREATE FOREIGN DATA WRAPPER fdw_wrapper;
 	CREATE ROLE regress_dependency;
@@ -30,7 +30,7 @@ teardown
 	DROP TYPE IF EXISTS public.foo;
 	DROP TYPE IF EXISTS public.footab;
 	DROP DOMAIN IF EXISTS id;
-	DROP FUNCTION IF EXISTS f();
+	DROP FUNCTION IF EXISTS ddl_f();
 	DROP FOREIGN DATA WRAPPER IF EXISTS fdw_wrapper;
 	DROP ROLE regress_dependency;
 }
@@ -41,7 +41,7 @@ step "s1_begin" { BEGIN; }
 step "s1_create_function_in_schema" { CREATE FUNCTION testschema.foo() RETURNS int AS 'select 1' LANGUAGE sql; }
 step "s1_create_function_with_argtype" { CREATE FUNCTION fooargtype(num foo) RETURNS int AS 'select 1' LANGUAGE sql; }
 step "s1_create_function_with_rettype" { CREATE FUNCTION footrettype() RETURNS id LANGUAGE sql RETURN 1; }
-step "s1_create_function_with_function" { CREATE FUNCTION foofunc() RETURNS int LANGUAGE SQL RETURN f() + 1; }
+step "s1_create_function_with_function" { CREATE FUNCTION foofunc() RETURNS int LANGUAGE SQL RETURN ddl_f() + 1; }
 step "s1_alter_function_owner" { ALTER FUNCTION public.falter() OWNER TO regress_dependency; }
 step "s1_alter_function_schema" { ALTER FUNCTION public.falter() SET SCHEMA alterschema; }
 step "s1_create_domain_with_domain" { CREATE DOMAIN idid as id; }
@@ -57,7 +57,7 @@ step "s2_drop_alterschema" { DROP SCHEMA alterschema; }
 step "s2_drop_foo_type" { DROP TYPE public.foo; }
 step "s2_drop_foo_rettype" { DROP DOMAIN id; }
 step "s2_drop_footab_type" { DROP TYPE public.footab; }
-step "s2_drop_function_f" { DROP FUNCTION f(); }
+step "s2_drop_function_f" { DROP FUNCTION ddl_f(); }
 step "s2_drop_domain_id" { DROP DOMAIN id; }
 step "s2_drop_fdw_wrapper" { DROP FOREIGN DATA WRAPPER fdw_wrapper RESTRICT; }
 step "s2_drop_role" { DROP ROLE regress_dependency; }

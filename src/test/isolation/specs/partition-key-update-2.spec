@@ -12,31 +12,31 @@
 
 setup
 {
-  CREATE TABLE foo (a int primary key, b text) PARTITION BY LIST(a);
-  CREATE TABLE foo1 PARTITION OF foo FOR VALUES IN (1);
-  CREATE TABLE foo2 PARTITION OF foo FOR VALUES IN (2);
-  INSERT INTO foo VALUES (1, 'initial tuple');
+  CREATE TABLE pku2_foo (a int primary key, b text) PARTITION BY LIST(a);
+  CREATE TABLE pku2_foo1 PARTITION OF pku2_foo FOR VALUES IN (1);
+  CREATE TABLE pku2_foo2 PARTITION OF pku2_foo FOR VALUES IN (2);
+  INSERT INTO pku2_foo VALUES (1, 'initial tuple');
 }
 
 teardown
 {
-  DROP TABLE foo;
+  DROP TABLE pku2_foo;
 }
 
 session s1
 setup		{ BEGIN ISOLATION LEVEL READ COMMITTED; }
-step s1u	{ UPDATE foo SET a=2, b=b || ' -> moved by session-1' WHERE a=1; }
+step s1u	{ UPDATE pku2_foo SET a=2, b=b || ' -> moved by session-1' WHERE a=1; }
 step s1c	{ COMMIT; }
 
 session s2
 setup		{ BEGIN ISOLATION LEVEL READ COMMITTED; }
-step s2donothing { INSERT INTO foo VALUES(1, 'session-2 donothing') ON CONFLICT DO NOTHING; }
+step s2donothing { INSERT INTO pku2_foo VALUES(1, 'session-2 donothing') ON CONFLICT DO NOTHING; }
 step s2c	{ COMMIT; }
 
 session s3
 setup		{ BEGIN ISOLATION LEVEL READ COMMITTED; }
-step s3donothing { INSERT INTO foo VALUES(2, 'session-3 donothing') ON CONFLICT DO NOTHING; }
-step s3select { SELECT * FROM foo ORDER BY a; }
+step s3donothing { INSERT INTO pku2_foo VALUES(2, 'session-3 donothing') ON CONFLICT DO NOTHING; }
+step s3select { SELECT * FROM pku2_foo ORDER BY a; }
 step s3c	{ COMMIT; }
 
 # Regular case where one session block-waits on another to determine if it

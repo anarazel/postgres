@@ -2,27 +2,27 @@
 
 setup
 {
-  CREATE TABLE foo (
+  CREATE TABLE nw2_foo (
 	id int PRIMARY KEY,
 	data text NOT NULL
   );
-  INSERT INTO foo VALUES (1, 'x');
+  INSERT INTO nw2_foo VALUES (1, 'x');
 }
 
 teardown
 {
-  DROP TABLE foo;
+  DROP TABLE nw2_foo;
 }
 
 session s1
 setup		{ BEGIN; }
-step s1a	{ SELECT * FROM foo FOR SHARE NOWAIT; }
+step s1a	{ SELECT * FROM nw2_foo FOR SHARE NOWAIT; }
 step s1b	{ COMMIT; }
 
 session s2
 setup		{ BEGIN; }
-step s2a	{ SELECT * FROM foo FOR SHARE NOWAIT; }
-step s2b	{ SELECT * FROM foo FOR UPDATE NOWAIT; }
+step s2a	{ SELECT * FROM nw2_foo FOR SHARE NOWAIT; }
+step s2b	{ SELECT * FROM nw2_foo FOR UPDATE NOWAIT; }
 step s2c	{ COMMIT; }
 
 # s1 and s2 both get SHARE lock, creating a multixact lock, then s2

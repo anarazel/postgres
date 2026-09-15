@@ -1,7 +1,7 @@
 Parsed test spec with 4 sessions
 
 starting permutation: s1r s3r s2r1 s4r1 s1c s2r2 s3c s4r2 s4c s2c
-step s1r: SELECT * FROM foo;
+step s1r: SELECT * FROM sp3_foo;
  a
 --
  1
@@ -16,7 +16,7 @@ step s1r: SELECT * FROM foo;
 10
 (10 rows)
 
-step s3r: SELECT * FROM foo;
+step s3r: SELECT * FROM sp3_foo;
  a
 --
  1
@@ -31,7 +31,7 @@ step s3r: SELECT * FROM foo;
 10
 (10 rows)
 
-step s2r1: SELECT * FROM foo;
+step s2r1: SELECT * FROM sp3_foo;
  a
 --
  1
@@ -46,7 +46,7 @@ step s2r1: SELECT * FROM foo;
 10
 (10 rows)
 
-step s4r1: SELECT * FROM foo;
+step s4r1: SELECT * FROM sp3_foo;
  a
 --
  1
@@ -62,7 +62,7 @@ step s4r1: SELECT * FROM foo;
 (10 rows)
 
 step s1c: COMMIT;
-step s2r2: SELECT * FROM foo;
+step s2r2: SELECT * FROM sp3_foo;
  a
 --
  1
@@ -78,7 +78,7 @@ step s2r2: SELECT * FROM foo;
 (10 rows)
 
 step s3c: COMMIT;
-step s4r2: SELECT * FROM foo;
+step s4r2: SELECT * FROM sp3_foo;
  a
 --
  1

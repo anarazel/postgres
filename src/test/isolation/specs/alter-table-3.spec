@@ -5,28 +5,28 @@
 
 setup
 {
- CREATE TABLE a (i int PRIMARY KEY);
- INSERT INTO a VALUES (0), (1), (2), (3);
- CREATE FUNCTION f() RETURNS TRIGGER LANGUAGE plpgsql AS 'BEGIN RETURN NULL; END;';
- CREATE TRIGGER t AFTER UPDATE ON a EXECUTE PROCEDURE f();
+ CREATE TABLE at3_a (i int PRIMARY KEY);
+ INSERT INTO at3_a VALUES (0), (1), (2), (3);
+ CREATE FUNCTION at3_f() RETURNS TRIGGER LANGUAGE plpgsql AS 'BEGIN RETURN NULL; END;';
+ CREATE TRIGGER at3_t AFTER UPDATE ON at3_a EXECUTE PROCEDURE at3_f();
 }
 
 teardown
 {
- DROP TABLE a;
- DROP FUNCTION f();
+ DROP TABLE at3_a;
+ DROP FUNCTION at3_f();
 }
 
 session s1
 step s1a { BEGIN; }
-step s1b { ALTER TABLE a DISABLE TRIGGER t; }
-step s1c { ALTER TABLE a ENABLE TRIGGER t; }
+step s1b { ALTER TABLE at3_a DISABLE TRIGGER at3_t; }
+step s1c { ALTER TABLE at3_a ENABLE TRIGGER at3_t; }
 step s1d { COMMIT; }
 
 session s2
 step s2a { BEGIN; }
-step s2b { SELECT * FROM a WHERE i = 1 LIMIT 1 FOR UPDATE; }
-step s2c { INSERT INTO a VALUES (0); }
+step s2b { SELECT * FROM at3_a WHERE i = 1 LIMIT 1 FOR UPDATE; }
+step s2c { INSERT INTO at3_a VALUES (0); }
 step s2d { COMMIT; }
 
 permutation s1a s1b s1c s1d s2a s2b s2c s2d

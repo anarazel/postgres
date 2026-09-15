@@ -1,25 +1,25 @@
-# Read-write-unique test.
+# Read-write-unique rwu2_test.
 
 setup
 {
-  CREATE TABLE test (i integer PRIMARY KEY);
+  CREATE TABLE rwu2_test (i integer PRIMARY KEY);
 }
 
 teardown
 {
-  DROP TABLE test;
+  DROP TABLE rwu2_test;
 }
 
 session s1
 setup { BEGIN ISOLATION LEVEL SERIALIZABLE; }
-step r1 { SELECT * FROM test WHERE i = 42; }
-step w1 { INSERT INTO test VALUES (42); }
+step r1 { SELECT * FROM rwu2_test WHERE i = 42; }
+step w1 { INSERT INTO rwu2_test VALUES (42); }
 step c1 { COMMIT; }
 
 session s2
 setup { BEGIN ISOLATION LEVEL SERIALIZABLE; }
-step r2 { SELECT * FROM test WHERE i = 42; }
-step w2 { INSERT INTO test VALUES (42); }
+step r2 { SELECT * FROM rwu2_test WHERE i = 42; }
+step w2 { INSERT INTO rwu2_test VALUES (42); }
 step c2 { COMMIT; }
 
 # Two SSI transactions see that there is no row with value 42

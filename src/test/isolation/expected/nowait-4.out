@@ -7,10 +7,10 @@ pg_advisory_lock
                 
 (1 row)
 
-step s1a: SELECT * FROM foo WHERE pg_advisory_lock(0) IS NOT NULL FOR UPDATE NOWAIT; <waiting ...>
-step s2b: UPDATE foo SET data = data;
+step s1a: SELECT * FROM nw4_foo WHERE pg_advisory_lock(0) IS NOT NULL FOR UPDATE NOWAIT; <waiting ...>
+step s2b: UPDATE nw4_foo SET data = data;
 step s2c: BEGIN;
-step s2d: UPDATE foo SET data = data;
+step s2d: UPDATE nw4_foo SET data = data;
 step s2e: SELECT pg_advisory_unlock(0);
 pg_advisory_unlock
 ------------------
@@ -18,6 +18,6 @@ t
 (1 row)
 
 step s1a: <... completed>
-ERROR:  could not obtain lock on row in relation "foo"
+ERROR:  could not obtain lock on row in relation "nw4_foo"
 step s1b: COMMIT;
 step s2f: COMMIT;

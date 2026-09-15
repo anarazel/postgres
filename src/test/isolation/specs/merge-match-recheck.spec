@@ -6,16 +6,16 @@
 
 setup
 {
-  CREATE TABLE target (key int primary key, balance integer, status text, val text);
-  INSERT INTO target VALUES (1, 160, 's1', 'setup');
+  CREATE TABLE mmr_target (key int primary key, balance integer, status text, val text);
+  INSERT INTO mmr_target VALUES (1, 160, 's1', 'setup');
 
-  CREATE TABLE target_pa (key int, balance integer, status text, val text) PARTITION BY RANGE (balance);
-  CREATE TABLE target_pa1 PARTITION OF target_pa FOR VALUES FROM (-100) TO (200);
-  CREATE TABLE target_pa2 PARTITION OF target_pa FOR VALUES FROM (200) TO (1000);
-  INSERT INTO target_pa VALUES (1, 160, 's1', 'setup');
+  CREATE TABLE mmr_target_pa (key int, balance integer, status text, val text) PARTITION BY RANGE (balance);
+  CREATE TABLE mmr_target_pa1 PARTITION OF mmr_target_pa FOR VALUES FROM (-100) TO (200);
+  CREATE TABLE mmr_target_pa2 PARTITION OF mmr_target_pa FOR VALUES FROM (200) TO (1000);
+  INSERT INTO mmr_target_pa VALUES (1, 160, 's1', 'setup');
 
-  CREATE TABLE target_tg (key int primary key, balance integer, status text, val text);
-  CREATE FUNCTION target_tg_trig_fn() RETURNS trigger LANGUAGE plpgsql AS
+  CREATE TABLE mmr_target_tg (key int primary key, balance integer, status text, val text);
+  CREATE FUNCTION mmr_target_tg_trig_fn() RETURNS trigger LANGUAGE plpgsql AS
   $$
   BEGIN
     IF tg_op = 'INSERT' THEN
@@ -30,17 +30,17 @@ setup
     END IF;
   END
   $$;
-  CREATE TRIGGER target_tg_trig BEFORE INSERT OR UPDATE OR DELETE ON target_tg
-    FOR EACH ROW EXECUTE FUNCTION target_tg_trig_fn();
-  INSERT INTO target_tg VALUES (1, 160, 's1', 'setup');
+  CREATE TRIGGER mmr_target_tg_trig BEFORE INSERT OR UPDATE OR DELETE ON mmr_target_tg
+    FOR EACH ROW EXECUTE FUNCTION mmr_target_tg_trig_fn();
+  INSERT INTO mmr_target_tg VALUES (1, 160, 's1', 'setup');
 }
 
 teardown
 {
-  DROP TABLE target;
-  DROP TABLE target_pa;
-  DROP TABLE target_tg;
-  DROP FUNCTION target_tg_trig_fn;
+  DROP TABLE mmr_target;
+  DROP TABLE mmr_target_pa;
+  DROP TABLE mmr_target_tg;
+  DROP FUNCTION mmr_target_tg_trig_fn;
 }
 
 session "s1"
@@ -50,7 +50,7 @@ setup
 }
 step "merge_status"
 {
-  MERGE INTO target t
+  MERGE INTO mmr_target t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND status = 's1' THEN
@@ -62,7 +62,7 @@ step "merge_status"
 }
 step "merge_status_tg"
 {
-  MERGE INTO target_tg t
+  MERGE INTO mmr_target_tg t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND status = 's1' THEN
@@ -75,7 +75,7 @@ step "merge_status_tg"
 
 step "merge_bal"
 {
-  MERGE INTO target t
+  MERGE INTO mmr_target t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND balance < 0 THEN
@@ -90,7 +90,7 @@ step "merge_bal"
 }
 step "merge_bal_pa"
 {
-  MERGE INTO target_pa t
+  MERGE INTO mmr_target_pa t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND balance < 0 THEN
@@ -106,7 +106,7 @@ step "merge_bal_pa"
 step "merge_bal_tg"
 {
   WITH t AS (
-    MERGE INTO target_tg t
+    MERGE INTO mmr_target_tg t
     USING (SELECT 1 as key) s
     ON s.key = t.key
     WHEN MATCHED AND balance < 0 THEN
@@ -124,7 +124,7 @@ step "merge_bal_tg"
 
 step "merge_delete"
 {
-  MERGE INTO target t
+  MERGE INTO mmr_target t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND balance < 100 THEN
@@ -134,7 +134,7 @@ step "merge_delete"
 }
 step "merge_delete_tg"
 {
-  MERGE INTO target_tg t
+  MERGE INTO mmr_target_tg t
   USING (SELECT 1 as key) s
   ON s.key = t.key
   WHEN MATCHED AND balance < 100 THEN
@@ -143,9 +143,9 @@ step "merge_delete_tg"
     DELETE;
 }
 
-step "select1" { SELECT * FROM target; }
-step "select1_pa" { SELECT * FROM target_pa; }
-step "select1_tg" { SELECT * FROM target_tg; }
+step "select1" { SELECT * FROM mmr_target; }
+step "select1_pa" { SELECT * FROM mmr_target_pa; }
+step "select1_tg" { SELECT * FROM mmr_target_tg; }
 step "c1" { COMMIT; }
 
 session "s2"
@@ -153,23 +153,23 @@ setup
 {
   BEGIN ISOLATION LEVEL READ COMMITTED;
 }
-step "update1" { UPDATE target t SET balance = balance + 10, val = t.val || ' updated by update1' WHERE t.key = 1; }
-step "update1_pa" { UPDATE target_pa t SET balance = balance + 10, val = t.val || ' updated by update1_pa' WHERE t.key = 1; }
-step "update1_pa_move" { UPDATE target_pa t SET balance = 210, val = t.val || ' updated by update1_pa_move' WHERE t.key = 1; }
-step "update1_tg" { UPDATE target_tg t SET balance = balance + 10, val = t.val || ' updated by update1_tg' WHERE t.key = 1; }
-step "update2" { UPDATE target t SET status = 's2', val = t.val || ' updated by update2' WHERE t.key = 1; }
-step "update2_tg" { UPDATE target_tg t SET status = 's2', val = t.val || ' updated by update2_tg' WHERE t.key = 1; }
-step "update3" { UPDATE target t SET status = 's3', val = t.val || ' updated by update3' WHERE t.key = 1; }
-step "update3_tg" { UPDATE target_tg t SET status = 's3', val = t.val || ' updated by update3_tg' WHERE t.key = 1; }
-step "update5" { UPDATE target t SET status = 's5', val = t.val || ' updated by update5' WHERE t.key = 1; }
-step "update5_tg" { UPDATE target_tg t SET status = 's5', val = t.val || ' updated by update5_tg' WHERE t.key = 1; }
-step "update6" { UPDATE target t SET balance = balance - 100, val = t.val || ' updated by update6' WHERE t.key = 1; }
-step "update6_pa" { UPDATE target_pa t SET balance = balance - 100, val = t.val || ' updated by update6_pa' WHERE t.key = 1; }
-step "update6_tg" { UPDATE target_tg t SET balance = balance - 100, val = t.val || ' updated by update6_tg' WHERE t.key = 1; }
-step "update7" { UPDATE target t SET balance = 350, val = t.val || ' updated by update7' WHERE t.key = 1; }
-step "update_bal1" { UPDATE target t SET balance = 50, val = t.val || ' updated by update_bal1' WHERE t.key = 1; }
-step "update_bal1_pa" { UPDATE target_pa t SET balance = 50, val = t.val || ' updated by update_bal1_pa' WHERE t.key = 1; }
-step "update_bal1_tg" { UPDATE target_tg t SET balance = 50, val = t.val || ' updated by update_bal1_tg' WHERE t.key = 1; }
+step "update1" { UPDATE mmr_target t SET balance = balance + 10, val = t.val || ' updated by update1' WHERE t.key = 1; }
+step "update1_pa" { UPDATE mmr_target_pa t SET balance = balance + 10, val = t.val || ' updated by update1_pa' WHERE t.key = 1; }
+step "update1_pa_move" { UPDATE mmr_target_pa t SET balance = 210, val = t.val || ' updated by update1_pa_move' WHERE t.key = 1; }
+step "update1_tg" { UPDATE mmr_target_tg t SET balance = balance + 10, val = t.val || ' updated by update1_tg' WHERE t.key = 1; }
+step "update2" { UPDATE mmr_target t SET status = 's2', val = t.val || ' updated by update2' WHERE t.key = 1; }
+step "update2_tg" { UPDATE mmr_target_tg t SET status = 's2', val = t.val || ' updated by update2_tg' WHERE t.key = 1; }
+step "update3" { UPDATE mmr_target t SET status = 's3', val = t.val || ' updated by update3' WHERE t.key = 1; }
+step "update3_tg" { UPDATE mmr_target_tg t SET status = 's3', val = t.val || ' updated by update3_tg' WHERE t.key = 1; }
+step "update5" { UPDATE mmr_target t SET status = 's5', val = t.val || ' updated by update5' WHERE t.key = 1; }
+step "update5_tg" { UPDATE mmr_target_tg t SET status = 's5', val = t.val || ' updated by update5_tg' WHERE t.key = 1; }
+step "update6" { UPDATE mmr_target t SET balance = balance - 100, val = t.val || ' updated by update6' WHERE t.key = 1; }
+step "update6_pa" { UPDATE mmr_target_pa t SET balance = balance - 100, val = t.val || ' updated by update6_pa' WHERE t.key = 1; }
+step "update6_tg" { UPDATE mmr_target_tg t SET balance = balance - 100, val = t.val || ' updated by update6_tg' WHERE t.key = 1; }
+step "update7" { UPDATE mmr_target t SET balance = 350, val = t.val || ' updated by update7' WHERE t.key = 1; }
+step "update_bal1" { UPDATE mmr_target t SET balance = 50, val = t.val || ' updated by update_bal1' WHERE t.key = 1; }
+step "update_bal1_pa" { UPDATE mmr_target_pa t SET balance = 50, val = t.val || ' updated by update_bal1_pa' WHERE t.key = 1; }
+step "update_bal1_tg" { UPDATE mmr_target_tg t SET balance = 50, val = t.val || ' updated by update_bal1_tg' WHERE t.key = 1; }
 step "c2" { COMMIT; }
 
 # merge_status sees concurrently updated row and rechecks WHEN conditions, but recheck passes and final status = 's2'

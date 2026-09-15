@@ -7,9 +7,9 @@ pg_advisory_lock
 (1 row)
 
 step s2b: BEGIN;
-step s1l: SELECT * FROM foo WHERE pg_advisory_xact_lock(0) IS NOT NULL AND key = 1 FOR KEY SHARE; <waiting ...>
-step s2u: UPDATE foo SET value = 2 WHERE key = 1;
-step s2_blocker1: DELETE FROM foo;
+step s1l: SELECT * FROM lud_foo WHERE pg_advisory_xact_lock(0) IS NOT NULL AND key = 1 FOR KEY SHARE; <waiting ...>
+step s2u: UPDATE lud_foo SET value = 2 WHERE key = 1;
+step s2_blocker1: DELETE FROM lud_foo;
 step s2_unlock: SELECT pg_advisory_unlock(0);
 pg_advisory_unlock
 ------------------
@@ -30,9 +30,9 @@ pg_advisory_lock
 (1 row)
 
 step s2b: BEGIN;
-step s1l: SELECT * FROM foo WHERE pg_advisory_xact_lock(0) IS NOT NULL AND key = 1 FOR KEY SHARE; <waiting ...>
-step s2u: UPDATE foo SET value = 2 WHERE key = 1;
-step s2_blocker2: UPDATE foo SET key = 2 WHERE key = 1;
+step s1l: SELECT * FROM lud_foo WHERE pg_advisory_xact_lock(0) IS NOT NULL AND key = 1 FOR KEY SHARE; <waiting ...>
+step s2u: UPDATE lud_foo SET value = 2 WHERE key = 1;
+step s2_blocker2: UPDATE lud_foo SET key = 2 WHERE key = 1;
 step s2_unlock: SELECT pg_advisory_unlock(0);
 pg_advisory_unlock
 ------------------
@@ -53,9 +53,9 @@ pg_advisory_lock
 (1 row)
 
 step s2b: BEGIN;
-step s1l: SELECT * FROM foo WHERE pg_advisory_xact_lock(0) IS NOT NULL AND key = 1 FOR KEY SHARE; <waiting ...>
-step s2u: UPDATE foo SET value = 2 WHERE key = 1;
-step s2_blocker3: UPDATE foo SET value = 2 WHERE key = 1;
+step s1l: SELECT * FROM lud_foo WHERE pg_advisory_xact_lock(0) IS NOT NULL AND key = 1 FOR KEY SHARE; <waiting ...>
+step s2u: UPDATE lud_foo SET value = 2 WHERE key = 1;
+step s2_blocker3: UPDATE lud_foo SET value = 2 WHERE key = 1;
 step s2_unlock: SELECT pg_advisory_unlock(0);
 pg_advisory_unlock
 ------------------
@@ -77,9 +77,9 @@ pg_advisory_lock
 (1 row)
 
 step s2b: BEGIN;
-step s1l: SELECT * FROM foo WHERE pg_advisory_xact_lock(0) IS NOT NULL AND key = 1 FOR KEY SHARE; <waiting ...>
-step s2u: UPDATE foo SET value = 2 WHERE key = 1;
-step s2_blocker1: DELETE FROM foo;
+step s1l: SELECT * FROM lud_foo WHERE pg_advisory_xact_lock(0) IS NOT NULL AND key = 1 FOR KEY SHARE; <waiting ...>
+step s2u: UPDATE lud_foo SET value = 2 WHERE key = 1;
+step s2_blocker1: DELETE FROM lud_foo;
 step s2_unlock: SELECT pg_advisory_unlock(0);
 pg_advisory_unlock
 ------------------
@@ -101,9 +101,9 @@ pg_advisory_lock
 (1 row)
 
 step s2b: BEGIN;
-step s1l: SELECT * FROM foo WHERE pg_advisory_xact_lock(0) IS NOT NULL AND key = 1 FOR KEY SHARE; <waiting ...>
-step s2u: UPDATE foo SET value = 2 WHERE key = 1;
-step s2_blocker2: UPDATE foo SET key = 2 WHERE key = 1;
+step s1l: SELECT * FROM lud_foo WHERE pg_advisory_xact_lock(0) IS NOT NULL AND key = 1 FOR KEY SHARE; <waiting ...>
+step s2u: UPDATE lud_foo SET value = 2 WHERE key = 1;
+step s2_blocker2: UPDATE lud_foo SET key = 2 WHERE key = 1;
 step s2_unlock: SELECT pg_advisory_unlock(0);
 pg_advisory_unlock
 ------------------
@@ -125,9 +125,9 @@ pg_advisory_lock
 (1 row)
 
 step s2b: BEGIN;
-step s1l: SELECT * FROM foo WHERE pg_advisory_xact_lock(0) IS NOT NULL AND key = 1 FOR KEY SHARE; <waiting ...>
-step s2u: UPDATE foo SET value = 2 WHERE key = 1;
-step s2_blocker3: UPDATE foo SET value = 2 WHERE key = 1;
+step s1l: SELECT * FROM lud_foo WHERE pg_advisory_xact_lock(0) IS NOT NULL AND key = 1 FOR KEY SHARE; <waiting ...>
+step s2u: UPDATE lud_foo SET value = 2 WHERE key = 1;
+step s2_blocker3: UPDATE lud_foo SET value = 2 WHERE key = 1;
 step s2_unlock: SELECT pg_advisory_unlock(0);
 pg_advisory_unlock
 ------------------
@@ -149,9 +149,9 @@ pg_advisory_lock
 (1 row)
 
 step s2b: BEGIN;
-step s1l: SELECT * FROM foo WHERE pg_advisory_xact_lock(0) IS NOT NULL AND key = 1 FOR KEY SHARE; <waiting ...>
-step s2u: UPDATE foo SET value = 2 WHERE key = 1;
-step s2_blocker1: DELETE FROM foo;
+step s1l: SELECT * FROM lud_foo WHERE pg_advisory_xact_lock(0) IS NOT NULL AND key = 1 FOR KEY SHARE; <waiting ...>
+step s2u: UPDATE lud_foo SET value = 2 WHERE key = 1;
+step s2_blocker1: DELETE FROM lud_foo;
 step s2c: COMMIT;
 step s2_unlock: SELECT pg_advisory_unlock(0);
 pg_advisory_unlock
@@ -172,9 +172,9 @@ pg_advisory_lock
 (1 row)
 
 step s2b: BEGIN;
-step s1l: SELECT * FROM foo WHERE pg_advisory_xact_lock(0) IS NOT NULL AND key = 1 FOR KEY SHARE; <waiting ...>
-step s2u: UPDATE foo SET value = 2 WHERE key = 1;
-step s2_blocker2: UPDATE foo SET key = 2 WHERE key = 1;
+step s1l: SELECT * FROM lud_foo WHERE pg_advisory_xact_lock(0) IS NOT NULL AND key = 1 FOR KEY SHARE; <waiting ...>
+step s2u: UPDATE lud_foo SET value = 2 WHERE key = 1;
+step s2_blocker2: UPDATE lud_foo SET key = 2 WHERE key = 1;
 step s2c: COMMIT;
 step s2_unlock: SELECT pg_advisory_unlock(0);
 pg_advisory_unlock
@@ -195,9 +195,9 @@ pg_advisory_lock
 (1 row)
 
 step s2b: BEGIN;
-step s1l: SELECT * FROM foo WHERE pg_advisory_xact_lock(0) IS NOT NULL AND key = 1 FOR KEY SHARE; <waiting ...>
-step s2u: UPDATE foo SET value = 2 WHERE key = 1;
-step s2_blocker3: UPDATE foo SET value = 2 WHERE key = 1;
+step s1l: SELECT * FROM lud_foo WHERE pg_advisory_xact_lock(0) IS NOT NULL AND key = 1 FOR KEY SHARE; <waiting ...>
+step s2u: UPDATE lud_foo SET value = 2 WHERE key = 1;
+step s2_blocker3: UPDATE lud_foo SET value = 2 WHERE key = 1;
 step s2c: COMMIT;
 step s2_unlock: SELECT pg_advisory_unlock(0);
 pg_advisory_unlock
@@ -219,9 +219,9 @@ pg_advisory_lock
 (1 row)
 
 step s2b: BEGIN;
-step s1l: SELECT * FROM foo WHERE pg_advisory_xact_lock(0) IS NOT NULL AND key = 1 FOR KEY SHARE; <waiting ...>
-step s2u: UPDATE foo SET value = 2 WHERE key = 1;
-step s2_blocker1: DELETE FROM foo;
+step s1l: SELECT * FROM lud_foo WHERE pg_advisory_xact_lock(0) IS NOT NULL AND key = 1 FOR KEY SHARE; <waiting ...>
+step s2u: UPDATE lud_foo SET value = 2 WHERE key = 1;
+step s2_blocker1: DELETE FROM lud_foo;
 step s2r: ROLLBACK;
 step s2_unlock: SELECT pg_advisory_unlock(0);
 pg_advisory_unlock
@@ -243,9 +243,9 @@ pg_advisory_lock
 (1 row)
 
 step s2b: BEGIN;
-step s1l: SELECT * FROM foo WHERE pg_advisory_xact_lock(0) IS NOT NULL AND key = 1 FOR KEY SHARE; <waiting ...>
-step s2u: UPDATE foo SET value = 2 WHERE key = 1;
-step s2_blocker2: UPDATE foo SET key = 2 WHERE key = 1;
+step s1l: SELECT * FROM lud_foo WHERE pg_advisory_xact_lock(0) IS NOT NULL AND key = 1 FOR KEY SHARE; <waiting ...>
+step s2u: UPDATE lud_foo SET value = 2 WHERE key = 1;
+step s2_blocker2: UPDATE lud_foo SET key = 2 WHERE key = 1;
 step s2r: ROLLBACK;
 step s2_unlock: SELECT pg_advisory_unlock(0);
 pg_advisory_unlock
@@ -267,9 +267,9 @@ pg_advisory_lock
 (1 row)
 
 step s2b: BEGIN;
-step s1l: SELECT * FROM foo WHERE pg_advisory_xact_lock(0) IS NOT NULL AND key = 1 FOR KEY SHARE; <waiting ...>
-step s2u: UPDATE foo SET value = 2 WHERE key = 1;
-step s2_blocker3: UPDATE foo SET value = 2 WHERE key = 1;
+step s1l: SELECT * FROM lud_foo WHERE pg_advisory_xact_lock(0) IS NOT NULL AND key = 1 FOR KEY SHARE; <waiting ...>
+step s2u: UPDATE lud_foo SET value = 2 WHERE key = 1;
+step s2_blocker3: UPDATE lud_foo SET value = 2 WHERE key = 1;
 step s2r: ROLLBACK;
 step s2_unlock: SELECT pg_advisory_unlock(0);
 pg_advisory_unlock

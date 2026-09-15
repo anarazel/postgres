@@ -2,28 +2,28 @@
 
 setup
 {
-  CREATE TABLE foo (
+  CREATE TABLE nw4_foo (
 	id int PRIMARY KEY,
 	data text NOT NULL
   );
-  INSERT INTO foo VALUES (1, 'x');
+  INSERT INTO nw4_foo VALUES (1, 'x');
 }
 
 teardown
 {
-  DROP TABLE foo;
+  DROP TABLE nw4_foo;
 }
 
 session s1
 setup		{ BEGIN; }
-step s1a	{ SELECT * FROM foo WHERE pg_advisory_lock(0) IS NOT NULL FOR UPDATE NOWAIT; }
+step s1a	{ SELECT * FROM nw4_foo WHERE pg_advisory_lock(0) IS NOT NULL FOR UPDATE NOWAIT; }
 step s1b	{ COMMIT; }
 
 session s2
 step s2a	{ SELECT pg_advisory_lock(0); }
-step s2b	{ UPDATE foo SET data = data; }
+step s2b	{ UPDATE nw4_foo SET data = data; }
 step s2c	{ BEGIN; }
-step s2d	{ UPDATE foo SET data = data; }
+step s2d	{ UPDATE nw4_foo SET data = data; }
 step s2e	{ SELECT pg_advisory_unlock(0); }
 step s2f	{ COMMIT; }
 

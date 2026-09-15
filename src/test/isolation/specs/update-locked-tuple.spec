@@ -3,26 +3,26 @@
 
 setup
 {
-   DROP TABLE IF EXISTS users, orders;
+   DROP TABLE IF EXISTS users, ult_orders;
    CREATE TABLE users (id INTEGER PRIMARY KEY,
                        name varchar,
                        sometime timestamp);
-   CREATE TABLE orders (id INTEGER PRIMARY KEY,
+   CREATE TABLE ult_orders (id INTEGER PRIMARY KEY,
                         name varchar,
                         user_id INTEGER REFERENCES users (id));
    INSERT INTO users (id, name) VALUES (1, 'olivier');
-   INSERT INTO orders (id, name) VALUES (1, 'order of olivier (1)');
+   INSERT INTO ult_orders (id, name) VALUES (1, 'order of olivier (1)');
 }
 
 teardown
 {
-   DROP TABLE users, orders;
+   DROP TABLE users, ult_orders;
 }
 
 session s1
 step s1b   { BEGIN ISOLATION LEVEL REPEATABLE READ; }
-step s1u1  { UPDATE orders SET name = 'order of olivier (2)', user_id = 1 WHERE id = 1; }
-step s1u2  { UPDATE orders SET name = 'order of olivier (3)', user_id = 1 WHERE id = 1; }
+step s1u1  { UPDATE ult_orders SET name = 'order of olivier (2)', user_id = 1 WHERE id = 1; }
+step s1u2  { UPDATE ult_orders SET name = 'order of olivier (3)', user_id = 1 WHERE id = 1; }
 step s1c   { COMMIT; }
 
 session s2

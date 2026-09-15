@@ -4,30 +4,30 @@
 
 setup
 {
-  CREATE TABLE foo (
+  CREATE TABLE ak_foo (
 	key		int PRIMARY KEY,
 	value	int
   );
 
-  INSERT INTO foo VALUES (1, 1);
+  INSERT INTO ak_foo VALUES (1, 1);
 }
 
 teardown
 {
-  DROP TABLE foo;
+  DROP TABLE ak_foo;
 }
 
 session s1
 setup		{ BEGIN; }
 step s1s	{ SAVEPOINT f; }
-step s1u	{ UPDATE foo SET key = 2; }	# obtain KEY REVOKE
+step s1u	{ UPDATE ak_foo SET key = 2; }	# obtain KEY REVOKE
 step s1r	{ ROLLBACK TO f; } # lose KEY REVOKE
-step s1l	{ SELECT * FROM foo FOR KEY SHARE; }
+step s1l	{ SELECT * FROM ak_foo FOR KEY SHARE; }
 step s1c	{ COMMIT; }
 
 session s2
 setup		{ BEGIN; }
-step s2l	{ SELECT * FROM foo FOR KEY SHARE; }
+step s2l	{ SELECT * FROM ak_foo FOR KEY SHARE; }
 step s2c	{ COMMIT; }
 
 permutation s1s s1u s1r s1l s1c s2l s2c

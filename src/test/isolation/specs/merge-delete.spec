@@ -5,16 +5,16 @@
 
 setup
 {
-  CREATE TABLE target (key int primary key, val text);
-  INSERT INTO target VALUES (1, 'setup1');
+  CREATE TABLE md_target (key int primary key, val text);
+  INSERT INTO md_target VALUES (1, 'setup1');
 
-  CREATE TABLE target_pa (key int primary key, val text) PARTITION BY LIST (key);
-  CREATE TABLE target_pa1 PARTITION OF target_pa FOR VALUES IN (1);
-  CREATE TABLE target_pa2 PARTITION OF target_pa FOR VALUES IN (2);
-  INSERT INTO target_pa VALUES (1, 'setup1');
+  CREATE TABLE md_target_pa (key int primary key, val text) PARTITION BY LIST (key);
+  CREATE TABLE md_target_pa1 PARTITION OF md_target_pa FOR VALUES IN (1);
+  CREATE TABLE md_target_pa2 PARTITION OF md_target_pa FOR VALUES IN (2);
+  INSERT INTO md_target_pa VALUES (1, 'setup1');
 
-  CREATE TABLE target_tg (key int primary key, val text);
-  CREATE FUNCTION target_tg_trig_fn() RETURNS trigger LANGUAGE plpgsql AS
+  CREATE TABLE md_target_tg (key int primary key, val text);
+  CREATE FUNCTION md_target_tg_trig_fn() RETURNS trigger LANGUAGE plpgsql AS
   $$
   BEGIN
     IF tg_op = 'INSERT' THEN
@@ -29,17 +29,17 @@ setup
     END IF;
   END
   $$;
-  CREATE TRIGGER target_tg_trig BEFORE INSERT OR UPDATE OR DELETE ON target_tg
-    FOR EACH ROW EXECUTE FUNCTION target_tg_trig_fn();
-  INSERT INTO target_tg VALUES (1, 'setup1');
+  CREATE TRIGGER md_target_tg_trig BEFORE INSERT OR UPDATE OR DELETE ON md_target_tg
+    FOR EACH ROW EXECUTE FUNCTION md_target_tg_trig_fn();
+  INSERT INTO md_target_tg VALUES (1, 'setup1');
 }
 
 teardown
 {
-  DROP TABLE target;
-  DROP TABLE target_pa;
-  DROP TABLE target_tg;
-  DROP FUNCTION target_tg_trig_fn;
+  DROP TABLE md_target;
+  DROP TABLE md_target_pa;
+  DROP TABLE md_target_tg;
+  DROP FUNCTION md_target_tg_trig_fn;
 }
 
 session "s1"
@@ -47,9 +47,9 @@ setup
 {
   BEGIN ISOLATION LEVEL READ COMMITTED;
 }
-step "delete" { DELETE FROM target t WHERE t.key = 1; }
-step "delete_pa" { DELETE FROM target_pa t WHERE t.key = 1; }
-step "delete_tg" { DELETE FROM target_tg t WHERE t.key = 1; }
+step "delete" { DELETE FROM md_target t WHERE t.key = 1; }
+step "delete_pa" { DELETE FROM md_target_pa t WHERE t.key = 1; }
+step "delete_tg" { DELETE FROM md_target_tg t WHERE t.key = 1; }
 step "c1" { COMMIT; }
 
 session "s2"
@@ -57,17 +57,17 @@ setup
 {
   BEGIN ISOLATION LEVEL READ COMMITTED;
 }
-step "update2" { UPDATE target t SET val = t.val || ' updated by update2' WHERE t.key = 1; }
-step "update2_pa" { UPDATE target_pa t SET val = t.val || ' updated by update2_pa' WHERE t.key = 1; }
-step "update2_tg" { UPDATE target_tg t SET val = t.val || ' updated by update2_tg' WHERE t.key = 1; }
-step "merge2" { MERGE INTO target t USING (SELECT 1 as key, 'merge2' as val) s ON s.key = t.key WHEN NOT MATCHED THEN INSERT VALUES (s.key, s.val) WHEN MATCHED THEN UPDATE set key = t.key + 1, val = t.val || ' updated by ' || s.val; }
-step "merge2_pa" { MERGE INTO target_pa t USING (SELECT 1 as key, 'merge2_pa' as val) s ON s.key = t.key WHEN NOT MATCHED THEN INSERT VALUES (s.key, s.val) WHEN MATCHED THEN UPDATE set key = t.key + 1, val = t.val || ' updated by ' || s.val; }
-step "merge2_tg" { MERGE INTO target_tg t USING (SELECT 1 as key, 'merge2_tg' as val) s ON s.key = t.key WHEN NOT MATCHED THEN INSERT VALUES (s.key, s.val) WHEN MATCHED THEN UPDATE set key = t.key + 1, val = t.val || ' updated by ' || s.val; }
-step "merge_delete2" { MERGE INTO target t USING (SELECT 1 as key, 'merge_delete2' as val) s ON s.key = t.key WHEN NOT MATCHED THEN INSERT VALUES (s.key, s.val) WHEN MATCHED THEN DELETE; }
-step "merge_delete2_tg" { MERGE INTO target_tg t USING (SELECT 1 as key, 'merge_delete2_tg' as val) s ON s.key = t.key WHEN NOT MATCHED THEN INSERT VALUES (s.key, s.val) WHEN MATCHED THEN DELETE; }
-step "select2" { SELECT * FROM target; }
-step "select2_pa" { SELECT * FROM target_pa; }
-step "select2_tg" { SELECT * FROM target_tg; }
+step "update2" { UPDATE md_target t SET val = t.val || ' updated by update2' WHERE t.key = 1; }
+step "update2_pa" { UPDATE md_target_pa t SET val = t.val || ' updated by update2_pa' WHERE t.key = 1; }
+step "update2_tg" { UPDATE md_target_tg t SET val = t.val || ' updated by update2_tg' WHERE t.key = 1; }
+step "merge2" { MERGE INTO md_target t USING (SELECT 1 as key, 'merge2' as val) s ON s.key = t.key WHEN NOT MATCHED THEN INSERT VALUES (s.key, s.val) WHEN MATCHED THEN UPDATE set key = t.key + 1, val = t.val || ' updated by ' || s.val; }
+step "merge2_pa" { MERGE INTO md_target_pa t USING (SELECT 1 as key, 'merge2_pa' as val) s ON s.key = t.key WHEN NOT MATCHED THEN INSERT VALUES (s.key, s.val) WHEN MATCHED THEN UPDATE set key = t.key + 1, val = t.val || ' updated by ' || s.val; }
+step "merge2_tg" { MERGE INTO md_target_tg t USING (SELECT 1 as key, 'merge2_tg' as val) s ON s.key = t.key WHEN NOT MATCHED THEN INSERT VALUES (s.key, s.val) WHEN MATCHED THEN UPDATE set key = t.key + 1, val = t.val || ' updated by ' || s.val; }
+step "merge_delete2" { MERGE INTO md_target t USING (SELECT 1 as key, 'merge_delete2' as val) s ON s.key = t.key WHEN NOT MATCHED THEN INSERT VALUES (s.key, s.val) WHEN MATCHED THEN DELETE; }
+step "merge_delete2_tg" { MERGE INTO md_target_tg t USING (SELECT 1 as key, 'merge_delete2_tg' as val) s ON s.key = t.key WHEN NOT MATCHED THEN INSERT VALUES (s.key, s.val) WHEN MATCHED THEN DELETE; }
+step "select2" { SELECT * FROM md_target; }
+step "select2_pa" { SELECT * FROM md_target_pa; }
+step "select2_tg" { SELECT * FROM md_target_tg; }
 step "c2" { COMMIT; }
 
 # Basic effects

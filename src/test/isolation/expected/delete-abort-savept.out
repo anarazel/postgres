@@ -1,17 +1,17 @@
 Parsed test spec with 2 sessions
 
 starting permutation: s1l s1svp s1d s1r s1c s2l s2c
-step s1l: SELECT * FROM foo FOR KEY SHARE;
+step s1l: SELECT * FROM das_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
 (1 row)
 
 step s1svp: SAVEPOINT f;
-step s1d: DELETE FROM foo;
+step s1d: DELETE FROM das_foo;
 step s1r: ROLLBACK TO f;
 step s1c: COMMIT;
-step s2l: SELECT * FROM foo FOR UPDATE;
+step s2l: SELECT * FROM das_foo FOR UPDATE;
 key|value
 ---+-----
   1|    1
@@ -20,16 +20,16 @@ key|value
 step s2c: COMMIT;
 
 starting permutation: s1l s1svp s1d s1r s2l s1c s2c
-step s1l: SELECT * FROM foo FOR KEY SHARE;
+step s1l: SELECT * FROM das_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
 (1 row)
 
 step s1svp: SAVEPOINT f;
-step s1d: DELETE FROM foo;
+step s1d: DELETE FROM das_foo;
 step s1r: ROLLBACK TO f;
-step s2l: SELECT * FROM foo FOR UPDATE; <waiting ...>
+step s2l: SELECT * FROM das_foo FOR UPDATE; <waiting ...>
 step s1c: COMMIT;
 step s2l: <... completed>
 key|value
@@ -40,15 +40,15 @@ key|value
 step s2c: COMMIT;
 
 starting permutation: s1l s1svp s1d s2l s1r s1c s2c
-step s1l: SELECT * FROM foo FOR KEY SHARE;
+step s1l: SELECT * FROM das_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
 (1 row)
 
 step s1svp: SAVEPOINT f;
-step s1d: DELETE FROM foo;
-step s2l: SELECT * FROM foo FOR UPDATE; <waiting ...>
+step s1d: DELETE FROM das_foo;
+step s2l: SELECT * FROM das_foo FOR UPDATE; <waiting ...>
 step s1r: ROLLBACK TO f;
 step s1c: COMMIT;
 step s2l: <... completed>
@@ -60,15 +60,15 @@ key|value
 step s2c: COMMIT;
 
 starting permutation: s1l s1svp s2l s1d s1r s1c s2c
-step s1l: SELECT * FROM foo FOR KEY SHARE;
+step s1l: SELECT * FROM das_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
 (1 row)
 
 step s1svp: SAVEPOINT f;
-step s2l: SELECT * FROM foo FOR UPDATE; <waiting ...>
-step s1d: DELETE FROM foo;
+step s2l: SELECT * FROM das_foo FOR UPDATE; <waiting ...>
+step s1d: DELETE FROM das_foo;
 step s1r: ROLLBACK TO f;
 step s1c: COMMIT;
 step s2l: <... completed>
@@ -80,15 +80,15 @@ key|value
 step s2c: COMMIT;
 
 starting permutation: s1l s2l s1svp s1d s1r s1c s2c
-step s1l: SELECT * FROM foo FOR KEY SHARE;
+step s1l: SELECT * FROM das_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
 (1 row)
 
-step s2l: SELECT * FROM foo FOR UPDATE; <waiting ...>
+step s2l: SELECT * FROM das_foo FOR UPDATE; <waiting ...>
 step s1svp: SAVEPOINT f;
-step s1d: DELETE FROM foo;
+step s1d: DELETE FROM das_foo;
 step s1r: ROLLBACK TO f;
 step s1c: COMMIT;
 step s2l: <... completed>
@@ -100,13 +100,13 @@ key|value
 step s2c: COMMIT;
 
 starting permutation: s2l s1l s2c s1svp s1d s1r s1c
-step s2l: SELECT * FROM foo FOR UPDATE;
+step s2l: SELECT * FROM das_foo FOR UPDATE;
 key|value
 ---+-----
   1|    1
 (1 row)
 
-step s1l: SELECT * FROM foo FOR KEY SHARE; <waiting ...>
+step s1l: SELECT * FROM das_foo FOR KEY SHARE; <waiting ...>
 step s2c: COMMIT;
 step s1l: <... completed>
 key|value
@@ -115,25 +115,25 @@ key|value
 (1 row)
 
 step s1svp: SAVEPOINT f;
-step s1d: DELETE FROM foo;
+step s1d: DELETE FROM das_foo;
 step s1r: ROLLBACK TO f;
 step s1c: COMMIT;
 
 starting permutation: s2l s2c s1l s1svp s1d s1r s1c
-step s2l: SELECT * FROM foo FOR UPDATE;
+step s2l: SELECT * FROM das_foo FOR UPDATE;
 key|value
 ---+-----
   1|    1
 (1 row)
 
 step s2c: COMMIT;
-step s1l: SELECT * FROM foo FOR KEY SHARE;
+step s1l: SELECT * FROM das_foo FOR KEY SHARE;
 key|value
 ---+-----
   1|    1
 (1 row)
 
 step s1svp: SAVEPOINT f;
-step s1d: DELETE FROM foo;
+step s1d: DELETE FROM das_foo;
 step s1r: ROLLBACK TO f;
 step s1c: COMMIT;

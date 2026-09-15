@@ -10,26 +10,26 @@
 
 setup
 {
-	CREATE TABLE bank_account (id TEXT PRIMARY KEY, balance DECIMAL NOT NULL);
-	INSERT INTO bank_account (id, balance) VALUES ('X', 0), ('Y', 0);
+	CREATE TABLE sp_bank_account (id TEXT PRIMARY KEY, balance DECIMAL NOT NULL);
+	INSERT INTO sp_bank_account (id, balance) VALUES ('X', 0), ('Y', 0);
 }
 
 teardown
 {
-	DROP TABLE bank_account;
+	DROP TABLE sp_bank_account;
 }
 
 session s1
 setup 		{ BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE; }
-step s1ry	{ SELECT balance FROM bank_account WHERE id = 'Y'; }
-step s1wy	{ UPDATE bank_account SET balance = 20 WHERE id = 'Y'; }
+step s1ry	{ SELECT balance FROM sp_bank_account WHERE id = 'Y'; }
+step s1wy	{ UPDATE sp_bank_account SET balance = 20 WHERE id = 'Y'; }
 step s1c 	{ COMMIT; }
 
 session s2
 setup		{ BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE; }
-step s2rx	{ SELECT balance FROM bank_account WHERE id = 'X'; }
-step s2ry	{ SELECT balance FROM bank_account WHERE id = 'Y'; }
-step s2wx	{ UPDATE bank_account SET balance = -11 WHERE id = 'X'; }
+step s2rx	{ SELECT balance FROM sp_bank_account WHERE id = 'X'; }
+step s2ry	{ SELECT balance FROM sp_bank_account WHERE id = 'Y'; }
+step s2wx	{ UPDATE sp_bank_account SET balance = -11 WHERE id = 'X'; }
 step s2c	{ COMMIT; }
 
 session s3
@@ -37,7 +37,7 @@ setup		{
 			  BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE;
 			  SET debug_parallel_query = on;
 			}
-step s3r	{ SELECT id, balance FROM bank_account WHERE id IN ('X', 'Y') ORDER BY id; }
+step s3r	{ SELECT id, balance FROM sp_bank_account WHERE id IN ('X', 'Y') ORDER BY id; }
 step s3c	{ COMMIT; }
 
 # without s3, s1 and s2 commit

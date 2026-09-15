@@ -2,28 +2,28 @@
 
 setup
 {
-  CREATE TABLE foo (
+  CREATE TABLE sl4_foo (
 	id int PRIMARY KEY,
 	data text NOT NULL
   );
-  INSERT INTO foo VALUES (1, 'x'), (2, 'x');
+  INSERT INTO sl4_foo VALUES (1, 'x'), (2, 'x');
 }
 
 teardown
 {
-  DROP TABLE foo;
+  DROP TABLE sl4_foo;
 }
 
 session s1
 setup		{ BEGIN; }
-step s1a	{ SELECT * FROM foo WHERE pg_advisory_lock(0) IS NOT NULL ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED; }
+step s1a	{ SELECT * FROM sl4_foo WHERE pg_advisory_lock(0) IS NOT NULL ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED; }
 step s1b	{ COMMIT; }
 
 session s2
 step s2a	{ SELECT pg_advisory_lock(0); }
-step s2b	{ UPDATE foo SET data = data WHERE id = 1; }
+step s2b	{ UPDATE sl4_foo SET data = data WHERE id = 1; }
 step s2c	{ BEGIN; }
-step s2d	{ UPDATE foo SET data = data WHERE id = 1; }
+step s2d	{ UPDATE sl4_foo SET data = data WHERE id = 1; }
 step s2e	{ SELECT pg_advisory_unlock(0); }
 step s2f	{ COMMIT; }
 

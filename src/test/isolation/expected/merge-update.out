@@ -2,7 +2,7 @@ Parsed test spec with 2 sessions
 
 starting permutation: merge1 c1 select2 c2
 step merge1: 
-  MERGE INTO target t
+  MERGE INTO mu_target t
   USING (SELECT 1 as key, 'merge1' as val) s
   ON s.key = t.key
   WHEN NOT MATCHED THEN
@@ -11,7 +11,7 @@ step merge1:
     UPDATE set key = t.key + 1, val = t.val || ' updated by ' || s.val;
 
 step c1: COMMIT;
-step select2: SELECT * FROM target;
+step select2: SELECT * FROM mu_target;
 key|val                     
 ---+------------------------
   2|setup1 updated by merge1
@@ -21,7 +21,7 @@ step c2: COMMIT;
 
 starting permutation: merge1 c1 merge2a select2 c2
 step merge1: 
-  MERGE INTO target t
+  MERGE INTO mu_target t
   USING (SELECT 1 as key, 'merge1' as val) s
   ON s.key = t.key
   WHEN NOT MATCHED THEN
@@ -31,7 +31,7 @@ step merge1:
 
 step c1: COMMIT;
 step merge2a: 
-  MERGE INTO target t
+  MERGE INTO mu_target t
   USING (SELECT 1 as key, 'merge2a' as val) s
   ON s.key = t.key
   WHEN NOT MATCHED THEN
@@ -48,7 +48,7 @@ UPDATE      |(2,"setup1 updated by merge1")|(3,"setup1 updated by merge1 source 
 INSERT      |                              |(1,merge2a)                                                 |  1|merge2a                                               
 (2 rows)
 
-step select2: SELECT * FROM target;
+step select2: SELECT * FROM mu_target;
 key|val                                                   
 ---+------------------------------------------------------
   3|setup1 updated by merge1 source not matched by merge2a
@@ -59,7 +59,7 @@ step c2: COMMIT;
 
 starting permutation: merge1 c1 explain_merge2a select2 c2
 step merge1: 
-  MERGE INTO target t
+  MERGE INTO mu_target t
   USING (SELECT 1 as key, 'merge1' as val) s
   ON s.key = t.key
   WHEN NOT MATCHED THEN
@@ -71,7 +71,7 @@ step c1: COMMIT;
 step explain_merge2a: 
   SELECT explain_filter($$
   EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF)
-  MERGE INTO target t
+  MERGE INTO mu_target t
   USING (SELECT 1 as key, 'merge2a' as val) s
   ON s.key = t.key
   WHEN NOT MATCHED THEN
@@ -83,18 +83,18 @@ step explain_merge2a:
   RETURNING merge_action(), old, new, t.*
   $$);
 
-explain_filter                                             
------------------------------------------------------------
-Merge on target t (actual rows=2.00 loops=1)               
-  Tuples: inserted=1 updated=1                             
-  ->  Hash Full Join (actual rows=2.00 loops=1)            
-        Hash Cond: (t.key = (1))                           
-        ->  Seq Scan on target t (actual rows=1.00 loops=1)
-        ->  Hash (actual rows=1.00 loops=1)                
-              ->  Result (actual rows=1.00 loops=1)        
+explain_filter                                                
+--------------------------------------------------------------
+Merge on mu_target t (actual rows=2.00 loops=1)               
+  Tuples: inserted=1 updated=1                                
+  ->  Hash Full Join (actual rows=2.00 loops=1)               
+        Hash Cond: (t.key = (1))                              
+        ->  Seq Scan on mu_target t (actual rows=1.00 loops=1)
+        ->  Hash (actual rows=1.00 loops=1)                   
+              ->  Result (actual rows=1.00 loops=1)           
 (7 rows)
 
-step select2: SELECT * FROM target;
+step select2: SELECT * FROM mu_target;
 key|val                                                   
 ---+------------------------------------------------------
   3|setup1 updated by merge1 source not matched by merge2a
@@ -126,7 +126,7 @@ step a2: ABORT;
 
 starting permutation: merge1 merge2a c1 select2 c2
 step merge1: 
-  MERGE INTO target t
+  MERGE INTO mu_target t
   USING (SELECT 1 as key, 'merge1' as val) s
   ON s.key = t.key
   WHEN NOT MATCHED THEN
@@ -135,7 +135,7 @@ step merge1:
     UPDATE set key = t.key + 1, val = t.val || ' updated by ' || s.val;
 
 step merge2a: 
-  MERGE INTO target t
+  MERGE INTO mu_target t
   USING (SELECT 1 as key, 'merge2a' as val) s
   ON s.key = t.key
   WHEN NOT MATCHED THEN
@@ -154,7 +154,7 @@ UPDATE      |(2,"setup1 updated by merge1")|(3,"setup1 updated by merge1 source 
 INSERT      |                              |(1,merge2a)                                                 |  1|merge2a                                               
 (2 rows)
 
-step select2: SELECT * FROM target;
+step select2: SELECT * FROM mu_target;
 key|val                                                   
 ---+------------------------------------------------------
   3|setup1 updated by merge1 source not matched by merge2a
@@ -165,7 +165,7 @@ step c2: COMMIT;
 
 starting permutation: merge1 explain_merge2a c1 select2 c2
 step merge1: 
-  MERGE INTO target t
+  MERGE INTO mu_target t
   USING (SELECT 1 as key, 'merge1' as val) s
   ON s.key = t.key
   WHEN NOT MATCHED THEN
@@ -176,7 +176,7 @@ step merge1:
 step explain_merge2a: 
   SELECT explain_filter($$
   EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF, BUFFERS OFF)
-  MERGE INTO target t
+  MERGE INTO mu_target t
   USING (SELECT 1 as key, 'merge2a' as val) s
   ON s.key = t.key
   WHEN NOT MATCHED THEN
@@ -190,18 +190,18 @@ step explain_merge2a:
  <waiting ...>
 step c1: COMMIT;
 step explain_merge2a: <... completed>
-explain_filter                                             
------------------------------------------------------------
-Merge on target t (actual rows=2.00 loops=1)               
-  Tuples: inserted=1 updated=1                             
-  ->  Hash Full Join (actual rows=2.00 loops=1)            
-        Hash Cond: (t.key = (1))                           
-        ->  Seq Scan on target t (actual rows=1.00 loops=1)
-        ->  Hash (actual rows=1.00 loops=1)                
-              ->  Result (actual rows=1.00 loops=1)        
+explain_filter                                                
+--------------------------------------------------------------
+Merge on mu_target t (actual rows=2.00 loops=1)               
+  Tuples: inserted=1 updated=1                                
+  ->  Hash Full Join (actual rows=2.00 loops=1)               
+        Hash Cond: (t.key = (1))                              
+        ->  Seq Scan on mu_target t (actual rows=1.00 loops=1)
+        ->  Hash (actual rows=1.00 loops=1)                   
+              ->  Result (actual rows=1.00 loops=1)           
 (7 rows)
 
-step select2: SELECT * FROM target;
+step select2: SELECT * FROM mu_target;
 key|val                                                   
 ---+------------------------------------------------------
   3|setup1 updated by merge1 source not matched by merge2a
@@ -212,7 +212,7 @@ step c2: COMMIT;
 
 starting permutation: merge1 merge2a a1 select2 c2
 step merge1: 
-  MERGE INTO target t
+  MERGE INTO mu_target t
   USING (SELECT 1 as key, 'merge1' as val) s
   ON s.key = t.key
   WHEN NOT MATCHED THEN
@@ -221,7 +221,7 @@ step merge1:
     UPDATE set key = t.key + 1, val = t.val || ' updated by ' || s.val;
 
 step merge2a: 
-  MERGE INTO target t
+  MERGE INTO mu_target t
   USING (SELECT 1 as key, 'merge2a' as val) s
   ON s.key = t.key
   WHEN NOT MATCHED THEN
@@ -239,7 +239,7 @@ merge_action|old       |new                            |key|val
 UPDATE      |(1,setup1)|(2,"setup1 updated by merge2a")|  2|setup1 updated by merge2a
 (1 row)
 
-step select2: SELECT * FROM target;
+step select2: SELECT * FROM mu_target;
 key|val                      
 ---+-------------------------
   2|setup1 updated by merge2a
@@ -249,7 +249,7 @@ step c2: COMMIT;
 
 starting permutation: merge1 merge2b c1 select2 c2
 step merge1: 
-  MERGE INTO target t
+  MERGE INTO mu_target t
   USING (SELECT 1 as key, 'merge1' as val) s
   ON s.key = t.key
   WHEN NOT MATCHED THEN
@@ -258,7 +258,7 @@ step merge1:
     UPDATE set key = t.key + 1, val = t.val || ' updated by ' || s.val;
 
 step merge2b: 
-  MERGE INTO target t
+  MERGE INTO mu_target t
   USING (SELECT 1 as key, 'merge2b' as val) s
   ON s.key = t.key
   WHEN NOT MATCHED THEN
@@ -268,7 +268,7 @@ step merge2b:
  <waiting ...>
 step c1: COMMIT;
 step merge2b: <... completed>
-step select2: SELECT * FROM target;
+step select2: SELECT * FROM mu_target;
 key|val                     
 ---+------------------------
   2|setup1 updated by merge1
@@ -279,7 +279,7 @@ step c2: COMMIT;
 
 starting permutation: merge1 merge2c c1 select2 c2
 step merge1: 
-  MERGE INTO target t
+  MERGE INTO mu_target t
   USING (SELECT 1 as key, 'merge1' as val) s
   ON s.key = t.key
   WHEN NOT MATCHED THEN
@@ -288,7 +288,7 @@ step merge1:
     UPDATE set key = t.key + 1, val = t.val || ' updated by ' || s.val;
 
 step merge2c: 
-  MERGE INTO target t
+  MERGE INTO mu_target t
   USING (SELECT 1 as key, 'merge2c' as val) s
   ON s.key = t.key AND t.key < 2
   WHEN NOT MATCHED THEN
@@ -298,7 +298,7 @@ step merge2c:
  <waiting ...>
 step c1: COMMIT;
 step merge2c: <... completed>
-step select2: SELECT * FROM target;
+step select2: SELECT * FROM mu_target;
 key|val                     
 ---+------------------------
   2|setup1 updated by merge1
@@ -373,21 +373,21 @@ step explain_pa_merge2a:
  <waiting ...>
 step c1: COMMIT;
 step explain_pa_merge2a: <... completed>
-explain_filter                                                    
-------------------------------------------------------------------
-Merge on pa_target t (actual rows=2.00 loops=1)                   
-  Merge on part1 t_1                                              
-  Merge on part2 t_2                                              
-  Merge on part3 t_3                                              
-  Tuples: updated=2                                               
-  ->  Hash Full Join (actual rows=2.00 loops=1)                   
-        Hash Cond: (t.key = (1))                                  
-        ->  Append (actual rows=2.00 loops=1)                     
-              ->  Seq Scan on part1 t_1 (actual rows=1.00 loops=1)
-              ->  Seq Scan on part2 t_2 (actual rows=1.00 loops=1)
-              ->  Seq Scan on part3 t_3 (actual rows=0.00 loops=1)
-        ->  Hash (actual rows=1.00 loops=1)                       
-              ->  Result (actual rows=1.00 loops=1)               
+explain_filter                                                       
+---------------------------------------------------------------------
+Merge on pa_target t (actual rows=2.00 loops=1)                      
+  Merge on mu_part1 t_1                                              
+  Merge on mu_part2 t_2                                              
+  Merge on mu_part3 t_3                                              
+  Tuples: updated=2                                                  
+  ->  Hash Full Join (actual rows=2.00 loops=1)                      
+        Hash Cond: (t.key = (1))                                     
+        ->  Append (actual rows=2.00 loops=1)                        
+              ->  Seq Scan on mu_part1 t_1 (actual rows=1.00 loops=1)
+              ->  Seq Scan on mu_part2 t_2 (actual rows=1.00 loops=1)
+              ->  Seq Scan on mu_part3 t_3 (actual rows=0.00 loops=1)
+        ->  Hash (actual rows=1.00 loops=1)                          
+              ->  Result (actual rows=1.00 loops=1)                  
 (13 rows)
 
 step pa_select2: SELECT * FROM pa_target;
@@ -552,7 +552,7 @@ step a2: ABORT;
 
 starting permutation: merge2a c1 s1beginrr merge1 c2
 step merge2a: 
-  MERGE INTO target t
+  MERGE INTO mu_target t
   USING (SELECT 1 as key, 'merge2a' as val) s
   ON s.key = t.key
   WHEN NOT MATCHED THEN
@@ -571,7 +571,7 @@ UPDATE      |(1,setup1)|(2,"setup1 updated by merge2a")|  2|setup1 updated by me
 step c1: COMMIT;
 step s1beginrr: BEGIN ISOLATION LEVEL REPEATABLE READ;
 step merge1: 
-  MERGE INTO target t
+  MERGE INTO mu_target t
   USING (SELECT 1 as key, 'merge1' as val) s
   ON s.key = t.key
   WHEN NOT MATCHED THEN

@@ -5,67 +5,67 @@
 
 setup
 {
-  CREATE TABLE a1 ();
-  CREATE TABLE a2 ();
-  CREATE TABLE a3 ();
-  CREATE TABLE a4 ();
-  CREATE TABLE a5 ();
-  CREATE TABLE a6 ();
-  CREATE TABLE a7 ();
-  CREATE TABLE a8 ();
+  CREATE TABLE dh_a1 ();
+  CREATE TABLE dh_a2 ();
+  CREATE TABLE dh_a3 ();
+  CREATE TABLE dh_a4 ();
+  CREATE TABLE dh_a5 ();
+  CREATE TABLE dh_a6 ();
+  CREATE TABLE dh_a7 ();
+  CREATE TABLE dh_a8 ();
 }
 
 teardown
 {
-  DROP TABLE a1, a2, a3, a4, a5, a6, a7, a8;
+  DROP TABLE dh_a1, dh_a2, dh_a3, dh_a4, dh_a5, dh_a6, dh_a7, dh_a8;
 }
 
 session s1
 setup		{ BEGIN; SET deadlock_timeout = '100s'; }
-step s1a1	{ LOCK TABLE a1; }
-step s1a2	{ LOCK TABLE a2; }
+step s1a1	{ LOCK TABLE dh_a1; }
+step s1a2	{ LOCK TABLE dh_a2; }
 step s1c	{ COMMIT; }
 
 session s2
 setup		{ BEGIN; SET deadlock_timeout = '100s'; }
-step s2a2	{ LOCK TABLE a2; }
-step s2a3	{ LOCK TABLE a3; }
+step s2a2	{ LOCK TABLE dh_a2; }
+step s2a3	{ LOCK TABLE dh_a3; }
 step s2c	{ COMMIT; }
 
 session s3
 setup		{ BEGIN; SET deadlock_timeout = '100s'; }
-step s3a3	{ LOCK TABLE a3; }
-step s3a4	{ LOCK TABLE a4; }
+step s3a3	{ LOCK TABLE dh_a3; }
+step s3a4	{ LOCK TABLE dh_a4; }
 step s3c	{ COMMIT; }
 
 session s4
 setup		{ BEGIN; SET deadlock_timeout = '100s'; }
-step s4a4	{ LOCK TABLE a4; }
-step s4a5	{ LOCK TABLE a5; }
+step s4a4	{ LOCK TABLE dh_a4; }
+step s4a5	{ LOCK TABLE dh_a5; }
 step s4c	{ COMMIT; }
 
 session s5
 setup		{ BEGIN; SET deadlock_timeout = '100s'; }
-step s5a5	{ LOCK TABLE a5; }
-step s5a6	{ LOCK TABLE a6; }
+step s5a5	{ LOCK TABLE dh_a5; }
+step s5a6	{ LOCK TABLE dh_a6; }
 step s5c	{ COMMIT; }
 
 session s6
 setup		{ BEGIN; SET deadlock_timeout = '100s'; }
-step s6a6	{ LOCK TABLE a6; }
-step s6a7	{ LOCK TABLE a7; }
+step s6a6	{ LOCK TABLE dh_a6; }
+step s6a7	{ LOCK TABLE dh_a7; }
 step s6c	{ COMMIT; }
 
 session s7
 setup		{ BEGIN; SET deadlock_timeout = '100s'; }
-step s7a7	{ LOCK TABLE a7; }
-step s7a8	{ LOCK TABLE a8; }
+step s7a7	{ LOCK TABLE dh_a7; }
+step s7a8	{ LOCK TABLE dh_a8; }
 step s7c	{ COMMIT; }
 
 session s8
 setup		{ BEGIN; SET deadlock_timeout = '10ms'; }
-step s8a8	{ LOCK TABLE a8; }
-step s8a1	{ LOCK TABLE a1; }
+step s8a8	{ LOCK TABLE dh_a8; }
+step s8a1	{ LOCK TABLE dh_a1; }
 step s8c	{ COMMIT; }
 
 # Note: when s8a1 detects the deadlock and fails, s7a8 is released, making
