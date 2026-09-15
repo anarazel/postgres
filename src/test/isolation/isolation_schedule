@@ -44,14 +44,14 @@ run: vacuum-no-cleanup-lock notwith: *
 run: freeze-the-dead notwith: *
 #   notwith *: index-only-bitmapscan: VACUUM must see no other snapshot in this database, runs alone
 run: index-only-bitmapscan notwith: *
-run: serializable-parallel-3 exclusive: serializable
-run: serializable-parallel exclusive: serializable
+run: serializable-parallel-3 exclusive: serializable workers: 2
+run: serializable-parallel exclusive: serializable workers: 1
 run: read-only-anomaly-2 exclusive: serializable
 run: read-only-anomaly-3 exclusive: serializable
-run: serializable-parallel-2 exclusive: serializable
+run: serializable-parallel-2 exclusive: serializable workers: 2
 run: temp-schema-cleanup exclusive: advisory_locks temp_schema
 run: insert-conflict-specconflict shared: stats exclusive: advisory_locks
-run: deadlock-parallel exclusive: advisory_locks
+run: deadlock-parallel exclusive: advisory_locks workers: 8
 run: stats exclusive: notify stats
 run: lock-update-delete shared: advisory_locks exclusive: advisory_0
 run: skip-locked-4 shared: advisory_locks exclusive: advisory_0
@@ -62,7 +62,7 @@ run: lock-committed-update lock-committed-keyupdate shared: advisory_locks seria
 run: alter-domain-validate shared: advisory_locks
 run: receipt-report shared: serializable
 run: alter-table-1 eval-plan-qual
-run: multiple-row-versions shared: serializable
+run: multiple-row-versions shared: serializable workers: 1
 run: eval-plan-qual-trigger alter-table-2
 run: predicate-gin two-ids predicate-gist shared: serializable
 run: merge-match-recheck alter-table-3

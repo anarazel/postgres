@@ -83,8 +83,8 @@ run: fast_default notwith: *
 run: event_trigger_login notwith: *
 #   notwith *: maintain_every: database-wide VACUUM or ANALYZE
 run: maintain_every notwith: *
-run: privileges shared: pg_largeobject_metadata stats exclusive: database_regression largeobjects
-run: collate.icu.utf8 exclusive: database_regression
+run: privileges shared: pg_largeobject_metadata stats exclusive: database_regression largeobjects workers: 1
+run: collate.icu.utf8 exclusive: database_regression workers: 2
 #   after collate.icu.utf8: dup(), mylt(), mylt2() ...
 run: collate.linux.utf8 after: collate.icu.utf8 exclusive: database_regression
 run: subscription shared: stats exclusive: database_regression
@@ -98,24 +98,24 @@ run: stats_rewrite shared: stats exclusive: twophase
 run: database create_index
 #   after create_index: public.tenk2_unique1
 #   notwith create_role: stats resets the counters of shared pg_shdescription, which create_role writes
-run: stats after: create_index notwith: create_role exclusive: stats
+run: stats after: create_index notwith: create_role exclusive: stats workers: 2
 run: create_misc
 #   after create_index: public.onek_unique1, public.onek_unique2, public.tenk1_hundred ...
 #   after create_misc: public.b_star
-run: join after: create_index create_misc
+run: join after: create_index create_misc workers: 4
 run: create_aggregate
 #   after create_index: public.onek_hundred, public.onek_unique1, public.tenk1_hundred ...
 #   after create_aggregate: aggf_trans(), aggfns(), aggfns_trans() ...
-run: aggregates after: create_index create_aggregate
+run: aggregates after: create_index create_aggregate workers: 4
 run: create_table
 #   after create_index: public.iix, public.onek_stringu1, public.onek_unique1 ...
-run: subselect after: create_index
+run: subselect after: create_index workers: 4
 #   after create_index: public.tenk1_hundred, public.tenk1_unique1
 run: groupingsets after: create_index
 #   after create_index: public.tenk1_thous_tenthous, public.tenk1_unique1, public.tenk1_unique2 ...
 run: union after: create_index
 #   after create_index: public.tenk1_hundred
-run: select_distinct after: create_index
+run: select_distinct after: create_index workers: 2
 #   after create_index: public.onek_stringu1, public.tenk1_unique1, public.tenk1_unique2 ...
 run: portals after: create_index
 #   after create_index: public.onek2_u1_prtl, public.onek2_u2_prtl, public.onek_stringu1 ...
@@ -165,8 +165,8 @@ run: alter_table after: constraints psql create_view portals_p2 errors notwith: 
 #   after psql: psql lists opfamily names with "\dAf btree int4"
 #   notwith subscription: select_parallel lists fdw names with "SELECT * FROM information_schema.foreign_data_wrapper_option"
 #   notwith stats_ext: select_parallel lists fdw names with "SELECT * FROM information_schema.foreign_data_wrapper_option"
-run: select_parallel after: psql notwith: subscription stats_ext shared: stats
-run: join_hash
+run: select_parallel after: psql notwith: subscription stats_ext shared: stats workers: 8
+run: join_hash workers: 2
 #   after create_index: public.tenk1_hundred, public.tenk1_thous_tenthous, public.tenk1_unique1 ...
 run: inherit after: create_index
 run: gist
@@ -176,22 +176,23 @@ run: create_procedure notwith: privileges stats
 run: indexing
 #   after create_index: public.tenk1_thous_tenthous, public.tenk1_unique1
 #   after create_procedure: create_procedure lists proc names with "\dfn public.*test*1"
-run: plpgsql after: create_index create_procedure
+run: plpgsql after: create_index create_procedure workers: 1
 #   notwith subscription: foreign_data lists fdw names with "SELECT * FROM information_schema.foreign_data_wrapper_option", foreign_data lists fdw names with "SELECT * FROM information_schema.foreign_data_wrappers ORDER", foreign_data lists fdw names with "SELECT fdwname, fdwhandler, fdwvalidator, fdwoptions FROM pg" ...
 #   notwith stats_ext: foreign_data lists fdw names with "SELECT * FROM information_schema.foreign_data_wrapper_option", foreign_data lists fdw names with "SELECT * FROM information_schema.foreign_data_wrappers ORDER", foreign_data lists fdw names with "SELECT fdwname, fdwhandler, fdwvalidator, fdwoptions FROM pg" ...
 #   notwith select_parallel: select_parallel lists fdw names with "SELECT * FROM information_schema.foreign_data_wrapper_option"
 run: foreign_data notwith: subscription stats_ext select_parallel
 run: tuplesort
 #   after create_table: public.part_p1, public.part_p1[], public.part_p2 ...
-run: partition_prune after: create_table
-run: gin partition_join
+run: partition_prune after: create_table workers: 2
+run: gin
+run: partition_join workers: 2
 #   after create_index: public.tenk1_thous_tenthous, public.tenk1_unique1, public.tenk1_unique2
 run: brin_multi after: create_index
-run: partition_aggregate
+run: partition_aggregate workers: 2
 #   notwith alter_table: public.mytype, public.mytype[]
 run: rangetypes notwith: alter_table
 #   after create_index: public.tenk1_thous_tenthous, public.tenk1_unique1, public.tenk1_unique2
-run: brin after: create_index
+run: brin after: create_index workers: 4
 run: generated_stored updatable_views
 #   notwith rangetypes: (public.textrange2 AS public.textmultirange2), public.textmultirange2(), public.textmultirange2(public.textrange2) ...
 run: without_overlaps notwith: rangetypes
@@ -202,16 +203,17 @@ run: generated_virtual notwith: generated_stored
 run: rules after: create_procedure
 run: hash_index
 #   after create_index: public.tenk1_hundred, public.tenk1_thous_tenthous
-run: btree_index after: create_index
+run: btree_index after: create_index workers: 4
 #   after create_view: interpt_pp(), public.iexit, public.interpt_pp(pg_catalog.path,pg_catalog.path) ...
 #   notwith inherit: regress_alice
 #   notwith rowsecurity: f_leak()
 run: select_views after: create_view notwith: inherit rowsecurity
-run: create_index_spgist spgist jsonb
+run: create_index_spgist spgist
+run: jsonb workers: 2
 #   notwith alter_table: public.hash_parted, public.hash_parted[], public.list_parted ...
 run: insert notwith: alter_table
 #   notwith create_view: create_view lists rel names with "SELECT relname FROM pg_class WHERE relname LIKE 'v%' AND rel"
-run: vacuum notwith: create_view shared: stats
+run: vacuum notwith: create_view shared: stats workers: 2
 #   after select_views: xml lists proc names with "WITH x AS (SELECT proname, proowner, procost::numeric, prona"
 #   notwith rowsecurity: xml lists proc names with "WITH x AS (SELECT proname, proowner, procost::numeric, prona"
 run: xml after: select_views notwith: rowsecurity
@@ -225,21 +227,26 @@ run: box
 #   notwith alter_table: public.part1, public.part1[], public.part2 ...
 #   notwith insert: public.part1, public.part1[], public.part2 ...
 run: merge notwith: privileges alter_table insert
-run: identity numeric index_including_gist stats_import
+run: identity
+run: numeric workers: 4
+run: index_including_gist stats_import
 #   notwith privileges: privileges grants MAINTAIN on a table to PUBLIC, which cluster reaches with a database-wide REPACK
 #   notwith rowsecurity: rowsecurity grants MAINTAIN on a table to PUBLIC, which cluster reaches with a database-wide REPACK
 run: cluster notwith: privileges rowsecurity
-run: timestamptz eager_aggregate matview
+run: timestamptz
+run: eager_aggregate workers: 4
+run: matview
 #   after rangetypes: arraymultirange(), arrayrange(), mydomainmultirange() ...
 #   notwith alter_table: public.mytype, public.mytype[], mytype()
 #   notwith without_overlaps: textrange2(), public.textrange2(pg_catalog.text,pg_catalog.text), public.textrange2(pg_catalog.text,pg_catalog.text,pg_catalog.text) ...
 run: multirangetypes after: rangetypes notwith: alter_table without_overlaps
-run: tsearch
+run: tsearch workers: 2
 #   notwith alter_table: public.hash_parted, public.hash_parted[], public.list_parted ...
 #   notwith partition_prune: public.list_part1, public.list_part1[]
 #   notwith insert: public.hash_parted, public.hash_parted[], public.hpart1 ...
 run: update notwith: alter_table partition_prune insert
-run: timestamp bitmapops
+run: timestamp
+run: bitmapops workers: 1
 #   after create_index: public.tenk1_thous_tenthous, public.tenk1_unique1, public.tenk1_unique2
 #   notwith create_view: create_view lists rel names with "SELECT relname FROM pg_class WHERE relname LIKE 'v%' AND rel"
 run: window after: create_index notwith: create_view
@@ -257,10 +264,12 @@ run: replica_identity notwith: constraints
 #   after create_index: public.tenk1_unique1
 #   after create_misc: public.a_star
 #   notwith create_view: create_view lists rel names with "SELECT relname FROM pg_class WHERE relname LIKE 'v%' AND rel"
-run: with after: create_index create_misc notwith: create_view
+run: with after: create_index create_misc notwith: create_view workers: 1
 #   after create_index: public.tenk1_hundred, public.tenk1_unique1
-run: memoize after: create_index
-run: enum vacuum_parallel create_type
+run: memoize after: create_index workers: 2
+run: enum
+run: vacuum_parallel workers: 4
+run: create_type
 #   after create_index: public.tenk1_unique1
 #   notwith domain: public.comptype, public.comptype[]
 run: arrays after: create_index notwith: domain
@@ -274,7 +283,7 @@ run: indirect_toast interval insert_conflict circle sequence
 run: collate notwith: collate.icu.utf8 collate.linux.utf8 create_view rangefuncs
 run: line path
 #   after create_index: public.tenk1_unique1, public.tenk1_unique2
-run: incremental_sort after: create_index
+run: incremental_sort after: create_index workers: 2
 run: lseg
 run: copy shared: stats
 run: compression date jsonb_jsonpath
@@ -298,7 +307,7 @@ run: brin_bloom after: create_index
 #   notwith rangetypes: (public.mydomainrange AS public.mydomainmultirange), public.mydomain, public.mydomain[] ...
 #   notwith multirangetypes: (public.mydomainrange AS public.mydomainmultirange), public.mydomain, public.mydomain[] ...
 run: sqljson notwith: rangetypes multirangetypes
-run: write_parallel
+run: write_parallel workers: 4
 #   after enum: public.rainbow, public.rainbow[], public.rgb ...
 run: sqljson_queryfuncs after: enum
 #   after create_index: public.tenk1_unique2
@@ -321,7 +330,8 @@ run: sqljson_jsontable
 run: alter_generic notwith: privileges select_parallel foreign_data
 #   after create_index: public.tenk1_unique1
 run: misc_functions after: create_index shared: stats
-run: tidrangescan create_schema password random mvcc
+run: tidrangescan workers: 4
+run: create_schema password random mvcc
 #   after misc: public.onek
 run: limit after: misc
 run: uuid
@@ -332,7 +342,7 @@ run: object_address notwith: subscription select_parallel foreign_data
 run: guc shared: stats
 run: predicate conversion partition_info tablesample
 #   after create_index: public.tenk1_thous_tenthous
-run: explain after: create_index
+run: explain after: create_index workers: 4
 run: equivclass lock
 #   after create_index: public.tenk1_unique1
 #   notwith create_view: create_view lists rel names with "SELECT relname FROM pg_class WHERE relname LIKE 'v%' AND rel"
@@ -362,7 +372,7 @@ run: pg_lsn copyencoding
 run: amutils after: brin hash_index create_index_spgist geometry notwith: create_am
 run: drop_operator dbsize oid unicode json_encoding char delete macaddr create_cast md5 jsonpath_encoding compression_pglz nls init_privs async create_function_c comments collate.windows.win1252 euc_kr
 #   notwith *: sanity_check: database-wide VACUUM or ANALYZE
-run: sanity_check filenode_mapping after: * notwith: *
+run: sanity_check filenode_mapping after: * notwith: * workers: 1
 #   notwith *: event_trigger: its event triggers would fire on the DDL of aggregates
 run: event_trigger oidjoins after: * notwith: *
 #   notwith privileges: foo()
