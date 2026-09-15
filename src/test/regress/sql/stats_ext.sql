@@ -49,11 +49,11 @@ CREATE STATISTICS tst ON a FROM (SELECT * FROM ext_stats_test) AS foo;
 CREATE STATISTICS tst ON a FROM ext_stats_test s TABLESAMPLE system (x);
 CREATE STATISTICS tst ON a FROM XMLTABLE('foo' PASSING 'bar' COLUMNS a text);
 CREATE STATISTICS tst ON a FROM JSON_TABLE(jsonb '123', '$' COLUMNS (item int));
-CREATE FUNCTION tftest(int) returns table(a int, b int) as $$
+CREATE FUNCTION stats_ext_tftest(int) returns table(a int, b int) as $$
 SELECT $1, $1+i FROM generate_series(1,5) g(i);
 $$ LANGUAGE sql IMMUTABLE STRICT;
-CREATE STATISTICS alt_stat2 ON a FROM tftest(1);
-DROP FUNCTION tftest;
+CREATE STATISTICS alt_stat2 ON a FROM stats_ext_tftest(1);
+DROP FUNCTION stats_ext_tftest;
 -- incorrect expressions
 CREATE STATISTICS tst ON (y) FROM ext_stats_test; -- single column reference
 CREATE STATISTICS tst ON y + z FROM ext_stats_test; -- missing parentheses
@@ -1691,21 +1691,21 @@ SELECT * FROM tststats.priv_test_tbl
   WHERE a = 1 and tststats.priv_test_tbl.* > (1, 1) is not null;
 
 -- Attempt to gain access using a leaky operator
-CREATE FUNCTION op_leak(int, int) RETURNS bool
-    AS 'BEGIN RAISE NOTICE ''op_leak => %, %'', $1, $2; RETURN $1 < $2; END'
+CREATE FUNCTION stats_ext_op_leak(int, int) RETURNS bool
+    AS 'BEGIN RAISE NOTICE ''stats_ext_op_leak => %, %'', $1, $2; RETURN $1 < $2; END'
     LANGUAGE plpgsql;
-CREATE OPERATOR <<< (procedure = op_leak, leftarg = int, rightarg = int,
+CREATE OPERATOR <<<< (procedure = stats_ext_op_leak, leftarg = int, rightarg = int,
                      restrict = scalarltsel);
-CREATE FUNCTION op_leak(record, record) RETURNS bool
-    AS 'BEGIN RAISE NOTICE ''op_leak => %, %'', $1, $2; RETURN $1 < $2; END'
+CREATE FUNCTION stats_ext_op_leak(record, record) RETURNS bool
+    AS 'BEGIN RAISE NOTICE ''stats_ext_op_leak => %, %'', $1, $2; RETURN $1 < $2; END'
     LANGUAGE plpgsql;
-CREATE OPERATOR <<< (procedure = op_leak, leftarg = record, rightarg = record,
+CREATE OPERATOR <<<< (procedure = stats_ext_op_leak, leftarg = record, rightarg = record,
                      restrict = scalarltsel);
-SELECT * FROM tststats.priv_test_tbl WHERE a <<< 0 AND b <<< 0; -- Permission denied
-SELECT * FROM tststats.priv_test_tbl WHERE a <<< 0 OR b <<< 0; -- Permission denied
+SELECT * FROM tststats.priv_test_tbl WHERE a <<<< 0 AND b <<<< 0; -- Permission denied
+SELECT * FROM tststats.priv_test_tbl WHERE a <<<< 0 OR b <<<< 0; -- Permission denied
 SELECT * FROM tststats.priv_test_tbl t
- WHERE a <<< 0 AND (b <<< 0 OR t.* <<< (1, 1) IS NOT NULL); -- Permission denied
-DELETE FROM tststats.priv_test_tbl WHERE a <<< 0 AND b <<< 0; -- Permission denied
+ WHERE a <<<< 0 AND (b <<<< 0 OR t.* <<<< (1, 1) IS NOT NULL); -- Permission denied
+DELETE FROM tststats.priv_test_tbl WHERE a <<<< 0 AND b <<<< 0; -- Permission denied
 
 -- Grant access via a security barrier view, but hide all data
 RESET SESSION AUTHORIZATION;
@@ -1715,11 +1715,11 @@ GRANT SELECT, DELETE ON tststats.priv_test_view TO regress_stats_user1;
 
 -- Should now have access via the view, but see nothing and leak nothing
 SET SESSION AUTHORIZATION regress_stats_user1;
-SELECT * FROM tststats.priv_test_view WHERE a <<< 0 AND b <<< 0; -- Should not leak
-SELECT * FROM tststats.priv_test_view WHERE a <<< 0 OR b <<< 0; -- Should not leak
+SELECT * FROM tststats.priv_test_view WHERE a <<<< 0 AND b <<<< 0; -- Should not leak
+SELECT * FROM tststats.priv_test_view WHERE a <<<< 0 OR b <<<< 0; -- Should not leak
 SELECT * FROM tststats.priv_test_view t
- WHERE a <<< 0 AND (b <<< 0 OR t.* <<< (1, 1) IS NOT NULL); -- Should not leak
-DELETE FROM tststats.priv_test_view WHERE a <<< 0 AND b <<< 0; -- Should not leak
+ WHERE a <<<< 0 AND (b <<<< 0 OR t.* <<<< (1, 1) IS NOT NULL); -- Should not leak
+DELETE FROM tststats.priv_test_view WHERE a <<<< 0 AND b <<<< 0; -- Should not leak
 
 -- Grant table access, but hide all data with RLS
 RESET SESSION AUTHORIZATION;
@@ -1729,11 +1729,11 @@ GRANT SELECT, DELETE ON tststats.priv_test_tbl TO regress_stats_user1;
 
 -- Should now have direct table access, but see nothing and leak nothing
 SET SESSION AUTHORIZATION regress_stats_user1;
-SELECT * FROM tststats.priv_test_tbl WHERE a <<< 0 AND b <<< 0; -- Should not leak
-SELECT * FROM tststats.priv_test_tbl WHERE a <<< 0 OR b <<< 0; -- Should not leak
+SELECT * FROM tststats.priv_test_tbl WHERE a <<<< 0 AND b <<<< 0; -- Should not leak
+SELECT * FROM tststats.priv_test_tbl WHERE a <<<< 0 OR b <<<< 0; -- Should not leak
 SELECT * FROM tststats.priv_test_tbl t
- WHERE a <<< 0 AND (b <<< 0 OR t.* <<< (1, 1) IS NOT NULL); -- Should not leak
-DELETE FROM tststats.priv_test_tbl WHERE a <<< 0 AND b <<< 0; -- Should not leak
+ WHERE a <<<< 0 AND (b <<<< 0 OR t.* <<<< (1, 1) IS NOT NULL); -- Should not leak
+DELETE FROM tststats.priv_test_tbl WHERE a <<<< 0 AND b <<<< 0; -- Should not leak
 
 -- Create plain inheritance parent table with no access permissions
 RESET SESSION AUTHORIZATION;
@@ -1742,11 +1742,11 @@ ALTER TABLE tststats.priv_test_tbl INHERIT tststats.priv_test_parent_tbl;
 
 -- Should not have access to parent, and should leak nothing
 SET SESSION AUTHORIZATION regress_stats_user1;
-SELECT * FROM tststats.priv_test_parent_tbl WHERE a <<< 0 AND b <<< 0; -- Permission denied
-SELECT * FROM tststats.priv_test_parent_tbl WHERE a <<< 0 OR b <<< 0; -- Permission denied
+SELECT * FROM tststats.priv_test_parent_tbl WHERE a <<<< 0 AND b <<<< 0; -- Permission denied
+SELECT * FROM tststats.priv_test_parent_tbl WHERE a <<<< 0 OR b <<<< 0; -- Permission denied
 SELECT * FROM tststats.priv_test_parent_tbl t
- WHERE a <<< 0 AND (b <<< 0 OR t.* <<< (1, 1) IS NOT NULL); -- Permission denied
-DELETE FROM tststats.priv_test_parent_tbl WHERE a <<< 0 AND b <<< 0; -- Permission denied
+ WHERE a <<<< 0 AND (b <<<< 0 OR t.* <<<< (1, 1) IS NOT NULL); -- Permission denied
+DELETE FROM tststats.priv_test_parent_tbl WHERE a <<<< 0 AND b <<<< 0; -- Permission denied
 
 -- Grant table access to parent, but hide all data with RLS
 RESET SESSION AUTHORIZATION;
@@ -1756,11 +1756,11 @@ GRANT SELECT, DELETE ON tststats.priv_test_parent_tbl TO regress_stats_user1;
 
 -- Should now have direct table access to parent, but see nothing and leak nothing
 SET SESSION AUTHORIZATION regress_stats_user1;
-SELECT * FROM tststats.priv_test_parent_tbl WHERE a <<< 0 AND b <<< 0; -- Should not leak
-SELECT * FROM tststats.priv_test_parent_tbl WHERE a <<< 0 OR b <<< 0; -- Should not leak
+SELECT * FROM tststats.priv_test_parent_tbl WHERE a <<<< 0 AND b <<<< 0; -- Should not leak
+SELECT * FROM tststats.priv_test_parent_tbl WHERE a <<<< 0 OR b <<<< 0; -- Should not leak
 SELECT * FROM tststats.priv_test_parent_tbl t
- WHERE a <<< 0 AND (b <<< 0 OR t.* <<< (1, 1) IS NOT NULL); -- Should not leak
-DELETE FROM tststats.priv_test_parent_tbl WHERE a <<< 0 AND b <<< 0; -- Should not leak
+ WHERE a <<<< 0 AND (b <<<< 0 OR t.* <<<< (1, 1) IS NOT NULL); -- Should not leak
+DELETE FROM tststats.priv_test_parent_tbl WHERE a <<<< 0 AND b <<<< 0; -- Should not leak
 
 -- privilege checks for pg_stats_ext and pg_stats_ext_exprs
 RESET SESSION AUTHORIZATION;
@@ -1822,10 +1822,10 @@ ALTER TABLE sts_sch1.tbl ALTER COLUMN a TYPE SMALLINT;
 ALTER TABLE sts_sch1.tbl ALTER COLUMN c SET EXPRESSION AS (a * 3);
 
 -- Tidy up
-DROP OPERATOR <<< (int, int);
-DROP FUNCTION op_leak(int, int);
-DROP OPERATOR <<< (record, record);
-DROP FUNCTION op_leak(record, record);
+DROP OPERATOR <<<< (int, int);
+DROP FUNCTION stats_ext_op_leak(int, int);
+DROP OPERATOR <<<< (record, record);
+DROP FUNCTION stats_ext_op_leak(record, record);
 RESET SESSION AUTHORIZATION;
 DROP TABLE stats_ext_tbl;
 DROP SCHEMA tststats CASCADE;

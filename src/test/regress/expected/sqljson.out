@@ -1745,7 +1745,7 @@ ERROR:  value for domain sqljson_char2 violates check constraint "sqljson_char2_
 -- to a crash in ExecBuildAggTrans() as mentioned in the bug report:
 -- https://postgr.es/m/18657-1b90ccce2b16bdb8@postgresql.org
 CREATE FUNCTION volatile_one() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql VOLATILE;
-CREATE FUNCTION stable_one() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql STABLE;
+CREATE FUNCTION sqljson_stable_one() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql STABLE;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT JSON_OBJECT('a': JSON_OBJECTAGG('b': volatile_one() RETURNING text) FORMAT JSON);
                                                  QUERY PLAN                                                  
 -------------------------------------------------------------------------------------------------------------
@@ -1760,15 +1760,15 @@ SELECT JSON_OBJECT('a': JSON_OBJECTAGG('b': volatile_one() RETURNING text) FORMA
  {"a" : { "b" : 1 }}
 (1 row)
 
-EXPLAIN (VERBOSE, COSTS OFF) SELECT JSON_OBJECT('a': JSON_OBJECTAGG('b': stable_one() RETURNING text) FORMAT JSON);
-                                                QUERY PLAN                                                 
------------------------------------------------------------------------------------------------------------
+EXPLAIN (VERBOSE, COSTS OFF) SELECT JSON_OBJECT('a': JSON_OBJECTAGG('b': sqljson_stable_one() RETURNING text) FORMAT JSON);
+                                                    QUERY PLAN                                                     
+-------------------------------------------------------------------------------------------------------------------
  Aggregate
-   Output: JSON_OBJECT('a' : JSON_OBJECTAGG('b' : stable_one() RETURNING text) FORMAT JSON RETURNING json)
+   Output: JSON_OBJECT('a' : JSON_OBJECTAGG('b' : sqljson_stable_one() RETURNING text) FORMAT JSON RETURNING json)
    ->  Result
 (3 rows)
 
-SELECT JSON_OBJECT('a': JSON_OBJECTAGG('b': stable_one() RETURNING text) FORMAT JSON);
+SELECT JSON_OBJECT('a': JSON_OBJECTAGG('b': sqljson_stable_one() RETURNING text) FORMAT JSON);
      json_object     
 ---------------------
  {"a" : { "b" : 1 }}
@@ -1788,7 +1788,7 @@ SELECT JSON_OBJECT('a': JSON_OBJECTAGG('b': 1 RETURNING text) FORMAT JSON);
  {"a" : { "b" : 1 }}
 (1 row)
 
-DROP FUNCTION volatile_one, stable_one;
+DROP FUNCTION volatile_one, sqljson_stable_one;
 -- Test deparsing of JSON aggregates that are computed below a WindowAgg
 -- node.
 EXPLAIN (VERBOSE, COSTS OFF)

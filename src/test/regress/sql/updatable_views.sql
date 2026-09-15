@@ -1625,19 +1625,19 @@ SELECT * FROM base_tbl;
 DROP TABLE base_tbl CASCADE;
 
 -- security barrier view based on inheritance set
-CREATE TABLE t1 (a int, b float, c text);
-CREATE INDEX t1_a_idx ON t1(a);
-INSERT INTO t1
-SELECT i,i,'t1' FROM generate_series(1,10) g(i);
-ANALYZE t1;
+CREATE TABLE uv_t1 (a int, b float, c text);
+CREATE INDEX uv_t1_a_idx ON uv_t1(a);
+INSERT INTO uv_t1
+SELECT i,i,'uv_t1' FROM generate_series(1,10) g(i);
+ANALYZE uv_t1;
 
-CREATE TABLE t11 (d text) INHERITS (t1);
+CREATE TABLE t11 (d text) INHERITS (uv_t1);
 CREATE INDEX t11_a_idx ON t11(a);
 INSERT INTO t11
 SELECT i,i,'t11','t11d' FROM generate_series(1,10) g(i);
 ANALYZE t11;
 
-CREATE TABLE t12 (e int[]) INHERITS (t1);
+CREATE TABLE t12 (e int[]) INHERITS (uv_t1);
 CREATE INDEX t12_a_idx ON t12(a);
 INSERT INTO t12
 SELECT i,i,'t12','{1,2}'::int[] FROM generate_series(1,10) g(i);
@@ -1650,9 +1650,9 @@ SELECT i,i,'t111','t111d','{1,1,1}'::int[] FROM generate_series(1,10) g(i);
 ANALYZE t111;
 
 CREATE VIEW v1 WITH (security_barrier=true) AS
-SELECT *, (SELECT d FROM t11 WHERE t11.a = t1.a LIMIT 1) AS d
-FROM t1
-WHERE a > 5 AND EXISTS(SELECT 1 FROM t12 WHERE t12.a = t1.a);
+SELECT *, (SELECT d FROM t11 WHERE t11.a = uv_t1.a LIMIT 1) AS d
+FROM uv_t1
+WHERE a > 5 AND EXISTS(SELECT 1 FROM t12 WHERE t12.a = uv_t1.a);
 
 SELECT * FROM v1 WHERE a=3; -- should not see anything
 SELECT * FROM v1 WHERE a=8;
@@ -1662,7 +1662,7 @@ UPDATE v1 SET a=100 WHERE snoop(a) AND leakproof(a) AND a < 7 AND a != 6;
 UPDATE v1 SET a=100 WHERE snoop(a) AND leakproof(a) AND a < 7 AND a != 6;
 
 SELECT * FROM v1 WHERE a=100; -- Nothing should have been changed to 100
-SELECT * FROM t1 WHERE a=100; -- Nothing should have been changed to 100
+SELECT * FROM uv_t1 WHERE a=100; -- Nothing should have been changed to 100
 
 EXPLAIN (VERBOSE, COSTS OFF)
 UPDATE v1 SET a=a+1 WHERE snoop(a) AND leakproof(a) AND a = 8;
@@ -1672,9 +1672,9 @@ SELECT * FROM v1 WHERE b=8;
 
 DELETE FROM v1 WHERE snoop(a) AND leakproof(a); -- should not delete everything, just where a>5
 
-TABLE t1; -- verify all a<=5 are intact
+TABLE uv_t1; -- verify all a<=5 are intact
 
-DROP TABLE t1, t11, t12, t111 CASCADE;
+DROP TABLE uv_t1, t11, t12, t111 CASCADE;
 DROP FUNCTION snoop(anyelement);
 DROP FUNCTION leakproof(anyelement);
 
@@ -1726,18 +1726,18 @@ DROP TABLE tx3;
 -- Test handling of vars from correlated subqueries in quals from outer
 -- security barrier views, per bug #13988
 --
-CREATE TABLE t1 (a int, b text, c int);
-INSERT INTO t1 VALUES (1, 'one', 10);
+CREATE TABLE uv_t1 (a int, b text, c int);
+INSERT INTO uv_t1 VALUES (1, 'one', 10);
 
-CREATE TABLE t2 (cc int);
-INSERT INTO t2 VALUES (10), (20);
+CREATE TABLE uv_t2 (cc int);
+INSERT INTO uv_t2 VALUES (10), (20);
 
 CREATE VIEW v1 WITH (security_barrier = true) AS
-  SELECT * FROM t1 WHERE (a > 0)
+  SELECT * FROM uv_t1 WHERE (a > 0)
   WITH CHECK OPTION;
 
 CREATE VIEW v2 WITH (security_barrier = true) AS
-  SELECT * FROM v1 WHERE EXISTS (SELECT 1 FROM t2 WHERE t2.cc = v1.c)
+  SELECT * FROM v1 WHERE EXISTS (SELECT 1 FROM uv_t2 WHERE uv_t2.cc = v1.c)
   WITH CHECK OPTION;
 
 INSERT INTO v2 VALUES (2, 'two', 20); -- ok
@@ -1753,17 +1753,17 @@ SELECT * FROM v2;
 
 DROP VIEW v2;
 DROP VIEW v1;
-DROP TABLE t2;
-DROP TABLE t1;
+DROP TABLE uv_t2;
+DROP TABLE uv_t1;
 
 --
 -- Test sub-select in nested security barrier views, per bug #17972
 --
-CREATE TABLE t1 (a int);
+CREATE TABLE uv_t1 (a int);
 CREATE VIEW v1 WITH (security_barrier = true) AS
-  SELECT * FROM t1;
+  SELECT * FROM uv_t1;
 CREATE RULE v1_upd_rule AS ON UPDATE TO v1 DO INSTEAD
-  UPDATE t1 SET a = NEW.a WHERE a = OLD.a;
+  UPDATE uv_t1 SET a = NEW.a WHERE a = OLD.a;
 CREATE VIEW v2 WITH (security_barrier = true) AS
   SELECT * FROM v1 WHERE EXISTS (SELECT 1);
 
@@ -1771,21 +1771,21 @@ EXPLAIN (COSTS OFF) UPDATE v2 SET a = 1;
 
 DROP VIEW v2;
 DROP VIEW v1;
-DROP TABLE t1;
+DROP TABLE uv_t1;
 
 --
 -- Test CREATE OR REPLACE VIEW turning a non-updatable view into an
 -- auto-updatable view and adding check options in a single step
 --
-CREATE TABLE t1 (a int, b text);
+CREATE TABLE uv_t1 (a int, b text);
 CREATE VIEW v1 AS SELECT null::int AS a;
-CREATE OR REPLACE VIEW v1 AS SELECT * FROM t1 WHERE a > 0 WITH CHECK OPTION;
+CREATE OR REPLACE VIEW v1 AS SELECT * FROM uv_t1 WHERE a > 0 WITH CHECK OPTION;
 
 INSERT INTO v1 VALUES (1, 'ok'); -- ok
 INSERT INTO v1 VALUES (-1, 'invalid'); -- should fail
 
 DROP VIEW v1;
-DROP TABLE t1;
+DROP TABLE uv_t1;
 
 -- check that an auto-updatable view on a partitioned table works correctly
 create table uv_pt (a int, b int, v varchar) partition by range (a, b);

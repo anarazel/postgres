@@ -730,28 +730,28 @@ ROLLBACK;
 
 -- check error reporting with column privs
 SET SESSION AUTHORIZATION regress_priv_user1;
-CREATE TABLE t1 (c1 int, c2 int, c3 int check (c3 < 5), primary key (c1, c2));
-GRANT SELECT (c1) ON t1 TO regress_priv_user2;
-GRANT INSERT (c1, c2, c3) ON t1 TO regress_priv_user2;
-GRANT UPDATE (c1, c2, c3) ON t1 TO regress_priv_user2;
+CREATE TABLE priv_t1 (c1 int, c2 int, c3 int check (c3 < 5), primary key (c1, c2));
+GRANT SELECT (c1) ON priv_t1 TO regress_priv_user2;
+GRANT INSERT (c1, c2, c3) ON priv_t1 TO regress_priv_user2;
+GRANT UPDATE (c1, c2, c3) ON priv_t1 TO regress_priv_user2;
 
 -- seed data
-INSERT INTO t1 VALUES (1, 1, 1);
-INSERT INTO t1 VALUES (1, 2, 1);
-INSERT INTO t1 VALUES (2, 1, 2);
-INSERT INTO t1 VALUES (2, 2, 2);
-INSERT INTO t1 VALUES (3, 1, 3);
+INSERT INTO priv_t1 VALUES (1, 1, 1);
+INSERT INTO priv_t1 VALUES (1, 2, 1);
+INSERT INTO priv_t1 VALUES (2, 1, 2);
+INSERT INTO priv_t1 VALUES (2, 2, 2);
+INSERT INTO priv_t1 VALUES (3, 1, 3);
 
 SET SESSION AUTHORIZATION regress_priv_user2;
-INSERT INTO t1 (c1, c2) VALUES (1, 1); -- fail, but row not shown
-UPDATE t1 SET c2 = 1; -- fail, but row not shown
-INSERT INTO t1 (c1, c2) VALUES (null, null); -- fail, but see columns being inserted
-INSERT INTO t1 (c3) VALUES (null); -- fail, but see columns being inserted or have SELECT
-INSERT INTO t1 (c1) VALUES (5); -- fail, but see columns being inserted or have SELECT
-UPDATE t1 SET c3 = 10; -- fail, but see columns with SELECT rights, or being modified
+INSERT INTO priv_t1 (c1, c2) VALUES (1, 1); -- fail, but row not shown
+UPDATE priv_t1 SET c2 = 1; -- fail, but row not shown
+INSERT INTO priv_t1 (c1, c2) VALUES (null, null); -- fail, but see columns being inserted
+INSERT INTO priv_t1 (c3) VALUES (null); -- fail, but see columns being inserted or have SELECT
+INSERT INTO priv_t1 (c1) VALUES (5); -- fail, but see columns being inserted or have SELECT
+UPDATE priv_t1 SET c3 = 10; -- fail, but see columns with SELECT rights, or being modified
 
 SET SESSION AUTHORIZATION regress_priv_user1;
-DROP TABLE t1;
+DROP TABLE priv_t1;
 
 -- check error reporting with column privs on a partitioned table
 CREATE TABLE errtst(a text, b text NOT NULL, c text, secret1 text, secret2 text) PARTITION BY LIST (a);

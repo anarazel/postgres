@@ -859,12 +859,12 @@ alter table parted_pk_detach_test1 drop constraint parted_pk_detach_test1_pkey;	
 alter table parted_pk_detach_test detach partition parted_pk_detach_test1;
 alter table parted_pk_detach_test1 drop constraint parted_pk_detach_test1_pkey;
 drop table parted_pk_detach_test, parted_pk_detach_test1;
-create table parted_uniq_detach_test (a int unique) partition by list (a);
-create table parted_uniq_detach_test1 partition of parted_uniq_detach_test for values in (1);
-alter table parted_uniq_detach_test1 drop constraint parted_uniq_detach_test1_a_key;	-- should fail
-alter table parted_uniq_detach_test detach partition parted_uniq_detach_test1;
-alter table parted_uniq_detach_test1 drop constraint parted_uniq_detach_test1_a_key;
-drop table parted_uniq_detach_test, parted_uniq_detach_test1;
+create table parted_detach_uniq_test (a int unique) partition by list (a);
+create table parted_detach_uniq_test1 partition of parted_detach_uniq_test for values in (1);
+alter table parted_detach_uniq_test1 drop constraint parted_detach_uniq_test1_a_key;	-- should fail
+alter table parted_detach_uniq_test detach partition parted_detach_uniq_test1;
+alter table parted_detach_uniq_test1 drop constraint parted_detach_uniq_test1_a_key;
+drop table parted_detach_uniq_test, parted_detach_uniq_test1;
 
 -- check that dropping a column takes with it any partitioned indexes
 -- depending on it.

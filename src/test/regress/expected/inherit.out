@@ -3170,61 +3170,61 @@ NOTICE:  drop cascades to table inh_temp_child_2
 -- Check that constraint exclusion works correctly with partitions using
 -- implicit constraints generated from the partition bound information.
 --
-create table list_parted (
+create table inh_list_parted (
 	a	varchar
 ) partition by list (a);
-create table part_ab_cd partition of list_parted for values in ('ab', 'cd');
-create table part_ef_gh partition of list_parted for values in ('ef', 'gh');
-create table part_null_xy partition of list_parted for values in (null, 'xy');
-explain (costs off) select * from list_parted;
-                  QUERY PLAN                  
-----------------------------------------------
+create table part_ab_cd partition of inh_list_parted for values in ('ab', 'cd');
+create table part_ef_gh partition of inh_list_parted for values in ('ef', 'gh');
+create table part_null_xy partition of inh_list_parted for values in (null, 'xy');
+explain (costs off) select * from inh_list_parted;
+                    QUERY PLAN                    
+--------------------------------------------------
  Append
-   ->  Seq Scan on part_ab_cd list_parted_1
-   ->  Seq Scan on part_ef_gh list_parted_2
-   ->  Seq Scan on part_null_xy list_parted_3
+   ->  Seq Scan on part_ab_cd inh_list_parted_1
+   ->  Seq Scan on part_ef_gh inh_list_parted_2
+   ->  Seq Scan on part_null_xy inh_list_parted_3
 (4 rows)
 
-explain (costs off) select * from list_parted where a is null;
-              QUERY PLAN              
---------------------------------------
- Seq Scan on part_null_xy list_parted
+explain (costs off) select * from inh_list_parted where a is null;
+                QUERY PLAN                
+------------------------------------------
+ Seq Scan on part_null_xy inh_list_parted
    Filter: (a IS NULL)
 (2 rows)
 
-explain (costs off) select * from list_parted where a is not null;
-                  QUERY PLAN                  
-----------------------------------------------
+explain (costs off) select * from inh_list_parted where a is not null;
+                    QUERY PLAN                    
+--------------------------------------------------
  Append
-   ->  Seq Scan on part_ab_cd list_parted_1
+   ->  Seq Scan on part_ab_cd inh_list_parted_1
          Filter: (a IS NOT NULL)
-   ->  Seq Scan on part_ef_gh list_parted_2
+   ->  Seq Scan on part_ef_gh inh_list_parted_2
          Filter: (a IS NOT NULL)
-   ->  Seq Scan on part_null_xy list_parted_3
+   ->  Seq Scan on part_null_xy inh_list_parted_3
          Filter: (a IS NOT NULL)
 (7 rows)
 
-explain (costs off) select * from list_parted where a in ('ab', 'cd', 'ef');
+explain (costs off) select * from inh_list_parted where a in ('ab', 'cd', 'ef');
                         QUERY PLAN                        
 ----------------------------------------------------------
  Append
-   ->  Seq Scan on part_ab_cd list_parted_1
+   ->  Seq Scan on part_ab_cd inh_list_parted_1
          Filter: ((a)::text = ANY ('{ab,cd,ef}'::text[]))
-   ->  Seq Scan on part_ef_gh list_parted_2
+   ->  Seq Scan on part_ef_gh inh_list_parted_2
          Filter: ((a)::text = ANY ('{ab,cd,ef}'::text[]))
 (5 rows)
 
-explain (costs off) select * from list_parted where a = 'ab' or a in (null, 'cd');
+explain (costs off) select * from inh_list_parted where a = 'ab' or a in (null, 'cd');
                                    QUERY PLAN                                    
 ---------------------------------------------------------------------------------
- Seq Scan on part_ab_cd list_parted
+ Seq Scan on part_ab_cd inh_list_parted
    Filter: (((a)::text = 'ab'::text) OR ((a)::text = ANY ('{NULL,cd}'::text[])))
 (2 rows)
 
-explain (costs off) select * from list_parted where a = 'ab';
-             QUERY PLAN             
-------------------------------------
- Seq Scan on part_ab_cd list_parted
+explain (costs off) select * from inh_list_parted where a = 'ab';
+               QUERY PLAN               
+----------------------------------------
+ Seq Scan on part_ab_cd inh_list_parted
    Filter: ((a)::text = 'ab'::text)
 (2 rows)
 
@@ -3349,108 +3349,108 @@ explain (costs off) select * from range_list_parted where a >= 30;
          Filter: (a >= 30)
 (7 rows)
 
-drop table list_parted;
+drop table inh_list_parted;
 drop table range_list_parted;
 -- check that constraint exclusion is able to cope with the partition
 -- constraint emitted for multi-column range partitioned tables
-create table mcrparted (a int, b int, c int) partition by range (a, abs(b), c);
-create table mcrparted_def partition of mcrparted default;
-create table mcrparted0 partition of mcrparted for values from (minvalue, minvalue, minvalue) to (1, 1, 1);
-create table mcrparted1 partition of mcrparted for values from (1, 1, 1) to (10, 5, 10);
-create table mcrparted2 partition of mcrparted for values from (10, 5, 10) to (10, 10, 10);
-create table mcrparted3 partition of mcrparted for values from (11, 1, 1) to (20, 10, 10);
-create table mcrparted4 partition of mcrparted for values from (20, 10, 10) to (20, 20, 20);
-create table mcrparted5 partition of mcrparted for values from (20, 20, 20) to (maxvalue, maxvalue, maxvalue);
-explain (costs off) select * from mcrparted where a = 0;	-- scans mcrparted0, mcrparted_def
-                 QUERY PLAN                  
----------------------------------------------
+create table inh_mcrparted (a int, b int, c int) partition by range (a, abs(b), c);
+create table inh_mcrparted_def partition of inh_mcrparted default;
+create table inh_mcrparted0 partition of inh_mcrparted for values from (minvalue, minvalue, minvalue) to (1, 1, 1);
+create table inh_mcrparted1 partition of inh_mcrparted for values from (1, 1, 1) to (10, 5, 10);
+create table inh_mcrparted2 partition of inh_mcrparted for values from (10, 5, 10) to (10, 10, 10);
+create table inh_mcrparted3 partition of inh_mcrparted for values from (11, 1, 1) to (20, 10, 10);
+create table inh_mcrparted4 partition of inh_mcrparted for values from (20, 10, 10) to (20, 20, 20);
+create table inh_mcrparted5 partition of inh_mcrparted for values from (20, 20, 20) to (maxvalue, maxvalue, maxvalue);
+explain (costs off) select * from inh_mcrparted where a = 0;	-- scans inh_mcrparted0, inh_mcrparted_def
+                     QUERY PLAN                      
+-----------------------------------------------------
  Append
-   ->  Seq Scan on mcrparted0 mcrparted_1
+   ->  Seq Scan on inh_mcrparted0 inh_mcrparted_1
          Filter: (a = 0)
-   ->  Seq Scan on mcrparted_def mcrparted_2
+   ->  Seq Scan on inh_mcrparted_def inh_mcrparted_2
          Filter: (a = 0)
 (5 rows)
 
-explain (costs off) select * from mcrparted where a = 10 and abs(b) < 5;	-- scans mcrparted1, mcrparted_def
-                 QUERY PLAN                  
----------------------------------------------
+explain (costs off) select * from inh_mcrparted where a = 10 and abs(b) < 5;	-- scans inh_mcrparted1, inh_mcrparted_def
+                     QUERY PLAN                      
+-----------------------------------------------------
  Append
-   ->  Seq Scan on mcrparted1 mcrparted_1
+   ->  Seq Scan on inh_mcrparted1 inh_mcrparted_1
          Filter: ((a = 10) AND (abs(b) < 5))
-   ->  Seq Scan on mcrparted_def mcrparted_2
+   ->  Seq Scan on inh_mcrparted_def inh_mcrparted_2
          Filter: ((a = 10) AND (abs(b) < 5))
 (5 rows)
 
-explain (costs off) select * from mcrparted where a = 10 and abs(b) = 5;	-- scans mcrparted1, mcrparted2, mcrparted_def
-                 QUERY PLAN                  
----------------------------------------------
+explain (costs off) select * from inh_mcrparted where a = 10 and abs(b) = 5;	-- scans inh_mcrparted1, inh_mcrparted2, inh_mcrparted_def
+                     QUERY PLAN                      
+-----------------------------------------------------
  Append
-   ->  Seq Scan on mcrparted1 mcrparted_1
+   ->  Seq Scan on inh_mcrparted1 inh_mcrparted_1
          Filter: ((a = 10) AND (abs(b) = 5))
-   ->  Seq Scan on mcrparted2 mcrparted_2
+   ->  Seq Scan on inh_mcrparted2 inh_mcrparted_2
          Filter: ((a = 10) AND (abs(b) = 5))
-   ->  Seq Scan on mcrparted_def mcrparted_3
+   ->  Seq Scan on inh_mcrparted_def inh_mcrparted_3
          Filter: ((a = 10) AND (abs(b) = 5))
 (7 rows)
 
-explain (costs off) select * from mcrparted where abs(b) = 5;	-- scans all partitions
-                 QUERY PLAN                  
----------------------------------------------
- Append
-   ->  Seq Scan on mcrparted0 mcrparted_1
-         Filter: (abs(b) = 5)
-   ->  Seq Scan on mcrparted1 mcrparted_2
-         Filter: (abs(b) = 5)
-   ->  Seq Scan on mcrparted2 mcrparted_3
-         Filter: (abs(b) = 5)
-   ->  Seq Scan on mcrparted3 mcrparted_4
-         Filter: (abs(b) = 5)
-   ->  Seq Scan on mcrparted4 mcrparted_5
-         Filter: (abs(b) = 5)
-   ->  Seq Scan on mcrparted5 mcrparted_6
-         Filter: (abs(b) = 5)
-   ->  Seq Scan on mcrparted_def mcrparted_7
-         Filter: (abs(b) = 5)
-(15 rows)
-
-explain (costs off) select * from mcrparted where a > -1;	-- scans all partitions
-                 QUERY PLAN                  
----------------------------------------------
- Append
-   ->  Seq Scan on mcrparted0 mcrparted_1
-         Filter: (a > '-1'::integer)
-   ->  Seq Scan on mcrparted1 mcrparted_2
-         Filter: (a > '-1'::integer)
-   ->  Seq Scan on mcrparted2 mcrparted_3
-         Filter: (a > '-1'::integer)
-   ->  Seq Scan on mcrparted3 mcrparted_4
-         Filter: (a > '-1'::integer)
-   ->  Seq Scan on mcrparted4 mcrparted_5
-         Filter: (a > '-1'::integer)
-   ->  Seq Scan on mcrparted5 mcrparted_6
-         Filter: (a > '-1'::integer)
-   ->  Seq Scan on mcrparted_def mcrparted_7
-         Filter: (a > '-1'::integer)
-(15 rows)
-
-explain (costs off) select * from mcrparted where a = 20 and abs(b) = 10 and c > 10;	-- scans mcrparted4
+explain (costs off) select * from inh_mcrparted where abs(b) = 5;	-- scans all partitions
                      QUERY PLAN                      
 -----------------------------------------------------
- Seq Scan on mcrparted4 mcrparted
+ Append
+   ->  Seq Scan on inh_mcrparted0 inh_mcrparted_1
+         Filter: (abs(b) = 5)
+   ->  Seq Scan on inh_mcrparted1 inh_mcrparted_2
+         Filter: (abs(b) = 5)
+   ->  Seq Scan on inh_mcrparted2 inh_mcrparted_3
+         Filter: (abs(b) = 5)
+   ->  Seq Scan on inh_mcrparted3 inh_mcrparted_4
+         Filter: (abs(b) = 5)
+   ->  Seq Scan on inh_mcrparted4 inh_mcrparted_5
+         Filter: (abs(b) = 5)
+   ->  Seq Scan on inh_mcrparted5 inh_mcrparted_6
+         Filter: (abs(b) = 5)
+   ->  Seq Scan on inh_mcrparted_def inh_mcrparted_7
+         Filter: (abs(b) = 5)
+(15 rows)
+
+explain (costs off) select * from inh_mcrparted where a > -1;	-- scans all partitions
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Append
+   ->  Seq Scan on inh_mcrparted0 inh_mcrparted_1
+         Filter: (a > '-1'::integer)
+   ->  Seq Scan on inh_mcrparted1 inh_mcrparted_2
+         Filter: (a > '-1'::integer)
+   ->  Seq Scan on inh_mcrparted2 inh_mcrparted_3
+         Filter: (a > '-1'::integer)
+   ->  Seq Scan on inh_mcrparted3 inh_mcrparted_4
+         Filter: (a > '-1'::integer)
+   ->  Seq Scan on inh_mcrparted4 inh_mcrparted_5
+         Filter: (a > '-1'::integer)
+   ->  Seq Scan on inh_mcrparted5 inh_mcrparted_6
+         Filter: (a > '-1'::integer)
+   ->  Seq Scan on inh_mcrparted_def inh_mcrparted_7
+         Filter: (a > '-1'::integer)
+(15 rows)
+
+explain (costs off) select * from inh_mcrparted where a = 20 and abs(b) = 10 and c > 10;	-- scans inh_mcrparted4
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Seq Scan on inh_mcrparted4 inh_mcrparted
    Filter: ((c > 10) AND (a = 20) AND (abs(b) = 10))
 (2 rows)
 
-explain (costs off) select * from mcrparted where a = 20 and c > 20; -- scans mcrparted3, mcrparte4, mcrparte5, mcrparted_def
-                 QUERY PLAN                  
----------------------------------------------
+explain (costs off) select * from inh_mcrparted where a = 20 and c > 20; -- scans inh_mcrparted3, inh_mcrparted4, inh_mcrparted5, inh_mcrparted_def
+                     QUERY PLAN                      
+-----------------------------------------------------
  Append
-   ->  Seq Scan on mcrparted3 mcrparted_1
+   ->  Seq Scan on inh_mcrparted3 inh_mcrparted_1
          Filter: ((c > 20) AND (a = 20))
-   ->  Seq Scan on mcrparted4 mcrparted_2
+   ->  Seq Scan on inh_mcrparted4 inh_mcrparted_2
          Filter: ((c > 20) AND (a = 20))
-   ->  Seq Scan on mcrparted5 mcrparted_3
+   ->  Seq Scan on inh_mcrparted5 inh_mcrparted_3
          Filter: ((c > 20) AND (a = 20))
-   ->  Seq Scan on mcrparted_def mcrparted_4
+   ->  Seq Scan on inh_mcrparted_def inh_mcrparted_4
          Filter: ((c > 20) AND (a = 20))
 (9 rows)
 
@@ -3484,100 +3484,100 @@ select min(a), max(a) from parted_minmax where b = '12345';
 drop table parted_minmax;
 -- Test code that uses Append nodes in place of MergeAppend when the
 -- partition ordering matches the desired ordering.
-create index mcrparted_a_abs_c_idx on mcrparted (a, abs(b), c);
+create index inh_mcrparted_a_abs_c_idx on inh_mcrparted (a, abs(b), c);
 -- MergeAppend must be used when a default partition exists
-explain (costs off) select * from mcrparted order by a, abs(b), c;
-                                   QUERY PLAN                                    
----------------------------------------------------------------------------------
+explain (costs off) select * from inh_mcrparted order by a, abs(b), c;
+                                         QUERY PLAN                                          
+---------------------------------------------------------------------------------------------
  Merge Append
-   Sort Key: mcrparted.a, (abs(mcrparted.b)), mcrparted.c
-   ->  Index Scan using mcrparted0_a_abs_b_c_idx on mcrparted0 mcrparted_1
-   ->  Index Scan using mcrparted1_a_abs_b_c_idx on mcrparted1 mcrparted_2
-   ->  Index Scan using mcrparted2_a_abs_b_c_idx on mcrparted2 mcrparted_3
-   ->  Index Scan using mcrparted3_a_abs_b_c_idx on mcrparted3 mcrparted_4
-   ->  Index Scan using mcrparted4_a_abs_b_c_idx on mcrparted4 mcrparted_5
-   ->  Index Scan using mcrparted5_a_abs_b_c_idx on mcrparted5 mcrparted_6
-   ->  Index Scan using mcrparted_def_a_abs_b_c_idx on mcrparted_def mcrparted_7
+   Sort Key: inh_mcrparted.a, (abs(inh_mcrparted.b)), inh_mcrparted.c
+   ->  Index Scan using inh_mcrparted0_a_abs_b_c_idx on inh_mcrparted0 inh_mcrparted_1
+   ->  Index Scan using inh_mcrparted1_a_abs_b_c_idx on inh_mcrparted1 inh_mcrparted_2
+   ->  Index Scan using inh_mcrparted2_a_abs_b_c_idx on inh_mcrparted2 inh_mcrparted_3
+   ->  Index Scan using inh_mcrparted3_a_abs_b_c_idx on inh_mcrparted3 inh_mcrparted_4
+   ->  Index Scan using inh_mcrparted4_a_abs_b_c_idx on inh_mcrparted4 inh_mcrparted_5
+   ->  Index Scan using inh_mcrparted5_a_abs_b_c_idx on inh_mcrparted5 inh_mcrparted_6
+   ->  Index Scan using inh_mcrparted_def_a_abs_b_c_idx on inh_mcrparted_def inh_mcrparted_7
 (9 rows)
 
-drop table mcrparted_def;
+drop table inh_mcrparted_def;
 -- Append is used for a RANGE partitioned table with no default
 -- and no subpartitions
-explain (costs off) select * from mcrparted order by a, abs(b), c;
-                                QUERY PLAN                                 
----------------------------------------------------------------------------
+explain (costs off) select * from inh_mcrparted order by a, abs(b), c;
+                                      QUERY PLAN                                       
+---------------------------------------------------------------------------------------
  Append
-   ->  Index Scan using mcrparted0_a_abs_b_c_idx on mcrparted0 mcrparted_1
-   ->  Index Scan using mcrparted1_a_abs_b_c_idx on mcrparted1 mcrparted_2
-   ->  Index Scan using mcrparted2_a_abs_b_c_idx on mcrparted2 mcrparted_3
-   ->  Index Scan using mcrparted3_a_abs_b_c_idx on mcrparted3 mcrparted_4
-   ->  Index Scan using mcrparted4_a_abs_b_c_idx on mcrparted4 mcrparted_5
-   ->  Index Scan using mcrparted5_a_abs_b_c_idx on mcrparted5 mcrparted_6
+   ->  Index Scan using inh_mcrparted0_a_abs_b_c_idx on inh_mcrparted0 inh_mcrparted_1
+   ->  Index Scan using inh_mcrparted1_a_abs_b_c_idx on inh_mcrparted1 inh_mcrparted_2
+   ->  Index Scan using inh_mcrparted2_a_abs_b_c_idx on inh_mcrparted2 inh_mcrparted_3
+   ->  Index Scan using inh_mcrparted3_a_abs_b_c_idx on inh_mcrparted3 inh_mcrparted_4
+   ->  Index Scan using inh_mcrparted4_a_abs_b_c_idx on inh_mcrparted4 inh_mcrparted_5
+   ->  Index Scan using inh_mcrparted5_a_abs_b_c_idx on inh_mcrparted5 inh_mcrparted_6
 (7 rows)
 
 -- Append is used with subpaths in reverse order with backwards index scans
-explain (costs off) select * from mcrparted order by a desc, abs(b) desc, c desc;
-                                     QUERY PLAN                                     
-------------------------------------------------------------------------------------
+explain (costs off) select * from inh_mcrparted order by a desc, abs(b) desc, c desc;
+                                           QUERY PLAN                                           
+------------------------------------------------------------------------------------------------
  Append
-   ->  Index Scan Backward using mcrparted5_a_abs_b_c_idx on mcrparted5 mcrparted_6
-   ->  Index Scan Backward using mcrparted4_a_abs_b_c_idx on mcrparted4 mcrparted_5
-   ->  Index Scan Backward using mcrparted3_a_abs_b_c_idx on mcrparted3 mcrparted_4
-   ->  Index Scan Backward using mcrparted2_a_abs_b_c_idx on mcrparted2 mcrparted_3
-   ->  Index Scan Backward using mcrparted1_a_abs_b_c_idx on mcrparted1 mcrparted_2
-   ->  Index Scan Backward using mcrparted0_a_abs_b_c_idx on mcrparted0 mcrparted_1
+   ->  Index Scan Backward using inh_mcrparted5_a_abs_b_c_idx on inh_mcrparted5 inh_mcrparted_6
+   ->  Index Scan Backward using inh_mcrparted4_a_abs_b_c_idx on inh_mcrparted4 inh_mcrparted_5
+   ->  Index Scan Backward using inh_mcrparted3_a_abs_b_c_idx on inh_mcrparted3 inh_mcrparted_4
+   ->  Index Scan Backward using inh_mcrparted2_a_abs_b_c_idx on inh_mcrparted2 inh_mcrparted_3
+   ->  Index Scan Backward using inh_mcrparted1_a_abs_b_c_idx on inh_mcrparted1 inh_mcrparted_2
+   ->  Index Scan Backward using inh_mcrparted0_a_abs_b_c_idx on inh_mcrparted0 inh_mcrparted_1
 (7 rows)
 
 -- check that Append plan is used containing a MergeAppend for sub-partitions
 -- that are unordered.
-drop table mcrparted5;
-create table mcrparted5 partition of mcrparted for values from (20, 20, 20) to (maxvalue, maxvalue, maxvalue) partition by list (a);
-create table mcrparted5a partition of mcrparted5 for values in(20);
-create table mcrparted5_def partition of mcrparted5 default;
-explain (costs off) select * from mcrparted order by a, abs(b), c;
-                                       QUERY PLAN                                        
------------------------------------------------------------------------------------------
+drop table inh_mcrparted5;
+create table inh_mcrparted5 partition of inh_mcrparted for values from (20, 20, 20) to (maxvalue, maxvalue, maxvalue) partition by list (a);
+create table inh_mcrparted5a partition of inh_mcrparted5 for values in(20);
+create table inh_mcrparted5_def partition of inh_mcrparted5 default;
+explain (costs off) select * from inh_mcrparted order by a, abs(b), c;
+                                             QUERY PLAN                                              
+-----------------------------------------------------------------------------------------------------
  Append
-   ->  Index Scan using mcrparted0_a_abs_b_c_idx on mcrparted0 mcrparted_1
-   ->  Index Scan using mcrparted1_a_abs_b_c_idx on mcrparted1 mcrparted_2
-   ->  Index Scan using mcrparted2_a_abs_b_c_idx on mcrparted2 mcrparted_3
-   ->  Index Scan using mcrparted3_a_abs_b_c_idx on mcrparted3 mcrparted_4
-   ->  Index Scan using mcrparted4_a_abs_b_c_idx on mcrparted4 mcrparted_5
+   ->  Index Scan using inh_mcrparted0_a_abs_b_c_idx on inh_mcrparted0 inh_mcrparted_1
+   ->  Index Scan using inh_mcrparted1_a_abs_b_c_idx on inh_mcrparted1 inh_mcrparted_2
+   ->  Index Scan using inh_mcrparted2_a_abs_b_c_idx on inh_mcrparted2 inh_mcrparted_3
+   ->  Index Scan using inh_mcrparted3_a_abs_b_c_idx on inh_mcrparted3 inh_mcrparted_4
+   ->  Index Scan using inh_mcrparted4_a_abs_b_c_idx on inh_mcrparted4 inh_mcrparted_5
    ->  Merge Append
-         Sort Key: mcrparted_7.a, (abs(mcrparted_7.b)), mcrparted_7.c
-         ->  Index Scan using mcrparted5a_a_abs_b_c_idx on mcrparted5a mcrparted_7
-         ->  Index Scan using mcrparted5_def_a_abs_b_c_idx on mcrparted5_def mcrparted_8
+         Sort Key: inh_mcrparted_7.a, (abs(inh_mcrparted_7.b)), inh_mcrparted_7.c
+         ->  Index Scan using inh_mcrparted5a_a_abs_b_c_idx on inh_mcrparted5a inh_mcrparted_7
+         ->  Index Scan using inh_mcrparted5_def_a_abs_b_c_idx on inh_mcrparted5_def inh_mcrparted_8
 (10 rows)
 
-drop table mcrparted5_def;
+drop table inh_mcrparted5_def;
 -- check that an Append plan is used and the sub-partitions are flattened
 -- into the main Append when the sub-partition is unordered but contains
 -- just a single sub-partition.
-explain (costs off) select a, abs(b) from mcrparted order by a, abs(b), c;
-                                 QUERY PLAN                                  
------------------------------------------------------------------------------
+explain (costs off) select a, abs(b) from inh_mcrparted order by a, abs(b), c;
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
  Append
-   ->  Index Scan using mcrparted0_a_abs_b_c_idx on mcrparted0 mcrparted_1
-   ->  Index Scan using mcrparted1_a_abs_b_c_idx on mcrparted1 mcrparted_2
-   ->  Index Scan using mcrparted2_a_abs_b_c_idx on mcrparted2 mcrparted_3
-   ->  Index Scan using mcrparted3_a_abs_b_c_idx on mcrparted3 mcrparted_4
-   ->  Index Scan using mcrparted4_a_abs_b_c_idx on mcrparted4 mcrparted_5
-   ->  Index Scan using mcrparted5a_a_abs_b_c_idx on mcrparted5a mcrparted_6
+   ->  Index Scan using inh_mcrparted0_a_abs_b_c_idx on inh_mcrparted0 inh_mcrparted_1
+   ->  Index Scan using inh_mcrparted1_a_abs_b_c_idx on inh_mcrparted1 inh_mcrparted_2
+   ->  Index Scan using inh_mcrparted2_a_abs_b_c_idx on inh_mcrparted2 inh_mcrparted_3
+   ->  Index Scan using inh_mcrparted3_a_abs_b_c_idx on inh_mcrparted3 inh_mcrparted_4
+   ->  Index Scan using inh_mcrparted4_a_abs_b_c_idx on inh_mcrparted4 inh_mcrparted_5
+   ->  Index Scan using inh_mcrparted5a_a_abs_b_c_idx on inh_mcrparted5a inh_mcrparted_6
 (7 rows)
 
 -- check that Append is used when the sub-partitioned tables are pruned
 -- during planning.
-explain (costs off) select * from mcrparted where a < 20 order by a, abs(b), c;
-                                QUERY PLAN                                 
----------------------------------------------------------------------------
+explain (costs off) select * from inh_mcrparted where a < 20 order by a, abs(b), c;
+                                      QUERY PLAN                                       
+---------------------------------------------------------------------------------------
  Append
-   ->  Index Scan using mcrparted0_a_abs_b_c_idx on mcrparted0 mcrparted_1
+   ->  Index Scan using inh_mcrparted0_a_abs_b_c_idx on inh_mcrparted0 inh_mcrparted_1
          Index Cond: (a < 20)
-   ->  Index Scan using mcrparted1_a_abs_b_c_idx on mcrparted1 mcrparted_2
+   ->  Index Scan using inh_mcrparted1_a_abs_b_c_idx on inh_mcrparted1 inh_mcrparted_2
          Index Cond: (a < 20)
-   ->  Index Scan using mcrparted2_a_abs_b_c_idx on mcrparted2 mcrparted_3
+   ->  Index Scan using inh_mcrparted2_a_abs_b_c_idx on inh_mcrparted2 inh_mcrparted_3
          Index Cond: (a < 20)
-   ->  Index Scan using mcrparted3_a_abs_b_c_idx on mcrparted3 mcrparted_4
+   ->  Index Scan using inh_mcrparted3_a_abs_b_c_idx on inh_mcrparted3 inh_mcrparted_4
          Index Cond: (a < 20)
 (9 rows)
 
@@ -3720,43 +3720,43 @@ reset enable_sort;
 reset enable_bitmapscan;
 -- Ensure subplans which don't have a path with the correct pathkeys get
 -- sorted correctly.
-drop index mcrparted_a_abs_c_idx;
-create index on mcrparted1 (a, abs(b), c);
-create index on mcrparted2 (a, abs(b), c);
-create index on mcrparted3 (a, abs(b), c);
-create index on mcrparted4 (a, abs(b), c);
-explain (costs off) select * from mcrparted where a < 20 order by a, abs(b), c limit 1;
-                                   QUERY PLAN                                    
----------------------------------------------------------------------------------
+drop index inh_mcrparted_a_abs_c_idx;
+create index on inh_mcrparted1 (a, abs(b), c);
+create index on inh_mcrparted2 (a, abs(b), c);
+create index on inh_mcrparted3 (a, abs(b), c);
+create index on inh_mcrparted4 (a, abs(b), c);
+explain (costs off) select * from inh_mcrparted where a < 20 order by a, abs(b), c limit 1;
+                                         QUERY PLAN                                          
+---------------------------------------------------------------------------------------------
  Limit
    ->  Append
          ->  Sort
-               Sort Key: mcrparted_1.a, (abs(mcrparted_1.b)), mcrparted_1.c
-               ->  Seq Scan on mcrparted0 mcrparted_1
+               Sort Key: inh_mcrparted_1.a, (abs(inh_mcrparted_1.b)), inh_mcrparted_1.c
+               ->  Seq Scan on inh_mcrparted0 inh_mcrparted_1
                      Filter: (a < 20)
-         ->  Index Scan using mcrparted1_a_abs_b_c_idx on mcrparted1 mcrparted_2
+         ->  Index Scan using inh_mcrparted1_a_abs_b_c_idx on inh_mcrparted1 inh_mcrparted_2
                Index Cond: (a < 20)
-         ->  Index Scan using mcrparted2_a_abs_b_c_idx on mcrparted2 mcrparted_3
+         ->  Index Scan using inh_mcrparted2_a_abs_b_c_idx on inh_mcrparted2 inh_mcrparted_3
                Index Cond: (a < 20)
-         ->  Index Scan using mcrparted3_a_abs_b_c_idx on mcrparted3 mcrparted_4
+         ->  Index Scan using inh_mcrparted3_a_abs_b_c_idx on inh_mcrparted3 inh_mcrparted_4
                Index Cond: (a < 20)
 (12 rows)
 
 set enable_bitmapscan = 0;
 -- Ensure Append node can be used when the partition is ordered by some
 -- pathkeys which were deemed redundant.
-explain (costs off) select * from mcrparted where a = 10 order by a, abs(b), c;
-                                QUERY PLAN                                 
----------------------------------------------------------------------------
+explain (costs off) select * from inh_mcrparted where a = 10 order by a, abs(b), c;
+                                      QUERY PLAN                                       
+---------------------------------------------------------------------------------------
  Append
-   ->  Index Scan using mcrparted1_a_abs_b_c_idx on mcrparted1 mcrparted_1
+   ->  Index Scan using inh_mcrparted1_a_abs_b_c_idx on inh_mcrparted1 inh_mcrparted_1
          Index Cond: (a = 10)
-   ->  Index Scan using mcrparted2_a_abs_b_c_idx on mcrparted2 mcrparted_2
+   ->  Index Scan using inh_mcrparted2_a_abs_b_c_idx on inh_mcrparted2 inh_mcrparted_2
          Index Cond: (a = 10)
 (5 rows)
 
 reset enable_bitmapscan;
-drop table mcrparted;
+drop table inh_mcrparted;
 -- Ensure LIST partitions allow an Append to be used instead of a MergeAppend
 create table bool_lp (b bool) partition by list(b);
 create table bool_lp_true partition of bool_lp for values in(true);
@@ -3821,27 +3821,27 @@ explain (costs off) select * from bool_rp where b = false order by a;
 drop table bool_rp;
 -- Ensure an Append scan is chosen when the partition order is a subset of
 -- the required order.
-create table range_parted (a int, b int, c int) partition by range(a, b);
-create table range_parted1 partition of range_parted for values from (0,0) to (10,10);
-create table range_parted2 partition of range_parted for values from (10,10) to (20,20);
-create index on range_parted (a,b,c);
-explain (costs off) select * from range_parted order by a,b,c;
-                                     QUERY PLAN                                      
--------------------------------------------------------------------------------------
+create table inh_range_parted (a int, b int, c int) partition by range(a, b);
+create table inh_range_parted1 partition of inh_range_parted for values from (0,0) to (10,10);
+create table inh_range_parted2 partition of inh_range_parted for values from (10,10) to (20,20);
+create index on inh_range_parted (a,b,c);
+explain (costs off) select * from inh_range_parted order by a,b,c;
+                                           QUERY PLAN                                            
+-------------------------------------------------------------------------------------------------
  Append
-   ->  Index Only Scan using range_parted1_a_b_c_idx on range_parted1 range_parted_1
-   ->  Index Only Scan using range_parted2_a_b_c_idx on range_parted2 range_parted_2
+   ->  Index Only Scan using inh_range_parted1_a_b_c_idx on inh_range_parted1 inh_range_parted_1
+   ->  Index Only Scan using inh_range_parted2_a_b_c_idx on inh_range_parted2 inh_range_parted_2
 (3 rows)
 
-explain (costs off) select * from range_parted order by a desc,b desc,c desc;
-                                          QUERY PLAN                                          
-----------------------------------------------------------------------------------------------
+explain (costs off) select * from inh_range_parted order by a desc,b desc,c desc;
+                                                QUERY PLAN                                                
+----------------------------------------------------------------------------------------------------------
  Append
-   ->  Index Only Scan Backward using range_parted2_a_b_c_idx on range_parted2 range_parted_2
-   ->  Index Only Scan Backward using range_parted1_a_b_c_idx on range_parted1 range_parted_1
+   ->  Index Only Scan Backward using inh_range_parted2_a_b_c_idx on inh_range_parted2 inh_range_parted_2
+   ->  Index Only Scan Backward using inh_range_parted1_a_b_c_idx on inh_range_parted1 inh_range_parted_1
 (3 rows)
 
-drop table range_parted;
+drop table inh_range_parted;
 -- Check that we allow access to a child table's statistics when the user
 -- has permissions only for the parent table.
 create table permtest_parent (a int, b text, c text) partition by list (a);

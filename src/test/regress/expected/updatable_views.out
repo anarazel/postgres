@@ -3212,17 +3212,17 @@ SELECT * FROM base_tbl;
 DROP TABLE base_tbl CASCADE;
 NOTICE:  drop cascades to view rw_view1
 -- security barrier view based on inheritance set
-CREATE TABLE t1 (a int, b float, c text);
-CREATE INDEX t1_a_idx ON t1(a);
-INSERT INTO t1
-SELECT i,i,'t1' FROM generate_series(1,10) g(i);
-ANALYZE t1;
-CREATE TABLE t11 (d text) INHERITS (t1);
+CREATE TABLE uv_t1 (a int, b float, c text);
+CREATE INDEX uv_t1_a_idx ON uv_t1(a);
+INSERT INTO uv_t1
+SELECT i,i,'uv_t1' FROM generate_series(1,10) g(i);
+ANALYZE uv_t1;
+CREATE TABLE t11 (d text) INHERITS (uv_t1);
 CREATE INDEX t11_a_idx ON t11(a);
 INSERT INTO t11
 SELECT i,i,'t11','t11d' FROM generate_series(1,10) g(i);
 ANALYZE t11;
-CREATE TABLE t12 (e int[]) INHERITS (t1);
+CREATE TABLE t12 (e int[]) INHERITS (uv_t1);
 CREATE INDEX t12_a_idx ON t12(a);
 INSERT INTO t12
 SELECT i,i,'t12','{1,2}'::int[] FROM generate_series(1,10) g(i);
@@ -3236,57 +3236,57 @@ INSERT INTO t111
 SELECT i,i,'t111','t111d','{1,1,1}'::int[] FROM generate_series(1,10) g(i);
 ANALYZE t111;
 CREATE VIEW v1 WITH (security_barrier=true) AS
-SELECT *, (SELECT d FROM t11 WHERE t11.a = t1.a LIMIT 1) AS d
-FROM t1
-WHERE a > 5 AND EXISTS(SELECT 1 FROM t12 WHERE t12.a = t1.a);
+SELECT *, (SELECT d FROM t11 WHERE t11.a = uv_t1.a LIMIT 1) AS d
+FROM uv_t1
+WHERE a > 5 AND EXISTS(SELECT 1 FROM t12 WHERE t12.a = uv_t1.a);
 SELECT * FROM v1 WHERE a=3; -- should not see anything
  a | b | c | d 
 ---+---+---+---
 (0 rows)
 
 SELECT * FROM v1 WHERE a=8;
- a | b |  c   |  d   
----+---+------+------
- 8 | 8 | t1   | t11d
- 8 | 8 | t11  | t11d
- 8 | 8 | t12  | t11d
- 8 | 8 | t111 | t11d
+ a | b |   c   |  d   
+---+---+-------+------
+ 8 | 8 | uv_t1 | t11d
+ 8 | 8 | t11   | t11d
+ 8 | 8 | t12   | t11d
+ 8 | 8 | t111  | t11d
 (4 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF)
 UPDATE v1 SET a=100 WHERE snoop(a) AND leakproof(a) AND a < 7 AND a != 6;
-                                                    QUERY PLAN                                                    
-------------------------------------------------------------------------------------------------------------------
- Update on public.t1
-   Update on public.t1 t1_1
-   Update on public.t11 t1_2
-   Update on public.t12 t1_3
-   Update on public.t111 t1_4
+                                                        QUERY PLAN                                                         
+---------------------------------------------------------------------------------------------------------------------------
+ Update on public.uv_t1
+   Update on public.uv_t1 uv_t1_1
+   Update on public.t11 uv_t1_2
+   Update on public.t12 uv_t1_3
+   Update on public.t111 uv_t1_4
    ->  Result
-         Output: 100, t1.tableoid, t1.ctid
+         Output: 100, uv_t1.tableoid, uv_t1.ctid
          ->  Append
-               ->  Index Scan using t1_a_idx on public.t1 t1_1
-                     Output: t1_1.tableoid, t1_1.ctid
-                     Index Cond: ((t1_1.a > 5) AND (t1_1.a < 7))
-                     Filter: ((t1_1.a <> 6) AND EXISTS(SubPlan exists_1) AND snoop(t1_1.a) AND leakproof(t1_1.a))
+               ->  Index Scan using uv_t1_a_idx on public.uv_t1 uv_t1_1
+                     Output: uv_t1_1.tableoid, uv_t1_1.ctid
+                     Index Cond: ((uv_t1_1.a > 5) AND (uv_t1_1.a < 7))
+                     Filter: ((uv_t1_1.a <> 6) AND EXISTS(SubPlan exists_1) AND snoop(uv_t1_1.a) AND leakproof(uv_t1_1.a))
                      SubPlan exists_1
                        ->  Append
                              ->  Seq Scan on public.t12 t12_1
-                                   Filter: (t12_1.a = t1_1.a)
+                                   Filter: (t12_1.a = uv_t1_1.a)
                              ->  Seq Scan on public.t111 t12_2
-                                   Filter: (t12_2.a = t1_1.a)
-               ->  Index Scan using t11_a_idx on public.t11 t1_2
-                     Output: t1_2.tableoid, t1_2.ctid
-                     Index Cond: ((t1_2.a > 5) AND (t1_2.a < 7))
-                     Filter: ((t1_2.a <> 6) AND EXISTS(SubPlan exists_1) AND snoop(t1_2.a) AND leakproof(t1_2.a))
-               ->  Index Scan using t12_a_idx on public.t12 t1_3
-                     Output: t1_3.tableoid, t1_3.ctid
-                     Index Cond: ((t1_3.a > 5) AND (t1_3.a < 7))
-                     Filter: ((t1_3.a <> 6) AND EXISTS(SubPlan exists_1) AND snoop(t1_3.a) AND leakproof(t1_3.a))
-               ->  Index Scan using t111_a_idx on public.t111 t1_4
-                     Output: t1_4.tableoid, t1_4.ctid
-                     Index Cond: ((t1_4.a > 5) AND (t1_4.a < 7))
-                     Filter: ((t1_4.a <> 6) AND EXISTS(SubPlan exists_1) AND snoop(t1_4.a) AND leakproof(t1_4.a))
+                                   Filter: (t12_2.a = uv_t1_1.a)
+               ->  Index Scan using t11_a_idx on public.t11 uv_t1_2
+                     Output: uv_t1_2.tableoid, uv_t1_2.ctid
+                     Index Cond: ((uv_t1_2.a > 5) AND (uv_t1_2.a < 7))
+                     Filter: ((uv_t1_2.a <> 6) AND EXISTS(SubPlan exists_1) AND snoop(uv_t1_2.a) AND leakproof(uv_t1_2.a))
+               ->  Index Scan using t12_a_idx on public.t12 uv_t1_3
+                     Output: uv_t1_3.tableoid, uv_t1_3.ctid
+                     Index Cond: ((uv_t1_3.a > 5) AND (uv_t1_3.a < 7))
+                     Filter: ((uv_t1_3.a <> 6) AND EXISTS(SubPlan exists_1) AND snoop(uv_t1_3.a) AND leakproof(uv_t1_3.a))
+               ->  Index Scan using t111_a_idx on public.t111 uv_t1_4
+                     Output: uv_t1_4.tableoid, uv_t1_4.ctid
+                     Index Cond: ((uv_t1_4.a > 5) AND (uv_t1_4.a < 7))
+                     Filter: ((uv_t1_4.a <> 6) AND EXISTS(SubPlan exists_1) AND snoop(uv_t1_4.a) AND leakproof(uv_t1_4.a))
 (30 rows)
 
 UPDATE v1 SET a=100 WHERE snoop(a) AND leakproof(a) AND a < 7 AND a != 6;
@@ -3295,45 +3295,45 @@ SELECT * FROM v1 WHERE a=100; -- Nothing should have been changed to 100
 ---+---+---+---
 (0 rows)
 
-SELECT * FROM t1 WHERE a=100; -- Nothing should have been changed to 100
+SELECT * FROM uv_t1 WHERE a=100; -- Nothing should have been changed to 100
  a | b | c 
 ---+---+---
 (0 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF)
 UPDATE v1 SET a=a+1 WHERE snoop(a) AND leakproof(a) AND a = 8;
-                                           QUERY PLAN                                           
-------------------------------------------------------------------------------------------------
- Update on public.t1
-   Update on public.t1 t1_1
-   Update on public.t11 t1_2
-   Update on public.t12 t1_3
-   Update on public.t111 t1_4
+                                              QUERY PLAN                                              
+------------------------------------------------------------------------------------------------------
+ Update on public.uv_t1
+   Update on public.uv_t1 uv_t1_1
+   Update on public.t11 uv_t1_2
+   Update on public.t12 uv_t1_3
+   Update on public.t111 uv_t1_4
    ->  Result
-         Output: (t1.a + 1), t1.tableoid, t1.ctid
+         Output: (uv_t1.a + 1), uv_t1.tableoid, uv_t1.ctid
          ->  Append
-               ->  Index Scan using t1_a_idx on public.t1 t1_1
-                     Output: t1_1.a, t1_1.tableoid, t1_1.ctid
-                     Index Cond: ((t1_1.a > 5) AND (t1_1.a = 8))
-                     Filter: (EXISTS(SubPlan exists_1) AND snoop(t1_1.a) AND leakproof(t1_1.a))
+               ->  Index Scan using uv_t1_a_idx on public.uv_t1 uv_t1_1
+                     Output: uv_t1_1.a, uv_t1_1.tableoid, uv_t1_1.ctid
+                     Index Cond: ((uv_t1_1.a > 5) AND (uv_t1_1.a = 8))
+                     Filter: (EXISTS(SubPlan exists_1) AND snoop(uv_t1_1.a) AND leakproof(uv_t1_1.a))
                      SubPlan exists_1
                        ->  Append
                              ->  Seq Scan on public.t12 t12_1
-                                   Filter: (t12_1.a = t1_1.a)
+                                   Filter: (t12_1.a = uv_t1_1.a)
                              ->  Seq Scan on public.t111 t12_2
-                                   Filter: (t12_2.a = t1_1.a)
-               ->  Index Scan using t11_a_idx on public.t11 t1_2
-                     Output: t1_2.a, t1_2.tableoid, t1_2.ctid
-                     Index Cond: ((t1_2.a > 5) AND (t1_2.a = 8))
-                     Filter: (EXISTS(SubPlan exists_1) AND snoop(t1_2.a) AND leakproof(t1_2.a))
-               ->  Index Scan using t12_a_idx on public.t12 t1_3
-                     Output: t1_3.a, t1_3.tableoid, t1_3.ctid
-                     Index Cond: ((t1_3.a > 5) AND (t1_3.a = 8))
-                     Filter: (EXISTS(SubPlan exists_1) AND snoop(t1_3.a) AND leakproof(t1_3.a))
-               ->  Index Scan using t111_a_idx on public.t111 t1_4
-                     Output: t1_4.a, t1_4.tableoid, t1_4.ctid
-                     Index Cond: ((t1_4.a > 5) AND (t1_4.a = 8))
-                     Filter: (EXISTS(SubPlan exists_1) AND snoop(t1_4.a) AND leakproof(t1_4.a))
+                                   Filter: (t12_2.a = uv_t1_1.a)
+               ->  Index Scan using t11_a_idx on public.t11 uv_t1_2
+                     Output: uv_t1_2.a, uv_t1_2.tableoid, uv_t1_2.ctid
+                     Index Cond: ((uv_t1_2.a > 5) AND (uv_t1_2.a = 8))
+                     Filter: (EXISTS(SubPlan exists_1) AND snoop(uv_t1_2.a) AND leakproof(uv_t1_2.a))
+               ->  Index Scan using t12_a_idx on public.t12 uv_t1_3
+                     Output: uv_t1_3.a, uv_t1_3.tableoid, uv_t1_3.ctid
+                     Index Cond: ((uv_t1_3.a > 5) AND (uv_t1_3.a = 8))
+                     Filter: (EXISTS(SubPlan exists_1) AND snoop(uv_t1_3.a) AND leakproof(uv_t1_3.a))
+               ->  Index Scan using t111_a_idx on public.t111 uv_t1_4
+                     Output: uv_t1_4.a, uv_t1_4.tableoid, uv_t1_4.ctid
+                     Index Cond: ((uv_t1_4.a > 5) AND (uv_t1_4.a = 8))
+                     Filter: (EXISTS(SubPlan exists_1) AND snoop(uv_t1_4.a) AND leakproof(uv_t1_4.a))
 (30 rows)
 
 UPDATE v1 SET a=a+1 WHERE snoop(a) AND leakproof(a) AND a = 8;
@@ -3342,12 +3342,12 @@ NOTICE:  snooped value: 8
 NOTICE:  snooped value: 8
 NOTICE:  snooped value: 8
 SELECT * FROM v1 WHERE b=8;
- a | b |  c   |  d   
----+---+------+------
- 9 | 8 | t111 | t11d
- 9 | 8 | t12  | t11d
- 9 | 8 | t11  | t11d
- 9 | 8 | t1   | t11d
+ a | b |   c   |  d   
+---+---+-------+------
+ 9 | 8 | t111  | t11d
+ 9 | 8 | t12   | t11d
+ 9 | 8 | t11   | t11d
+ 9 | 8 | uv_t1 | t11d
 (4 rows)
 
 DELETE FROM v1 WHERE snoop(a) AND leakproof(a); -- should not delete everything, just where a>5
@@ -3371,14 +3371,14 @@ NOTICE:  snooped value: 7
 NOTICE:  snooped value: 9
 NOTICE:  snooped value: 10
 NOTICE:  snooped value: 9
-TABLE t1; -- verify all a<=5 are intact
- a | b |  c   
----+---+------
- 1 | 1 | t1
- 2 | 2 | t1
- 3 | 3 | t1
- 4 | 4 | t1
- 5 | 5 | t1
+TABLE uv_t1; -- verify all a<=5 are intact
+ a | b |   c   
+---+---+-------
+ 1 | 1 | uv_t1
+ 2 | 2 | uv_t1
+ 3 | 3 | uv_t1
+ 4 | 4 | uv_t1
+ 5 | 5 | uv_t1
  1 | 1 | t11
  2 | 2 | t11
  3 | 3 | t11
@@ -3396,7 +3396,7 @@ TABLE t1; -- verify all a<=5 are intact
  5 | 5 | t111
 (20 rows)
 
-DROP TABLE t1, t11, t12, t111 CASCADE;
+DROP TABLE uv_t1, t11, t12, t111 CASCADE;
 NOTICE:  drop cascades to view v1
 DROP FUNCTION snoop(anyelement);
 DROP FUNCTION leakproof(anyelement);
@@ -3471,15 +3471,15 @@ DROP TABLE tx3;
 -- Test handling of vars from correlated subqueries in quals from outer
 -- security barrier views, per bug #13988
 --
-CREATE TABLE t1 (a int, b text, c int);
-INSERT INTO t1 VALUES (1, 'one', 10);
-CREATE TABLE t2 (cc int);
-INSERT INTO t2 VALUES (10), (20);
+CREATE TABLE uv_t1 (a int, b text, c int);
+INSERT INTO uv_t1 VALUES (1, 'one', 10);
+CREATE TABLE uv_t2 (cc int);
+INSERT INTO uv_t2 VALUES (10), (20);
 CREATE VIEW v1 WITH (security_barrier = true) AS
-  SELECT * FROM t1 WHERE (a > 0)
+  SELECT * FROM uv_t1 WHERE (a > 0)
   WITH CHECK OPTION;
 CREATE VIEW v2 WITH (security_barrier = true) AS
-  SELECT * FROM v1 WHERE EXISTS (SELECT 1 FROM t2 WHERE t2.cc = v1.c)
+  SELECT * FROM v1 WHERE EXISTS (SELECT 1 FROM uv_t2 WHERE uv_t2.cc = v1.c)
   WITH CHECK OPTION;
 INSERT INTO v2 VALUES (2, 'two', 20); -- ok
 INSERT INTO v2 VALUES (-2, 'minus two', 20); -- not allowed
@@ -3504,53 +3504,53 @@ SELECT * FROM v2;
 
 DROP VIEW v2;
 DROP VIEW v1;
-DROP TABLE t2;
-DROP TABLE t1;
+DROP TABLE uv_t2;
+DROP TABLE uv_t1;
 --
 -- Test sub-select in nested security barrier views, per bug #17972
 --
-CREATE TABLE t1 (a int);
+CREATE TABLE uv_t1 (a int);
 CREATE VIEW v1 WITH (security_barrier = true) AS
-  SELECT * FROM t1;
+  SELECT * FROM uv_t1;
 CREATE RULE v1_upd_rule AS ON UPDATE TO v1 DO INSTEAD
-  UPDATE t1 SET a = NEW.a WHERE a = OLD.a;
+  UPDATE uv_t1 SET a = NEW.a WHERE a = OLD.a;
 CREATE VIEW v2 WITH (security_barrier = true) AS
   SELECT * FROM v1 WHERE EXISTS (SELECT 1);
 EXPLAIN (COSTS OFF) UPDATE v2 SET a = 1;
                              QUERY PLAN                              
 ---------------------------------------------------------------------
- Update on t1
+ Update on uv_t1
    InitPlan exists_1
      ->  Result
    ->  Merge Join
-         Merge Cond: (t1.a = v1.a)
+         Merge Cond: (uv_t1.a = v1.a)
          ->  Sort
-               Sort Key: t1.a
-               ->  Seq Scan on t1
+               Sort Key: uv_t1.a
+               ->  Seq Scan on uv_t1
          ->  Sort
                Sort Key: v1.a
                ->  Subquery Scan on v1
                      ->  Result
                            One-Time Filter: (InitPlan exists_1).col1
-                           ->  Seq Scan on t1 t1_1
+                           ->  Seq Scan on uv_t1 uv_t1_1
 (14 rows)
 
 DROP VIEW v2;
 DROP VIEW v1;
-DROP TABLE t1;
+DROP TABLE uv_t1;
 --
 -- Test CREATE OR REPLACE VIEW turning a non-updatable view into an
 -- auto-updatable view and adding check options in a single step
 --
-CREATE TABLE t1 (a int, b text);
+CREATE TABLE uv_t1 (a int, b text);
 CREATE VIEW v1 AS SELECT null::int AS a;
-CREATE OR REPLACE VIEW v1 AS SELECT * FROM t1 WHERE a > 0 WITH CHECK OPTION;
+CREATE OR REPLACE VIEW v1 AS SELECT * FROM uv_t1 WHERE a > 0 WITH CHECK OPTION;
 INSERT INTO v1 VALUES (1, 'ok'); -- ok
 INSERT INTO v1 VALUES (-1, 'invalid'); -- should fail
 ERROR:  new row violates check option for view "v1"
 DETAIL:  Failing row contains (-1, invalid).
 DROP VIEW v1;
-DROP TABLE t1;
+DROP TABLE uv_t1;
 -- check that an auto-updatable view on a partitioned table works correctly
 create table uv_pt (a int, b int, v varchar) partition by range (a, b);
 create table uv_pt1 (b int not null, v varchar, a int not null) partition by range (b);

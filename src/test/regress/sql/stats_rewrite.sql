@@ -134,18 +134,18 @@ SELECT n_tup_ins, n_live_tup, n_dead_tup
 DROP TABLE test_alone;
 
 -- Table-level stats with rewrite and DMLs.
-CREATE TABLE test (a int) WITH (autovacuum_enabled = false);
-INSERT INTO test VALUES (1);
+CREATE TABLE test_basic (a int) WITH (autovacuum_enabled = false);
+INSERT INTO test_basic VALUES (1);
 BEGIN;
-INSERT INTO test VALUES (1);
-INSERT INTO test VALUES (2);
-INSERT INTO test VALUES (3);
-ALTER TABLE test ALTER COLUMN a TYPE bigint;
+INSERT INTO test_basic VALUES (1);
+INSERT INTO test_basic VALUES (2);
+INSERT INTO test_basic VALUES (3);
+ALTER TABLE test_basic ALTER COLUMN a TYPE bigint;
 COMMIT;
 SELECT pg_stat_force_next_flush();
 SELECT n_tup_ins, n_live_tup, n_dead_tup
-  FROM pg_stat_all_tables WHERE relname = 'test';
-DROP TABLE test;
+  FROM pg_stat_all_tables WHERE relname = 'test_basic';
+DROP TABLE test_basic;
 
 -- Table-level stats with multiple rewrites and DMLs.
 CREATE TABLE test_multi (a int) WITH (autovacuum_enabled = false);

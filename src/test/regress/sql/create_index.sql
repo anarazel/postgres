@@ -389,38 +389,38 @@ RESET maintenance_work_mem;
 --
 -- Test unique null behavior
 --
-CREATE TABLE unique_tbl (i int, t text);
+CREATE TABLE ci_unique_tbl (i int, t text);
 
-CREATE UNIQUE INDEX unique_idx1 ON unique_tbl (i) NULLS DISTINCT;
-CREATE UNIQUE INDEX unique_idx2 ON unique_tbl (i) NULLS NOT DISTINCT;
+CREATE UNIQUE INDEX unique_idx1 ON ci_unique_tbl (i) NULLS DISTINCT;
+CREATE UNIQUE INDEX unique_idx2 ON ci_unique_tbl (i) NULLS NOT DISTINCT;
 
-INSERT INTO unique_tbl VALUES (1, 'one');
-INSERT INTO unique_tbl VALUES (2, 'two');
-INSERT INTO unique_tbl VALUES (3, 'three');
-INSERT INTO unique_tbl VALUES (4, 'four');
-INSERT INTO unique_tbl VALUES (5, 'one');
-INSERT INTO unique_tbl (t) VALUES ('six');
-INSERT INTO unique_tbl (t) VALUES ('seven');  -- error from unique_idx2
+INSERT INTO ci_unique_tbl VALUES (1, 'one');
+INSERT INTO ci_unique_tbl VALUES (2, 'two');
+INSERT INTO ci_unique_tbl VALUES (3, 'three');
+INSERT INTO ci_unique_tbl VALUES (4, 'four');
+INSERT INTO ci_unique_tbl VALUES (5, 'one');
+INSERT INTO ci_unique_tbl (t) VALUES ('six');
+INSERT INTO ci_unique_tbl (t) VALUES ('seven');  -- error from unique_idx2
 
 DROP INDEX unique_idx1, unique_idx2;
 
-INSERT INTO unique_tbl (t) VALUES ('seven');
+INSERT INTO ci_unique_tbl (t) VALUES ('seven');
 
 -- build indexes on filled table
-CREATE UNIQUE INDEX unique_idx3 ON unique_tbl (i) NULLS DISTINCT;  -- ok
-CREATE UNIQUE INDEX unique_idx4 ON unique_tbl (i) NULLS NOT DISTINCT;  -- error
+CREATE UNIQUE INDEX unique_idx3 ON ci_unique_tbl (i) NULLS DISTINCT;  -- ok
+CREATE UNIQUE INDEX unique_idx4 ON ci_unique_tbl (i) NULLS NOT DISTINCT;  -- error
 
-DELETE FROM unique_tbl WHERE t = 'seven';
+DELETE FROM ci_unique_tbl WHERE t = 'seven';
 
-CREATE UNIQUE INDEX unique_idx4 ON unique_tbl (i) NULLS NOT DISTINCT;  -- ok now
+CREATE UNIQUE INDEX unique_idx4 ON ci_unique_tbl (i) NULLS NOT DISTINCT;  -- ok now
 
-\d unique_tbl
+\d ci_unique_tbl
 \d unique_idx3
 \d unique_idx4
 SELECT pg_get_indexdef('unique_idx3'::regclass);
 SELECT pg_get_indexdef('unique_idx4'::regclass);
 
-DROP TABLE unique_tbl;
+DROP TABLE ci_unique_tbl;
 
 
 --

@@ -602,15 +602,15 @@ SELECT stats_reset > :'dbc_reset_ts'::timestamptz FROM pg_stat_database_conflict
 -- Use the sequence to accumulate its stats, and reset them once first
 -- so that we have a baseline for comparison, similar to the previous test.
 -- stats_reset to compare to.
-CREATE SEQUENCE test_seq1;
-SELECT nextval('test_seq1');
-SELECT pg_stat_reset_single_table_counters('test_seq1'::regclass);
+CREATE SEQUENCE stats_test_seq1;
+SELECT nextval('stats_test_seq1');
+SELECT pg_stat_reset_single_table_counters('stats_test_seq1'::regclass);
 SELECT stats_reset AS seq_reset_ts
-  FROM pg_statio_all_sequences WHERE relname ='test_seq1' \gset
-SELECT pg_stat_reset_single_table_counters('test_seq1'::regclass);
+  FROM pg_statio_all_sequences WHERE relname ='stats_test_seq1' \gset
+SELECT pg_stat_reset_single_table_counters('stats_test_seq1'::regclass);
 SELECT stats_reset > :'seq_reset_ts'::timestamptz
-  FROM pg_statio_all_sequences WHERE relname ='test_seq1';
-DROP SEQUENCE test_seq1;
+  FROM pg_statio_all_sequences WHERE relname ='stats_test_seq1';
+DROP SEQUENCE stats_test_seq1;
 
 
 ----

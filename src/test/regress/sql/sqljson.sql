@@ -717,14 +717,14 @@ SELECT JSON_SERIALIZE('12' RETURNING sqljson_char2);
 -- to a crash in ExecBuildAggTrans() as mentioned in the bug report:
 -- https://postgr.es/m/18657-1b90ccce2b16bdb8@postgresql.org
 CREATE FUNCTION volatile_one() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql VOLATILE;
-CREATE FUNCTION stable_one() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql STABLE;
+CREATE FUNCTION sqljson_stable_one() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql STABLE;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT JSON_OBJECT('a': JSON_OBJECTAGG('b': volatile_one() RETURNING text) FORMAT JSON);
 SELECT JSON_OBJECT('a': JSON_OBJECTAGG('b': volatile_one() RETURNING text) FORMAT JSON);
-EXPLAIN (VERBOSE, COSTS OFF) SELECT JSON_OBJECT('a': JSON_OBJECTAGG('b': stable_one() RETURNING text) FORMAT JSON);
-SELECT JSON_OBJECT('a': JSON_OBJECTAGG('b': stable_one() RETURNING text) FORMAT JSON);
+EXPLAIN (VERBOSE, COSTS OFF) SELECT JSON_OBJECT('a': JSON_OBJECTAGG('b': sqljson_stable_one() RETURNING text) FORMAT JSON);
+SELECT JSON_OBJECT('a': JSON_OBJECTAGG('b': sqljson_stable_one() RETURNING text) FORMAT JSON);
 EXPLAIN (VERBOSE, COSTS OFF) SELECT JSON_OBJECT('a': JSON_OBJECTAGG('b': 1 RETURNING text) FORMAT JSON);
 SELECT JSON_OBJECT('a': JSON_OBJECTAGG('b': 1 RETURNING text) FORMAT JSON);
-DROP FUNCTION volatile_one, stable_one;
+DROP FUNCTION volatile_one, sqljson_stable_one;
 
 -- Test deparsing of JSON aggregates that are computed below a WindowAgg
 -- node.

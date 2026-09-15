@@ -292,20 +292,20 @@ ALTER TABLE gtest10a DROP COLUMN b;
 INSERT INTO gtest10a (a) VALUES (1);
 
 -- privileges
-CREATE USER regress_user11;
+CREATE USER regress_user11v;
 
 CREATE TABLE gtest11 (a int PRIMARY KEY, b int, c int GENERATED ALWAYS AS (b * 2) VIRTUAL);
 INSERT INTO gtest11 VALUES (1, 10), (2, 20);
-GRANT SELECT (a, c) ON gtest11 TO regress_user11;
+GRANT SELECT (a, c) ON gtest11 TO regress_user11v;
 
 CREATE FUNCTION gf1(a int) RETURNS int AS $$ SELECT a * 3 $$ IMMUTABLE LANGUAGE SQL;
 REVOKE ALL ON FUNCTION gf1(int) FROM PUBLIC;
 
 CREATE TABLE gtest12 (a int PRIMARY KEY, b int, c int GENERATED ALWAYS AS (gf1(b)) VIRTUAL);  -- fails, user-defined function
 --INSERT INTO gtest12 VALUES (1, 10), (2, 20);
---GRANT SELECT (a, c), INSERT ON gtest12 TO regress_user11;
+--GRANT SELECT (a, c), INSERT ON gtest12 TO regress_user11v;
 
-SET ROLE regress_user11;
+SET ROLE regress_user11v;
 SELECT a, b FROM gtest11;  -- not allowed
 SELECT a, c FROM gtest11;  -- allowed
 SELECT gf1(10);  -- not allowed
@@ -317,7 +317,7 @@ RESET ROLE;
 DROP TABLE gtest11;
 --DROP TABLE gtest12;
 DROP FUNCTION gf1(int);
-DROP USER regress_user11;
+DROP USER regress_user11v;
 
 -- check constraints
 CREATE TABLE gtest20 (a int PRIMARY KEY, b int GENERATED ALWAYS AS (a * 2) VIRTUAL CHECK (b < 50));

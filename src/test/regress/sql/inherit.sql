@@ -1312,19 +1312,19 @@ drop table inh_temp_parent cascade;
 -- Check that constraint exclusion works correctly with partitions using
 -- implicit constraints generated from the partition bound information.
 --
-create table list_parted (
+create table inh_list_parted (
 	a	varchar
 ) partition by list (a);
-create table part_ab_cd partition of list_parted for values in ('ab', 'cd');
-create table part_ef_gh partition of list_parted for values in ('ef', 'gh');
-create table part_null_xy partition of list_parted for values in (null, 'xy');
+create table part_ab_cd partition of inh_list_parted for values in ('ab', 'cd');
+create table part_ef_gh partition of inh_list_parted for values in ('ef', 'gh');
+create table part_null_xy partition of inh_list_parted for values in (null, 'xy');
 
-explain (costs off) select * from list_parted;
-explain (costs off) select * from list_parted where a is null;
-explain (costs off) select * from list_parted where a is not null;
-explain (costs off) select * from list_parted where a in ('ab', 'cd', 'ef');
-explain (costs off) select * from list_parted where a = 'ab' or a in (null, 'cd');
-explain (costs off) select * from list_parted where a = 'ab';
+explain (costs off) select * from inh_list_parted;
+explain (costs off) select * from inh_list_parted where a is null;
+explain (costs off) select * from inh_list_parted where a is not null;
+explain (costs off) select * from inh_list_parted where a in ('ab', 'cd', 'ef');
+explain (costs off) select * from inh_list_parted where a = 'ab' or a in (null, 'cd');
+explain (costs off) select * from inh_list_parted where a = 'ab';
 
 create table range_list_parted (
 	a	int,
@@ -1357,26 +1357,26 @@ explain (costs off) select * from range_list_parted where b is null;
 explain (costs off) select * from range_list_parted where a is not null and a < 67;
 explain (costs off) select * from range_list_parted where a >= 30;
 
-drop table list_parted;
+drop table inh_list_parted;
 drop table range_list_parted;
 
 -- check that constraint exclusion is able to cope with the partition
 -- constraint emitted for multi-column range partitioned tables
-create table mcrparted (a int, b int, c int) partition by range (a, abs(b), c);
-create table mcrparted_def partition of mcrparted default;
-create table mcrparted0 partition of mcrparted for values from (minvalue, minvalue, minvalue) to (1, 1, 1);
-create table mcrparted1 partition of mcrparted for values from (1, 1, 1) to (10, 5, 10);
-create table mcrparted2 partition of mcrparted for values from (10, 5, 10) to (10, 10, 10);
-create table mcrparted3 partition of mcrparted for values from (11, 1, 1) to (20, 10, 10);
-create table mcrparted4 partition of mcrparted for values from (20, 10, 10) to (20, 20, 20);
-create table mcrparted5 partition of mcrparted for values from (20, 20, 20) to (maxvalue, maxvalue, maxvalue);
-explain (costs off) select * from mcrparted where a = 0;	-- scans mcrparted0, mcrparted_def
-explain (costs off) select * from mcrparted where a = 10 and abs(b) < 5;	-- scans mcrparted1, mcrparted_def
-explain (costs off) select * from mcrparted where a = 10 and abs(b) = 5;	-- scans mcrparted1, mcrparted2, mcrparted_def
-explain (costs off) select * from mcrparted where abs(b) = 5;	-- scans all partitions
-explain (costs off) select * from mcrparted where a > -1;	-- scans all partitions
-explain (costs off) select * from mcrparted where a = 20 and abs(b) = 10 and c > 10;	-- scans mcrparted4
-explain (costs off) select * from mcrparted where a = 20 and c > 20; -- scans mcrparted3, mcrparte4, mcrparte5, mcrparted_def
+create table inh_mcrparted (a int, b int, c int) partition by range (a, abs(b), c);
+create table inh_mcrparted_def partition of inh_mcrparted default;
+create table inh_mcrparted0 partition of inh_mcrparted for values from (minvalue, minvalue, minvalue) to (1, 1, 1);
+create table inh_mcrparted1 partition of inh_mcrparted for values from (1, 1, 1) to (10, 5, 10);
+create table inh_mcrparted2 partition of inh_mcrparted for values from (10, 5, 10) to (10, 10, 10);
+create table inh_mcrparted3 partition of inh_mcrparted for values from (11, 1, 1) to (20, 10, 10);
+create table inh_mcrparted4 partition of inh_mcrparted for values from (20, 10, 10) to (20, 20, 20);
+create table inh_mcrparted5 partition of inh_mcrparted for values from (20, 20, 20) to (maxvalue, maxvalue, maxvalue);
+explain (costs off) select * from inh_mcrparted where a = 0;	-- scans inh_mcrparted0, inh_mcrparted_def
+explain (costs off) select * from inh_mcrparted where a = 10 and abs(b) < 5;	-- scans inh_mcrparted1, inh_mcrparted_def
+explain (costs off) select * from inh_mcrparted where a = 10 and abs(b) = 5;	-- scans inh_mcrparted1, inh_mcrparted2, inh_mcrparted_def
+explain (costs off) select * from inh_mcrparted where abs(b) = 5;	-- scans all partitions
+explain (costs off) select * from inh_mcrparted where a > -1;	-- scans all partitions
+explain (costs off) select * from inh_mcrparted where a = 20 and abs(b) = 10 and c > 10;	-- scans inh_mcrparted4
+explain (costs off) select * from inh_mcrparted where a = 20 and c > 20; -- scans inh_mcrparted3, inh_mcrparted4, inh_mcrparted5, inh_mcrparted_def
 
 -- check that partitioned table Appends cope with being referenced in
 -- subplans
@@ -1391,39 +1391,39 @@ drop table parted_minmax;
 -- Test code that uses Append nodes in place of MergeAppend when the
 -- partition ordering matches the desired ordering.
 
-create index mcrparted_a_abs_c_idx on mcrparted (a, abs(b), c);
+create index inh_mcrparted_a_abs_c_idx on inh_mcrparted (a, abs(b), c);
 
 -- MergeAppend must be used when a default partition exists
-explain (costs off) select * from mcrparted order by a, abs(b), c;
+explain (costs off) select * from inh_mcrparted order by a, abs(b), c;
 
-drop table mcrparted_def;
+drop table inh_mcrparted_def;
 
 -- Append is used for a RANGE partitioned table with no default
 -- and no subpartitions
-explain (costs off) select * from mcrparted order by a, abs(b), c;
+explain (costs off) select * from inh_mcrparted order by a, abs(b), c;
 
 -- Append is used with subpaths in reverse order with backwards index scans
-explain (costs off) select * from mcrparted order by a desc, abs(b) desc, c desc;
+explain (costs off) select * from inh_mcrparted order by a desc, abs(b) desc, c desc;
 
 -- check that Append plan is used containing a MergeAppend for sub-partitions
 -- that are unordered.
-drop table mcrparted5;
-create table mcrparted5 partition of mcrparted for values from (20, 20, 20) to (maxvalue, maxvalue, maxvalue) partition by list (a);
-create table mcrparted5a partition of mcrparted5 for values in(20);
-create table mcrparted5_def partition of mcrparted5 default;
+drop table inh_mcrparted5;
+create table inh_mcrparted5 partition of inh_mcrparted for values from (20, 20, 20) to (maxvalue, maxvalue, maxvalue) partition by list (a);
+create table inh_mcrparted5a partition of inh_mcrparted5 for values in(20);
+create table inh_mcrparted5_def partition of inh_mcrparted5 default;
 
-explain (costs off) select * from mcrparted order by a, abs(b), c;
+explain (costs off) select * from inh_mcrparted order by a, abs(b), c;
 
-drop table mcrparted5_def;
+drop table inh_mcrparted5_def;
 
 -- check that an Append plan is used and the sub-partitions are flattened
 -- into the main Append when the sub-partition is unordered but contains
 -- just a single sub-partition.
-explain (costs off) select a, abs(b) from mcrparted order by a, abs(b), c;
+explain (costs off) select a, abs(b) from inh_mcrparted order by a, abs(b), c;
 
 -- check that Append is used when the sub-partitioned tables are pruned
 -- during planning.
-explain (costs off) select * from mcrparted where a < 20 order by a, abs(b), c;
+explain (costs off) select * from inh_mcrparted where a < 20 order by a, abs(b), c;
 
 set enable_bitmapscan to off;
 set enable_sort to off;
@@ -1471,21 +1471,21 @@ reset enable_bitmapscan;
 
 -- Ensure subplans which don't have a path with the correct pathkeys get
 -- sorted correctly.
-drop index mcrparted_a_abs_c_idx;
-create index on mcrparted1 (a, abs(b), c);
-create index on mcrparted2 (a, abs(b), c);
-create index on mcrparted3 (a, abs(b), c);
-create index on mcrparted4 (a, abs(b), c);
+drop index inh_mcrparted_a_abs_c_idx;
+create index on inh_mcrparted1 (a, abs(b), c);
+create index on inh_mcrparted2 (a, abs(b), c);
+create index on inh_mcrparted3 (a, abs(b), c);
+create index on inh_mcrparted4 (a, abs(b), c);
 
-explain (costs off) select * from mcrparted where a < 20 order by a, abs(b), c limit 1;
+explain (costs off) select * from inh_mcrparted where a < 20 order by a, abs(b), c limit 1;
 
 set enable_bitmapscan = 0;
 -- Ensure Append node can be used when the partition is ordered by some
 -- pathkeys which were deemed redundant.
-explain (costs off) select * from mcrparted where a = 10 order by a, abs(b), c;
+explain (costs off) select * from inh_mcrparted where a = 10 order by a, abs(b), c;
 reset enable_bitmapscan;
 
-drop table mcrparted;
+drop table inh_mcrparted;
 
 -- Ensure LIST partitions allow an Append to be used instead of a MergeAppend
 create table bool_lp (b bool) partition by list(b);
@@ -1513,15 +1513,15 @@ drop table bool_rp;
 
 -- Ensure an Append scan is chosen when the partition order is a subset of
 -- the required order.
-create table range_parted (a int, b int, c int) partition by range(a, b);
-create table range_parted1 partition of range_parted for values from (0,0) to (10,10);
-create table range_parted2 partition of range_parted for values from (10,10) to (20,20);
-create index on range_parted (a,b,c);
+create table inh_range_parted (a int, b int, c int) partition by range(a, b);
+create table inh_range_parted1 partition of inh_range_parted for values from (0,0) to (10,10);
+create table inh_range_parted2 partition of inh_range_parted for values from (10,10) to (20,20);
+create index on inh_range_parted (a,b,c);
 
-explain (costs off) select * from range_parted order by a,b,c;
-explain (costs off) select * from range_parted order by a desc,b desc,c desc;
+explain (costs off) select * from inh_range_parted order by a,b,c;
+explain (costs off) select * from inh_range_parted order by a desc,b desc,c desc;
 
-drop table range_parted;
+drop table inh_range_parted;
 
 -- Check that we allow access to a child table's statistics when the user
 -- has permissions only for the parent table.

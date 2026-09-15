@@ -97,27 +97,27 @@ select cache_test_2();
 --- Check that change of search_path is honored when re-using cached plan
 
 create schema s1
-  create table abc (f1 int);
+  create table pc_abc (f1 int);
 
 create schema s2
-  create table abc (f1 int);
+  create table pc_abc (f1 int);
 
-insert into s1.abc values(123);
-insert into s2.abc values(456);
+insert into s1.pc_abc values(123);
+insert into s2.pc_abc values(456);
 
 set search_path = s1;
 
-prepare p1 as select f1 from abc;
+prepare p1 as select f1 from pc_abc;
 
 execute p1;
 
 set search_path = s2;
 
-select f1 from abc;
+select f1 from pc_abc;
 
 execute p1;
 
-alter table s1.abc add column f2 float8;   -- force replan
+alter table s1.pc_abc add column f2 float8;   -- force replan
 
 execute p1;
 

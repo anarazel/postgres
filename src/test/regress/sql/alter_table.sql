@@ -1214,75 +1214,75 @@ alter table renameColumn add column y int check (x > 0) not enforced enforced;
 
 -- Test corner cases in dropping of inherited columns
 
-create table p1 (f1 int, f2 int);
-create table c1 (f1 int not null) inherits(p1);
+create table at_p1 (f1 int, f2 int);
+create table at_c1 (f1 int not null) inherits(at_p1);
 
--- should be rejected since c1.f1 is inherited
-alter table c1 drop column f1;
+-- should be rejected since at_c1.f1 is inherited
+alter table at_c1 drop column f1;
 -- should work
-alter table p1 drop column f1;
--- c1.f1 is still there, but no longer inherited
-select f1 from c1;
-alter table c1 drop column f1;
-select f1 from c1;
+alter table at_p1 drop column f1;
+-- at_c1.f1 is still there, but no longer inherited
+select f1 from at_c1;
+alter table at_c1 drop column f1;
+select f1 from at_c1;
 
-drop table p1 cascade;
+drop table at_p1 cascade;
 
-create table p1 (f1 int, f2 int);
-create table c1 () inherits(p1);
+create table at_p1 (f1 int, f2 int);
+create table at_c1 () inherits(at_p1);
 
--- should be rejected since c1.f1 is inherited
-alter table c1 drop column f1;
-alter table p1 drop column f1;
--- c1.f1 is dropped now, since there is no local definition for it
-select f1 from c1;
+-- should be rejected since at_c1.f1 is inherited
+alter table at_c1 drop column f1;
+alter table at_p1 drop column f1;
+-- at_c1.f1 is dropped now, since there is no local definition for it
+select f1 from at_c1;
 
-drop table p1 cascade;
+drop table at_p1 cascade;
 
-create table p1 (f1 int, f2 int);
-create table c1 () inherits(p1);
+create table at_p1 (f1 int, f2 int);
+create table at_c1 () inherits(at_p1);
 
--- should be rejected since c1.f1 is inherited
-alter table c1 drop column f1;
-alter table only p1 drop column f1;
--- c1.f1 is NOT dropped, but must now be considered non-inherited
-alter table c1 drop column f1;
+-- should be rejected since at_c1.f1 is inherited
+alter table at_c1 drop column f1;
+alter table only at_p1 drop column f1;
+-- at_c1.f1 is NOT dropped, but must now be considered non-inherited
+alter table at_c1 drop column f1;
 
-drop table p1 cascade;
+drop table at_p1 cascade;
 
-create table p1 (f1 int, f2 int);
-create table c1 (f1 int not null) inherits(p1);
+create table at_p1 (f1 int, f2 int);
+create table at_c1 (f1 int not null) inherits(at_p1);
 
--- should be rejected since c1.f1 is inherited
-alter table c1 drop column f1;
-alter table only p1 drop column f1;
--- c1.f1 is still there, but no longer inherited
-alter table c1 drop column f1;
+-- should be rejected since at_c1.f1 is inherited
+alter table at_c1 drop column f1;
+alter table only at_p1 drop column f1;
+-- at_c1.f1 is still there, but no longer inherited
+alter table at_c1 drop column f1;
 
-drop table p1 cascade;
+drop table at_p1 cascade;
 
-create table p1(id int, name text);
-create table p2(id2 int, name text, height int);
-create table c1(age int) inherits(p1,p2);
-create table gc1() inherits (c1);
+create table at_p1(id int, name text);
+create table at_p2(id2 int, name text, height int);
+create table at_c1(age int) inherits(at_p1,at_p2);
+create table at_gc1() inherits (at_c1);
 
 select relname, attname, attinhcount, attislocal
 from pg_class join pg_attribute on (pg_class.oid = pg_attribute.attrelid)
-where relname in ('p1','p2','c1','gc1') and attnum > 0 and not attisdropped
+where relname in ('at_p1','at_p2','at_c1','at_gc1') and attnum > 0 and not attisdropped
 order by relname, attnum;
 
 -- should work
-alter table only p1 drop column name;
--- should work. Now c1.name is local and inhcount is 0.
-alter table p2 drop column name;
+alter table only at_p1 drop column name;
+-- should work. Now at_c1.name is local and inhcount is 0.
+alter table at_p2 drop column name;
 -- should be rejected since its inherited
-alter table gc1 drop column name;
--- should work, and drop gc1.name along
-alter table c1 drop column name;
+alter table at_gc1 drop column name;
+-- should work, and drop at_gc1.name along
+alter table at_c1 drop column name;
 -- should fail: column does not exist
-alter table gc1 drop column name;
+alter table at_gc1 drop column name;
 -- should work and drop the attribute in all tables
-alter table p2 drop column height;
+alter table at_p2 drop column height;
 
 -- IF EXISTS test
 create table dropColumnExists ();
@@ -1291,10 +1291,10 @@ alter table dropColumnExists drop column if exists non_existing; --succeed
 
 select relname, attname, attinhcount, attislocal
 from pg_class join pg_attribute on (pg_class.oid = pg_attribute.attrelid)
-where relname in ('p1','p2','c1','gc1') and attnum > 0 and not attisdropped
+where relname in ('at_p1','at_p2','at_c1','at_gc1') and attnum > 0 and not attisdropped
 order by relname, attnum;
 
-drop table p1, p2 cascade;
+drop table at_p1, at_p2 cascade;
 
 -- test attinhcount tracking with merged columns
 
@@ -1310,21 +1310,21 @@ order by attrelid::regclass::text, attnum;
 
 -- test renumbering of child-table columns in inherited operations
 
-create table p1 (f1 int);
-create table c1 (f2 text, f3 int) inherits (p1);
+create table at_p1 (f1 int);
+create table at_c1 (f2 text, f3 int) inherits (at_p1);
 
-alter table p1 add column a1 int check (a1 > 0);
-alter table p1 add column f2 text;
+alter table at_p1 add column a1 int check (a1 > 0);
+alter table at_p1 add column f2 text;
 
-insert into p1 values (1,2,'abc');
-insert into c1 values(11,'xyz',33,0); -- should fail
-insert into c1 values(11,'xyz',33,22);
+insert into at_p1 values (1,2,'abc');
+insert into at_c1 values(11,'xyz',33,0); -- should fail
+insert into at_c1 values(11,'xyz',33,22);
 
-select * from p1;
-update p1 set a1 = a1 + 1, f2 = upper(f2);
-select * from p1;
+select * from at_p1;
+update at_p1 set a1 = a1 + 1, f2 = upper(f2);
+select * from at_p1;
 
-drop table p1 cascade;
+drop table at_p1 cascade;
 
 -- test that operations with a dropped column do not try to reference
 -- its datatype
@@ -2920,31 +2920,31 @@ DROP TABLE fail_def_part;
 DROP TABLE hash_parted;
 
 -- more tests for certain multi-level partitioning scenarios
-create table p (a int, b int) partition by range (a, b);
-create table p1 (b int, a int not null) partition by range (b);
-create table p11 (like p1);
-alter table p11 drop a;
-alter table p11 add a int;
-alter table p11 drop a;
-alter table p11 add a int not null;
--- attnum for key attribute 'a' is different in p, p1, and p11
+create table at_part (a int, b int) partition by range (a, b);
+create table at_part1 (b int, a int not null) partition by range (b);
+create table at_part11 (like at_part1);
+alter table at_part11 drop a;
+alter table at_part11 add a int;
+alter table at_part11 drop a;
+alter table at_part11 add a int not null;
+-- attnum for key attribute 'a' is different in at_part, at_part1, and at_part11
 select attrelid::regclass, attname, attnum
 from pg_attribute
 where attname = 'a'
- and (attrelid = 'p'::regclass
-   or attrelid = 'p1'::regclass
-   or attrelid = 'p11'::regclass)
+ and (attrelid = 'at_part'::regclass
+   or attrelid = 'at_part1'::regclass
+   or attrelid = 'at_part11'::regclass)
 order by attrelid::regclass::text;
 
-alter table p1 attach partition p11 for values from (2) to (5);
+alter table at_part1 attach partition at_part11 for values from (2) to (5);
 
-insert into p1 (a, b) values (2, 3);
+insert into at_part1 (a, b) values (2, 3);
 -- check that partition validation scan correctly detects violating rows
-alter table p attach partition p1 for values from (1, 2) to (1, 10);
+alter table at_part attach partition at_part1 for values from (1, 2) to (1, 10);
 
 -- cleanup
-drop table p;
-drop table p1;
+drop table at_part;
+drop table at_part1;
 
 -- validate constraint on partitioned tables should only scan leaf partitions
 create table parted_validate_test (a int) partition by list (a);

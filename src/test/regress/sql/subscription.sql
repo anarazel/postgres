@@ -8,7 +8,7 @@
 
 \set regresslib :libdir '/regress' :dlsuffix
 
-CREATE FUNCTION test_fdw_connection(oid, oid, internal)
+CREATE FUNCTION sub_test_fdw_connection(oid, oid, internal)
     RETURNS text
     AS :'regresslib', 'test_fdw_connection'
     LANGUAGE C;
@@ -107,43 +107,43 @@ CREATE SUBSCRIPTION regress_testsub5 CONNECTION 'i_dont_exist=param' PUBLICATION
 -- connecting, so this is reliable and safe)
 CREATE SUBSCRIPTION regress_testsub5 CONNECTION 'port=-1' PUBLICATION testpub;
 
-CREATE FOREIGN DATA WRAPPER test_fdw;
-CREATE SERVER test_server FOREIGN DATA WRAPPER test_fdw;
+CREATE FOREIGN DATA WRAPPER sub_test_fdw;
+CREATE SERVER sub_test_server FOREIGN DATA WRAPPER sub_test_fdw;
 
 GRANT CREATE ON DATABASE REGRESSION TO regress_subscription_user3;
 SET SESSION AUTHORIZATION regress_subscription_user3;
 
 -- fail, need USAGE privileges on server
-CREATE SUBSCRIPTION regress_testsub6 SERVER test_server PUBLICATION testpub WITH (slot_name = NONE, connect = false);
+CREATE SUBSCRIPTION regress_testsub6 SERVER sub_test_server PUBLICATION testpub WITH (slot_name = NONE, connect = false);
 
 RESET SESSION AUTHORIZATION;
-GRANT USAGE ON FOREIGN SERVER test_server TO regress_subscription_user3;
+GRANT USAGE ON FOREIGN SERVER sub_test_server TO regress_subscription_user3;
 SET SESSION AUTHORIZATION regress_subscription_user3;
 
 -- warn, need user mapping, then fail, FDW doesn't support connections
-CREATE SUBSCRIPTION regress_testsub6 SERVER test_server PUBLICATION testpub WITH (slot_name = NONE, connect = false);
+CREATE SUBSCRIPTION regress_testsub6 SERVER sub_test_server PUBLICATION testpub WITH (slot_name = NONE, connect = false);
 
-CREATE USER MAPPING FOR regress_subscription_user3 SERVER test_server OPTIONS(user 'foo', password 'secret');
+CREATE USER MAPPING FOR regress_subscription_user3 SERVER sub_test_server OPTIONS(user 'foo', password 'secret');
 
 RESET SESSION AUTHORIZATION;
-ALTER FOREIGN DATA WRAPPER test_fdw CONNECTION test_fdw_connection;
+ALTER FOREIGN DATA WRAPPER sub_test_fdw CONNECTION sub_test_fdw_connection;
 SET SESSION AUTHORIZATION regress_subscription_user3;
 
-CREATE SUBSCRIPTION regress_testsub6 SERVER test_server
+CREATE SUBSCRIPTION regress_testsub6 SERVER sub_test_server
   PUBLICATION testpub WITH (slot_name = 'dummy', connect = false);
 
 RESET SESSION AUTHORIZATION;
 -- fail, subscription depends on the server and cannot be dropped by CASCADE
-DROP SERVER test_server CASCADE;
+DROP SERVER sub_test_server CASCADE;
 
 -- ok, USAGE privilege on server not checked for OWNER TO, but warn
 -- about user mapping
 ALTER SUBSCRIPTION regress_testsub6 OWNER TO regress_subscription_user2;
 ALTER SUBSCRIPTION regress_testsub6 OWNER TO regress_subscription_user3;
-REVOKE USAGE ON FOREIGN SERVER test_server FROM regress_subscription_user3;
+REVOKE USAGE ON FOREIGN SERVER sub_test_server FROM regress_subscription_user3;
 SET SESSION AUTHORIZATION regress_subscription_user3;
 
--- ok, lacks USAGE on test_server, but replacing connection anyway
+-- ok, lacks USAGE on sub_test_server, but replacing connection anyway
 BEGIN;
 ALTER SUBSCRIPTION regress_testsub6 CONNECTION 'dbname=regress_doesnotexist password=secret';
 ABORT;
@@ -155,16 +155,16 @@ ALTER SUBSCRIPTION regress_testsub6 REFRESH PUBLICATION;
 DROP SUBSCRIPTION regress_testsub6;
 
 RESET SESSION AUTHORIZATION;
-GRANT USAGE ON FOREIGN SERVER test_server TO regress_subscription_user3;
+GRANT USAGE ON FOREIGN SERVER sub_test_server TO regress_subscription_user3;
 SET SESSION AUTHORIZATION regress_subscription_user3;
 
 ALTER SUBSCRIPTION regress_testsub6 SET (slot_name = NONE);
 DROP SUBSCRIPTION regress_testsub6; --ok
 
-CREATE SUBSCRIPTION regress_testsub6 SERVER test_server
+CREATE SUBSCRIPTION regress_testsub6 SERVER sub_test_server
   PUBLICATION testpub WITH (slot_name = 'dummy', connect = false);
 
-DROP USER MAPPING FOR regress_subscription_user3 SERVER test_server;
+DROP USER MAPPING FOR regress_subscription_user3 SERVER sub_test_server;
 
 -- ok, catalog-only forms don't construct conninfo
 ALTER SUBSCRIPTION regress_testsub6 ENABLE;
@@ -175,7 +175,7 @@ ALTER SUBSCRIPTION regress_testsub6 SET (disable_on_error = true);
 ALTER SUBSCRIPTION regress_testsub6 SET (disable_on_error = false);
 ALTER SUBSCRIPTION regress_testsub6 SET PUBLICATION testpub WITH (refresh = false);
 
--- ok, test_server lacks user mapping, but replacing connection anyway
+-- ok, sub_test_server lacks user mapping, but replacing connection anyway
 BEGIN;
 ALTER SUBSCRIPTION regress_testsub6 CONNECTION 'dbname=regress_doesnotexist password=secret';
 ABORT;
@@ -190,16 +190,16 @@ DROP SUBSCRIPTION regress_testsub6; --ok
 SET SESSION AUTHORIZATION regress_subscription_user;
 REVOKE CREATE ON DATABASE REGRESSION FROM regress_subscription_user3;
 
-DROP SERVER test_server;
+DROP SERVER sub_test_server;
 
 -- fail, FDW is dependent
-DROP FUNCTION test_fdw_connection(oid, oid, internal);
+DROP FUNCTION sub_test_fdw_connection(oid, oid, internal);
 -- warn
-ALTER FOREIGN DATA WRAPPER test_fdw NO CONNECTION;
+ALTER FOREIGN DATA WRAPPER sub_test_fdw NO CONNECTION;
 
-DROP FUNCTION test_fdw_connection(oid, oid, internal);
+DROP FUNCTION sub_test_fdw_connection(oid, oid, internal);
 
-DROP FOREIGN DATA WRAPPER test_fdw;
+DROP FOREIGN DATA WRAPPER sub_test_fdw;
 
 -- fail - invalid connection string during ALTER
 ALTER SUBSCRIPTION regress_testsub CONNECTION 'foobar';

@@ -222,10 +222,10 @@ explain (costs off)
 	select count(*) from tenk1, tenk2 where tenk1.hundred > 1 and tenk2.thousand=0;
 select count(*) from tenk1, tenk2 where tenk1.hundred > 1 and tenk2.thousand=0;
 
-create table bmscantest (a int, t text);
-insert into bmscantest select r, 'fooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo' FROM generate_series(1,100000) r;
-create index i_bmtest ON bmscantest(a);
-select count(*) from bmscantest where a>1;
+create table parallel_bmscantest (a int, t text);
+insert into parallel_bmscantest select r, 'fooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo' FROM generate_series(1,100000) r;
+create index i_bmtest ON parallel_bmscantest(a);
+select count(*) from parallel_bmscantest where a>1;
 
 -- test accumulation of stats for parallel nodes
 reset enable_seqscan;
@@ -259,7 +259,7 @@ reset enable_hashjoin;
 reset enable_mergejoin;
 reset enable_material;
 reset effective_io_concurrency;
-drop table bmscantest;
+drop table parallel_bmscantest;
 drop function explain_parallel_sort_stats();
 
 -- test parallel merge join path.

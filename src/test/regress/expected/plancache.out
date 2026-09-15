@@ -165,13 +165,13 @@ select cache_test_2();
 
 --- Check that change of search_path is honored when re-using cached plan
 create schema s1
-  create table abc (f1 int);
+  create table pc_abc (f1 int);
 create schema s2
-  create table abc (f1 int);
-insert into s1.abc values(123);
-insert into s2.abc values(456);
+  create table pc_abc (f1 int);
+insert into s1.pc_abc values(123);
+insert into s2.pc_abc values(456);
 set search_path = s1;
-prepare p1 as select f1 from abc;
+prepare p1 as select f1 from pc_abc;
 execute p1;
  f1  
 -----
@@ -179,7 +179,7 @@ execute p1;
 (1 row)
 
 set search_path = s2;
-select f1 from abc;
+select f1 from pc_abc;
  f1  
 -----
  456
@@ -191,7 +191,7 @@ execute p1;
  456
 (1 row)
 
-alter table s1.abc add column f2 float8;   -- force replan
+alter table s1.pc_abc add column f2 float8;   -- force replan
 execute p1;
  f1  
 -----
@@ -199,9 +199,9 @@ execute p1;
 (1 row)
 
 drop schema s1 cascade;
-NOTICE:  drop cascades to table s1.abc
+NOTICE:  drop cascades to table s1.pc_abc
 drop schema s2 cascade;
-NOTICE:  drop cascades to table abc
+NOTICE:  drop cascades to table pc_abc
 reset search_path;
 -- Check that invalidation deals with regclass constants
 create temp sequence seq;

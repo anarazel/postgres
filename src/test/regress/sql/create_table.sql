@@ -237,8 +237,8 @@ CREATE TABLE fail () INHERITS (partitioned2);
 \d+ partitioned2
 
 INSERT INTO partitioned2 VALUES (1, 'hello');
-CREATE TABLE part2_1 PARTITION OF partitioned2 FOR VALUES FROM (-1, 'aaaaa') TO (100, 'ccccc');
-\d+ part2_1
+CREATE TABLE ct_part2_1 PARTITION OF partitioned2 FOR VALUES FROM (-1, 'aaaaa') TO (100, 'ccccc');
+\d+ ct_part2_1
 
 DROP TABLE partitioned, partitioned2;
 
@@ -304,36 +304,36 @@ table partitioned;  -- gone
 
 -- check partition bound syntax
 
-CREATE TABLE list_parted (
+CREATE TABLE ct_list_parted (
 	a int
 ) PARTITION BY LIST (a);
-CREATE TABLE part_p1 PARTITION OF list_parted FOR VALUES IN ('1');
-CREATE TABLE part_p2 PARTITION OF list_parted FOR VALUES IN (2);
-CREATE TABLE part_p3 PARTITION OF list_parted FOR VALUES IN ((2+1));
-CREATE TABLE part_null PARTITION OF list_parted FOR VALUES IN (null);
-\d+ list_parted
+CREATE TABLE part_p1 PARTITION OF ct_list_parted FOR VALUES IN ('1');
+CREATE TABLE part_p2 PARTITION OF ct_list_parted FOR VALUES IN (2);
+CREATE TABLE part_p3 PARTITION OF ct_list_parted FOR VALUES IN ((2+1));
+CREATE TABLE ct_part_null PARTITION OF ct_list_parted FOR VALUES IN (null);
+\d+ ct_list_parted
 
 -- forbidden expressions for partition bound with list partitioned table
-CREATE TABLE part_bogus_expr_fail PARTITION OF list_parted FOR VALUES IN (somename);
-CREATE TABLE part_bogus_expr_fail PARTITION OF list_parted FOR VALUES IN (somename.somename);
-CREATE TABLE part_bogus_expr_fail PARTITION OF list_parted FOR VALUES IN (a);
-CREATE TABLE part_bogus_expr_fail PARTITION OF list_parted FOR VALUES IN (sum(a));
-CREATE TABLE part_bogus_expr_fail PARTITION OF list_parted FOR VALUES IN (sum(somename));
-CREATE TABLE part_bogus_expr_fail PARTITION OF list_parted FOR VALUES IN (sum(1));
-CREATE TABLE part_bogus_expr_fail PARTITION OF list_parted FOR VALUES IN ((select 1));
-CREATE TABLE part_bogus_expr_fail PARTITION OF list_parted FOR VALUES IN (generate_series(4, 6));
-CREATE TABLE part_bogus_expr_fail PARTITION OF list_parted FOR VALUES IN ((1+1) collate "POSIX");
+CREATE TABLE part_bogus_expr_fail PARTITION OF ct_list_parted FOR VALUES IN (somename);
+CREATE TABLE part_bogus_expr_fail PARTITION OF ct_list_parted FOR VALUES IN (somename.somename);
+CREATE TABLE part_bogus_expr_fail PARTITION OF ct_list_parted FOR VALUES IN (a);
+CREATE TABLE part_bogus_expr_fail PARTITION OF ct_list_parted FOR VALUES IN (sum(a));
+CREATE TABLE part_bogus_expr_fail PARTITION OF ct_list_parted FOR VALUES IN (sum(somename));
+CREATE TABLE part_bogus_expr_fail PARTITION OF ct_list_parted FOR VALUES IN (sum(1));
+CREATE TABLE part_bogus_expr_fail PARTITION OF ct_list_parted FOR VALUES IN ((select 1));
+CREATE TABLE part_bogus_expr_fail PARTITION OF ct_list_parted FOR VALUES IN (generate_series(4, 6));
+CREATE TABLE part_bogus_expr_fail PARTITION OF ct_list_parted FOR VALUES IN ((1+1) collate "POSIX");
 
 -- syntax does not allow empty list of values for list partitions
-CREATE TABLE fail_part PARTITION OF list_parted FOR VALUES IN ();
+CREATE TABLE fail_part PARTITION OF ct_list_parted FOR VALUES IN ();
 -- trying to specify range for list partitioned table
-CREATE TABLE fail_part PARTITION OF list_parted FOR VALUES FROM (1) TO (2);
+CREATE TABLE fail_part PARTITION OF ct_list_parted FOR VALUES FROM (1) TO (2);
 -- trying to specify modulus and remainder for list partitioned table
-CREATE TABLE fail_part PARTITION OF list_parted FOR VALUES WITH (MODULUS 10, REMAINDER 1);
+CREATE TABLE fail_part PARTITION OF ct_list_parted FOR VALUES WITH (MODULUS 10, REMAINDER 1);
 
 -- check default partition cannot be created more than once
-CREATE TABLE part_default PARTITION OF list_parted DEFAULT;
-CREATE TABLE fail_default_part PARTITION OF list_parted DEFAULT;
+CREATE TABLE ct_part_default PARTITION OF ct_list_parted DEFAULT;
+CREATE TABLE fail_default_part PARTITION OF ct_list_parted DEFAULT;
 
 -- specified literal can't be cast to the partition column data type
 CREATE TABLE bools (
@@ -360,64 +360,64 @@ CREATE TABLE bigintp_10 PARTITION OF bigintp FOR VALUES IN (10);
 CREATE TABLE bigintp_10_2 PARTITION OF bigintp FOR VALUES IN ('10');
 DROP TABLE bigintp;
 
-CREATE TABLE range_parted (
+CREATE TABLE ct_range_parted (
 	a date
 ) PARTITION BY RANGE (a);
 
 -- forbidden expressions for partition bounds with range partitioned table
-CREATE TABLE part_bogus_expr_fail PARTITION OF range_parted
+CREATE TABLE part_bogus_expr_fail PARTITION OF ct_range_parted
   FOR VALUES FROM (somename) TO ('2019-01-01');
-CREATE TABLE part_bogus_expr_fail PARTITION OF range_parted
+CREATE TABLE part_bogus_expr_fail PARTITION OF ct_range_parted
   FOR VALUES FROM (somename.somename) TO ('2019-01-01');
-CREATE TABLE part_bogus_expr_fail PARTITION OF range_parted
+CREATE TABLE part_bogus_expr_fail PARTITION OF ct_range_parted
   FOR VALUES FROM (a) TO ('2019-01-01');
-CREATE TABLE part_bogus_expr_fail PARTITION OF range_parted
+CREATE TABLE part_bogus_expr_fail PARTITION OF ct_range_parted
   FOR VALUES FROM (max(a)) TO ('2019-01-01');
-CREATE TABLE part_bogus_expr_fail PARTITION OF range_parted
+CREATE TABLE part_bogus_expr_fail PARTITION OF ct_range_parted
   FOR VALUES FROM (max(somename)) TO ('2019-01-01');
-CREATE TABLE part_bogus_expr_fail PARTITION OF range_parted
+CREATE TABLE part_bogus_expr_fail PARTITION OF ct_range_parted
   FOR VALUES FROM (max('2019-02-01'::date)) TO ('2019-01-01');
-CREATE TABLE part_bogus_expr_fail PARTITION OF range_parted
+CREATE TABLE part_bogus_expr_fail PARTITION OF ct_range_parted
   FOR VALUES FROM ((select 1)) TO ('2019-01-01');
-CREATE TABLE part_bogus_expr_fail PARTITION OF range_parted
+CREATE TABLE part_bogus_expr_fail PARTITION OF ct_range_parted
   FOR VALUES FROM (generate_series(1, 3)) TO ('2019-01-01');
 
 -- trying to specify list for range partitioned table
-CREATE TABLE fail_part PARTITION OF range_parted FOR VALUES IN ('a');
+CREATE TABLE fail_part PARTITION OF ct_range_parted FOR VALUES IN ('a');
 -- trying to specify modulus and remainder for range partitioned table
-CREATE TABLE fail_part PARTITION OF range_parted FOR VALUES WITH (MODULUS 10, REMAINDER 1);
+CREATE TABLE fail_part PARTITION OF ct_range_parted FOR VALUES WITH (MODULUS 10, REMAINDER 1);
 -- each of start and end bounds must have same number of values as the
 -- length of the partition key
-CREATE TABLE fail_part PARTITION OF range_parted FOR VALUES FROM ('a', 1) TO ('z');
-CREATE TABLE fail_part PARTITION OF range_parted FOR VALUES FROM ('a') TO ('z', 1);
+CREATE TABLE fail_part PARTITION OF ct_range_parted FOR VALUES FROM ('a', 1) TO ('z');
+CREATE TABLE fail_part PARTITION OF ct_range_parted FOR VALUES FROM ('a') TO ('z', 1);
 
 -- cannot specify null values in range bounds
-CREATE TABLE fail_part PARTITION OF range_parted FOR VALUES FROM (null) TO (maxvalue);
+CREATE TABLE fail_part PARTITION OF ct_range_parted FOR VALUES FROM (null) TO (maxvalue);
 
 -- trying to specify modulus and remainder for range partitioned table
-CREATE TABLE fail_part PARTITION OF range_parted FOR VALUES WITH (MODULUS 10, REMAINDER 1);
+CREATE TABLE fail_part PARTITION OF ct_range_parted FOR VALUES WITH (MODULUS 10, REMAINDER 1);
 
 -- check partition bound syntax for the hash partition
-CREATE TABLE hash_parted (
+CREATE TABLE ct_hash_parted (
 	a int
 ) PARTITION BY HASH (a);
-CREATE TABLE hpart_1 PARTITION OF hash_parted FOR VALUES WITH (MODULUS 10, REMAINDER 0);
-CREATE TABLE hpart_2 PARTITION OF hash_parted FOR VALUES WITH (MODULUS 50, REMAINDER 1);
-CREATE TABLE hpart_3 PARTITION OF hash_parted FOR VALUES WITH (MODULUS 200, REMAINDER 2);
-CREATE TABLE hpart_4 PARTITION OF hash_parted FOR VALUES WITH (MODULUS 10, REMAINDER 3);
+CREATE TABLE hpart_1 PARTITION OF ct_hash_parted FOR VALUES WITH (MODULUS 10, REMAINDER 0);
+CREATE TABLE hpart_2 PARTITION OF ct_hash_parted FOR VALUES WITH (MODULUS 50, REMAINDER 1);
+CREATE TABLE hpart_3 PARTITION OF ct_hash_parted FOR VALUES WITH (MODULUS 200, REMAINDER 2);
+CREATE TABLE hpart_4 PARTITION OF ct_hash_parted FOR VALUES WITH (MODULUS 10, REMAINDER 3);
 -- modulus 25 is factor of modulus of 50 but 10 is not a factor of 25.
-CREATE TABLE fail_part PARTITION OF hash_parted FOR VALUES WITH (MODULUS 25, REMAINDER 3);
+CREATE TABLE fail_part PARTITION OF ct_hash_parted FOR VALUES WITH (MODULUS 25, REMAINDER 3);
 -- previous modulus 50 is factor of 150 but this modulus is not a factor of next modulus 200.
-CREATE TABLE fail_part PARTITION OF hash_parted FOR VALUES WITH (MODULUS 150, REMAINDER 3);
+CREATE TABLE fail_part PARTITION OF ct_hash_parted FOR VALUES WITH (MODULUS 150, REMAINDER 3);
 -- overlapping remainders
-CREATE TABLE fail_part PARTITION OF hash_parted FOR VALUES WITH (MODULUS 100, REMAINDER 3);
+CREATE TABLE fail_part PARTITION OF ct_hash_parted FOR VALUES WITH (MODULUS 100, REMAINDER 3);
 -- trying to specify range for the hash partitioned table
-CREATE TABLE fail_part PARTITION OF hash_parted FOR VALUES FROM ('a', 1) TO ('z');
+CREATE TABLE fail_part PARTITION OF ct_hash_parted FOR VALUES FROM ('a', 1) TO ('z');
 -- trying to specify list value for the hash partitioned table
-CREATE TABLE fail_part PARTITION OF hash_parted FOR VALUES IN (1000);
+CREATE TABLE fail_part PARTITION OF ct_hash_parted FOR VALUES IN (1000);
 
 -- trying to create default partition for the hash partitioned table
-CREATE TABLE fail_default_part PARTITION OF hash_parted DEFAULT;
+CREATE TABLE fail_default_part PARTITION OF ct_hash_parted DEFAULT;
 
 -- check if compatible with the specified parent
 
@@ -438,93 +438,93 @@ DROP TABLE temp_parted;
 
 -- check for partition bound overlap and other invalid specifications
 
-CREATE TABLE list_parted2 (
+CREATE TABLE ct_list_parted2 (
 	a varchar
 ) PARTITION BY LIST (a);
-CREATE TABLE part_null_z PARTITION OF list_parted2 FOR VALUES IN (null, 'z');
-CREATE TABLE part_ab PARTITION OF list_parted2 FOR VALUES IN ('a', 'b');
-CREATE TABLE list_parted2_def PARTITION OF list_parted2 DEFAULT;
+CREATE TABLE ct_part_null_z PARTITION OF ct_list_parted2 FOR VALUES IN (null, 'z');
+CREATE TABLE part_ab PARTITION OF ct_list_parted2 FOR VALUES IN ('a', 'b');
+CREATE TABLE ct_list_parted2_def PARTITION OF ct_list_parted2 DEFAULT;
 
-CREATE TABLE fail_part PARTITION OF list_parted2 FOR VALUES IN (null);
-CREATE TABLE fail_part PARTITION OF list_parted2 FOR VALUES IN ('b', 'c');
+CREATE TABLE fail_part PARTITION OF ct_list_parted2 FOR VALUES IN (null);
+CREATE TABLE fail_part PARTITION OF ct_list_parted2 FOR VALUES IN ('b', 'c');
 -- check default partition overlap
-INSERT INTO list_parted2 VALUES('X');
-CREATE TABLE fail_part PARTITION OF list_parted2 FOR VALUES IN ('W', 'X', 'Y');
+INSERT INTO ct_list_parted2 VALUES('X');
+CREATE TABLE fail_part PARTITION OF ct_list_parted2 FOR VALUES IN ('W', 'X', 'Y');
 
-CREATE TABLE range_parted2 (
+CREATE TABLE ct_range_parted2 (
 	a int
 ) PARTITION BY RANGE (a);
 
 -- trying to create range partition with empty range
-CREATE TABLE fail_part PARTITION OF range_parted2 FOR VALUES FROM (1) TO (0);
+CREATE TABLE fail_part PARTITION OF ct_range_parted2 FOR VALUES FROM (1) TO (0);
 -- note that the range '[1, 1)' has no elements
-CREATE TABLE fail_part PARTITION OF range_parted2 FOR VALUES FROM (1) TO (1);
+CREATE TABLE fail_part PARTITION OF ct_range_parted2 FOR VALUES FROM (1) TO (1);
 
-CREATE TABLE part0 PARTITION OF range_parted2 FOR VALUES FROM (minvalue) TO (1);
-CREATE TABLE fail_part PARTITION OF range_parted2 FOR VALUES FROM (minvalue) TO (2);
-CREATE TABLE part1 PARTITION OF range_parted2 FOR VALUES FROM (1) TO (10);
-CREATE TABLE fail_part PARTITION OF range_parted2 FOR VALUES FROM (-1) TO (1);
-CREATE TABLE fail_part PARTITION OF range_parted2 FOR VALUES FROM (9) TO (maxvalue);
-CREATE TABLE part2 PARTITION OF range_parted2 FOR VALUES FROM (20) TO (30);
-CREATE TABLE part3 PARTITION OF range_parted2 FOR VALUES FROM (30) TO (40);
-CREATE TABLE fail_part PARTITION OF range_parted2 FOR VALUES FROM (10) TO (30);
-CREATE TABLE fail_part PARTITION OF range_parted2 FOR VALUES FROM (10) TO (50);
+CREATE TABLE part0 PARTITION OF ct_range_parted2 FOR VALUES FROM (minvalue) TO (1);
+CREATE TABLE fail_part PARTITION OF ct_range_parted2 FOR VALUES FROM (minvalue) TO (2);
+CREATE TABLE ct_part1 PARTITION OF ct_range_parted2 FOR VALUES FROM (1) TO (10);
+CREATE TABLE fail_part PARTITION OF ct_range_parted2 FOR VALUES FROM (-1) TO (1);
+CREATE TABLE fail_part PARTITION OF ct_range_parted2 FOR VALUES FROM (9) TO (maxvalue);
+CREATE TABLE ct_part2 PARTITION OF ct_range_parted2 FOR VALUES FROM (20) TO (30);
+CREATE TABLE ct_part3 PARTITION OF ct_range_parted2 FOR VALUES FROM (30) TO (40);
+CREATE TABLE fail_part PARTITION OF ct_range_parted2 FOR VALUES FROM (10) TO (30);
+CREATE TABLE fail_part PARTITION OF ct_range_parted2 FOR VALUES FROM (10) TO (50);
 
 -- Create a default partition for range partitioned table
-CREATE TABLE range2_default PARTITION OF range_parted2 DEFAULT;
+CREATE TABLE range2_default PARTITION OF ct_range_parted2 DEFAULT;
 
 -- More than one default partition is not allowed, so this should give error
-CREATE TABLE fail_default_part PARTITION OF range_parted2 DEFAULT;
+CREATE TABLE fail_default_part PARTITION OF ct_range_parted2 DEFAULT;
 
 -- Check if the range for default partitions overlap
-INSERT INTO range_parted2 VALUES (85);
-CREATE TABLE fail_part PARTITION OF range_parted2 FOR VALUES FROM (80) TO (90);
-CREATE TABLE part4 PARTITION OF range_parted2 FOR VALUES FROM (90) TO (100);
+INSERT INTO ct_range_parted2 VALUES (85);
+CREATE TABLE fail_part PARTITION OF ct_range_parted2 FOR VALUES FROM (80) TO (90);
+CREATE TABLE ct_part4 PARTITION OF ct_range_parted2 FOR VALUES FROM (90) TO (100);
 
 -- now check for multi-column range partition key
-CREATE TABLE range_parted3 (
+CREATE TABLE ct_range_parted3 (
 	a int,
 	b int
 ) PARTITION BY RANGE (a, (b+1));
 
-CREATE TABLE part00 PARTITION OF range_parted3 FOR VALUES FROM (0, minvalue) TO (0, maxvalue);
-CREATE TABLE fail_part PARTITION OF range_parted3 FOR VALUES FROM (0, minvalue) TO (0, 1);
+CREATE TABLE part00 PARTITION OF ct_range_parted3 FOR VALUES FROM (0, minvalue) TO (0, maxvalue);
+CREATE TABLE fail_part PARTITION OF ct_range_parted3 FOR VALUES FROM (0, minvalue) TO (0, 1);
 
-CREATE TABLE part10 PARTITION OF range_parted3 FOR VALUES FROM (1, minvalue) TO (1, 1);
-CREATE TABLE part11 PARTITION OF range_parted3 FOR VALUES FROM (1, 1) TO (1, 10);
-CREATE TABLE part12 PARTITION OF range_parted3 FOR VALUES FROM (1, 10) TO (1, maxvalue);
-CREATE TABLE fail_part PARTITION OF range_parted3 FOR VALUES FROM (1, 10) TO (1, 20);
-CREATE TABLE range3_default PARTITION OF range_parted3 DEFAULT;
+CREATE TABLE ct_part10 PARTITION OF ct_range_parted3 FOR VALUES FROM (1, minvalue) TO (1, 1);
+CREATE TABLE ct_part11 PARTITION OF ct_range_parted3 FOR VALUES FROM (1, 1) TO (1, 10);
+CREATE TABLE ct_part12 PARTITION OF ct_range_parted3 FOR VALUES FROM (1, 10) TO (1, maxvalue);
+CREATE TABLE fail_part PARTITION OF ct_range_parted3 FOR VALUES FROM (1, 10) TO (1, 20);
+CREATE TABLE range3_default PARTITION OF ct_range_parted3 DEFAULT;
 
 -- cannot create a partition that says column b is allowed to range
 -- from -infinity to +infinity, while there exist partitions that have
 -- more specific ranges
-CREATE TABLE fail_part PARTITION OF range_parted3 FOR VALUES FROM (1, minvalue) TO (1, maxvalue);
+CREATE TABLE fail_part PARTITION OF ct_range_parted3 FOR VALUES FROM (1, minvalue) TO (1, maxvalue);
 
 -- check for partition bound overlap and other invalid specifications for the hash partition
-CREATE TABLE hash_parted2 (
+CREATE TABLE ct_hash_parted2 (
 	a varchar
 ) PARTITION BY HASH (a);
-CREATE TABLE h2part_1 PARTITION OF hash_parted2 FOR VALUES WITH (MODULUS 4, REMAINDER 2);
-CREATE TABLE h2part_2 PARTITION OF hash_parted2 FOR VALUES WITH (MODULUS 8, REMAINDER 0);
-CREATE TABLE h2part_3 PARTITION OF hash_parted2 FOR VALUES WITH (MODULUS 8, REMAINDER 4);
-CREATE TABLE h2part_4 PARTITION OF hash_parted2 FOR VALUES WITH (MODULUS 8, REMAINDER 5);
+CREATE TABLE h2part_1 PARTITION OF ct_hash_parted2 FOR VALUES WITH (MODULUS 4, REMAINDER 2);
+CREATE TABLE h2part_2 PARTITION OF ct_hash_parted2 FOR VALUES WITH (MODULUS 8, REMAINDER 0);
+CREATE TABLE h2part_3 PARTITION OF ct_hash_parted2 FOR VALUES WITH (MODULUS 8, REMAINDER 4);
+CREATE TABLE h2part_4 PARTITION OF ct_hash_parted2 FOR VALUES WITH (MODULUS 8, REMAINDER 5);
 -- overlap with part_4
-CREATE TABLE fail_part PARTITION OF hash_parted2 FOR VALUES WITH (MODULUS 2, REMAINDER 1);
+CREATE TABLE fail_part PARTITION OF ct_hash_parted2 FOR VALUES WITH (MODULUS 2, REMAINDER 1);
 -- modulus must be greater than zero
-CREATE TABLE fail_part PARTITION OF hash_parted2 FOR VALUES WITH (MODULUS 0, REMAINDER 1);
+CREATE TABLE fail_part PARTITION OF ct_hash_parted2 FOR VALUES WITH (MODULUS 0, REMAINDER 1);
 -- remainder must be greater than or equal to zero and less than modulus
-CREATE TABLE fail_part PARTITION OF hash_parted2 FOR VALUES WITH (MODULUS 8, REMAINDER 8);
+CREATE TABLE fail_part PARTITION OF ct_hash_parted2 FOR VALUES WITH (MODULUS 8, REMAINDER 8);
 
 -- check schema propagation from parent
 
-CREATE TABLE parted (
+CREATE TABLE ct_parted (
 	a text,
 	b int NOT NULL DEFAULT 0,
 	CONSTRAINT check_a CHECK (length(a) > 0)
 ) PARTITION BY LIST (a);
 
-CREATE TABLE part_a PARTITION OF parted FOR VALUES IN ('a');
+CREATE TABLE part_a PARTITION OF ct_parted FOR VALUES IN ('a');
 
 -- only inherited attributes (never local ones)
 SELECT attname, attislocal, attinhcount FROM pg_attribute
@@ -534,14 +534,14 @@ SELECT attname, attislocal, attinhcount FROM pg_attribute
 -- able to specify column default, column constraint, and table constraint
 
 -- first check the "column specified more than once" error
-CREATE TABLE part_b PARTITION OF parted (
+CREATE TABLE part_b PARTITION OF ct_parted (
 	b NOT NULL,
 	b DEFAULT 1,
 	b CHECK (b >= 0),
 	CONSTRAINT check_a CHECK (length(a) > 0)
 ) FOR VALUES IN ('b');
 
-CREATE TABLE part_b PARTITION OF parted (
+CREATE TABLE part_b PARTITION OF ct_parted (
 	b NOT NULL DEFAULT 1,
 	CONSTRAINT check_a CHECK (length(a) > 0),
 	CONSTRAINT check_b CHECK (b >= 0)
@@ -550,52 +550,52 @@ CREATE TABLE part_b PARTITION OF parted (
 SELECT conname, conislocal, coninhcount FROM pg_constraint WHERE conrelid = 'part_b'::regclass ORDER BY coninhcount DESC, conname;
 
 -- Once check_b is added to the parent, it should be made non-local for part_b
-ALTER TABLE parted ADD CONSTRAINT check_b CHECK (b >= 0);
+ALTER TABLE ct_parted ADD CONSTRAINT check_b CHECK (b >= 0);
 SELECT conname, conislocal, coninhcount FROM pg_constraint WHERE conrelid = 'part_b'::regclass ORDER BY coninhcount DESC, conname;
 
 -- Neither check_a nor check_b are droppable from part_b
 ALTER TABLE part_b DROP CONSTRAINT check_a;
 ALTER TABLE part_b DROP CONSTRAINT check_b;
 
--- And dropping it from parted should leave no trace of them on part_b, unlike
+-- And dropping it from ct_parted should leave no trace of them on part_b, unlike
 -- traditional inheritance where they will be left behind, because they would
 -- be local constraints.
-ALTER TABLE parted DROP CONSTRAINT check_a, DROP CONSTRAINT check_b;
+ALTER TABLE ct_parted DROP CONSTRAINT check_a, DROP CONSTRAINT check_b;
 SELECT conname, conislocal, coninhcount FROM pg_constraint WHERE conrelid = 'part_b'::regclass ORDER BY coninhcount DESC, conname;
 
 -- specify PARTITION BY for a partition
-CREATE TABLE fail_part_col_not_found PARTITION OF parted FOR VALUES IN ('c') PARTITION BY RANGE (c);
-CREATE TABLE part_c PARTITION OF parted (b WITH OPTIONS NOT NULL DEFAULT 0) FOR VALUES IN ('c') PARTITION BY RANGE ((b));
+CREATE TABLE fail_part_col_not_found PARTITION OF ct_parted FOR VALUES IN ('c') PARTITION BY RANGE (c);
+CREATE TABLE part_c PARTITION OF ct_parted (b WITH OPTIONS NOT NULL DEFAULT 0) FOR VALUES IN ('c') PARTITION BY RANGE ((b));
 
 -- create a level-2 partition
 CREATE TABLE part_c_1_10 PARTITION OF part_c FOR VALUES FROM (1) TO (10);
 
 -- check that NOT NULL and default value are inherited correctly
-create table parted_notnull_inh_test (a int default 1, b int not null default 0) partition by list (a);
-create table parted_notnull_inh_test1 partition of parted_notnull_inh_test (a not null, b default 1) for values in (1);
-insert into parted_notnull_inh_test (b) values (null);
+create table ct_parted_notnull_inh_test (a int default 1, b int not null default 0) partition by list (a);
+create table ct_parted_notnull_inh_test1 partition of ct_parted_notnull_inh_test (a not null, b default 1) for values in (1);
+insert into ct_parted_notnull_inh_test (b) values (null);
 -- note that while b's default is overridden, a's default is preserved
-\d parted_notnull_inh_test1
-drop table parted_notnull_inh_test;
+\d ct_parted_notnull_inh_test1
+drop table ct_parted_notnull_inh_test;
 
 -- check that collations are assigned in partition bound expressions
-create table parted_boolean_col (a bool, b text) partition by list(a);
-create table parted_boolean_less partition of parted_boolean_col
+create table ct_parted_boolean_col (a bool, b text) partition by list(a);
+create table ct_parted_boolean_less partition of ct_parted_boolean_col
   for values in ('foo' < 'bar');
-create table parted_boolean_greater partition of parted_boolean_col
+create table ct_parted_boolean_greater partition of ct_parted_boolean_col
   for values in ('foo' > 'bar');
-drop table parted_boolean_col;
+drop table ct_parted_boolean_col;
 
 -- check for a conflicting COLLATE clause
-create table parted_collate_must_match (a text collate "C", b text collate "C")
+create table ct_parted_collate_must_match (a text collate "C", b text collate "C")
   partition by range (a);
 -- on the partition key
-create table parted_collate_must_match1 partition of parted_collate_must_match
+create table ct_parted_collate_must_match1 partition of ct_parted_collate_must_match
   (a collate "POSIX") for values from ('a') to ('m');
 -- on another column
-create table parted_collate_must_match2 partition of parted_collate_must_match
+create table ct_parted_collate_must_match2 partition of ct_parted_collate_must_match
   (b collate "POSIX") for values from ('m') to ('z');
-drop table parted_collate_must_match;
+drop table ct_parted_collate_must_match;
 
 -- check that non-matching collations for partition bound
 -- expressions are coerced to the right collation
@@ -625,21 +625,21 @@ drop table test_part_coll_posix;
 -- Tempted to include \d+ output listing partitions with bound info but
 -- output could vary depending on the order in which partition oids are
 -- returned.
-\d parted
-\d hash_parted
+\d ct_parted
+\d ct_hash_parted
 
 -- check that we get the expected partition constraints
-CREATE TABLE range_parted4 (a int, b int, c int) PARTITION BY RANGE (abs(a), abs(b), c);
-CREATE TABLE unbounded_range_part PARTITION OF range_parted4 FOR VALUES FROM (MINVALUE, MINVALUE, MINVALUE) TO (MAXVALUE, MAXVALUE, MAXVALUE);
+CREATE TABLE ct_range_parted4 (a int, b int, c int) PARTITION BY RANGE (abs(a), abs(b), c);
+CREATE TABLE unbounded_range_part PARTITION OF ct_range_parted4 FOR VALUES FROM (MINVALUE, MINVALUE, MINVALUE) TO (MAXVALUE, MAXVALUE, MAXVALUE);
 \d+ unbounded_range_part
 DROP TABLE unbounded_range_part;
-CREATE TABLE range_parted4_1 PARTITION OF range_parted4 FOR VALUES FROM (MINVALUE, MINVALUE, MINVALUE) TO (1, MAXVALUE, MAXVALUE);
-\d+ range_parted4_1
-CREATE TABLE range_parted4_2 PARTITION OF range_parted4 FOR VALUES FROM (3, 4, 5) TO (6, 7, MAXVALUE);
-\d+ range_parted4_2
-CREATE TABLE range_parted4_3 PARTITION OF range_parted4 FOR VALUES FROM (6, 8, MINVALUE) TO (9, MAXVALUE, MAXVALUE);
-\d+ range_parted4_3
-DROP TABLE range_parted4;
+CREATE TABLE ct_range_parted4_1 PARTITION OF ct_range_parted4 FOR VALUES FROM (MINVALUE, MINVALUE, MINVALUE) TO (1, MAXVALUE, MAXVALUE);
+\d+ ct_range_parted4_1
+CREATE TABLE ct_range_parted4_2 PARTITION OF ct_range_parted4 FOR VALUES FROM (3, 4, 5) TO (6, 7, MAXVALUE);
+\d+ ct_range_parted4_2
+CREATE TABLE ct_range_parted4_3 PARTITION OF ct_range_parted4 FOR VALUES FROM (6, 8, MINVALUE) TO (9, MAXVALUE, MAXVALUE);
+\d+ ct_range_parted4_3
+DROP TABLE ct_range_parted4;
 
 -- user-defined operator class in partition key
 CREATE FUNCTION my_int4_sort(int4,int4) RETURNS int LANGUAGE sql
@@ -654,21 +654,21 @@ INSERT INTO partkey_t VALUES (100);
 INSERT INTO partkey_t VALUES (200);
 
 -- cleanup
-DROP TABLE parted, list_parted, range_parted, list_parted2, range_parted2, range_parted3;
-DROP TABLE partkey_t, hash_parted, hash_parted2;
+DROP TABLE ct_parted, ct_list_parted, ct_range_parted, ct_list_parted2, ct_range_parted2, ct_range_parted3;
+DROP TABLE partkey_t, ct_hash_parted, ct_hash_parted2;
 DROP OPERATOR CLASS test_int4_ops USING btree;
 DROP FUNCTION my_int4_sort(int4,int4);
 
 -- comments on partitioned tables columns
-CREATE TABLE parted_col_comment (a int, b text) PARTITION BY LIST (a);
-COMMENT ON TABLE parted_col_comment IS 'Am partitioned table';
-COMMENT ON COLUMN parted_col_comment.a IS 'Partition key';
-SELECT obj_description('parted_col_comment'::regclass);
-\d+ parted_col_comment
-DROP TABLE parted_col_comment;
+CREATE TABLE ct_parted_col_comment (a int, b text) PARTITION BY LIST (a);
+COMMENT ON TABLE ct_parted_col_comment IS 'Am partitioned table';
+COMMENT ON COLUMN ct_parted_col_comment.a IS 'Partition key';
+SELECT obj_description('ct_parted_col_comment'::regclass);
+\d+ ct_parted_col_comment
+DROP TABLE ct_parted_col_comment;
 
 -- specifying storage parameters for partitioned tables is not supported
-CREATE TABLE parted_col_comment (a int, b text) PARTITION BY LIST (a) WITH (fillfactor=100);
+CREATE TABLE ct_parted_col_comment (a int, b text) PARTITION BY LIST (a) WITH (fillfactor=100);
 
 -- list partitioning on array type column
 CREATE TABLE arrlp (a int[]) PARTITION BY LIST (a);
