@@ -80,18 +80,38 @@ make check
 
    <para>
     The parallel regression test starts quite a few processes under your
-    user ID.  Presently, the maximum concurrency is twenty parallel test
-    scripts, which means forty processes: there's a server process and a
-    <application>psql</application> process for each test script.
-    So if your system enforces a per-user limit on the number of processes,
+    user ID.  Each test is started as soon as the constraints listed for it
+    in the schedule file allow; at most twenty run at once, and the
+    connections they open are kept within a budget of forty, or fewer if
+    the server does not have that many to spare.  There's a server process
+    and a <application>psql</application> process for each test script,
+    so if your system enforces a per-user limit on the number of processes,
     make sure this limit is at least fifty or so, else you might get
     random-seeming failures in the parallel test.  If you are not in
-    a position to raise the limit, you can cut down the degree of parallelism
-    by setting the <literal>MAX_CONNECTIONS</literal> parameter.  For example:
+    a position to raise the limit, you can cut down the number of
+    connections by setting the <literal>MAX_CONNECTIONS</literal>
+    parameter.  For example:
 <screen>
 make MAX_CONNECTIONS=10 check
 </screen>
-    runs no more than ten tests concurrently.
+    lets the tests open no more than ten connections at once; a test that
+    alone needs more than that runs by itself.  The same parameter applies
+    to the isolation tests, whose specifications open one connection per
+    session.
+   </para>
+
+   <para>
+    A schedule file lists the tests one or more per line.  Tests on a
+    <literal>run:</literal> line are started subject only to the
+    constraints the line names: <literal>after:</literal> lists tests that
+    must have finished, <literal>notwith:</literal> tests that must not run
+    at the same time, <literal>before: *</literal> makes every later line
+    wait, and <literal>shared:</literal> and <literal>exclusive:</literal>
+    name resources that an exclusive user may not share with anyone.  Tests
+    on a <literal>test:</literal> line form a group that waits for every
+    earlier line and that every later line waits for.  The header of
+    <filename>src/test/regress/parallel_schedule</filename> describes the
+    syntax in full.
    </para>
   </sect2>
 

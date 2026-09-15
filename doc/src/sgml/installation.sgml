@@ -3612,7 +3612,7 @@ meson setup ...
        can generate spurious regression test failures due to
        overflowing the <function>listen()</function> backlog queue
        which causes connection refused errors or hangs.  You can limit
-       the number of connections using the make
+       the number of connections the tests open at once using the make
        variable <varname>MAX_CONNECTIONS</varname> thus:
 <programlisting>
 make MAX_CONNECTIONS=5 check

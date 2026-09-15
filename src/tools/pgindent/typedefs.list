@@ -2787,6 +2787,7 @@ ScanKeywordList
 ScanState
 ScanTypeControl
 ScannerCallbackState
+SchedTest
 SchemaQuery
 SearchPathCacheEntry
 SearchPathCacheKey

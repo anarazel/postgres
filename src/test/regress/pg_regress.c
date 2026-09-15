@@ -105,6 +105,9 @@ char	   *bindir = PGBINDIR;
 char	   *launcher = NULL;
 static _stringlist *loadextension = NULL;
 static int	max_connections = 0;
+static int	server_connections = 0; /* what the server allows beyond its
+									 * reserved slots */
+test_connections_function test_connections = NULL;
 static int	max_concurrent_tests = 0;
 static char *encoding = NULL;
 static _stringlist *schedulelist = NULL;
@@ -151,6 +154,7 @@ static void test_status_ok(const char *testname, double runtime, bool parallel);
 static void test_status_failed(const char *testname, double runtime, bool parallel);
 static void bail_out(bool noatexit, const char *fmt, ...) pg_attribute_printf(2, 3);
 static void emit_tap_output(TAPtype type, const char *fmt, ...) pg_attribute_printf(2, 3);
+static void log_child_failure(int exitstatus);
 static void emit_tap_output_v(TAPtype type, const char *fmt, va_list argp) pg_attribute_printf(2, 0);
 
 static StringInfo psql_start_command(void);
@@ -1207,6 +1211,58 @@ psql_end_command(StringInfo buf, const char *database)
 	} while (0)
 
 /*
+ * Ask the server how many connections it allows beyond its reserved slots;
+ * the connection budget of the scheduler stays below that.  This covers a
+ * temporary instance and an existing installation alike.
+ */
+static void
+query_server_connections(void)
+{
+	StringInfo	buf = psql_start_command();
+	const char *probe_db = "postgres";
+	FILE	   *fp;
+	char		line[64];
+	bool		ok = false;
+
+	/*
+	 * With --use-existing the "postgres" database need not exist or accept
+	 * connections from the test role, while the test database does.
+	 */
+	if (use_existing && dblist != NULL && dblist->str != NULL)
+		probe_db = dblist->str;
+
+	psql_add_command(buf, "SELECT current_setting('max_connections')::int"
+					 " - current_setting('superuser_reserved_connections')::int"
+					 " - coalesce(current_setting('reserved_connections', true)::int, 0)");
+	appendStringInfo(buf, " -A -t \"%s\"", probe_db);
+	fflush(NULL);
+	fp = popen(buf->data, "r");
+	if (fp != NULL)
+	{
+		int			conns;
+
+		if (fgets(line, sizeof(line), fp) != NULL &&
+			sscanf(line, "%d", &conns) == 1)
+		{
+			server_connections = conns;
+			ok = true;
+		}
+		if (pclose(fp) != 0)
+			ok = false;
+	}
+
+	/*
+	 * Without an answer the scheduler keeps to a budget that fits a default
+	 * configuration, which may be more than this server allows; say so.
+	 */
+	if (!ok)
+		note("could not read the connection limit of the server from database \"%s\"",
+			 probe_db);
+
+	destroyStringInfo(buf);
+}
+
+/*
  * Spawn a process to execute the given shell command; don't wait for it
  *
  * Returns the process ID (or HANDLE) so we can wait for it later
@@ -1615,75 +1671,702 @@ results_differ(const char *testname, const char *resultsfile, const char *defaul
 }
 
 /*
- * Wait for specified subprocesses to finish, and return their exit
- * statuses into statuses[] and stop times into stoptimes[]
- *
- * If names isn't NULL, print each subprocess's name as it finishes
- *
- * Note: it's OK to scribble on the pids array, but not on the names array
+ * Wait for any one of the given child processes to exit.  Returns the index
+ * of the process that finished and stores its exit status.
  */
-static void
-wait_for_tests(PID_TYPE * pids, int *statuses, instr_time *stoptimes,
-			   char **names, int num_tests)
+static int
+wait_for_one(PID_TYPE * pids, int num_pids, int *exit_status)
 {
-	int			tests_left;
-	int			i;
-
-#ifdef WIN32
-	PID_TYPE   *active_pids = pg_malloc_array(PID_TYPE, num_tests);
-
-	memcpy(active_pids, pids, num_tests * sizeof(PID_TYPE));
-#endif
-
-	tests_left = num_tests;
-	while (tests_left > 0)
-	{
-		PID_TYPE	p;
-
 #ifndef WIN32
-		int			exit_status;
-
-		p = wait(&exit_status);
+	for (;;)
+	{
+		int			status;
+		PID_TYPE	p = wait(&status);
 
 		if (p == INVALID_PID)
 			bail("failed to wait for subprocesses: %m");
-#else
-		DWORD		exit_status;
-		int			r;
-
-		r = WaitForMultipleObjects(tests_left, active_pids, FALSE, INFINITE);
-		if (r < WAIT_OBJECT_0 || r >= WAIT_OBJECT_0 + tests_left)
+		for (int i = 0; i < num_pids; i++)
 		{
-			bail("failed to wait for subprocesses: error code %lu",
-				 GetLastError());
-		}
-		p = active_pids[r - WAIT_OBJECT_0];
-		/* compact the active_pids array */
-		active_pids[r - WAIT_OBJECT_0] = active_pids[tests_left - 1];
-#endif							/* WIN32 */
-
-		for (i = 0; i < num_tests; i++)
-		{
-			if (p == pids[i])
+			if (pids[i] == p)
 			{
-#ifdef WIN32
-				GetExitCodeProcess(pids[i], &exit_status);
-				CloseHandle(pids[i]);
-#endif
-				pids[i] = INVALID_PID;
-				statuses[i] = (int) exit_status;
-				INSTR_TIME_SET_CURRENT(stoptimes[i]);
-				if (names)
-					note_detail(" %s", names[i]);
-				tests_left--;
-				break;
+				*exit_status = status;
+				return i;
 			}
+		}
+		/* not one of the test processes, keep waiting */
+	}
+#else
+	DWORD		status;
+	int			r;
+	int			i;
+
+	r = WaitForMultipleObjects(num_pids, pids, FALSE, INFINITE);
+	if (r < WAIT_OBJECT_0 || r >= WAIT_OBJECT_0 + num_pids)
+		bail("failed to wait for subprocesses: error code %lu",
+			 GetLastError());
+	i = r - WAIT_OBJECT_0;
+	GetExitCodeProcess(pids[i], &status);
+	CloseHandle(pids[i]);
+	*exit_status = (int) status;
+	return i;
+#endif
+}
+
+/* the tests currently running, for the scheduler and for cleanup at exit */
+static PID_TYPE * running_pids = NULL;
+static int	nrunning = 0;
+
+/*
+ * atexit callback: a fatal error while tests are running must not leave
+ * them behind, still working on the database.
+ */
+static void
+stop_running_tests(void)
+{
+	for (int i = 0; i < nrunning; i++)
+	{
+#ifndef WIN32
+		kill(running_pids[i], SIGTERM);
+#else
+		TerminateProcess(running_pids[i], 255);
+#endif
+	}
+	while (nrunning > 0)
+	{
+		int			exit_status;
+		int			i = wait_for_one(running_pids, nrunning, &exit_status);
+
+		running_pids[i] = running_pids[--nrunning];
+	}
+}
+
+/*
+ * Compare a finished test's results against the expected files and report
+ * its status.  Frees the file lists.
+ */
+static void
+report_test_result(const char *testname, postprocess_result_function postfunc,
+				   _stringlist **resultfiles, _stringlist **expectfiles,
+				   _stringlist **tags, int exit_status, double runtime,
+				   bool parallel)
+{
+	_stringlist *rl,
+			   *el,
+			   *tl;
+	bool		differ = false;
+
+	/*
+	 * Advance over all three lists simultaneously.
+	 *
+	 * Compare resultfiles[j] with expectfiles[j] always. Tags are optional
+	 * but if there are tags, the tag list has the same length as the other
+	 * two lists.
+	 */
+	for (rl = *resultfiles, el = *expectfiles, tl = *tags;
+		 rl != NULL;			/* rl and el have the same length */
+		 rl = rl->next, el = el->next,
+		 tl = tl ? tl->next : NULL)
+	{
+		bool		newdiff;
+
+		if (postfunc)
+			(*postfunc) (rl->str);
+		newdiff = results_differ(testname, rl->str, el->str);
+		if (newdiff && tl)
+		{
+			diag("tag: %s", tl->str);
+		}
+		differ |= newdiff;
+	}
+
+	if (exit_status != 0)
+	{
+		test_status_failed(testname, runtime, parallel);
+		log_child_failure(exit_status);
+	}
+	else if (differ)
+		test_status_failed(testname, runtime, parallel);
+	else
+		test_status_ok(testname, runtime, parallel);
+
+	free_stringlist(resultfiles);
+	free_stringlist(expectfiles);
+	free_stringlist(tags);
+}
+
+/*
+ * Schedule files.
+ *
+ * A schedule file lists the tests to run, one or more per line:
+ *
+ *   test: a b c
+ *   run: d e f [after: x y|*] [before: *] [notwith: p q|*]
+ *                [shared: r1 r2] [exclusive: r3]
+ *
+ * A "test:" line is a parallel group: its tests start together once every
+ * test on the lines above has finished, and no later line starts before
+ * they have all finished.  A "run:" line only has the constraints it
+ * spells out, so its tests start as soon as those allow.  Tests on one
+ * line are started without any constraint among themselves, so they must
+ * be known to be compatible.  "after:" names tests that must have finished
+ * before these start and "notwith:" tests that must not run at the same
+ * time.  Names must be declared on an earlier line, which also guarantees
+ * the absence of cycles; "*" stands for every test on another line, so
+ * "after: *" waits for everything declared above and "notwith: *" runs
+ * with nothing else.  "before:" only accepts "*" and makes everything
+ * declared below wait for this line.
+ *
+ * "shared:" and "exclusive:" name resources (arbitrary words) a test uses;
+ * a test needing a resource exclusively does not run concurrently with any
+ * other test naming that resource, while shared users may overlap.
+ *
+ * Runnable tests are started longest-dependency-chain first, then in file
+ * order, so the order of the file doubles as scheduling priority.  At most
+ * --max-concurrent-tests tests run at once (20 by default), and the
+ * connections they open, as declared by the driver program, stay within
+ * --max-connections (40 by default, less if the server allows fewer).
+ */
+typedef struct SchedTest
+{
+	char	   *name;
+	int			line;			/* index of the first test on the same line */
+	int		   *after;
+	int			nafter;
+	int		   *notwith;
+	int			nnotwith;
+	bool		after_all;		/* after: * */
+	bool		before_all;		/* before: * */
+	bool		notwith_all;	/* notwith: * */
+	bool		parallel;		/* overlapped another test */
+	int			conns;			/* connections the test opens */
+	bool		reported;
+	char	  **shared;
+	int			nshared;
+	char	  **exclusive;
+	int			nexclusive;
+	enum
+	{
+		SCHED_PENDING, SCHED_RUNNING, SCHED_DONE
+	}			state;
+	PID_TYPE	pid;
+	instr_time	starttime;
+	instr_time	duration;		/* run time once finished */
+	int			depth;			/* length of the longest chain of tests
+								 * waiting on this one */
+	int			exit_status;
+	_stringlist *resultfiles;
+	_stringlist *expectfiles;
+	_stringlist *tags;
+} SchedTest;
+
+static int
+sched_lookup(SchedTest *tests, int ntests, const char *name)
+{
+	for (int i = 0; i < ntests; i++)
+		if (strcmp(tests[i].name, name) == 0)
+			return i;
+	return -1;
+}
+
+/*
+ * Parse a dependency schedule into an array of SchedTest.
+ */
+static SchedTest *
+parse_schedule(const char *schedule, int *ntests_p, bool *has_run_lines)
+{
+	FILE	   *scf;
+	char		scbuf[1024];
+	int			line_num = 0;
+	SchedTest  *tests = NULL;
+	int			ntests = 0;
+	int			alloc = 0;
+
+	*has_run_lines = false;
+	scf = fopen(schedule, "r");
+	if (!scf)
+		bail("could not open file \"%s\" for reading: %m", schedule);
+
+	while (fgets(scbuf, sizeof(scbuf), scf))
+	{
+		char	   *saveptr = NULL;
+		char	   *tok;
+		int			first = ntests;
+		int		   *after = NULL;
+		int			nafter = 0;
+		int		   *notwith = NULL;
+		int			nnotwith = 0;
+		bool		after_all = false;
+		bool		before_all = false;
+		bool		notwith_all = false;
+		char	  **shared = NULL;
+		int			nshared = 0;
+		char	  **exclusive = NULL;
+		int			nexclusive = 0;
+		enum
+		{
+			MODE_NAMES, MODE_AFTER, MODE_BEFORE, MODE_NOTWITH, MODE_SHARED,
+			MODE_EXCLUSIVE
+		}			mode = MODE_NAMES;
+		const char *lastkw = NULL;
+		int			nitems = 0;
+		char	   *body = NULL;	/* bail() below does not return */
+		bool		barrier = false;
+		int			i;
+
+		line_num++;
+
+		i = strlen(scbuf);
+		if (i > 0 && scbuf[i - 1] != '\n' && !feof(scf))
+			bail("line %d of schedule file \"%s\" is too long", line_num, schedule);
+		while (i > 0 && isspace((unsigned char) scbuf[i - 1]))
+			scbuf[--i] = '\0';
+		if (scbuf[0] == '\0' || scbuf[0] == '#')
+			continue;
+
+		if (strncmp(scbuf, "run: ", 5) == 0)
+		{
+			body = scbuf + 5;
+			*has_run_lines = true;
+		}
+		else if (strncmp(scbuf, "test: ", 6) == 0)
+		{
+			body = scbuf + 6;
+			barrier = true;
+		}
+		else
+			bail("syntax error in schedule file \"%s\" line %d: %s",
+				 schedule, line_num, scbuf);
+
+		for (tok = strtok_r(body, " \t", &saveptr);
+			 tok != NULL;
+			 tok = strtok_r(NULL, " \t", &saveptr))
+		{
+			int			idx;
+
+			if (tok[0] == '#')
+				break;			/* the rest of the line is a comment */
+			if (strcmp(tok, "after:") == 0 || strcmp(tok, "before:") == 0 ||
+				strcmp(tok, "notwith:") == 0 || strcmp(tok, "shared:") == 0 ||
+				strcmp(tok, "exclusive:") == 0)
+			{
+				if (lastkw != NULL && nitems == 0)
+					bail("\"%s\" without names in schedule file \"%s\" line %d",
+						 lastkw, schedule, line_num);
+				lastkw = tok;
+				nitems = 0;
+			}
+			if (strcmp(tok, "after:") == 0)
+			{
+				mode = MODE_AFTER;
+				continue;
+			}
+			if (strcmp(tok, "before:") == 0)
+			{
+				mode = MODE_BEFORE;
+				continue;
+			}
+			if (strcmp(tok, "notwith:") == 0)
+			{
+				mode = MODE_NOTWITH;
+				continue;
+			}
+			if (strcmp(tok, "shared:") == 0)
+			{
+				mode = MODE_SHARED;
+				continue;
+			}
+			if (strcmp(tok, "exclusive:") == 0)
+			{
+				mode = MODE_EXCLUSIVE;
+				continue;
+			}
+
+			if ((mode == MODE_SHARED || mode == MODE_EXCLUSIVE) && strcmp(tok, "*") == 0)
+				bail("\"*\" is not a resource name in schedule file \"%s\" line %d",
+					 schedule, line_num);
+			if (mode == MODE_SHARED)
+			{
+				shared = pg_realloc_array(shared, char *, nshared + 1);
+				shared[nshared++] = pg_strdup(tok);
+				nitems++;
+				continue;
+			}
+			if (mode == MODE_EXCLUSIVE)
+			{
+				exclusive = pg_realloc_array(exclusive, char *, nexclusive + 1);
+				exclusive[nexclusive++] = pg_strdup(tok);
+				nitems++;
+				continue;
+			}
+
+			if (mode == MODE_NAMES)
+			{
+				if (sched_lookup(tests, ntests, tok) >= 0)
+					bail("test \"%s\" listed twice in schedule file \"%s\" line %d",
+						 tok, schedule, line_num);
+				if (ntests >= alloc)
+				{
+					alloc = alloc ? alloc * 2 : 64;
+					tests = pg_realloc_array(tests, SchedTest, alloc);
+				}
+				memset(&tests[ntests], 0, sizeof(SchedTest));
+				tests[ntests].name = pg_strdup(tok);
+				tests[ntests].line = first;
+				tests[ntests].conns = test_connections ? test_connections(tok) : 1;
+				tests[ntests].state = SCHED_PENDING;
+				ntests++;
+				continue;
+			}
+
+			if (strcmp(tok, "*") == 0)
+			{
+				if (mode == MODE_AFTER)
+					after_all = true;
+				else if (mode == MODE_BEFORE)
+					before_all = true;
+				else
+					notwith_all = true;
+				nitems++;
+				continue;
+			}
+			if (mode == MODE_BEFORE)
+				bail("only \"*\" is allowed after \"before:\" in schedule file \"%s\" line %d",
+					 schedule, line_num);
+
+			idx = sched_lookup(tests, first, tok);
+			if (idx < 0)
+				bail("unknown test \"%s\" in schedule file \"%s\" line %d (tests must be declared on an earlier line)",
+					 tok, schedule, line_num);
+			if (mode == MODE_AFTER)
+			{
+				after = pg_realloc_array(after, int, nafter + 1);
+				after[nafter++] = idx;
+				nitems++;
+			}
+			else
+			{
+				notwith = pg_realloc_array(notwith, int, nnotwith + 1);
+				notwith[nnotwith++] = idx;
+				nitems++;
+			}
+		}
+
+		if (first == ntests)
+			bail("syntax error in schedule file \"%s\" line %d: %s",
+				 schedule, line_num, scbuf);
+		if (lastkw != NULL && nitems == 0)
+			bail("\"%s\" without names in schedule file \"%s\" line %d",
+				 lastkw, schedule, line_num);
+		if (barrier)
+		{
+			/* a parallel group: nothing overlaps it in either direction */
+			if (lastkw != NULL)
+				bail("\"%s\" is not allowed on a \"test:\" line in schedule file \"%s\" line %d, use \"run:\"",
+					 lastkw, schedule, line_num);
+			after_all = true;
+			before_all = true;
+		}
+
+		for (i = first; i < ntests; i++)
+		{
+			tests[i].after = after;
+			tests[i].nafter = nafter;
+			tests[i].notwith = notwith;
+			tests[i].nnotwith = nnotwith;
+			tests[i].after_all = after_all;
+			tests[i].before_all = before_all;
+			tests[i].notwith_all = notwith_all;
+			tests[i].shared = shared;
+			tests[i].nshared = nshared;
+			tests[i].exclusive = exclusive;
+			tests[i].nexclusive = nexclusive;
+		}
+	}
+	fclose(scf);
+
+	*ntests_p = ntests;
+	return tests;
+}
+
+static bool
+names_overlap(char **a, int na, char **b, int nb)
+{
+	for (int i = 0; i < na; i++)
+		for (int j = 0; j < nb; j++)
+			if (strcmp(a[i], b[j]) == 0)
+				return true;
+	return false;
+}
+
+/* does one of the tests need a resource the other one uses? */
+static bool
+resources_conflict(SchedTest *a, SchedTest *b)
+{
+	return names_overlap(a->exclusive, a->nexclusive, b->shared, b->nshared) ||
+		names_overlap(a->exclusive, a->nexclusive, b->exclusive, b->nexclusive) ||
+		names_overlap(b->exclusive, b->nexclusive, a->shared, a->nshared);
+}
+
+/*
+ * Order tests by the length of the chain of tests transitively waiting on
+ * them, longest first, file order as tie-break.  Dependencies always point
+ * to earlier tests, so one backwards pass suffices.
+ */
+static int *
+sched_priority_order(SchedTest *tests, int ntests)
+{
+	int		   *order = pg_malloc_array(int, ntests);
+
+	for (int i = ntests - 1; i >= 0; i--)
+	{
+		int			depth = 0;
+
+		for (int j = i + 1; j < ntests; j++)
+		{
+			bool		waits;
+
+			if (tests[j].line == tests[i].line)
+				continue;
+			waits = tests[j].after_all || tests[i].before_all;
+
+			for (int k = 0; !waits && k < tests[j].nafter; k++)
+				waits = (tests[j].after[k] == i);
+			if (waits && tests[j].depth + 1 > depth)
+				depth = tests[j].depth + 1;
+		}
+		tests[i].depth = depth;
+	}
+
+	for (int i = 0; i < ntests; i++)
+		order[i] = i;
+	/* insertion sort by depth, stable so ties keep file order */
+	for (int i = 1; i < ntests; i++)
+	{
+		int			v = order[i];
+		int			j = i;
+
+		while (j > 0 && tests[order[j - 1]].depth < tests[v].depth)
+		{
+			order[j] = order[j - 1];
+			j--;
+		}
+		order[j] = v;
+	}
+	return order;
+}
+
+/*
+ * Number of tests on the line whose first test has index first.
+ */
+static int
+sched_line_size(SchedTest *tests, int ntests, int first)
+{
+	int			n = 0;
+
+	while (first + n < ntests && tests[first + n].line == first)
+		n++;
+	return n;
+}
+
+/*
+ * Can test t start now?
+ */
+static bool
+sched_runnable(SchedTest *tests, int ntests, int t)
+{
+	SchedTest  *st = &tests[t];
+
+	if (st->state != SCHED_PENDING)
+		return false;
+
+	for (int i = 0; i < ntests; i++)
+	{
+		SchedTest  *other = &tests[i];
+
+		if (other->line == st->line)
+			continue;
+		if (other->state == SCHED_RUNNING &&
+			(st->notwith_all || other->notwith_all ||
+			 resources_conflict(st, other)))
+			return false;
+
+		if (i < t && (st->after_all || other->before_all) &&
+			other->state != SCHED_DONE)
+			return false;
+		/* explicit conflicts are symmetric */
+		if (other->state == SCHED_RUNNING)
+		{
+			for (int j = 0; j < other->nnotwith; j++)
+				if (other->notwith[j] == t)
+					return false;
 		}
 	}
 
+	for (int i = 0; i < st->nafter; i++)
+		if (tests[st->after[i]].state != SCHED_DONE)
+			return false;
+	for (int i = 0; i < st->nnotwith; i++)
+		if (tests[st->notwith[i]].state == SCHED_RUNNING)
+			return false;
+
+	return true;
+}
+
+static void
+run_schedule(const char *schedule, test_start_function startfunc,
+			 postprocess_result_function postfunc)
+{
+	SchedTest  *tests;
+	int			ntests;
+	int			ndone = 0;
+	int			cap;
+	int			budget;
+	int			running_conns = 0;
+	int			reserved;
+	int		   *running_idx;
+	int		   *order;
+	bool		has_run_lines;
+
+	tests = parse_schedule(schedule, &ntests, &has_run_lines);
+	order = sched_priority_order(tests, ntests);
+
+	/*
+	 * Without --max-connections, allow 40 connections, or fewer if the server
+	 * would not have that many left; a few are kept spare for tests that
+	 * reconnect.
+	 */
+	cap = max_concurrent_tests > 0 ? max_concurrent_tests : 20;
+	if (max_connections > 0)
+		budget = max_connections;
+	else if (server_connections > 0)
+		budget = Max(1, Min(40, server_connections - 5));
+	else
+		budget = 20;
 #ifdef WIN32
-	pg_free(active_pids);
+	if (cap > MAXIMUM_WAIT_OBJECTS)
+		cap = MAXIMUM_WAIT_OBJECTS;
 #endif
+
+	running_pids = pg_malloc_array(PID_TYPE, cap);
+	nrunning = 0;
+	running_idx = pg_malloc_array(int, cap);
+
+	while (ndone < ntests)
+	{
+		int			i;
+		int			exit_status;
+		SchedTest  *st;
+
+		/* start everything that can run, in priority order */
+		reserved = 0;
+		for (int k = 0; k < ntests && nrunning < cap; k++)
+		{
+			i = order[k];
+			if (!sched_runnable(tests, ntests, i))
+				continue;
+			st = &tests[i];
+
+			/*
+			 * A test that does not fit into the connection budget keeps its
+			 * share reserved, so that lower-priority tests cannot starve it;
+			 * one needing more than the whole budget still runs, alone.
+			 */
+			if (nrunning > 0 && running_conns + reserved + st->conns > budget)
+			{
+				if (reserved == 0)
+					reserved = st->conns;
+				continue;
+			}
+			if (st->conns > budget)
+				note("%s needs %d connections, more than the %d allowed; running it alone",
+					 st->name, st->conns, budget);
+			if (st->after_all && st->before_all && st->line == i &&
+				sched_line_size(tests, ntests, i) > 1)
+			{
+				/* the note the parallel-group runner used to print */
+				int			n = sched_line_size(tests, ntests, i);
+
+				if (n > cap || n > budget)
+					note_detail("parallel group (%d tests, in groups of %d): ",
+								n, Min(cap, budget));
+				else
+					note_detail("parallel group (%d tests): ", n);
+				for (int j = i; j < i + n; j++)
+					note_detail(" %s", tests[j].name);
+				note_end();
+			}
+			st->pid = (startfunc) (st->name, &st->resultfiles,
+								   &st->expectfiles, &st->tags);
+			INSTR_TIME_SET_CURRENT(st->starttime);
+			st->state = SCHED_RUNNING;
+			st->parallel = (nrunning > 0);
+			for (int r = 0; r < nrunning; r++)
+				tests[running_idx[r]].parallel = true;
+			running_pids[nrunning] = st->pid;
+			running_idx[nrunning] = i;
+			running_conns += st->conns;
+			nrunning++;
+		}
+
+		if (nrunning == 0)
+		{
+			diag("no runnable test, remaining tests:");
+			for (i = 0; i < ntests; i++)
+				if (tests[i].state == SCHED_PENDING)
+					diag_detail(" %s", tests[i].name);
+			diag_end();
+			bail("dependency schedule \"%s\" cannot make progress", schedule);
+		}
+
+		i = wait_for_one(running_pids, nrunning, &exit_status);
+		st = &tests[running_idx[i]];
+		INSTR_TIME_SET_CURRENT(st->duration);
+		INSTR_TIME_SUBTRACT(st->duration, st->starttime);
+		st->exit_status = exit_status;
+		st->state = SCHED_DONE;
+		ndone++;
+		/* compact the running arrays */
+		running_pids[i] = running_pids[nrunning - 1];
+		running_idx[i] = running_idx[nrunning - 1];
+		running_conns -= st->conns;
+		nrunning--;
+
+		/*
+		 * The tests of a "test:" line are reported together in file order
+		 * once the whole line is done, as the parallel-group runner did.
+		 */
+		if (st->after_all && st->before_all &&
+			sched_line_size(tests, ntests, st->line) > 1)
+		{
+			int			n = sched_line_size(tests, ntests, st->line);
+			bool		alldone = true;
+
+			for (int j = st->line; j < st->line + n; j++)
+				if (tests[j].state != SCHED_DONE)
+					alldone = false;
+			if (!alldone)
+				continue;
+			for (int j = st->line; j < st->line + n; j++)
+				report_test_result(tests[j].name, postfunc, &tests[j].resultfiles,
+								   &tests[j].expectfiles, &tests[j].tags,
+								   tests[j].exit_status,
+								   INSTR_TIME_GET_MILLISEC(tests[j].duration),
+								   true);
+		}
+		else
+			report_test_result(st->name, postfunc, &st->resultfiles,
+							   &st->expectfiles, &st->tags, st->exit_status,
+							   INSTR_TIME_GET_MILLISEC(st->duration),
+							   st->parallel);
+	}
+
+	pg_free(order);
+	pg_free(running_pids);
+	running_pids = NULL;
+	pg_free(running_idx);
+	for (int i = 0; i < ntests; i++)
+		pg_free(tests[i].name);
+	pg_free(tests);
 }
 
 /*
@@ -1710,212 +2393,6 @@ log_child_failure(int exitstatus)
 }
 
 /*
- * Run all the tests specified in one schedule file
- */
-static void
-run_schedule(const char *schedule, test_start_function startfunc,
-			 postprocess_result_function postfunc)
-{
-#define MAX_PARALLEL_TESTS 100
-	char	   *tests[MAX_PARALLEL_TESTS];
-	_stringlist *resultfiles[MAX_PARALLEL_TESTS];
-	_stringlist *expectfiles[MAX_PARALLEL_TESTS];
-	_stringlist *tags[MAX_PARALLEL_TESTS];
-	PID_TYPE	pids[MAX_PARALLEL_TESTS];
-	instr_time	starttimes[MAX_PARALLEL_TESTS];
-	instr_time	stoptimes[MAX_PARALLEL_TESTS];
-	int			statuses[MAX_PARALLEL_TESTS];
-	char		scbuf[1024];
-	FILE	   *scf;
-	int			line_num = 0;
-
-	memset(tests, 0, sizeof(tests));
-	memset(resultfiles, 0, sizeof(resultfiles));
-	memset(expectfiles, 0, sizeof(expectfiles));
-	memset(tags, 0, sizeof(tags));
-
-	scf = fopen(schedule, "r");
-	if (!scf)
-		bail("could not open file \"%s\" for reading: %m", schedule);
-
-	while (fgets(scbuf, sizeof(scbuf), scf))
-	{
-		char	   *test = NULL;
-		char	   *c;
-		int			num_tests;
-		bool		inword;
-		int			i;
-
-		line_num++;
-
-		/* strip trailing whitespace, especially the newline */
-		i = strlen(scbuf);
-		while (i > 0 && isspace((unsigned char) scbuf[i - 1]))
-			scbuf[--i] = '\0';
-
-		if (scbuf[0] == '\0' || scbuf[0] == '#')
-			continue;
-		if (strncmp(scbuf, "test: ", 6) == 0)
-			test = scbuf + 6;
-		else
-		{
-			bail("syntax error in schedule file \"%s\" line %d: %s",
-				 schedule, line_num, scbuf);
-		}
-
-		num_tests = 0;
-		inword = false;
-		for (c = test;; c++)
-		{
-			if (*c == '\0' || isspace((unsigned char) *c))
-			{
-				if (inword)
-				{
-					/* Reached end of a test name */
-					char		sav;
-
-					if (num_tests >= MAX_PARALLEL_TESTS)
-					{
-						bail("too many parallel tests (more than %d) in schedule file \"%s\" line %d: %s",
-							 MAX_PARALLEL_TESTS, schedule, line_num, scbuf);
-					}
-					sav = *c;
-					*c = '\0';
-					tests[num_tests] = pg_strdup(test);
-					num_tests++;
-					*c = sav;
-					inword = false;
-				}
-				if (*c == '\0')
-					break;		/* loop exit is here */
-			}
-			else if (!inword)
-			{
-				/* Start of a test name */
-				test = c;
-				inword = true;
-			}
-		}
-
-		if (num_tests == 0)
-		{
-			bail("syntax error in schedule file \"%s\" line %d: %s",
-				 schedule, line_num, scbuf);
-		}
-
-		if (num_tests == 1)
-		{
-			pids[0] = (startfunc) (tests[0], &resultfiles[0], &expectfiles[0], &tags[0]);
-			INSTR_TIME_SET_CURRENT(starttimes[0]);
-			wait_for_tests(pids, statuses, stoptimes, NULL, 1);
-			/* status line is finished below */
-		}
-		else if (max_concurrent_tests > 0 && max_concurrent_tests < num_tests)
-		{
-			bail("too many parallel tests (more than %d) in schedule file \"%s\" line %d: %s",
-				 max_concurrent_tests, schedule, line_num, scbuf);
-		}
-		else if (max_connections > 0 && max_connections < num_tests)
-		{
-			int			oldest = 0;
-
-			note_detail("parallel group (%d tests, in groups of %d): ",
-						num_tests, max_connections);
-			for (i = 0; i < num_tests; i++)
-			{
-				if (i - oldest >= max_connections)
-				{
-					wait_for_tests(pids + oldest, statuses + oldest,
-								   stoptimes + oldest,
-								   tests + oldest, i - oldest);
-					oldest = i;
-				}
-				pids[i] = (startfunc) (tests[i], &resultfiles[i], &expectfiles[i], &tags[i]);
-				INSTR_TIME_SET_CURRENT(starttimes[i]);
-			}
-			wait_for_tests(pids + oldest, statuses + oldest,
-						   stoptimes + oldest,
-						   tests + oldest, i - oldest);
-			note_end();
-		}
-		else
-		{
-			note_detail("parallel group (%d tests): ", num_tests);
-			for (i = 0; i < num_tests; i++)
-			{
-				pids[i] = (startfunc) (tests[i], &resultfiles[i], &expectfiles[i], &tags[i]);
-				INSTR_TIME_SET_CURRENT(starttimes[i]);
-			}
-			wait_for_tests(pids, statuses, stoptimes, tests, num_tests);
-			note_end();
-		}
-
-		/* Check results for all tests */
-		for (i = 0; i < num_tests; i++)
-		{
-			_stringlist *rl,
-					   *el,
-					   *tl;
-			bool		differ = false;
-
-			INSTR_TIME_SUBTRACT(stoptimes[i], starttimes[i]);
-
-			/*
-			 * Advance over all three lists simultaneously.
-			 *
-			 * Compare resultfiles[j] with expectfiles[j] always. Tags are
-			 * optional but if there are tags, the tag list has the same
-			 * length as the other two lists.
-			 */
-			for (rl = resultfiles[i], el = expectfiles[i], tl = tags[i];
-				 rl != NULL;	/* rl and el have the same length */
-				 rl = rl->next, el = el->next,
-				 tl = tl ? tl->next : NULL)
-			{
-				bool		newdiff;
-
-				if (postfunc)
-					(*postfunc) (rl->str);
-				newdiff = results_differ(tests[i], rl->str, el->str);
-				if (newdiff && tl)
-				{
-					diag("tag: %s", tl->str);
-				}
-				differ |= newdiff;
-			}
-
-			if (statuses[i] != 0)
-			{
-				test_status_failed(tests[i], INSTR_TIME_GET_MILLISEC(stoptimes[i]), (num_tests > 1));
-				log_child_failure(statuses[i]);
-			}
-			else
-			{
-				if (differ)
-				{
-					test_status_failed(tests[i], INSTR_TIME_GET_MILLISEC(stoptimes[i]), (num_tests > 1));
-				}
-				else
-				{
-					test_status_ok(tests[i], INSTR_TIME_GET_MILLISEC(stoptimes[i]), (num_tests > 1));
-				}
-			}
-		}
-
-		for (i = 0; i < num_tests; i++)
-		{
-			pg_free(tests[i]);
-			tests[i] = NULL;
-			free_stringlist(&resultfiles[i]);
-			free_stringlist(&expectfiles[i]);
-			free_stringlist(&tags[i]);
-		}
-	}
-
-	fclose(scf);
-}
-
-/*
  * Run a single test
  */
 static void
@@ -1924,62 +2401,19 @@ run_single_test(const char *test, test_start_function startfunc,
 {
 	PID_TYPE	pid;
 	instr_time	starttime;
-	instr_time	stoptime;
+	instr_time	duration;
 	int			exit_status;
 	_stringlist *resultfiles = NULL;
 	_stringlist *expectfiles = NULL;
 	_stringlist *tags = NULL;
-	_stringlist *rl,
-			   *el,
-			   *tl;
-	bool		differ = false;
 
 	pid = (startfunc) (test, &resultfiles, &expectfiles, &tags);
 	INSTR_TIME_SET_CURRENT(starttime);
-	wait_for_tests(&pid, &exit_status, &stoptime, NULL, 1);
-
-	/*
-	 * Advance over all three lists simultaneously.
-	 *
-	 * Compare resultfiles[j] with expectfiles[j] always. Tags are optional
-	 * but if there are tags, the tag list has the same length as the other
-	 * two lists.
-	 */
-	for (rl = resultfiles, el = expectfiles, tl = tags;
-		 rl != NULL;			/* rl and el have the same length */
-		 rl = rl->next, el = el->next,
-		 tl = tl ? tl->next : NULL)
-	{
-		bool		newdiff;
-
-		if (postfunc)
-			(*postfunc) (rl->str);
-		newdiff = results_differ(test, rl->str, el->str);
-		if (newdiff && tl)
-		{
-			diag("tag: %s", tl->str);
-		}
-		differ |= newdiff;
-	}
-
-	INSTR_TIME_SUBTRACT(stoptime, starttime);
-
-	if (exit_status != 0)
-	{
-		test_status_failed(test, INSTR_TIME_GET_MILLISEC(stoptime), false);
-		log_child_failure(exit_status);
-	}
-	else
-	{
-		if (differ)
-		{
-			test_status_failed(test, INSTR_TIME_GET_MILLISEC(stoptime), false);
-		}
-		else
-		{
-			test_status_ok(test, INSTR_TIME_GET_MILLISEC(stoptime), false);
-		}
-	}
+	wait_for_one(&pid, 1, &exit_status);
+	INSTR_TIME_SET_CURRENT(duration);
+	INSTR_TIME_SUBTRACT(duration, starttime);
+	report_test_result(test, postfunc, &resultfiles, &expectfiles, &tags,
+					   exit_status, INSTR_TIME_GET_MILLISEC(duration), false);
 }
 
 /*
@@ -2110,10 +2544,10 @@ help(void)
 	printf(_("      --launcher=CMD            use CMD as launcher of psql\n"));
 	printf(_("      --load-extension=EXT      load the named extension before running the\n"));
 	printf(_("                                tests; can appear multiple times\n"));
-	printf(_("      --max-connections=N       maximum number of concurrent connections\n"));
-	printf(_("                                (default is 0, meaning unlimited)\n"));
-	printf(_("      --max-concurrent-tests=N  maximum number of concurrent tests in schedule\n"));
-	printf(_("                                (default is 0, meaning unlimited)\n"));
+	printf(_("      --max-connections=N       maximum number of connections the tests open\n"));
+	printf(_("                                at once (default 40, less if the server\n"));
+	printf(_("                                allows fewer)\n"));
+	printf(_("      --max-concurrent-tests=N  maximum number of tests run at once (default 20)\n"));
 	printf(_("      --outputdir=DIR           place output files in DIR (default \".\")\n"));
 	printf(_("      --schedule=FILE           use test ordering schedule from FILE\n"));
 	printf(_("                                (can be used multiple times to concatenate)\n"));
@@ -2188,6 +2622,7 @@ regression_main(int argc, char *argv[],
 	get_restricted_token();
 
 	atexit(stop_postmaster);
+	atexit(stop_running_tests);
 
 #if defined(WIN32)
 
@@ -2470,6 +2905,7 @@ regression_main(int argc, char *argv[],
 		 * actually needed by the prepared_xacts regression test.)
 		 */
 		snprintf(buf, sizeof(buf), "%s/data/postgresql.conf", temp_instance);
+
 		pg_conf = fopen(buf, "a");
 		if (pg_conf == NULL)
 			bail("could not open \"%s\" for adding extra config: %m", buf);
@@ -2665,6 +3101,8 @@ regression_main(int argc, char *argv[],
 				drop_role_if_exists(sl->str);
 		}
 	}
+
+	query_server_connections();
 
 	/*
 	 * Create the test database(s) and role(s)

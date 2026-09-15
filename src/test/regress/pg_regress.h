@@ -41,6 +41,9 @@ typedef PID_TYPE(*test_start_function) (const char *testname,
 /* Postprocess one result file (optional) */
 typedef void (*postprocess_result_function) (const char *filename);
 
+/* number of connections a test opens, for the connection budget (default 1) */
+typedef int (*test_connections_function) (const char *testname);
+
 
 extern char *bindir;
 extern char *libdir;
@@ -53,6 +56,7 @@ extern char *inputdir;
 extern char *outputdir;
 extern char *expecteddir;
 extern char *launcher;
+extern test_connections_function test_connections;
 
 extern const char *basic_diff_opts;
 extern const char *pretty_diff_opts;
