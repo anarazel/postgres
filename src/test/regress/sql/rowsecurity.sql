@@ -1464,7 +1464,9 @@ DROP VIEW rls_view;
 SET SESSION AUTHORIZATION regress_rls_alice;
 
 CREATE TABLE x1 (a int, b text, c text);
-GRANT ALL ON x1 TO PUBLIC;
+-- not MAINTAIN: that would let any role's database-wide REPACK, CLUSTER or
+-- VACUUM reach this table
+GRANT SELECT, INSERT, UPDATE, DELETE ON x1 TO PUBLIC;
 
 INSERT INTO x1 VALUES
     (1, 'abc', 'regress_rls_bob'),
@@ -1892,7 +1894,7 @@ DROP TABLE copy_rel_to CASCADE;
 SET SESSION AUTHORIZATION regress_rls_alice;
 
 CREATE TABLE current_check (currentid int, payload text, rlsuser text);
-GRANT ALL ON current_check TO PUBLIC;
+GRANT SELECT, INSERT, UPDATE, DELETE ON current_check TO PUBLIC;
 
 INSERT INTO current_check VALUES
     (1, 'abc', 'regress_rls_bob'),
