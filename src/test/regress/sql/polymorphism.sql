@@ -674,7 +674,10 @@ select myleast(variadic array[1.1, -5.5]);
 --test with empty variadic call parameter
 select myleast(variadic array[]::int[]);
 
--- an example with some ordinary arguments too
+-- An example with some ordinary arguments too.  This shadows the built-in
+-- concat() for every session, which changes what concat() in another test's
+-- query means, so roll it back rather than dropping it.
+begin;
 create function concat(text, variadic anyarray) returns text as $$
   select array_to_string($2, $1);
 $$ language sql immutable strict;
@@ -684,7 +687,7 @@ select concat('|', 'a'::text, 'b', 'c');
 select concat('|', variadic array[1,2,33]);
 select concat('|', variadic array[]::int[]);
 
-drop function concat(text, anyarray);
+rollback;
 
 -- mix variadic with anyelement
 create function formarray(anyelement, variadic anyarray) returns anyarray as $$
