@@ -116,6 +116,27 @@ make MAX_CONNECTIONS=10 check
     <filename>src/test/regress/parallel_schedule</filename> describes the
     syntax in full.
    </para>
+
+   <para>
+    Nothing but those constraints keeps two tests apart, so a test that
+    needs to be alone with something has to say so rather than rely on
+    where it sits in the file.  To check that, pass
+    <option>--shuffle</option>, which starts the tests in a random order
+    and admits them at random moments while honoring every constraint; a
+    schedule that only passes in one order is missing one.  It explores
+    orders the constraints already allow, so it finds a missing
+    <literal>after:</literal>, <literal>notwith:</literal> or resource, and
+    says nothing about one that is present and unnecessary.
+   </para>
+
+   <para>
+    The seed is given rather than chosen, so that a campaign decides how its
+    runs differ and records what it used.  It fixes the order the tests are
+    considered in, not the run: which tests are ready when a slot frees
+    depends on how long each took, so repeating a seed makes a failure
+    likelier to recur rather than certain to.  Expect to run a suspicious
+    seed more than once.
+   </para>
   </sect2>
 
   <sect2 id="regress-run-existing-inst">

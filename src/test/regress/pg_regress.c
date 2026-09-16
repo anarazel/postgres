@@ -27,7 +27,9 @@
 #include <unistd.h>
 
 #include "common/logging.h"
+#include "common/pg_prng.h"
 #include "common/restricted_token.h"
+#include "common/string.h"
 #include "common/username.h"
 #include "getopt_long.h"
 #include "lib/stringinfo.h"
@@ -106,6 +108,8 @@ char	   *launcher = NULL;
 static _stringlist *loadextension = NULL;
 static int	max_connections = 0;
 static int	max_parallel_workers = -1;
+static int	shuffle_seed = -1;	/* --shuffle; -1 runs in priority order */
+static pg_prng_state shuffle_prng;
 static int	server_workers = -1;	/* parallel workers the server can start */
 static bool server_debug_parallel = false;	/* debug_parallel_query is on */
 static int	server_connections = 0; /* what the server allows beyond its
@@ -2194,6 +2198,21 @@ sched_priority_order(SchedTest *tests, int ntests)
 		}
 		order[j] = v;
 	}
+
+	/*
+	 * A stress run permutes the order instead: the constraints, not the order
+	 * tests are considered in, are what has to keep them apart, so a schedule
+	 * that only works in one order is a schedule with a constraint missing.
+	 */
+	if (shuffle_seed >= 0)
+		for (int i = ntests - 1; i > 0; i--)
+		{
+			int			j = (int) pg_prng_uint64_range(&shuffle_prng, 0, i);
+			int			tmp = order[i];
+
+			order[i] = order[j];
+			order[j] = tmp;
+		}
 	return order;
 }
 
@@ -2325,6 +2344,16 @@ run_schedule(const char *schedule, test_start_function startfunc,
 			if (!sched_runnable(tests, ntests, i))
 				continue;
 			st = &tests[i];
+
+			/*
+			 * A stress run also leaves a runnable test for a later pass now
+			 * and then, so that one schedule produces many different sets of
+			 * tests running together.  Something has to be running already,
+			 * or there would be nothing to wait for.
+			 */
+			if (shuffle_seed >= 0 && nrunning > 0 &&
+				pg_prng_uint64_range(&shuffle_prng, 0, 3) == 0)
+				continue;
 
 			/*
 			 * A test that does not fit into the connection or worker budget
@@ -2624,6 +2653,9 @@ help(void)
 	printf(_("      --max-parallel-workers=N  parallel workers the tests may have running\n"));
 	printf(_("                                at once (default: what the server can start)\n"));
 	printf(_("      --outputdir=DIR           place output files in DIR (default \".\")\n"));
+	printf(_("      --shuffle=SEED            start the tests in the random order SEED\n"));
+	printf(_("                                gives, to check that the schedule's\n"));
+	printf(_("                                constraints suffice\n"));
 	printf(_("      --schedule=FILE           use test ordering schedule from FILE\n"));
 	printf(_("                                (can be used multiple times to concatenate)\n"));
 	printf(_("      --temp-instance=DIR       create a temporary instance in DIR\n"));
@@ -2679,6 +2711,7 @@ regression_main(int argc, char *argv[],
 		{"max-concurrent-tests", required_argument, NULL, 25},
 		{"max-parallel-workers", required_argument, NULL, 27},
 		{"expecteddir", required_argument, NULL, 26},
+		{"shuffle", required_argument, NULL, 28},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -2813,6 +2846,30 @@ regression_main(int argc, char *argv[],
 			case 26:
 				expecteddir = pg_strdup(optarg);
 				break;
+			case 28:
+				{
+					char	   *endp;
+					int			seed;
+
+					/*
+					 * Check the whole string: "--shuffle" with the seed left
+					 * out otherwise swallows the next option and shuffles by
+					 * whatever that parses as.  strtoint() reports a value
+					 * too large for an int as ERANGE, which a bounds test on
+					 * the result would miss where long is 32 bits.
+					 */
+					errno = 0;
+					seed = strtoint(optarg, &endp, 10);
+					if (endp == optarg || *endp != '\0' || errno != 0 ||
+						seed < 0)
+					{
+						fprintf(stderr, _("%s: invalid seed for --shuffle: \"%s\"\n"),
+								progname, optarg);
+						exit(2);
+					}
+					shuffle_seed = seed;
+				}
+				break;
 			default:
 				/* getopt_long already emitted a complaint */
 				pg_log_error_hint("Try \"%s --help\" for more information.",
@@ -2837,6 +2894,12 @@ regression_main(int argc, char *argv[],
 	if (!(dblist && dblist->str && dblist->str[0]))
 	{
 		bail("no database name was specified");
+	}
+
+	if (shuffle_seed >= 0)
+	{
+		pg_prng_seed(&shuffle_prng, (uint64) shuffle_seed);
+		note("running the schedule shuffled, with --shuffle=%d", shuffle_seed);
 	}
 
 	if (config_auth_datadir)
