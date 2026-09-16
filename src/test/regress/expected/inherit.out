@@ -943,7 +943,7 @@ drop table ac;
 create table ac (a int constraint check_a check (a <> 0));
 create table bc (b int constraint check_b check (b <> 0));
 create table cc (c int constraint check_c check (c <> 0)) inherits (ac, bc);
-select pc.relname, pgc.conname, pgc.contype, pgc.conislocal, pgc.coninhcount, pg_get_expr(pgc.conbin, pc.oid) as consrc from pg_class as pc inner join pg_constraint as pgc on (pgc.conrelid = pc.oid) where pc.relname in ('ac', 'bc', 'cc') order by 1,2;
+select pc.relname, pgc.conname, pgc.contype, pgc.conislocal, pgc.coninhcount, pg_get_expr(pgc.conbin, pc.oid) as consrc from pg_class as pc inner join pg_constraint as pgc on (pgc.conrelid = pc.oid) where pc.relname in ('ac', 'bc', 'cc') and pc.relnamespace = 'public'::regnamespace order by 1,2;
  relname | conname | contype | conislocal | coninhcount |  consrc  
 ---------+---------+---------+------------+-------------+----------
  ac      | check_a | c       | t          |           0 | (a <> 0)
@@ -954,7 +954,7 @@ select pc.relname, pgc.conname, pgc.contype, pgc.conislocal, pgc.coninhcount, pg
 (5 rows)
 
 alter table cc no inherit bc;
-select pc.relname, pgc.conname, pgc.contype, pgc.conislocal, pgc.coninhcount, pg_get_expr(pgc.conbin, pc.oid) as consrc from pg_class as pc inner join pg_constraint as pgc on (pgc.conrelid = pc.oid) where pc.relname in ('ac', 'bc', 'cc') order by 1,2;
+select pc.relname, pgc.conname, pgc.contype, pgc.conislocal, pgc.coninhcount, pg_get_expr(pgc.conbin, pc.oid) as consrc from pg_class as pc inner join pg_constraint as pgc on (pgc.conrelid = pc.oid) where pc.relname in ('ac', 'bc', 'cc') and pc.relnamespace = 'public'::regnamespace order by 1,2;
  relname | conname | contype | conislocal | coninhcount |  consrc  
 ---------+---------+---------+------------+-------------+----------
  ac      | check_a | c       | t          |           0 | (a <> 0)
