@@ -1,0 +1,1040 @@
+# GitHub Actions CI configuration for PostgreSQL
+#
+# For instructions on how to enable / disable CI integration in a repository
+# and further details, see src/tools/ci/README
+#
+# https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax
+# is a good starting point for documentation about GitHub Actions.
+
+name: CI for PostgreSQL
+
+on:
+  push:
+  # TODO: It might make sense to also add PR based triggers, to make it easier
+  # to use PRs on one's own repo, but it's a tad more complicated than just
+  # adding the 'pull_request' event, as naively doing so would often lead to
+  # running CI twice.
+
+# Restrict GITHUB_TOKEN to the minimum the jobs need: reading repo
+# contents during checkout.
+permissions:
+  contents: read
+
+concurrency:
+  # For anything other than stable branches, we want there to only be one
+  # workflow active for that branch. But on stable branches & master, we
+  # neither want to wait for prior runs, nor to cancel them, so that each
+  # separately pushed commit is tested.  We achieve that by setting a unique
+  # concurrency group when on such a branch.
+  group: |
+    ${{github.workflow }}-${{
+    case(github.ref == 'refs/heads/master' ||
+         (startsWith(github.ref, 'refs/heads/REL_') && endsWith(github.ref, '_STABLE')),
+         github.run_id,
+         github.ref)
+    }}
+  cancel-in-progress: true
+
+env:
+  # The lower depth accelerates git clone. Use a bit of depth so that
+  # concurrent jobs and retrying older runs have a chance of working.
+  CLONE_DEPTH: 500
+
+  CCACHE_MAXSIZE: "250M"
+  CCACHE_DIR: ${{ github.workspace }}/ccache_dir
+
+  # Check target for the autoconf builds. Can be set to e.g. check to only
+  # test the main regression tests.
+  CHECK: check-world PROVE_FLAGS=--timer
+  CHECKFLAGS: -Otarget
+
+  PGCTLTIMEOUT: 120  # avoids spurious failures during parallel tests
+  TEMP_CONFIG: ${{ github.workspace }}/src/tools/ci/pg_ci_base.conf
+  PG_TEST_EXTRA: kerberos ldap ssl
+
+  # Used by the Linux autoconf and the CompilerWarnings jobs
+  LINUX_CONFIGURE_FEATURES: >-
+    --with-gssapi
+    --with-icu
+    --with-ldap
+    --with-libxml
+    --with-libxslt
+    --with-llvm
+    --with-lz4
+    --with-pam
+    --with-perl
+    --with-python
+    --with-selinux
+    --with-ssl=openssl
+    --with-systemd
+    --with-tcl --with-tclconfig=/usr/lib/tcl8.6/
+    --with-uuid=ossp
+    --with-zstd
+
+  # Debian Trixie containers used by all Linux jobs. Built by
+  # 'https://github.com/anarazel/pg-vm-images/'.
+  #
+  # The containers are named
+  # ghcr.io/anarazel/pg-vm-images/<branch>/linux_debian_ci/<debian version>/<ci-job>:<CONTAINER_TAG>
+  CONTAINER_REPO: ghcr.io/anarazel/pg-vm-images/main
+  CONTAINER_LINUX_CI_NAME: linux_debian_ci/trixie
+  CONTAINER_TAG: latest
+
+  # The full set of OS / job selectors recognized by the `ci-os-only:`
+  # commit-message directive parsed in the `setup` job below.
+  CI_OS_ONLY_JOBS: "linux macos windows compilerwarnings sanitycheck"
+
+  ###
+  # A few variables to make expressions later on shorter
+  ###
+
+  ON_DEFAULT_BRANCH: ${{github.event.repository.default_branch == github.ref_name }}
+
+  # Note that we need to be careful to use a separator that can't be in branch
+  # names, otherwise e.g. caches for 'master' might be restored on the
+  # 'master-pending' branch.
+  CACHE_PREFIX_DEFAULT: >-
+    :${{ github.job }}:${{ github.event.repository.default_branch }}:
+  CACHE_PREFIX_BRANCH: >-
+    :${{ github.job }}:${{ github.ref_name }}:
+  CACHE_SUFFIX: >-
+    ${{ github.run_id }}:${{ github.run_attempt }}
+
+
+jobs:
+
+  # Job: Report if repository has not opted into CI
+  #
+  # Do not run CI unless the repository owner opts in, to avoid resource waste
+  # in all the forks of postgres (new forks have workflows disabled by
+  # default, but old ones don't). Unfortunately there's no declarative way to
+  # do so.
+  #
+  # To make the lack of actual CI due to missing opt-in more visible, emit a
+  # summary explaining how CI can be opted into and how the entire workflow,
+  # including this warning, can be disabled.
+  warn-if-not-opted-in:
+    name: Report if not opted into CI
+    if: ${{vars.PG_CI_ENABLED != '1'}}
+
+    # Can't use the output from the setup task here, so this has to be done
+    # differently. To avoid having the same logic it in the setup job (which
+    # also can't use its own outputs), have it use a yaml reference.
+    runs-on: &setup_runs_on |
+      ${{ vars.PG_CI_RUNS_ON_SETUP || 'ubuntu-slim' }}
+
+    steps:
+      - name: Warn
+        env:
+          MSG: |
+            > [!IMPORTANT]
+            > ${{github.workflow}} has not been opted into in this repository
+            >
+            > To opt into ${{github.workflow}}, go to
+            > ${{github.server_url}}/${{github.repository}}/settings/variables/actions
+            > and create a new repository variable named PG_CI_ENABLED, with
+            > the value 1.
+            >
+            > To avoid seeing this message over and over, go to
+            > ${{github.server_url}}/${{github.repository}}/actions/workflows/pg-ci.yml
+            > and click on the three dots at the top right and choose
+            > "Disable workflow"
+        run: |
+          echo "$MSG" |tee -a "$GITHUB_STEP_SUMMARY"
+
+
+  # Job: Determine enabled jobs
+  #
+  # Parses "ci-os-only: ..." from the commit message and exposes flags
+  # consumed by the jobs' `if:` conditions.
+  setup:
+    name: Determine enabled jobs
+    # Only run CI if repo owner opted in. If this task is skipped due to the
+    # if, none of it's depending tasks (i.e. the actual CI tasks) run either.
+    if: ${{vars.PG_CI_ENABLED == '1'}}
+    runs-on: *setup_runs_on
+    timeout-minutes: 1
+    outputs:
+      # Are certain tasks enabled?
+      linux: ${{ steps.os.outputs.linux }}
+      macos: ${{ steps.os.outputs.macos }}
+      windows: ${{ steps.os.outputs.windows }}
+      compilerwarnings: ${{ steps.os.outputs.compilerwarnings }}
+      sanitycheck: ${{ steps.os.outputs.sanitycheck }}
+
+      # What runners to run on:
+      #
+      # To allow over-riding what runners jobs use, we allow setting
+      # repository / org level variables influencing that choice on a
+      # per-host-operating-system basis.  See also src/tools/ci/README
+      #
+      # This also makes it easier to change the version of linux / windows
+      # used centrally. We don't just want to use ubuntu-latest, as it's not
+      # implausible there will be breakage when that switches to the next
+      # ubuntu version.
+      runs_on_linux: ${{ vars.PG_CI_RUNS_ON_LINUX || 'ubuntu-24.04' }}
+      runs_on_windows: ${{ vars.PG_CI_RUNS_ON_WINDOWS || 'windows-2022' }}
+      runs_on_macos: ${{ vars.PG_CI_RUNS_ON_MACOS || 'macos-15' }}
+
+      # Exports:
+      #
+      # Re-export workflow-level env vars that other jobs need to reference
+      # from contexts (e.g. `jobs.<id>.container.image`) where the `env`
+      # context is not available.
+      #
+      # For brevity, container_image is a format() template, {0} is the task
+      # specific image name.
+      container_image: ${{ env.CONTAINER_REPO }}/${{ env.CONTAINER_LINUX_CI_NAME }}/{0}:${{ env.CONTAINER_TAG }}
+
+    steps:
+      # Anchor reused by other jobs further down. GitHub Actions supports YAML
+      # anchors/aliases but not merge keys, so the alias copies the whole step
+      # verbatim. The anchor is resolved at YAML parse time, so the alias
+      # keeps working even if this job were to be skipped at runtime.
+      - &nix_sysinfo_step
+        name: sysinfo
+        run: |
+          echo "Number of cores: " $(nproc || sysctl hw.physicalcpu hw.logicalcpu)
+
+          echo "id: $(id)"
+          echo "uname: $(uname -a)"
+
+          echo ::group::ulimit
+          ulimit -a -H && ulimit -a -S
+          echo ::endgroup::
+
+          echo ::group::env
+          env
+          echo ::endgroup::
+
+      - name: Parse ci-os-only
+        id: os
+        env:
+          MSG: ${{ github.event.head_commit.message }}
+        shell: bash
+        run: |
+          all_os=${CI_OS_ONLY_JOBS}
+          if printf '%s\n' "$MSG" | grep -qE '^ci-os-only: '; then
+            sel=$(printf '%s\n' "$MSG" | sed -n 's/^ci-os-only: //p' | head -n 1)
+            echo "ci-os-only selection: $sel"
+          else
+            sel="$all_os"
+          fi
+          for o in $all_os; do
+            if echo " $sel " | grep -qE "[ ,]$o[ ,]"; then
+              echo "$o=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "$o=false" >> "$GITHUB_OUTPUT"
+            fi
+          done
+          cat "$GITHUB_OUTPUT"
+
+
+  # Job: SanityCheck
+  #
+  # To avoid unnecessarily spinning up a lot of VMs / containers for entirely
+  # broken commits, have a minimal task that all others depend on.
+  #
+  # SPECIAL:
+  # - Builds with almost no enabled dependencies
+  sanity-check:
+    name: SanityCheck
+    needs: setup
+    if: |
+      !cancelled() &&
+      needs.setup.outputs.sanitycheck == 'true'
+    runs-on: ${{ needs.setup.outputs.runs_on_linux }}
+    timeout-minutes: 15
+    container:
+      image: ${{ format(needs.setup.outputs.container_image, 'sanity-check') }}
+
+      # Options passed to all linux containers. Not all of the jobs need
+      # all of them, but it's easier to just define them centrally.
+      #
+      # --privileged is needed so the prepare step can write to sysctls
+      # under /proc/sys (it's mounted read-only without it). We use it to
+      # set kernel.core_pattern.
+      #
+      # Share the host PID + IPC namespaces. 017_shm.pl rapidly creates,
+      # kill9's, and restarts postgres; with the container's small PID
+      # space a new postgres can recycle the dead postmaster's PID before
+      # pg_ctl's postmaster.pid check notices, producing spurious "node X
+      # is already running" failures. SysV shm in the test also relies on
+      # host-like IPC behavior.
+      options: &linux_container_options |
+        --privileged --pid=host --ipc=host
+    env:
+      # no options enabled, should be small
+      CCACHE_MAXSIZE: "150M"
+
+    steps:
+      - *nix_sysinfo_step
+
+      - &checkout_step
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: ${{ env.CLONE_DEPTH }}
+
+      # We restore both the ccache from the default branch (typically master),
+      # and from the current branch. This will often allow feature branches to
+      # start out with a high cache hit ratio.
+      #
+      # With ccache it turns out to work to just restore two caches into the
+      # same directory, as it's basically a content addressed store. Stats
+      # could be corrupted, but we zero them out anyway.
+      - &ccache_restore_default_step
+        name: "ccache: Restore for default branch ${{github.event.repository.default_branch}}"
+        if: ${{ env.ON_DEFAULT_BRANCH == 'false' }}
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache${{env.CACHE_PREFIX_DEFAULT}}${{env.CACHE_SUFFIX}}
+          restore-keys: ccache${{env.CACHE_PREFIX_DEFAULT}}
+
+      - &ccache_restore_branch_step
+        name: "ccache: Restore for branch ${{ github.ref_name }}"
+        id: ccache-restore-branch
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache${{env.CACHE_PREFIX_BRANCH}}${{env.CACHE_SUFFIX}}
+          restore-keys: ccache${{env.CACHE_PREFIX_BRANCH}}
+
+      - &linux_prepare_workspace_step
+        name: Prepare workspace
+        run: |
+          useradd -m postgres
+          chown -R postgres:postgres .
+          mkdir -m 770 /tmp/cores
+          chown root:postgres /tmp/cores
+          sysctl kernel.core_pattern='/tmp/cores/%e-%s-%p.core'
+
+          cat >> /etc/hosts <<-EOF
+            127.0.0.1 pg-loadbalancetest
+            127.0.0.2 pg-loadbalancetest
+            127.0.0.3 pg-loadbalancetest
+          EOF
+
+      # By using a shell that includes su, the run commands themselves get
+      # simpler. As there are quite a few commands that need to use su...
+      - name: Configure
+        shell: &su_postgres_shell |
+          su postgres -c "bash --noprofile --norc -eo pipefail {0}"
+        run: |
+          ./configure \
+            --enable-debug \
+            --enable-tap-tests \
+            --without-readline \
+            --without-zlib \
+            CC="ccache gcc" \
+            CFLAGS="-O0"
+
+      - name: Build
+        shell: *su_postgres_shell
+        run: |
+          make -s -j$(nproc) world-bin
+
+      # Decide if it's worth uploading a new version of the ccache cache. If
+      # we always do so unconditionally, we'd very quickly go through the
+      # allowed cache space. Instead we check if the hit rate is high enough
+      # already for that not to be worth it.
+      - &ccache_decide_save_step
+        name: "ccache: Decide whether to upload"
+        id: ccache-decide
+        # Make the decision whether to upload whenever the cache has been set
+        # up, so that incrementally addressing compiler errors/warnings
+        # doesn't have to start from scratch.
+        if: |
+          always() &&
+          steps.ccache-restore-branch.conclusion == 'success'
+        run: python3 src/tools/ci/gha_ccache_decide.py
+
+      - &ccache_save_step
+        name: "ccache: Upload cache"
+        uses: actions/cache/save@v5
+        if: |
+          always() &&
+          steps.ccache-decide.outputs.should_save == 'true'
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ steps.ccache-restore-branch.outputs.cache-primary-key }}
+
+      # Run a minimal set of tests. The main regression tests take too long
+      # for this purpose. For now this is a random quick pg_regress style
+      # test, and a tap test that exercises both a frontend binary and the
+      # backend.
+      - name: Test
+        shell: *su_postgres_shell
+        run: |
+          ulimit -c unlimited
+          make -s -C contrib/cube check
+          make -s -C src/bin/pg_ctl check PROVE_TESTS=t/001_start_stop.pl
+
+      - &linux_collect_cores_step
+        name: Core backtraces
+        if: failure() && !cancelled()
+        run: src/tools/ci/cores_backtrace.sh linux /tmp/cores
+
+      - &upload_logs_step
+        name: Upload logs
+        if: failure() && !cancelled()
+        uses: actions/upload-artifact@v7
+        with:
+          name: logs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+              **/*.log
+              **/*.diffs
+              **/regress_log_*
+              **/crashlog-*.txt
+              **/config.log
+          if-no-files-found: ignore
+
+
+  # Job: Linux - Autoconf
+  #
+  # SPECIAL:
+  # - Uses undefined & alignment sanitizers (sanitizer failures are typically
+  #   printed in the server log)
+  # - Uses postgres specific CPPFLAGS that increase test coverage
+  linux-autoconf:
+    name: Linux - Autoconf
+    needs: [setup, sanity-check]
+    if: &linux_job_if |
+      !cancelled() &&
+      needs.setup.outputs.linux == 'true' &&
+      needs.sanity-check.result != 'failure'
+    runs-on: ${{ needs.setup.outputs.runs_on_linux }}
+    container:
+      image: ${{ format(needs.setup.outputs.container_image, 'linux-autoconf') }}
+      options: *linux_container_options
+    timeout-minutes: 60
+
+    env: &linux_env
+      # Add both debian and ubuntu, as symbols from the host can be visible during profiling
+      DEBUGINFOD_URLS: "https://debuginfod.debian.net https://debuginfod.ubuntu.com"
+      # Use -O2 to reduce the test times, use -fno-sanitize-recover=all to make sanitizer test
+      # failures visible.
+      CFLAGS: -O2 -ggdb -fno-sanitize-recover=all
+      CXXFLAGS: -O2 -ggdb -fno-sanitize-recover=all
+      LDFLAGS:
+      CC: ccache gcc
+      CXX: ccache g++
+      CLANG: ccache clang
+
+      # Configure sanitizer runtime behavior to be suitable for running tests:
+      # disable_coredump=0, abort_on_error=1: for useful backtraces in case of crashes
+      # print_stacktraces=1,verbosity=2, duh
+      # detect_leaks=0: too many uninteresting leak errors in short-lived binaries
+      UBSAN_OPTIONS: print_stacktrace=1:disable_coredump=0:abort_on_error=1:verbosity=2
+      ASAN_OPTIONS: print_stacktrace=1:disable_coredump=0:abort_on_error=1:detect_leaks=0
+
+    steps:
+      # GitHub Actions does not make it easy to share some, but not all,
+      # environment variables between related tasks. We solve that for the
+      # linux- tasks by updating the environment variables programmatically.
+      - name: Update Environment
+        env:
+          SANITIZER_FLAGS: -fsanitize=alignment,undefined
+          CPPFLAGS: -DRELCACHE_FORCE_RELEASE -DENFORCE_REGRESSION_TEST_NAME_RESTRICTIONS
+        run: &linux_update_config_cmd |
+          echo "CPPFLAGS=$CPPFLAGS" >> "$GITHUB_ENV"
+          echo "CFLAGS=$CFLAGS ${SANITIZER_FLAGS}" >> "$GITHUB_ENV"
+          echo "CXXFLAGS=$CXXFLAGS ${SANITIZER_FLAGS}" >> "$GITHUB_ENV"
+          echo "LDFLAGS=$LDFLAGS ${SANITIZER_FLAGS}" >> "$GITHUB_ENV"
+
+          echo "CC=${CC}" >> "$GITHUB_ENV"
+          echo "CXX=${CXX}" >> "$GITHUB_ENV"
+
+      - *nix_sysinfo_step
+      - *checkout_step
+      - *ccache_restore_default_step
+      - *ccache_restore_branch_step
+      - *linux_prepare_workspace_step
+
+      - name: Configure
+        shell: *su_postgres_shell
+        run: |
+          ./configure \
+            --enable-cassert --enable-debug \
+            --enable-tap-tests --enable-nls \
+            ${LINUX_CONFIGURE_FEATURES}
+
+      - name: Build
+        shell: *su_postgres_shell
+        run: |
+          make -s -j$(nproc) world-bin
+
+      - *ccache_decide_save_step
+      - *ccache_save_step
+
+      - name: Test world
+        shell: *su_postgres_shell
+        run: |
+          make -s ${CHECK} ${CHECKFLAGS} -j$(nproc)
+
+      - *linux_collect_cores_step
+      - *upload_logs_step
+
+
+  # Job: macOS - Autoconf
+  #
+  # SPECIAL:
+  # - Uses compile-time options that test reading/writing/copying of node trees
+  # - Specifies force_parallel_mode=regress, to catch related issues during CI
+  macos:
+    name: macOS - Autoconf
+    needs: [setup, sanity-check]
+    if: |
+      !cancelled() &&
+      needs.setup.outputs.macos == 'true' &&
+      needs.sanity-check.result != 'failure'
+    runs-on: ${{ needs.setup.outputs.runs_on_macos }}
+    timeout-minutes: 60
+    env:
+      MACPORTS_CACHE: ${{ github.workspace }}/macports-cache
+
+      MACOS_CONFIGURE_FEATURES: >-
+        --enable-dtrace
+        --enable-nls
+        --with-bonjour
+        --with-gssapi
+        --with-icu
+        --with-ldap
+        --with-libxml
+        --with-libxslt
+        --with-lz4
+        --with-perl
+        --with-python
+        --with-ssl=openssl
+        --with-tcl --with-tclconfig=/opt/local/lib
+        --with-uuid=e2fs
+        --with-zstd
+
+      MACOS_PACKAGE_LIST: >-
+        ccache
+        gmake
+        icu
+        kerberos5
+        lz4
+        openldap
+        openssl
+        p5.34-io-tty
+        p5.34-ipc-run
+        python312
+        tcl
+        zstd
+
+      CC: ccache cc
+      CXX: ccache c++
+      CFLAGS: -Og -ggdb
+      CXXFLAGS: -Og -ggdb
+
+      # Several buildfarm animals enable these options. Without testing them
+      # during CI, it would be easy to cause breakage on the buildfarm with CI
+      # passing.
+      CPPFLAGS: >-
+        -DCOPY_PARSE_PLAN_TREES
+        -DWRITE_READ_PARSE_PLAN_TREES
+        -DRAW_EXPRESSION_COVERAGE_TEST
+
+    steps:
+      - *nix_sysinfo_step
+      - *checkout_step
+
+      - name: Setup core files
+        run: |
+          mkdir -p $HOME/cores
+          sudo sysctl kern.corefile="$HOME/cores/core.%P"
+
+      - name: "Macports: Compute cache key"
+        id: mp-key
+        run: |
+          macos_major=$(sw_vers -productVersion | sed 's/\..*//')
+          pkglist_hash=$(printf '%s' "$MACOS_PACKAGE_LIST" | md5 -q)
+          script_hash=$(md5 -q src/tools/ci/ci_macports_packages.sh)
+          echo "key=macports-${macos_major}-${{runner.arch}}-${pkglist_hash}-${script_hash}" >> "$GITHUB_OUTPUT"
+          # It's faster to start with a partial cache for the same macos
+          # version and architecture than from scratch
+          echo "restore-key=macports-${macos_major}-${{runner.arch}}-" >> "$GITHUB_OUTPUT"
+
+      - name: "MacPorts: Restore cache"
+        id: mp-restore
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ env.MACPORTS_CACHE }}
+          key: ${{ steps.mp-key.outputs.key }}
+          restore-keys: ${{ steps.mp-key.outputs.restore-key }}
+
+      # Use MacPorts, even though Homebrew is installed. The installation
+      # of the additional packages we need would take quite a while with
+      # Homebrew, even if we cache the downloads. We can't cache all of
+      # Homebrew, because it's already large. So we use MacPorts. To cache
+      # the installation we create a .dmg file that we mount if it already
+      # exists.
+      # XXX: The reason for the direct p5.34* references is that we'd need
+      # the large MacPort tree around to figure out that p5-io-tty is
+      # actually p5.34-io-tty. Using the unversioned name works, but
+      # updates MacPorts every time.
+      - name: "MacPorts: Install dependencies"
+        id: mp-install
+        env:
+          # Pass token so the script's GitHub API call to list MacPorts
+          # releases isn't subject to the 60/h/IP unauthenticated rate
+          # limit (shared across all jobs on the runner's IP).
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          sh src/tools/ci/ci_macports_packages.sh $MACOS_PACKAGE_LIST
+          # system python doesn't provide headers
+          sudo /opt/local/bin/port select python3 python312
+          # Make macports install visible to subsequent steps
+          echo /opt/local/sbin >> "$GITHUB_PATH"
+          echo /opt/local/bin >> "$GITHUB_PATH"
+
+      # Save macports before running build / tests, creating macports can be
+      # quite slow, so we don't want to start from scratch in the next run.
+      - name: "MacPorts: Save cache"
+        uses: actions/cache/save@v5
+        # Don't save cache if we had an exact match
+        if: |
+          steps.mp-install.conclusion == 'success' &&
+          steps.mp-restore.outputs.cache-hit != 'true'
+        with:
+          path: ${{ env.MACPORTS_CACHE }}
+          key: ${{ steps.mp-key.outputs.key }}
+
+      - *ccache_restore_default_step
+      - *ccache_restore_branch_step
+
+      # PG_TEST_INITDB_EXTRA_OPTS doesn't exist in this branch, so specify
+      # force_parallel_mode in a TEMP_CONFIG file including the default one.
+      - name: Setup test configuration
+        run: |
+          cat > "$RUNNER_TEMP/pg_ci_macos.conf" <<EOF
+          include '${TEMP_CONFIG}'
+          force_parallel_mode = regress
+          EOF
+          echo "TEMP_CONFIG=$RUNNER_TEMP/pg_ci_macos.conf" >> "$GITHUB_ENV"
+
+      - name: Configure
+        env:
+          PKG_CONFIG_PATH: /opt/local/lib/pkgconfig/
+        run: |
+          ./configure \
+            --enable-cassert --enable-debug --enable-tap-tests \
+            ${MACOS_CONFIGURE_FEATURES} \
+            --with-includes=/opt/local/include \
+            --with-libs=/opt/local/lib \
+            PG_SYSROOT=none \
+            PYTHON=python3
+
+      - name: Build
+        run: |
+          gmake -s -j$(getconf _NPROCESSORS_ONLN) world-bin
+
+      - *ccache_decide_save_step
+      - *ccache_save_step
+
+      # The use of script avoids make -Otarget complaints about fcntl() on
+      # platforms without support for locking pipes. See also
+      # https://savannah.gnu.org/bugs/?60774
+      # script uses pseudo-ttys, which do support locking.
+      - name: Test world
+        run: |
+          ulimit -c unlimited
+          # default is 256, pretty low
+          ulimit -n 1024
+          script test.log gmake -s ${CHECK} ${CHECKFLAGS} -j$(getconf _NPROCESSORS_ONLN)
+
+      - name: Core backtraces
+        if: failure() && !cancelled()
+        run: src/tools/ci/cores_backtrace.sh macos "$HOME/cores"
+
+      - *upload_logs_step
+
+
+  # Job: Windows - Visual Studio
+  #
+  # Uses the src/tools/msvc build system.
+  windows-vs:
+    name: Windows - Visual Studio
+    needs: [setup, sanity-check]
+    if: |
+      !cancelled() &&
+      needs.setup.outputs.windows == 'true' &&
+      needs.sanity-check.result != 'failure'
+    runs-on: ${{ needs.setup.outputs.runs_on_windows }}
+    timeout-minutes: 60
+
+    env:
+      # Avoid port conflicts between concurrent tap tests
+      PG_TEST_USE_UNIX_SOCKETS: 1
+      TAR: "c:/windows/system32/tar.exe"
+
+      # Our legacy build system doesn't have test concurrency above the level
+      # of a single vcregress test target. Due to that, it's useful to run
+      # prove with multiple jobs.
+      PROVE_FLAGS: -j10 --timer
+
+      # Avoid re-installing over and over
+      NO_TEMP_INSTALL: 1
+
+      # GitHub's Windows runner images set PGUSER=postgres for their
+      # preinstalled PostgreSQL. Set it explicitly and create the server
+      # started below with that user, so this doesn't depend on the runner.
+      PGUSER: postgres
+
+      # -m enables parallelism
+      # verbosity:minimal + Summary reduce verbosity, while keeping a summary of
+      #   errors/warnings
+      # ForceNoAlign prevents msbuild from introducing line-breaks for long lines
+      # disable file tracker, we're never going to rebuild, and it slows down the
+      #   build
+      MSBFLAGS: -m -verbosity:minimal "-consoleLoggerParameters:Summary;ForceNoAlign" /p:TrackFileAccess=false -nologo
+
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      - name: Disable Windows Defender
+        shell: pwsh
+        run: |
+          Set-MpPreference -DisableRealtimeMonitoring $true -SubmitSamplesConsent NeverSend -MAPSReporting Disable
+          # Verify Defender status
+          $status = Get-MpComputerStatus -ErrorAction SilentlyContinue
+          if ($status) {
+              Write-Host "RealTimeProtectionEnabled: $($status.RealTimeProtectionEnabled)"
+              Write-Host "AntivirusEnabled: $($status.AntivirusEnabled)"
+          }
+
+      - *checkout_step
+
+      - name: Sysinfo
+        run: |
+          echo Number of logical processors: %NUMBER_OF_PROCESSORS%
+
+          echo codepage:
+          chcp
+
+          echo ::group::systeminfo
+          systeminfo
+          echo ::endgroup::
+
+          echo ::group::env
+          set
+          echo ::endgroup::
+
+      # On GitHub-hosted Windows runners the workspace's inherited ACL grants
+      # Administrators:(F) and Users:(RX) but does NOT grant the runner user
+      # (runneradmin) directly. That matters because pg_ctl on Windows uses
+      # CreateRestrictedProcess to drop admin privileges from postmaster, so
+      # the postmaster process has the user SID in its token but no longer
+      # the Administrators group — leaving it with only "Users:(RX)" on files
+      # that only have the inherited ACL.
+      #
+      # Fix it once on the workspace dir with (OI)(CI) inheritance flags so
+      # every file/dir created underneath gets an explicit grant for the
+      # current user.
+      - name: Grant workspace ACL to runner user
+        shell: pwsh
+        run: |
+          icacls "${{ github.workspace }}" /grant "${env:USERNAME}:(OI)(CI)F" /Q | Out-Null
+          Write-Host "Granted Full Control to $env:USERNAME on ${{ github.workspace }}"
+
+      # Install some dependencies via msys64, that seems to be the fastest and
+      # most reliable
+      - name: Install dependencies, Mingw
+        shell: 'C:\msys64\usr\bin\bash.exe --login -eo pipefail "{0}"'
+        run: |
+          # Install some dependencies via msys64, that seems to be the fastest
+          # and most reliable
+          pacman -S --noconfirm --needed --asdeps \
+            bison flex
+
+          # Make bison and flex visible
+          echo C:/msys64/usr/bin >> "$GITHUB_PATH"
+
+          # Don't prefer mingw's perl
+          echo C:/Strawberry/perl/bin >> "$GITHUB_PATH"
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          # Install IPC::Run.
+          # - recommends_policy=0 keeps cpan from pulling in IO::Tty / IO::Pty,
+          #   which don't build on Windows ("This module requires a POSIX
+          #   compliant system to work").
+          # - Pin to NJM/IPC-Run-20250809.0 because TODDR/IPC-Run-20260322.0
+          #   broke postgres tap tests on Windows (changed pipe stdio
+          #   handling). See upstream pg-vm-images commit ff5238afa3 and
+          #   the thread at
+          #   https://postgr.es/m/CAN55FZ06xanSbJdHe-CurjX_qNuBWZDEvS1kAk36L38YCtZXnw%40mail.gmail.com
+          echo ::group::cpan_ipc_run
+          "o conf recommends_policy 0`no conf commit`nnotest install NJM/IPC-Run-20250809.0.tar.gz" | cpan
+          if (!$?) { throw 'cmdfail' }
+          perl -mIPC::Run -e 1
+          if (!$?) { throw 'cmdfail' }
+          echo ::endgroup::
+
+      - name: Setup socket directory
+        shell: cmd
+        run: |
+          mkdir "%RUNNER_TEMP%\pgsock"
+          echo PG_REGRESS_SOCK_DIR=%RUNNER_TEMP%\pgsock>>"%GITHUB_ENV%"
+
+      - name: Setup Windows debugger
+        shell: pwsh
+        run: src/tools/ci/gha_setup_windows_debugger.ps1
+
+      # src/tools/msvc expects the OpenSSL libraries directly in lib/, newer
+      # OpenSSL installers put them into lib/VC/x64/MD/. If necessary, create
+      # a directory with the layout src/tools/msvc expects.
+      - name: Setup OpenSSL
+        shell: pwsh
+        run: |
+          $ossl = "$env:ProgramFiles\OpenSSL"
+          if (!(Test-Path "$ossl\lib\libssl.lib")) {
+            $shim = "$env:RUNNER_TEMP\openssl"
+            New-Item -ItemType Directory -Path $shim | Out-Null
+            New-Item -ItemType Junction -Path "$shim\bin" -Target "$ossl\bin" | Out-Null
+            New-Item -ItemType Junction -Path "$shim\include" -Target "$ossl\include" | Out-Null
+            New-Item -ItemType Junction -Path "$shim\lib" -Target "$ossl\lib\VC\x64\MD" | Out-Null
+            $ossl = $shim
+          }
+          Write-Host "Using OpenSSL in $ossl"
+          Add-Content $env:GITHUB_ENV "PG_CI_OPENSSL_DIR=$ossl"
+
+      - name: Configure
+        run: |
+          rem copy errors out when using forward slashes
+          copy src\tools\ci\windows_build_config.pl src\tools\msvc\config.pl || exit 1
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
+          perl src/tools/msvc/mkvcbuild.pl
+
+      - name: Build
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
+          msbuild %MSBFLAGS% pgsql.sln
+
+      # Installation on windows currently only completely works from
+      # src/tools/msvc
+      - name: Install
+        run: |
+          cd src/tools/msvc && perl install.pl %GITHUB_WORKSPACE%/tmp_install
+
+      - name: Test regress
+        timeout-minutes: 15
+        run: perl src/tools/msvc/vcregress.pl check parallel
+
+      # Start a server for the tests that only support running against an
+      # existing server, it is stopped further down. The server's
+      # postgresql.conf includes the TEMP_CONFIG file, the path to which needs
+      # forward slashes to not be interpreted as escape sequences.
+      - name: Start server
+        run: |
+          rem paths to binaries need backslashes
+          tmp_install\bin\pg_ctl.exe initdb -D tmp_check/db -l tmp_check/initdb.log --options="--no-sync -U %PGUSER%" || exit 1
+          echo include '%TEMP_CONFIG:\=/%' >> tmp_check/db/postgresql.conf
+          tmp_install\bin\pg_ctl.exe start -D tmp_check/db -l tmp_check/postmaster.log
+
+      - name: Test pl
+        timeout-minutes: 15
+        run: perl src/tools/msvc/vcregress.pl plcheck
+
+      - name: Test isolation
+        timeout-minutes: 15
+        run: perl src/tools/msvc/vcregress.pl isolationcheck
+
+      - name: Test modules
+        timeout-minutes: 15
+        run: perl src/tools/msvc/vcregress.pl modulescheck
+
+      - name: Test contrib
+        timeout-minutes: 15
+        run: perl src/tools/msvc/vcregress.pl contribcheck
+
+      - name: Stop server
+        run: tmp_install\bin\pg_ctl.exe stop -D tmp_check/db -l tmp_check/postmaster.log
+
+      - name: Test ssl
+        timeout-minutes: 15
+        run: |
+          set with_ssl=openssl
+          perl src/tools/msvc/vcregress.pl taptest ./src/test/ssl/
+
+      - name: Test subscription
+        timeout-minutes: 15
+        run: perl src/tools/msvc/vcregress.pl taptest ./src/test/subscription/
+
+      - name: Test authentication
+        timeout-minutes: 15
+        run: perl src/tools/msvc/vcregress.pl taptest ./src/test/authentication/
+
+      - name: Test recovery
+        timeout-minutes: 15
+        run: perl src/tools/msvc/vcregress.pl recoverycheck
+
+      - name: Test bin
+        timeout-minutes: 15
+        run: perl src/tools/msvc/vcregress.pl bincheck
+
+      - name: Test ecpg
+        timeout-minutes: 15
+        run: |
+          rem tries to build additional stuff
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
+          rem References ecpg_regression.proj in the current dir
+          cd src/tools/msvc
+          perl vcregress.pl ecpgcheck
+
+      - *upload_logs_step
+
+
+  # Job: CompilerWarnings
+  #
+  # Test that code can be built with both gcc and clang without warnings,
+  # with various combinations of cassert/dtrace flags. Trace probes have
+  # a history of getting accidentally broken; the matrix is there to
+  # catch that.
+  compiler-warnings:
+    name: CompilerWarnings
+    needs: [setup, sanity-check]
+    if: |
+      !cancelled() &&
+      needs.setup.outputs.compilerwarnings == 'true' &&
+      needs.sanity-check.result != 'failure'
+    runs-on: ${{ needs.setup.outputs.runs_on_linux }}
+    timeout-minutes: 60
+    container:
+      image: ${{ format(needs.setup.outputs.container_image, 'compiler-warnings') }}
+    env:
+      # Use larger ccache cache as this job compiles with multiple
+      # compilers / flag combinations.
+      CCACHE_MAXSIZE: "1G"
+
+    steps:
+      - *nix_sysinfo_step
+      - *checkout_step
+      - *ccache_restore_default_step
+      - *ccache_restore_branch_step
+
+      - name: Setup
+        run: echo "COPT=-Werror" > src/Makefile.custom
+
+      # gcc, cassert off, dtrace on
+      - name: gcc warnings + (dtrace)
+        if: ${{ !cancelled() }}
+        env:
+          CONF: >-
+            --cache gcc.cache
+            --enable-dtrace
+            ${{env.LINUX_CONFIGURE_FEATURES}}
+          CC: ccache gcc
+          CXX: ccache g++
+          CLANG: ccache clang
+        run: &compiler_warnings_cmd |
+          echo "::group::configure"
+          ./configure ${CONF}
+          echo "::endgroup::"
+
+          make -s -j$(nproc) clean
+          make -s -j$(nproc) world-bin
+
+      # gcc, cassert on, dtrace off
+      - name: gcc warnings + (cassert)
+        if: ${{ !cancelled() }}
+        env:
+          CONF: >-
+            --cache gcc.cache
+            --enable-cassert
+            ${{env.LINUX_CONFIGURE_FEATURES}}
+          CC: ccache gcc
+          CXX: ccache g++
+          CLANG: ccache clang
+        run: *compiler_warnings_cmd
+
+      # clang, cassert off, dtrace off
+      - name: clang warnings
+        if: ${{ !cancelled() }}
+        env:
+          CONF: >-
+            --cache clang.cache
+            ${{env.LINUX_CONFIGURE_FEATURES}}
+          CC: ccache clang
+          CXX: ccache clang++
+          CLANG: ccache clang
+        run: *compiler_warnings_cmd
+
+      # clang, cassert on, dtrace on
+      - name: clang warnings + (cassert + dtrace)
+        if: ${{ !cancelled() }}
+        env:
+          CONF: >-
+            --cache clang.cache
+            --enable-cassert
+            --enable-dtrace
+            ${{env.LINUX_CONFIGURE_FEATURES}}
+          CC: ccache clang
+          CXX: ccache clang++
+          CLANG: ccache clang
+        run: *compiler_warnings_cmd
+
+      - name: mingw warnings (cross compilation)
+        if: ${{ !cancelled() }}
+        env:
+          CONF: >-
+            --host=x86_64-w64-mingw32ucrt
+            --enable-cassert
+          CC: ccache x86_64-w64-mingw32ucrt-gcc
+          CXX: ccache x86_64-w64-mingw32ucrt-g++
+        run: *compiler_warnings_cmd
+
+      ###
+      # Verify docs can be built
+      ###
+      # XXX: Only do this if there have been changes in doc/ since last build
+      - name: Build documentation
+        if: ${{ !cancelled() }}
+        env:
+          CONF: --cache gcc.cache
+          CC: ccache gcc
+          CXX: ccache g++
+          CLANG: ccache clang
+        run: |
+          echo "::group::configure"
+          ./configure ${CONF}
+          echo "::endgroup::"
+
+          make -s -j$(nproc) clean
+          make -s -j$(nproc) -C doc
+
+      ###
+      # Verify headerscheck / cpluspluscheck succeed
+      #
+      # - Don't use ccache, the files are uncacheable, polluting ccache's
+      #   cache
+      # - Use -fmax-errors, as particularly cpluspluscheck can be very verbose
+      # - XXX: the -Wno-register avoids verbose warnings:
+      #   https://postgr.es/m/20220308181837.aun3tdtdvao4vb7o%40alap3.anarazel.de
+      ###
+      - name: headerscheck + cpluspluscheck
+        if: ${{ !cancelled() }}
+        run: |
+          echo "::group::configure"
+          ./configure \
+            ${LINUX_CONFIGURE_FEATURES} \
+            --quiet \
+            CC=gcc CXX=g++ CLANG=clang
+          echo "::endgroup::"
+
+          make -s -j$(nproc) clean
+          echo "::group::headerscheck"
+          make -s headerscheck EXTRAFLAGS='-fmax-errors=10'
+          echo "::endgroup::"
+          echo "::group::cpluspluscheck"
+          make -s cpluspluscheck EXTRAFLAGS='-Wno-register -fmax-errors=10'
+          echo "::endgroup::"
+
+      - *ccache_decide_save_step
+      - *ccache_save_step
+      - *upload_logs_step
