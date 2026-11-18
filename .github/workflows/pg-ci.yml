@@ -745,8 +745,8 @@ jobs:
 
       CC: ccache cc
       CXX: ccache c++
-      CFLAGS: -Og -ggdb
-      CXXFLAGS: -Og -ggdb
+      CFLAGS: -O2 -ggdb
+      CXXFLAGS: -O2 -ggdb
       PG_TEST_PG_UPGRADE_MODE: --clone
       PG_TEST_PG_COMBINEBACKUP_MODE: --clone
 
